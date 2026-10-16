@@ -21,6 +21,7 @@ from apiserver.database.model.scheduler import (
 )
 from apiserver.database.model.device import Device
 from apiserver.idp.audit import record as audit
+from apiserver.bll.scheduler import usage_history
 from apiserver.database.model.task.task import Task, TaskStatus
 from apiserver.redis_manager import redman
 
@@ -316,9 +317,17 @@ def sync(company: str, device: str, worker_name: str, jobs: Iterable[dict], usag
     jobs = list(jobs or [])
     worker = _worker_of_device(worker_name, device)
     was_lost = worker.state == WorkerState.lost
-    worker.update(last_sync=now, usage=usage or {}, state=WorkerState.active)
+    # a draining worker stays draining across syncs; only a lost worker comes back as active
+    state = WorkerState.active if was_lost or worker.state != WorkerState.draining else WorkerState.draining
+    worker.update(last_sync=now, usage=usage or {}, state=state)
     if was_lost:
         record_event(company, "worker_back", worker=worker.id, now=now)
+    usage_history.record(company, worker.id, usage or {}, jobs, now)
+    if state == WorkerState.draining:
+        # offers made before the drain are withdrawn; the running jobs continue
+        for r in Reservation.objects(worker=worker.id, state=ReservationState.offered):
+            r.update(state=ReservationState.released, released_at=now, release_reason="worker draining")
+        return {"offers": [], "stop": [], "ended": []}
 
     usage_by_task = {j["task"]: j.get("usage") or {} for j in jobs or [] if j.get("task")}
     for task_id, job_usage in usage_by_task.items():
@@ -368,6 +377,20 @@ def sync(company: str, device: str, worker_name: str, jobs: Iterable[dict], usag
             "max_runtime_min": max_runtime,
         })
     return {"offers": offers, "stop": stale, "ended": sorted(ended)}
+
+
+def set_drain(company: str, worker_name: str, drain: bool, user: str, is_admin: bool) -> None:
+    """A draining worker keeps its jobs and takes no new offers. Only an admin may drain a worker."""
+    if not is_admin:
+        raise errors.forbidden.NoWritePermission(worker=worker_name)
+    worker = SchedulerWorker.objects(id=worker_name, company=company).first()
+    if not worker:
+        raise errors.bad_request.ValidationError("no such worker")
+    if worker.state == WorkerState.lost:
+        raise errors.bad_request.ValidationError("a lost worker cannot be drained")
+    worker.update(state=WorkerState.draining if drain else WorkerState.active)
+    record_event(company, "drained" if drain else "resumed", worker=worker_name, detail=user)
+    audit(user, "scheduler.drained" if drain else "scheduler.resumed", worker=worker_name)
 
 
 def set_priority(company: str, task_id: str, priority: int, user: str, is_admin: bool) -> None:
