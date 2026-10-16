@@ -124,6 +124,21 @@ class AppSequence:
         StatisticsReporter.start()
         MetricsRefresher.start()
         NonResponsiveTasksWatchdog.start()
+        self._start_idp_sync()
+
+    @staticmethod
+    def _start_idp_sync():
+        # Off until the identity provider is configured for the deployment (apiserver.idp.sync_enabled).
+        if not config.get("apiserver.idp.sync_enabled", False):
+            return
+        from apiserver.idp.directory import build_from_config
+        from apiserver.idp.user_sync import UserSyncThread
+
+        UserSyncThread(
+            build_from_config(),
+            config.get("apiserver.idp.admin_role"),
+            config.get("apiserver.idp.sync_interval_sec"),
+        ).start()
 
     def _on_worker_stop(self):
         pass
