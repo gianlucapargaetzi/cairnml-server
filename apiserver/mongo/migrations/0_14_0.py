@@ -1,18 +1,10 @@
-import hashlib
-
 from pymongo.database import Database, Collection
-
-from apiserver.service_repo.auth.fixed_user import FixedUser
 
 
 def _get_ids():
-    if not FixedUser.enabled():
-        return
-
-    return {
-        hashlib.md5(f"{user.username}:{user.password}".encode()).hexdigest(): user.id
-        for user in FixedUser.from_config()
-    }
+    # Fixed users (username and password) are removed. The server refuses to start with them
+    # enabled, so there is never a mapping to apply and this migration does nothing.
+    return None
 
 
 def _switch_uuid(collection: Collection, uuid_field: str, uuids: dict):
