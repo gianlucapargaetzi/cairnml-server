@@ -79,6 +79,15 @@ def enroll(call: APICall, _company, request: EnrollRequest):
     return {"id": device.id, "kind": device.kind}
 
 
+@endpoint("devices.idp_settings", min_version="2.8")
+def idp_settings(call: APICall, _company, _):
+    """What a device needs to start the identity-provider sign-in. No secret is returned."""
+    return {
+        "issuer": config.get("apiserver.idp.issuer"),
+        "sdk_client_id": config.get("apiserver.idp.sdk_client_id"),
+    }
+
+
 @endpoint("devices.exchange", min_version="2.8", request_data_model=ExchangeRequest)
 def exchange(call: APICall, _company, request: ExchangeRequest):
     try:
