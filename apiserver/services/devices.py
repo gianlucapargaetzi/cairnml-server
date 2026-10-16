@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime
 
 from apiserver.apierrors import errors
-from apiserver.apimodels.devices import EnrollRequest, ExchangeRequest, JobTokenRequest, RevokeRequest
+from apiserver.apimodels.devices import EnrollRequest, ExchangeRequest, GitTokenRequest, JobTokenRequest, RevokeRequest
 from apiserver.config_repo import config
 from apiserver.database.model.auth import Role, User
 from apiserver.database.model.device import Device, DeviceKind
@@ -166,3 +166,41 @@ def job_token(call: APICall, _company, request: JobTokenRequest):
     token = issue_job_token(owner, task.id, device.id)
     audit(device.id, "job_token.issued", task=task.id)
     return {"access_token": token, "expires_in": config.get("apiserver.idp.job_token_ttl_sec")}
+
+
+@endpoint("devices.git_token", min_version="2.8", request_data_model=GitTokenRequest)
+def git_token(call: APICall, _company, request: GitTokenRequest):
+    """A read-only token for the task's repository, for the job or the agent running it."""
+    from apiserver.database.model.task.task import Task
+    from apiserver.idp.checks import AccessDenied, check_job_issue
+    from apiserver.idp.github import GitHubError, RepoNotAccessible
+    from apiserver.idp.github_check import build_from_config, repo_of
+    from apiserver.service_repo.auth import Token
+
+    claims = Token.decode(_bearer(call))
+    task = Task.objects(id=request.task).first()
+    try:
+        if claims.get("kind") == "job":
+            if claims.get("task") != request.task:
+                raise AccessDenied("this token is for another task")
+        elif claims.get("kind") == DeviceKind.agent:
+            check_job_issue(task.status if task else None, task.last_worker if task else None,
+                            Device.objects(id=claims.get("device")).first())
+        else:
+            raise AccessDenied("only a job or its agent may get a repository token")
+    except AccessDenied as exc:
+        raise errors.unauthorized.InvalidToken(str(exc)) from None
+
+    app = build_from_config()
+    if app is None:
+        raise errors.bad_request.ValidationError("GitHub is not configured")
+    repo = repo_of(task.script.repository)
+    if repo is None:
+        raise errors.bad_request.ValidationError("the task's repository is not on GitHub")
+    try:
+        token = app.installation_token(repo)
+    except RepoNotAccessible:
+        raise errors.bad_request.ValidationError(f"the GitHub App is not installed on {repo}") from None
+    except GitHubError:
+        raise errors.bad_request.ValidationError("GitHub could not be reached") from None
+    return {"token": token.token, "expires_at": token.expires_at.isoformat(), "username": "x-access-token"}

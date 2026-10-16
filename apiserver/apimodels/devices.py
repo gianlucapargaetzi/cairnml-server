@@ -31,3 +31,8 @@ class IdpCallbackRequest(Base):
 class JobTokenRequest(Base):
     task = StringField(required=True)
     """ The task the agent has taken from its queue """
+
+
+class GitTokenRequest(Base):
+    task = StringField(required=True)
+    """ The task whose repository the caller needs to clone """
