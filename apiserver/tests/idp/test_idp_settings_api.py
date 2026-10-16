@@ -18,3 +18,8 @@ class TestIdpSettings(TestCase):
         self.assertEqual(body["issuer"], config.get("apiserver.idp.issuer"))
         self.assertEqual(body["sdk_client_id"], config.get("apiserver.idp.sdk_client_id"))
         self.assertNotIn("secret", str(body).lower())
+
+    def test_the_settings_give_the_public_and_web_addresses(self):
+        body = requests.post(f"{API}/devices.idp_settings", json={}, timeout=20).json()["data"]
+        self.assertEqual(body["public_url"], config.get("apiserver.idp.public_url").rstrip("/"))
+        self.assertEqual(body["web_url"], config.get("apiserver.idp.web_url"))

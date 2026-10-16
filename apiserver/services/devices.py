@@ -85,6 +85,9 @@ def idp_settings(call: APICall, _company, _):
     return {
         "issuer": config.get("apiserver.idp.issuer"),
         "sdk_client_id": config.get("apiserver.idp.sdk_client_id"),
+        # The address devices must use: a device's assertion is addressed to it, so it must match exactly.
+        "public_url": config.get("apiserver.idp.public_url").rstrip("/"),
+        "web_url": config.get("apiserver.idp.web_url"),
     }
 
 
