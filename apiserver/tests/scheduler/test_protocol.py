@@ -172,3 +172,14 @@ class SchedulerProtocolTest(TestService):
         _, data = self.api.send("tasks.get_by_id", {"task": task})
         self.assertEqual(data["task"]["status"], "failed")
         self.assertEqual(data["task"]["failure"]["reason"], "time_limit")
+
+    def test_a_worker_is_taken_over_only_after_its_old_device_is_revoked(self):
+        from apiserver.database.model.device import Device
+        other = AgentDevice()
+        refused = agent_call(other, "scheduler.register_worker", {
+            "worker": self.worker, "capacity": {"cpus": 4, "ram_gb": 8, "disk_gb": 10, "gpus": []}}, expect_ok=False)
+        self.assertNotEqual(refused["meta"]["result_code"], 200)
+        Device.objects(id=self.agent.device).update(revoked=True)
+        agent_call(other, "scheduler.register_worker", {
+            "worker": self.worker, "capacity": {"cpus": 4, "ram_gb": 8, "disk_gb": 10, "gpus": []}})
+        self.assertEqual(SchedulerWorker.objects(id=self.worker).first().device, other.device)
