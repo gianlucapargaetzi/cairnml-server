@@ -220,6 +220,11 @@ def enqueue_task(
     task = get_task_with_write_access(
         task_id=task_id, company_id=company_id, identity=identity
     )
+    if queue_id or queue_name:
+        # A job must be runnable: its commit exists on GitHub and the App can read its repository.
+        from apiserver.idp.github_check import build_from_config as _github, check_submission
+
+        check_submission(task, _github())
     if not update_execution_queue:
         if not (
             task.status == TaskStatus.queued and task.execution and task.execution.queue

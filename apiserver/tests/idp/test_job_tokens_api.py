@@ -77,3 +77,27 @@ class TestJobTokens(TestCase):
         token = call("devices.exchange", {"assertion": make_assertion(key, device, PUBLIC_URL)}).json()["data"]["access_token"]
         Task.objects(id=self.task_id).update_one(set__last_worker=device)
         self.assertEqual(self.job_token(token=token).status_code, 401)
+
+
+class TestGitToken(TestCase):
+    @classmethod
+    def setUpClass(cls):
+        db.db.initialize()
+
+    def setUp(self):
+        self.device_id, self.agent_token = _agent(f"agent-{uuid.uuid4().hex}")
+        self.task_id = _new_task()
+        self.addCleanup(lambda: Task.objects(id=self.task_id).delete())
+        Task.objects(id=self.task_id).update_one(set__status="queued", set__last_worker=self.device_id)
+
+    def test_without_a_configured_app_no_repository_token_is_given(self):
+        response = call("devices.git_token", {"task": self.task_id}, token=self.agent_token)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("GitHub is not configured", response.text)
+
+    def test_a_job_token_for_another_task_is_refused(self):
+        token = call("devices.job_token", {"task": self.task_id}, token=self.agent_token).json()["data"]["access_token"]
+        other = _new_task()
+        self.addCleanup(lambda: Task.objects(id=other).delete())
+        response = call("devices.git_token", {"task": other}, token=token)
+        self.assertEqual(response.status_code, 401)
