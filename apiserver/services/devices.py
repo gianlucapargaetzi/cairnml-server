@@ -90,19 +90,19 @@ def exchange(call: APICall, _company, request: ExchangeRequest):
     try:
         check_device(device, owner)
     except AccessDenied as exc:
-        audit(device_id, "token.refused", reason=str(exc))
+        audit(device_id, "token.refused", device=device_id, reason=str(exc))
         raise errors.unauthorized.InvalidToken(str(exc)) from None
 
     audience = config.get("apiserver.idp.public_url")
     try:
         claims = verify_assertion(request.assertion, load_public_key(device.public_key), audience=audience)
     except (AssertionInvalid, ValueError):
-        audit(device_id, "token.refused", reason="bad assertion")
+        audit(device_id, "token.refused", device=device_id, reason="bad assertion")
         raise errors.unauthorized.InvalidToken("invalid assertion") from None
 
     now = datetime.utcnow().timestamp()
     if not claim_jti(claims["jti"], ttl=max(1, int(claims["exp"] - now)) + 60):
-        audit(device_id, "token.refused", reason="assertion reused")
+        audit(device_id, "token.refused", device=device_id, reason="assertion reused")
         raise errors.unauthorized.InvalidToken("assertion already used")
 
     token = issue_access_token(owner.id, owner.company, device.id, kind=device.kind,
@@ -161,7 +161,7 @@ def job_token(call: APICall, _company, request: JobTokenRequest):
         if owner is None or owner.idp_disabled:
             raise AccessDenied("task owner is disabled or unknown")
     except AccessDenied as exc:
-        audit(device.id if device else "unknown", "job_token.refused", task=request.task, reason=str(exc))
+        audit(device.id if device else "unknown", "job_token.refused", device=device.id if device else None, task=request.task, reason=str(exc))
         raise errors.unauthorized.InvalidToken(str(exc)) from None
     token = issue_job_token(owner, task.id, device.id)
     audit(device.id, "job_token.issued", task=task.id)
@@ -189,6 +189,7 @@ def git_token(call: APICall, _company, request: GitTokenRequest):
         else:
             raise AccessDenied("only a job or its agent may get a repository token")
     except AccessDenied as exc:
+        audit(claims.get("device") or "unknown", "git_token.refused", device=claims.get("device"), task=request.task, reason=str(exc))
         raise errors.unauthorized.InvalidToken(str(exc)) from None
 
     app = build_from_config()
@@ -203,4 +204,5 @@ def git_token(call: APICall, _company, request: GitTokenRequest):
         raise errors.bad_request.ValidationError(f"the GitHub App is not installed on {repo}") from None
     except GitHubError:
         raise errors.bad_request.ValidationError("GitHub could not be reached") from None
+    audit(claims.get("device") or claims.get("sub") or "unknown", "git_token.issued", task=request.task, repo=repo)
     return {"token": token.token, "expires_at": token.expires_at.isoformat(), "username": "x-access-token"}
