@@ -1,14 +1,12 @@
 FROM node:24-bookworm-slim as webapp_builder
 
-ARG CLEARML_WEB_GIT_URL=https://github.com/clearml/clearml-web.git
-ARG CLEARML_WEB_REF=v2.5
-
 USER root
 WORKDIR /opt
 
-RUN apt-get update && apt-get install -y git
-RUN git clone --depth 1 --branch ${CLEARML_WEB_REF} ${CLEARML_WEB_GIT_URL} clearml-web
-RUN mv clearml-web /opt/open-webapp
+# The web app is our fork of clearml-web. It is passed as the named build context "clearml_web"
+# (deploy/clearml/compose.yaml does this), so the image contains the fork's changes and not an
+# upstream tag. Build with: --build-context clearml_web=<path to the clearml-web fork>
+COPY --from=clearml_web . /opt/open-webapp
 COPY --chmod=744 docker/build/internal_files/build_webapp.sh /tmp/internal_files/
 RUN /bin/bash -c '/tmp/internal_files/build_webapp.sh'
 
