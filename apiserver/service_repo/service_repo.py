@@ -75,9 +75,6 @@ class ServiceRepo(object):
     )
     """ if 'return_stack' is true and error contains a return code, return stack trace only for these error codes """
 
-    _credentials = config["secure.credentials.apiserver"]
-    """ Api Server credentials used for intra-service communication """
-
     _token = None
     """ Token for internal calls """
 

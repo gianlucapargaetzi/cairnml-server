@@ -481,7 +481,7 @@ class APICall(DataContainer):
 
     @property
     def auth(self):
-        """ Authenticated payload (Token or Basic) """
+        """ Authenticated payload (Token) """
         return self._auth
 
     @auth.setter

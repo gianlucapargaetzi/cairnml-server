@@ -5,17 +5,16 @@ from apiserver.apierrors import errors
 from apiserver.apimodels.auth import (
     GetTokenResponse,
     CreateUserRequest,
-    Credentials as CredModel,
 )
 from apiserver.apimodels.users import CreateRequest as Users_CreateRequest
 from apiserver.bll.user import UserBLL
 from apiserver.config_repo import config
 from apiserver.config.info import get_version, get_build_number
 from apiserver.database.errors import translate_errors_context
-from apiserver.database.model.auth import User, Role, Credentials
+from apiserver.database.model.auth import User, Role
 from apiserver.database.model.company import Company
 from apiserver.service_repo import APICall, ServiceRepo
-from apiserver.service_repo.auth import Identity, Token, get_client_id, get_secret_key
+from apiserver.service_repo.auth import Identity, Token
 
 log = config.logger("AuthBLL")
 
@@ -147,28 +146,3 @@ class AuthBLL:
         except Exception as ex:
             log.error(f"Exception calling users.delete: {str(ex)}")
 
-    @classmethod
-    def create_credentials(
-        cls, user_id: str, company_id: str, role: str = None, label: str = None,
-    ) -> CredModel:
-
-        with translate_errors_context():
-            query = dict(id=user_id, company=company_id)
-            user = User.objects(**query).first()
-            if not user:
-                raise errors.bad_request.InvalidUserId(**query)
-
-            cred = CredModel(
-                access_key=get_client_id(), secret_key=get_secret_key(), label=label
-            )
-            user.credentials.append(
-                Credentials(
-                    key=cred.access_key,
-                    secret=cred.secret_key,
-                    label=label,
-                    created=datetime.utcnow(),
-                )
-            )
-            user.save()
-
-            return cred

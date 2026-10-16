@@ -8,24 +8,13 @@ from apiserver.apimodels.login import (
 from apiserver.config import info
 from apiserver.service_repo import endpoint, APICall
 from apiserver.service_repo.auth import revoke_auth_token
-from apiserver.service_repo.auth.fixed_user import FixedUser
 
 
 @endpoint("login.supported_modes", response_data_model=GetSupportedModesResponse)
 def supported_modes(call: APICall, _, __: GetSupportedModesRequest):
-    guest_user = FixedUser.get_guest_user()
-    if guest_user:
-        guest = BasicGuestMode(
-            enabled=True,
-            name=guest_user.name,
-            username=guest_user.username,
-            password=guest_user.password,
-        )
-    else:
-        guest = BasicGuestMode()
-
+    # Username and password sign-in is removed; the identity provider is the only way in.
     return GetSupportedModesResponse(
-        basic=BasicMode(enabled=FixedUser.enabled(), guest=guest),
+        basic=BasicMode(enabled=False, guest=BasicGuestMode()),
         sso={},
         sso_providers=[],
         server_errors=ServerErrors(

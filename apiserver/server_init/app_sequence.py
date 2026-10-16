@@ -12,6 +12,7 @@ from apiserver.database import db
 from apiserver.bll.statistics.stats_reporter import StatisticsReporter
 from apiserver.config import info
 from apiserver.config_repo import config
+from apiserver.idp.legacy import check_no_legacy_settings
 from apiserver.elastic.initialize import (
     init_es_data,
     check_elastic_empty,
@@ -38,6 +39,7 @@ class AppSequence:
 
     def start(self, request_handlers: RequestHandlers):
         log.info("################ API Server initializing #####################")
+        check_no_legacy_settings()
         self._configure()
         self._init_dbs()
         self._load_services()
