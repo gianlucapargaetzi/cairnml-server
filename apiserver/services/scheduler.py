@@ -160,3 +160,24 @@ def set_priority(call: APICall, company_id, _):
     priority = validate_priority(body["priority"])
     service.set_priority(company_id, body["task"], priority, user=call.identity.user, is_admin=_is_admin(call))
     call.result.data = {"task": body["task"], "priority": priority}
+
+
+@endpoint("scheduler.drain_worker", min_version="2.36")
+def drain_worker(call: APICall, company_id, _):
+    body = call.data
+    service.set_drain(company_id, body["worker"], bool(body.get("drain", True)),
+                      user=call.identity.user, is_admin=_is_admin(call))
+    call.result.data = {"worker": body["worker"], "drain": bool(body.get("drain", True))}
+
+
+@endpoint("scheduler.get_usage_history", min_version="2.36")
+def get_usage_history(call: APICall, company_id, _):
+    from datetime import datetime, timedelta
+    from apiserver.bll.scheduler import usage_history
+
+    body = call.data or {}
+    minutes = min(int(body.get("minutes") or 60), 24 * 60)
+    now = datetime.utcnow()
+    points = usage_history.query(company_id, start=now - timedelta(minutes=minutes), end=now,
+                                 worker=body.get("worker"), task=body.get("task"))
+    call.result.data = {"points": points}
