@@ -78,6 +78,7 @@ def get_overview(call: APICall, company_id, _):
     by_worker = {}
     for r in live:
         by_worker.setdefault(r.worker, []).append(r)
+    names = {t.id: t.name for t in Task.objects(id__in=[r.task for r in live]).only("id", "name")}
     for w in SchedulerWorker.objects(company=company_id):
         jobs = by_worker.get(w.id, [])
         workers.append({
@@ -91,6 +92,7 @@ def get_overview(call: APICall, company_id, _):
             "jobs": [
                 {
                     "task": r.task,
+                    "name": names.get(r.task, ""),
                     "state": r.state,
                     "cpus": r.cpus,
                     "gpus": r.gpus,

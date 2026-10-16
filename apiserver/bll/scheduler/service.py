@@ -281,8 +281,15 @@ def release(company: str, device: str, worker_name: str, task_id: str, outcome: 
         # agent still reports how the job ended, and a failure must be recorded
         cancelled = Reservation.objects(task=task_id, worker=worker.id, state=ReservationState.released,
                                         release_reason="cancelled").order_by("-released_at").first()
-        if not cancelled or outcome != "failed":
+        if not cancelled:
             raise errors.bad_request.ValidationError("no running job for this task on this worker")
+        # the status was set when the reservation was cancelled, so only a failure record is still to add
+        task = Task.objects(id=task_id).only("id", "status", "company").first()
+        if outcome == "failed" and failure and task is not None:
+            _fail_task(task, now, reason=failure["reason"], detail=failure["detail"], worker=worker.id,
+                       user_id=_user_of_device(device), exit_code=failure.get("exit_code"),
+                       reserved=failure.get("reserved"), peak=failure.get("peak"))
+        return {"task": task_id, "outcome": outcome}
 
     task = Task.objects(id=task_id).only("id", "status", "company").first()
     if outcome == "failed" and failure:
