@@ -128,3 +128,12 @@ class SchedulerProtocolTest(TestService):
         self.api.send("tasks.stop", {"task": task, "force": True})
         refused = agent_call(self.agent, "scheduler.claim", {"worker": self.worker, "task": task}, expect_ok=False)
         self.assertNotEqual(refused["meta"]["result_code"], 200)
+
+    def test_a_stopped_task_is_told_to_the_agent_and_its_reservation_ends(self):
+        task = self.task()
+        self.offers()
+        agent_call(self.agent, "scheduler.claim", {"worker": self.worker, "task": task})
+        self.api.send("tasks.stop", {"task": task, "force": True})
+        result = agent_call(self.agent, "scheduler.sync", {"worker": self.worker, "jobs": [], "usage": {}})
+        self.assertIn(task, result["stop"])
+        self.assertEqual(Reservation.objects(task=task).first().state, "released")
