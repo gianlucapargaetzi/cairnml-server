@@ -29,13 +29,16 @@ class OidcVerifier:
         client_id: str | Sequence[str],
         jwks_url: str | None = None,
         jwks: dict | None = None,
+        key_lifespan_sec: float = 300,
     ) -> None:
         if not jwks_url and not jwks:
             raise ValueError("need jwks_url or jwks")
         self._issuer = issuer
         self._client_ids = [client_id] if isinstance(client_id, str) else list(client_id)
         self._static = jwt.PyJWKSet.from_dict(jwks) if jwks else None
-        self._client = jwt.PyJWKClient(jwks_url, cache_keys=True) if jwks_url else None
+        # The key set expires after key_lifespan_sec, so a key the IdP removes stops verifying tokens.
+        # Individual keys are not cached on their own: that cache would never expire.
+        self._client = jwt.PyJWKClient(jwks_url, cache_keys=False, lifespan=key_lifespan_sec) if jwks_url else None
 
     def _key(self, token: str):
         if self._static is not None:
