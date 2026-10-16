@@ -27,3 +27,24 @@ class TestLegacySettings(TestCase):
     def test_disabled_fixed_users_start(self):
         get = settings(**{"apiserver.auth.fixed_users.enabled": False})
         check_no_legacy_settings(get)
+
+
+class TestTestOnlySettings(TestCase):
+    def check(self, env, **values):
+        from apiserver.idp.legacy import test_only_settings_in_use
+
+        return test_only_settings_in_use(settings(**values), env)
+
+    def test_no_test_settings_in_production(self):
+        self.assertEqual(self.check({}), [])
+
+    def test_a_fixed_key_set_needs_a_test_run(self):
+        problems = self.check({}, **{"apiserver.idp.jwks_file": "/tmp/jwks.json"})
+        self.assertEqual(len(problems), 1)
+
+    def test_the_config_secret_switch_needs_a_test_run(self):
+        self.assertEqual(len(self.check({"CLEARML_ALLOW_CONFIG_SECRET": "1"})), 1)
+
+    def test_both_are_allowed_in_a_test_run(self):
+        env = {"CLEARML_TEST_MODE": "1", "CLEARML_ALLOW_CONFIG_SECRET": "1"}
+        self.assertEqual(self.check(env, **{"apiserver.idp.jwks_file": "/tmp/jwks.json"}), [])

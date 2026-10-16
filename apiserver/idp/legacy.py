@@ -4,7 +4,8 @@ Access keys in secure.conf and fixed users would let a password or key log in, w
 longer accepts. A deployment that still sets them must fail loudly rather than appear to work.
 """
 
-from typing import Callable, List
+import os
+from typing import Callable, List, Mapping
 
 from apiserver.config_repo import config
 
@@ -22,7 +23,18 @@ def legacy_settings_in_use(get: Callable = config.get) -> List[str]:
     return problems
 
 
+def test_only_settings_in_use(get: Callable = config.get, env: Mapping = os.environ) -> List[str]:
+    """Settings that exist for the test suite. They are refused unless the server runs as a test run."""
+    test_run = env.get("CLEARML_TEST_MODE") == "1"
+    problems = []
+    if get("apiserver.idp.jwks_file", "") and not test_run:
+        problems.append("apiserver.idp.jwks_file is test-only: it needs CLEARML_TEST_MODE=1")
+    if env.get("CLEARML_ALLOW_CONFIG_SECRET") == "1" and not test_run:
+        problems.append("CLEARML_ALLOW_CONFIG_SECRET=1 is test-only: it needs CLEARML_TEST_MODE=1")
+    return problems
+
+
 def check_no_legacy_settings(get: Callable = config.get) -> None:
-    problems = legacy_settings_in_use(get)
+    problems = legacy_settings_in_use(get) + test_only_settings_in_use(get)
     if problems:
         raise RuntimeError("; ".join(problems))
