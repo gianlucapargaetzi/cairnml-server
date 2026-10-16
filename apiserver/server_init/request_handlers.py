@@ -203,6 +203,9 @@ class RequestHandlers:
         allowed = _origin_of(config.get("apiserver.idp.web_url"))
         sent = request.headers.get("Origin") or _origin_of(request.headers.get("Referer", ""))
         if not sent or sent != allowed:
+            from apiserver.idp.audit import record as _audit
+
+            _audit("anonymous", "csrf.refused", ip=request.remote_addr, path=request.path, origin=sent)
             return "Cross-site request refused", 403
         return None
 
