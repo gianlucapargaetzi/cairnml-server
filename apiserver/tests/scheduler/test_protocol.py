@@ -212,3 +212,12 @@ class SchedulerProtocolTest(TestService):
         _, data = self.api.send("scheduler.get_jobs", {"state": "running"})
         mine = [j for j in data["jobs"] if j["task"] == task][0]
         self.assertEqual(mine["requirements"]["cpus"], 3)
+
+    def test_a_job_that_ended_on_its_own_is_listed_as_ended_not_stopped(self):
+        task = self.task()
+        self.offers()
+        agent_call(self.agent, "scheduler.claim", {"worker": self.worker, "task": task})
+        self.api.send("tasks.failed", {"task": task, "force": True})
+        result = agent_call(self.agent, "scheduler.sync", {"worker": self.worker, "jobs": [], "usage": {}})
+        self.assertIn(task, result["ended"])
+        self.assertNotIn(task, result["stop"])
