@@ -80,4 +80,10 @@ class User(DbModelMixin, AuthDocument):
     """ Email uniquely identifying the user """
 
     autocreated = BooleanField(default=False)
+
+    idp_subject = StringField(unique=True, sparse=True)
+    """ The identity provider's subject for this user; empty for users created by the old login """
+
+    idp_disabled = BooleanField(default=False)
+    """ Set from the identity provider by the directory sync; a disabled user is refused """
     """ Set to true if the user was auto created based on config settings"""
