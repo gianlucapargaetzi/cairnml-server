@@ -13,6 +13,7 @@ from apiserver.bll.statistics.stats_reporter import StatisticsReporter
 from apiserver.config import info
 from apiserver.config_repo import config
 from apiserver.idp.legacy import check_no_legacy_settings
+from apiserver.idp.secrets import session_secret
 from apiserver.elastic.initialize import (
     init_es_data,
     check_elastic_empty,
@@ -60,9 +61,7 @@ class AppSequence:
         if get_bool("CLEARML_COMPRESS_RESP", default=True):
             Compress(self.app)
 
-        self.app.config["SECRET_KEY"] = config.get(
-            "secure.http.session_secret.apiserver"
-        )
+        self.app.config["SECRET_KEY"] = session_secret()
         self.app.config["JSONIFY_PRETTYPRINT_REGULAR"] = config.get(
             "apiserver.pretty_json"
         )
