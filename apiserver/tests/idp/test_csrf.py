@@ -6,13 +6,15 @@ from unittest import TestCase
 
 import requests
 
+from apiserver.config_repo import config
+
 from apiserver import database as db
 from apiserver.database.model.auth import User
 from apiserver.idp.tokens import issue_access_token
 from apiserver.idp.users import upsert_idp_user
 
 API = f"{os.environ.get('SM_API_URL', 'http://localhost:8008')}/v2.8"
-WEB = "http://localhost:8080"
+WEB = config.get("apiserver.idp.web_url")
 COOKIE = "clearml_token_basic"
 
 
