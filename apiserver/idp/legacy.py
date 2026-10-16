@@ -34,7 +34,15 @@ def test_only_settings_in_use(get: Callable = config.get, env: Mapping = os.envi
     return problems
 
 
+def cookie_settings_problems(get: Callable = config.get) -> List[str]:
+    """Over HTTPS the session cookie must be marked Secure, or it can be sent over plain HTTP."""
+    url = get("apiserver.idp.public_url", "") or ""
+    if url.lower().startswith("https://") and not get("apiserver.auth.cookies.secure", False):
+        return ["apiserver.idp.public_url is https but apiserver.auth.cookies.secure is false"]
+    return []
+
+
 def check_no_legacy_settings(get: Callable = config.get) -> None:
-    problems = legacy_settings_in_use(get) + test_only_settings_in_use(get)
+    problems = legacy_settings_in_use(get) + test_only_settings_in_use(get) + cookie_settings_problems(get)
     if problems:
         raise RuntimeError("; ".join(problems))
