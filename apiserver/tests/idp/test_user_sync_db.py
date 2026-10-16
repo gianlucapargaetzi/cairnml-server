@@ -41,8 +41,8 @@ class TestUserSyncAgainstTheDatabase(TestCase):
                         kind="client", name="t", public_key="pem").save()
         self.addCleanup(device.delete)
         directory = StubDirectory({
-            f"{self.issuer}|leaver": DirectoryUser(False, ()),
-            f"{self.issuer}|stayer": DirectoryUser(True, (ADMIN,)),
+            "leaver": DirectoryUser(False, ()),
+            "stayer": DirectoryUser(True, (ADMIN,)),
         })
         sync_once(directory, ADMIN)
         leaver = User.objects(id=self.leaver.id).get()
