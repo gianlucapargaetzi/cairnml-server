@@ -183,3 +183,23 @@ class SchedulerProtocolTest(TestService):
         agent_call(other, "scheduler.register_worker", {
             "worker": self.worker, "capacity": {"cpus": 4, "ram_gb": 8, "disk_gb": 10, "gpus": []}})
         self.assertEqual(SchedulerWorker.objects(id=self.worker).first().device, other.device)
+
+    def test_the_overview_names_each_job(self):
+        task = self.task()
+        self.offers()
+        agent_call(self.agent, "scheduler.claim", {"worker": self.worker, "task": task})
+        _, data = self.api.send("scheduler.get_overview", {})
+        mine = [w for w in data["workers"] if w["id"] == self.worker][0]
+        self.assertEqual(mine["jobs"][0]["name"], "protocol-test")
+
+    def test_the_agent_can_report_its_end_after_the_server_cancelled_the_reservation(self):
+        # the job's process marked its task failed itself; the next sync cancelled the reservation and asked
+        # the agent to stop; the agent reports the job as stopped. That report must be accepted.
+        task = self.task()
+        self.offers()
+        agent_call(self.agent, "scheduler.claim", {"worker": self.worker, "task": task})
+        self.api.send("tasks.failed", {"task": task, "force": True})
+        agent_call(self.agent, "scheduler.sync", {"worker": self.worker, "jobs": [], "usage": {}})
+        reported = agent_call(self.agent, "scheduler.release", {
+            "worker": self.worker, "task": task, "outcome": "stopped"})
+        self.assertEqual(reported["outcome"], "stopped")
