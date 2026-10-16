@@ -328,6 +328,7 @@ def sync(company: str, device: str, worker_name: str, jobs: Iterable[dict], usag
 
     # a claimed job whose task is no longer running (stopped by a user, or changed elsewhere) ends here
     cancelled = []
+    ended = []
     for r in Reservation.objects(worker=worker.id, state=ReservationState.claimed):
         task = Task.objects(id=r.task).only("status").first()
         if task is not None and task.status == TaskStatus.in_progress:
@@ -336,7 +337,10 @@ def sync(company: str, device: str, worker_name: str, jobs: Iterable[dict], usag
         if worker.exclusive_task == r.task:
             worker.update(exclusive_task=None)
         record_event(company, "cancelled", task=r.task, worker=worker.id, now=now)
-        cancelled.append(r.task)
+        if task is not None and task.status in (TaskStatus.failed, TaskStatus.completed):
+            ended.append(r.task)
+        else:
+            cancelled.append(r.task)
 
     # after the cancelled ones: a claimed job the agent does not report as running was lost on the machine (the agent crashed
     # before starting it, or the container died): retried once, like a lost worker
@@ -347,7 +351,7 @@ def sync(company: str, device: str, worker_name: str, jobs: Iterable[dict], usag
 
     expected = {r.task for r in _live_reservations(company, worker=worker.id) if r.state == ReservationState.claimed}
     reported = set(usage_by_task)
-    stale = sorted((reported - expected) | set(cancelled))
+    stale = sorted(((reported - expected) - set(ended)) | set(cancelled))
 
     placement_pass(company, now)
     offers = []
@@ -363,7 +367,7 @@ def sync(company: str, device: str, worker_name: str, jobs: Iterable[dict], usag
             "exclusive": r.exclusive,
             "max_runtime_min": max_runtime,
         })
-    return {"offers": offers, "stop": stale}
+    return {"offers": offers, "stop": stale, "ended": sorted(ended)}
 
 
 def set_priority(company: str, task_id: str, priority: int, user: str, is_admin: bool) -> None:
