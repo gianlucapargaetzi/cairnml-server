@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Callable, Any, Tuple, Union, Sequence
+from typing import Callable, Any, Tuple, Union, Sequence, Optional
 
 from apiserver.apierrors import errors, APIError
 from apiserver.bll.queue import QueueBLL
@@ -211,6 +211,8 @@ def enqueue_task(
     validate: bool = False,
     force: bool = False,
     update_execution_queue: bool = True,
+    requirements: Optional[dict] = None,
+    priority: Optional[int] = None,
 ) -> Tuple[int, dict]:
     if queue_id and queue_name:
         raise errors.bad_request.ValidationError(
@@ -261,6 +263,12 @@ def enqueue_task(
         force=force,
         user_id=user_id,
     ).execute(enqueue_status=before_enqueue_status)
+
+    # what the task asked for, as the enqueue call states it (None means a whole machine)
+    scheduling = {"requirements": requirements or {}}
+    if priority is not None:
+        scheduling["priority"] = priority
+    Task.objects(id=task_id).update(multi=False, **scheduling)
 
     try:
         queue_bll.add_task(company_id=company_id, queue_id=queue_id, task_id=task.id)
