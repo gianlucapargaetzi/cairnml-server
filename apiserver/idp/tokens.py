@@ -13,6 +13,17 @@ def issue_access_token(user_id: str, company_id: str, device_id: str, kind: str,
     return Token.create_encoded_token(identity, expiration_sec=ttl, kind=kind, device=device_id)
 
 
+def device_of_bearer(authorization):
+    """The device id behind an agent's bearer token; None for any other caller."""
+    if not authorization or not authorization.startswith("Bearer "):
+        return None
+    try:
+        claims = Token.decode(authorization[len("Bearer "):])
+    except Exception:
+        return None
+    return claims.get("device") if claims.get("kind") == "agent" else None
+
+
 def read_claims(token: str) -> dict:
     """Verified claims of a token issued by this server. Raises if it is forged or expired."""
     return Token.decode(token)

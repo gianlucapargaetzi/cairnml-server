@@ -276,6 +276,8 @@ class Task(AttributedDocument):
     script: Script = EmbeddedDocumentField(Script, default=Script)
     last_worker = StringField()
     last_worker_report = DateTimeField()
+    last_device = StringField()
+    """ The agent device that started the task; only it may get a job token for the task """
     last_update = DateTimeField()
     last_change = DateTimeField()
     last_iteration = IntField(default=DEFAULT_LAST_ITERATION)

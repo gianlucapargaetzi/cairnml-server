@@ -41,11 +41,11 @@ def check_user(owner) -> None:
         raise AccessDenied("user disabled or unknown")
 
 
-def check_job_issue(task_status, last_worker, device) -> None:
-    """A job token is issued only to the agent that is running the task, while it is queued or running."""
+def check_job_issue(task_status, started_by_device, device) -> None:
+    """A job token is issued only to the agent device that started the task, while it is queued or running."""
     if device is None or device.kind != "agent" or device.revoked:
         raise AccessDenied("only a live agent may get a job token")
-    if last_worker != device.id:
+    if started_by_device != device.id:
         raise AccessDenied("the task is not assigned to this agent")
     if task_status not in LIVE_JOB_STATUSES:
         raise AccessDenied(f"task is {task_status}")
