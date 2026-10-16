@@ -137,3 +137,38 @@ class SchedulerProtocolTest(TestService):
         result = agent_call(self.agent, "scheduler.sync", {"worker": self.worker, "jobs": [], "usage": {}})
         self.assertIn(task, result["stop"])
         self.assertEqual(Reservation.objects(task=task).first().state, "released")
+
+    def test_a_claimed_job_the_agent_does_not_report_is_retried_once(self):
+        task = self.task()
+        self.offers()
+        agent_call(self.agent, "scheduler.claim", {"worker": self.worker, "task": task})
+        # the agent is up, but it does not run the job (it crashed before starting it)
+        agent_call(self.agent, "scheduler.sync", {"worker": self.worker, "jobs": [], "usage": {}})
+        _, data = self.api.send("tasks.get_by_id", {"task": task})
+        self.assertEqual(data["task"]["status"], "queued")
+        self.assertEqual(Reservation.objects(task=task).first().release_reason, "worker lost")
+
+    def test_claim_and_release_are_audited(self):
+        from apiserver.database.model.audit import AuditEvent
+        task = self.task()
+        self.offers()
+        agent_call(self.agent, "scheduler.claim", {"worker": self.worker, "task": task})
+        agent_call(self.agent, "scheduler.release", {"worker": self.worker, "task": task, "outcome": "completed"})
+        actions = {e.action for e in AuditEvent.objects(action__in=["scheduler.claimed", "scheduler.released"]).order_by("-ts").limit(50)}
+        self.assertEqual(actions, {"scheduler.claimed", "scheduler.released"})
+
+    def test_a_failure_reported_after_the_cancel_is_still_recorded(self):
+        # the job was killed for its time limit, and the process marked the task stopped on the way out;
+        # the sync then cancelled the reservation. The agent's report of the failure must still count.
+        task = self.task()
+        self.offers()
+        agent_call(self.agent, "scheduler.claim", {"worker": self.worker, "task": task})
+        self.api.send("tasks.stop", {"task": task, "force": True})
+        agent_call(self.agent, "scheduler.sync", {"worker": self.worker, "jobs": [], "usage": {}})
+        agent_call(self.agent, "scheduler.release", {
+            "worker": self.worker, "task": task, "outcome": "failed",
+            "failure": {"reason": "time_limit", "detail": "Failure due to time limit: stopped after 10 minutes"},
+        })
+        _, data = self.api.send("tasks.get_by_id", {"task": task})
+        self.assertEqual(data["task"]["status"], "failed")
+        self.assertEqual(data["task"]["failure"]["reason"], "time_limit")

@@ -20,6 +20,7 @@ from apiserver.database.model.scheduler import (
     WorkerState,
 )
 from apiserver.database.model.device import Device
+from apiserver.idp.audit import record as audit
 from apiserver.database.model.task.task import Task, TaskStatus
 from apiserver.redis_manager import redman
 
@@ -121,7 +122,9 @@ def register_worker(company, device, name, capacity: dict, reserved: dict, can_e
     worker = SchedulerWorker(id=name, state=WorkerState.active, **doc)
     worker.save()
     record_event(company, "worker_registered", worker=name, now=now)
+    audit(device, "scheduler.worker_registered", worker=name, company=company)
     return worker
+
 
 
 def _user_of_device(device: str) -> str:
@@ -250,6 +253,7 @@ def claim(company: str, device: str, worker_name: str, task_id: str, now: Option
     if r.exclusive:
         worker.update(exclusive_task=task_id)
     record_event(company, "claimed", task=task_id, worker=worker.id, now=now)
+    audit(device, "scheduler.claimed", task=task_id, worker=worker.id, exclusive=r.exclusive)
     return {"task": task_id, "reservation": r.id}
 
 
@@ -259,11 +263,17 @@ def release(company: str, device: str, worker_name: str, task_id: str, outcome: 
     now = now or _now()
     worker = _worker_of_device(worker_name, device)
     r = Reservation.objects(task=task_id, worker=worker.id, state=ReservationState.claimed).first()
-    if not r:
-        raise errors.bad_request.ValidationError("no running job for this task on this worker")
-    r.update(state=ReservationState.released, released_at=now, release_reason=outcome)
-    if worker.exclusive_task == task_id:
-        worker.update(exclusive_task=None)
+    if r:
+        r.update(state=ReservationState.released, released_at=now, release_reason=outcome)
+        if worker.exclusive_task == task_id:
+            worker.update(exclusive_task=None)
+    else:
+        # a sync may already have cancelled it (the process marks the task stopped as it is killed); the
+        # agent still reports how the job ended, and a failure must be recorded
+        cancelled = Reservation.objects(task=task_id, worker=worker.id, state=ReservationState.released,
+                                        release_reason="cancelled").order_by("-released_at").first()
+        if not cancelled or outcome != "failed":
+            raise errors.bad_request.ValidationError("no running job for this task on this worker")
 
     task = Task.objects(id=task_id).only("id", "status", "company").first()
     if outcome == "failed" and failure:
@@ -277,6 +287,8 @@ def release(company: str, device: str, worker_name: str, task_id: str, outcome: 
         ChangeStatusRequest(task=task, new_status=TaskStatus.stopped, force=True,
                             user_id=_user_of_device(device)).execute(completed=now)
     record_event(company, "released", task=task_id, worker=worker.id, detail=outcome, now=now)
+    audit(device, "scheduler.released", task=task_id, worker=worker.id, outcome=outcome,
+          reason=(failure or {}).get("reason", ""))
     return {"task": task_id, "outcome": outcome}
 
 
@@ -285,6 +297,7 @@ def sync(company: str, device: str, worker_name: str, jobs: Iterable[dict], usag
     """Heartbeat from the agent. Returns the offers for this worker, and the running jobs the server
     no longer expects (the agent stops those containers)."""
     now = now or _now()
+    jobs = list(jobs or [])
     worker = _worker_of_device(worker_name, device)
     was_lost = worker.state == WorkerState.lost
     worker.update(last_sync=now, usage=usage or {}, state=WorkerState.active)
@@ -309,22 +322,31 @@ def sync(company: str, device: str, worker_name: str, jobs: Iterable[dict], usag
         record_event(company, "cancelled", task=r.task, worker=worker.id, now=now)
         cancelled.append(r.task)
 
+    # after the cancelled ones: a claimed job the agent does not report as running was lost on the machine (the agent crashed
+    # before starting it, or the container died): retried once, like a lost worker
+    reported = {j["task"] for j in (jobs or []) if j.get("task")}
+    for r in Reservation.objects(worker=worker.id, state=ReservationState.claimed):
+        if r.task not in reported:
+            _lose_reservation(r, now, user_id=_user_of_device(device))
+
     expected = {r.task for r in _live_reservations(company, worker=worker.id) if r.state == ReservationState.claimed}
     reported = set(usage_by_task)
     stale = sorted((reported - expected) | set(cancelled))
 
     placement_pass(company, now)
-    offers = [
-        {
+    offers = []
+    for r in Reservation.objects(worker=worker.id, state=ReservationState.offered):
+        task = Task.objects(id=r.task).only("requirements").first()
+        max_runtime = ((task.requirements or {}).get("max_runtime_min") if task else None)
+        offers.append({
             "task": r.task,
             "cpus": r.cpus,
             "gpus": r.gpus,
             "ram_gb": r.ram_gb,
             "disk_gb": r.disk_gb,
             "exclusive": r.exclusive,
-        }
-        for r in Reservation.objects(worker=worker.id, state=ReservationState.offered)
-    ]
+            "max_runtime_min": max_runtime,
+        })
     return {"offers": offers, "stop": stale}
 
 
@@ -336,6 +358,7 @@ def set_priority(company: str, task_id: str, priority: int, user: str, is_admin:
         raise errors.forbidden.NoWritePermission(task=task_id)
     Task.objects(id=task_id).update_one(set__priority=priority)
     record_event(company, "priority_changed", task=task_id, detail=f"priority {priority}")
+    audit(user, "scheduler.priority_changed", task=task_id, priority=priority)
     placement_pass(company)
 
 
