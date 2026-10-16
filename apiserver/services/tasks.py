@@ -141,6 +141,7 @@ from apiserver.services.utils import (
     unescape_dict_field,
     process_include_subprojects,
 )
+from apiserver.idp.tokens import device_of_bearer
 from apiserver.utilities.dicts import nested_get
 from apiserver.utilities.partial_version import PartialVersion
 
@@ -391,6 +392,9 @@ def started(call: APICall, company_id, request: UpdateRequest):
             **started_update,
         )
     )
+    device = device_of_bearer(call.authorization)
+    if device:
+        Task.objects(id=request.task).update_one(set__last_device=device)
     res.started = res.updated
     call.result.data_model = res
 

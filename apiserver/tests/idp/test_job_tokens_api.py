@@ -47,7 +47,7 @@ class TestJobTokens(TestCase):
         self.device_id, self.agent_token = _agent(f"agent-{uuid.uuid4().hex}")
         self.task_id = _new_task()
         self.addCleanup(lambda: Task.objects(id=self.task_id).delete())
-        Task.objects(id=self.task_id).update_one(set__status="queued", set__last_worker=self.device_id)
+        Task.objects(id=self.task_id).update_one(set__status="queued", set__last_device=self.device_id)
 
     def job_token(self, task_id=None, token=None):
         return call("devices.job_token", {"task": task_id or self.task_id}, token=token or self.agent_token)
@@ -76,7 +76,7 @@ class TestJobTokens(TestCase):
         device = call("devices.enroll", {"kind": "client", "public_key": _public_pem(key)},
                       token=idp_token(sub=f"laptop-{uuid.uuid4().hex}")).json()["data"]["id"]
         token = call("devices.exchange", {"assertion": make_assertion(key, device, PUBLIC_URL)}).json()["data"]["access_token"]
-        Task.objects(id=self.task_id).update_one(set__last_worker=device)
+        Task.objects(id=self.task_id).update_one(set__last_device=device)
         self.assertEqual(self.job_token(token=token).status_code, 401)
 
 
@@ -89,7 +89,7 @@ class TestGitToken(TestCase):
         self.device_id, self.agent_token = _agent(f"agent-{uuid.uuid4().hex}")
         self.task_id = _new_task()
         self.addCleanup(lambda: Task.objects(id=self.task_id).delete())
-        Task.objects(id=self.task_id).update_one(set__status="queued", set__last_worker=self.device_id)
+        Task.objects(id=self.task_id).update_one(set__status="queued", set__last_device=self.device_id)
 
     def test_without_a_configured_app_no_repository_token_is_given(self):
         response = call("devices.git_token", {"task": self.task_id}, token=self.agent_token)
@@ -101,4 +101,34 @@ class TestGitToken(TestCase):
         other = _new_task()
         self.addCleanup(lambda: Task.objects(id=other).delete())
         response = call("devices.git_token", {"task": other}, token=token)
+        self.assertEqual(response.status_code, 401)
+
+
+class TestStartedByAgent(TestCase):
+    """The device that starts a task, through tasks.started, is the one that gets its job token."""
+
+    @classmethod
+    def setUpClass(cls):
+        db.db.initialize()
+
+    def setUp(self):
+        self.device_id, self.agent_token = _agent(f"agent-{uuid.uuid4().hex}")
+        self.task_id = _new_task()
+        self.addCleanup(lambda: Task.objects(id=self.task_id).delete())
+
+    def test_the_device_that_starts_the_task_gets_a_job_token(self):
+        started = call("tasks.started", {"task": self.task_id}, token=self.agent_token)
+        self.assertEqual(started.status_code, 200, started.text)
+        self.assertEqual(Task.objects(id=self.task_id).get().last_device, self.device_id)
+        response = call("devices.job_token", {"task": self.task_id}, token=self.agent_token)
+        self.assertEqual(response.status_code, 200, response.text)
+
+    def test_a_laptop_that_starts_nothing_gets_no_job_token(self):
+        key = Ed25519PrivateKey.generate()
+        laptop = call("devices.enroll", {"kind": "client", "public_key": _public_pem(key)},
+                      token=idp_token(sub=f"laptop-{uuid.uuid4().hex}")).json()["data"]["id"]
+        laptop_token = call("devices.exchange", {"assertion": make_assertion(key, laptop, PUBLIC_URL)}
+                            ).json()["data"]["access_token"]
+        call("tasks.started", {"task": self.task_id}, token=self.agent_token)
+        response = call("devices.job_token", {"task": self.task_id}, token=laptop_token)
         self.assertEqual(response.status_code, 401)

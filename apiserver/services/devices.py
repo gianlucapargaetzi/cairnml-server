@@ -163,10 +163,10 @@ def job_token(call: APICall, _company, request: JobTokenRequest):
     from apiserver.idp.tokens import issue_job_token
 
     device = Device.objects(id=_caller_device_id(call)).first()
-    task = Task.objects(id=request.task).only("status", "last_worker", "user").first()
+    task = Task.objects(id=request.task).only("status", "last_device", "user").first()
     owner = User.objects(id=task.user).first() if task else None
     try:
-        check_job_issue(task.status if task else None, task.last_worker if task else None, device)
+        check_job_issue(task.status if task else None, task.last_device if task else None, device)
         if owner is None or owner.idp_disabled:
             raise AccessDenied("task owner is disabled or unknown")
     except AccessDenied as exc:
@@ -193,7 +193,7 @@ def git_token(call: APICall, _company, request: GitTokenRequest):
             if claims.get("task") != request.task:
                 raise AccessDenied("this token is for another task")
         elif claims.get("kind") == DeviceKind.agent:
-            check_job_issue(task.status if task else None, task.last_worker if task else None,
+            check_job_issue(task.status if task else None, task.last_device if task else None,
                             Device.objects(id=claims.get("device")).first())
         else:
             raise AccessDenied("only a job or its agent may get a repository token")
