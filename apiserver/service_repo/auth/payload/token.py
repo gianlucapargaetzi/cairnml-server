@@ -142,7 +142,7 @@ class Token(Payload):
     def decode_identity(cls, encoded_token):
         # noinspection PyBroadException
         try:
-            from ..auth import Identity
+            from ..identity import Identity
 
             decoded = cls.decode(encoded_token, verify=False)
             return Identity.from_dict(decoded.get("identity", {}))
