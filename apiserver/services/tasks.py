@@ -948,6 +948,9 @@ def enqueue(call: APICall, company_id, request: EnqueueRequest):
         requirements=requirements,
         priority=priority,
     )
+    from apiserver.bll.scheduler.service import placement_pass
+
+    placement_pass(company_id)
     if request.verify_watched_queue:
         res_queue = nested_get(res, ("fields", "execution.queue"))
         if res_queue:

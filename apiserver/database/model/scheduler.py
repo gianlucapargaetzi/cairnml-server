@@ -66,6 +66,8 @@ class SchedulerWorker(DbModelMixin, Document):
     """ Set while a job that blocks the whole worker runs """
     last_sync = DateTimeField()
     agent_version = StringField(default="")
+    usage = DictField(default=dict)
+    """ The latest machine usage the agent reported """
 
 
 class Reservation(DbModelMixin, Document):
@@ -99,6 +101,8 @@ class Reservation(DbModelMixin, Document):
     claimed_at = DateTimeField()
     released_at = DateTimeField()
     release_reason = StringField(default="")
+    usage = DictField(default=dict)
+    """ The latest usage of the job's container, from the agent """
 
 
 class SchedulerEvent(DbModelMixin, Document):
