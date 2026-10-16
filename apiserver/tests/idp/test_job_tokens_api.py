@@ -31,9 +31,10 @@ def _agent(sub):
 
 
 def _new_task():
-    basic = (os.environ["SM_API_KEY"], os.environ["SM_API_SECRET"])
+    from apiserver.tests.idp.bearer import suite_bearer
+
     response = requests.post(f"{API}/tasks.create", json={"name": f"job-{uuid.uuid4().hex[:8]}", "type": "training"},
-                             auth=basic, timeout=20)
+                             headers={"Authorization": f"Bearer {suite_bearer()}"}, timeout=20)
     return response.json()["data"]["id"]
 
 
