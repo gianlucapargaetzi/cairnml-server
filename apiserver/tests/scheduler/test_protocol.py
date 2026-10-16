@@ -203,3 +203,12 @@ class SchedulerProtocolTest(TestService):
         reported = agent_call(self.agent, "scheduler.release", {
             "worker": self.worker, "task": task, "outcome": "stopped"})
         self.assertEqual(reported["outcome"], "stopped")
+
+    def test_running_jobs_in_the_list_carry_their_requirements(self):
+        task = self.task(requirements={"cpus": 3, "ram_gb": 5, "gpus": {"count": 0, "min_memory_gb": 0, "model": None},
+                                       "disk_gb": 2})
+        self.offers()
+        agent_call(self.agent, "scheduler.claim", {"worker": self.worker, "task": task})
+        _, data = self.api.send("scheduler.get_jobs", {"state": "running"})
+        mine = [j for j in data["jobs"] if j["task"] == task][0]
+        self.assertEqual(mine["requirements"]["cpus"], 3)

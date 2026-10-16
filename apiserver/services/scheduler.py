@@ -113,7 +113,7 @@ def get_jobs(call: APICall, company_id, _):
     rows = []
     if state in (None, "running"):
         running = {r.task: r for r in Reservation.objects(company=company_id, state=ReservationState.claimed)}
-        for task in Task.objects(id__in=list(running)).only("id", "name", "project", "user", "priority"):
+        for task in Task.objects(id__in=list(running)).only("id", "name", "project", "user", "priority", "requirements"):
             r = running[task.id]
             rows.append({
                 "task": task.id,
@@ -121,6 +121,7 @@ def get_jobs(call: APICall, company_id, _):
                 "state": "running",
                 "worker": r.worker,
                 "priority": task.priority,
+                "requirements": task.requirements or None,
                 "exclusive": r.exclusive,
                 "cpus": r.cpus,
                 "gpus": r.gpus,
