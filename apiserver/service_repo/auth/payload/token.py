@@ -1,3 +1,4 @@
+import os
 from uuid import uuid4
 
 import jwt
@@ -9,11 +10,19 @@ from jwt.algorithms import get_default_algorithms
 from apiserver.apierrors import errors
 from apiserver.config_repo import config
 from apiserver.database.model.auth import Role
+from apiserver.idp.secrets import read_secret, refuse_default_secret
 
 from .auth_type import AuthType
 from .payload import Payload
 
-token_secret = config.get("secure.auth.token_secret")
+# The signing secret comes from a file in the secrets mount. The configuration value is only used
+# when CLEARML_ALLOW_CONFIG_SECRET=1 (tests), and it may be the public default in that case.
+DEFAULT_TOKEN_SECRET = "Rq8FW84sSqVgq7WvBB_4EzNl9y8z8IGiDXX3C345_a5AZfcwZcwCIA"
+if os.environ.get("CLEARML_ALLOW_CONFIG_SECRET") == "1":
+    token_secret = config.get("secure.auth.token_secret")
+else:
+    token_secret = read_secret("token_secret")
+    refuse_default_secret(token_secret, DEFAULT_TOKEN_SECRET)
 
 log = config.logger(__file__)
 
