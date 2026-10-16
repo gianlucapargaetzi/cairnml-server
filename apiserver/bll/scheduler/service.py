@@ -200,7 +200,10 @@ def _fail_task(task: Task, now: datetime, reason: str, detail: str, user_id: str
 def placement_pass(company: str, now: Optional[datetime] = None) -> int:
     """Make offers for the pending tasks that fit. Returns the number of offers made."""
     now = now or _now()
-    with _company_lock(company):
+    with _company_lock(company) as acquired:
+        if not acquired:
+            # another pass holds the lock; it places what is pending, so this one has nothing to add
+            return 0
         expire_offers(company, now)
         mark_lost_workers(company, now)
         workers = [w for w in SchedulerWorker.objects(company=company)]
