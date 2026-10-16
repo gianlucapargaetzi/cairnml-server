@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime
 
 from apiserver.apierrors import errors
-from apiserver.apimodels.devices import EnrollRequest, ExchangeRequest, RevokeRequest
+from apiserver.apimodels.devices import EnrollRequest, ExchangeRequest, JobTokenRequest, RevokeRequest
 from apiserver.config_repo import config
 from apiserver.database.model.auth import Role, User
 from apiserver.database.model.device import Device, DeviceKind
@@ -132,3 +132,37 @@ def revoke(call: APICall, _company, request: RevokeRequest):
     device.save()
     audit(identity.user, "device.revoked", device=device.id)
     return _device_view(device)
+
+
+def _caller_device_id(call: APICall) -> str:
+    """The device behind the caller's token: the agent's own device id, from its verified token."""
+    from apiserver.service_repo.auth import Token
+
+    try:
+        claims = Token.decode(_bearer(call))
+    except Exception:
+        raise errors.unauthorized.InvalidToken("invalid token") from None
+    if claims.get("kind") != DeviceKind.agent:
+        raise errors.unauthorized.InvalidToken("only an agent may get a job token")
+    return claims.get("device")
+
+
+@endpoint("devices.job_token", min_version="2.8", request_data_model=JobTokenRequest)
+def job_token(call: APICall, _company, request: JobTokenRequest):
+    from apiserver.database.model.task.task import Task
+    from apiserver.idp.checks import AccessDenied, check_job_issue
+    from apiserver.idp.tokens import issue_job_token
+
+    device = Device.objects(id=_caller_device_id(call)).first()
+    task = Task.objects(id=request.task).only("status", "last_worker", "user").first()
+    owner = User.objects(id=task.user).first() if task else None
+    try:
+        check_job_issue(task.status if task else None, task.last_worker if task else None, device)
+        if owner is None or owner.idp_disabled:
+            raise AccessDenied("task owner is disabled or unknown")
+    except AccessDenied as exc:
+        audit(device.id if device else "unknown", "job_token.refused", task=request.task, reason=str(exc))
+        raise errors.unauthorized.InvalidToken(str(exc)) from None
+    token = issue_job_token(owner, task.id, device.id)
+    audit(device.id, "job_token.issued", task=task.id)
+    return {"access_token": token, "expires_in": config.get("apiserver.idp.job_token_ttl_sec")}

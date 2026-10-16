@@ -26,3 +26,8 @@ class RevokeRequest(Base):
 class IdpCallbackRequest(Base):
     state = StringField(required=True)
     code = StringField(required=True)
+
+
+class JobTokenRequest(Base):
+    task = StringField(required=True)
+    """ The task the agent has taken from its queue """
