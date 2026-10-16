@@ -46,6 +46,7 @@ def authorize_token(jwt_token, service, action, call):
         token = Token.from_encoded_token(jwt_token)
         if is_token_revoked(token):
             raise errors.unauthorized.InvalidToken("revoked token")
+        check_idp_token(jwt_token)
         return token
     except jwt.exceptions.InvalidKeyError as ex:
         log_error("Failed parsing token.")
@@ -159,6 +160,31 @@ def compare_secret_key_hash(secret_key: str, hashed_secret: str) -> bool:
         secret_key.encode(), base64.b64decode(hashed_secret.encode("ascii"))
     )
 
+
+
+def check_idp_token(jwt_token: str) -> None:
+    """Device and job tokens are refused when their device, owner or task no longer allows them.
+
+    Tokens without a kind are the old-style tokens; they are removed in a later step.
+    """
+    from apiserver.database.model.auth import User
+    from apiserver.database.model.device import Device
+    from apiserver.database.model.task.task import Task
+    from apiserver.idp.checks import DEVICE_KINDS, AccessDenied, check_device, check_job
+
+    claims = Token.decode(jwt_token)
+    kind = claims.get("kind")
+    try:
+        if kind in DEVICE_KINDS:
+            device = Device.objects(id=claims.get("device")).first()
+            owner = User.objects(id=device.user).first() if device else None
+            check_device(device, owner)
+        elif kind == "job":
+            task = Task.objects(id=claims.get("task")).only("status", "user").first()
+            owner = User.objects(id=task.user).first() if task else None
+            check_job(task.status if task else None, owner)
+    except AccessDenied as exc:
+        raise errors.unauthorized.InvalidToken(str(exc)) from None
 
 def is_token_revoked(token: Token) -> bool:
     if not isinstance(token, Token) or not token.session_id:
