@@ -16,3 +16,12 @@ def issue_access_token(user_id: str, company_id: str, device_id: str, kind: str,
 def read_claims(token: str) -> dict:
     """Verified claims of a token issued by this server. Raises if it is forged or expired."""
     return Token.decode(token)
+
+
+def issue_job_token(owner, task_id: str, device_id: str) -> str:
+    """Token for one job: acts as the task's owner, for that task only, and ends with the job's lifetime."""
+    from apiserver.service_repo.auth import Identity, Token
+
+    identity = Identity(user=owner.id, company=owner.company, role=owner.role, user_name=owner.name)
+    ttl = config.get("apiserver.idp.job_token_ttl_sec")
+    return Token.create_encoded_token(identity, expiration_sec=ttl, kind="job", task=task_id, device=device_id)
