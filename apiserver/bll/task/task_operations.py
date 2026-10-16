@@ -1,8 +1,7 @@
 from datetime import datetime
 from typing import Callable, Any, Tuple, Union, Sequence, Optional
 
-from apiserver.apierrors import errors, APIError
-from apiserver.bll.queue import QueueBLL
+from apiserver.apierrors import errors
 from apiserver.bll.task import (
     TaskBLL,
     validate_status_change,
@@ -27,10 +26,8 @@ from apiserver.database.model.task.task import (
 )
 from apiserver.database.utils import get_options
 from apiserver.service_repo.auth import Identity
-from apiserver.utilities.dicts import nested_set
 
 log = config.logger(__file__)
-queue_bll = QueueBLL()
 
 
 def _get_pipeline_steps_for_controller_task(
@@ -78,19 +75,14 @@ def archive_task(
         )
 
     def archive_task_core(task_: Task) -> int:
-        try:
-            TaskBLL.dequeue_and_change_status(
-                task_,
-                company_id=company_id,
-                user_id=user_id,
-                status_message=status_message,
-                status_reason=status_reason,
-                remove_from_all_queues=True,
-                new_status_for_aborted_task=TaskStatus.stopped,
-            )
-        except APIError:
-            # dequeue may fail if the task was not enqueued
-            pass
+        TaskBLL.set_status_for_stop(
+            task_,
+            company_id=company_id,
+            user_id=user_id,
+            status_message=status_message,
+            status_reason=status_reason,
+            new_status_for_aborted_task=TaskStatus.stopped,
+        )
 
         return task_.update(
             status_message=status_message,
@@ -150,103 +142,27 @@ def unarchive_task(
     return unarchive_task_core(task)
 
 
-def dequeue_task(
-    task_id: str,
-    company_id: str,
-    identity: Identity,
-    status_message: str,
-    status_reason: str,
-    remove_from_all_queues: bool = False,
-    new_status=None,
-) -> Tuple[int, dict]:
-    if new_status and new_status not in get_options(TaskStatus):
-        raise errors.bad_request.ValidationError(f"Invalid task status: {new_status}")
-
-    # get the task without write access to make sure that it actually exists
-    task = Task.get(
-        id=task_id,
-        company=company_id,
-        _only=("id",),
-        include_public=True,
-    )
-    if not task:
-        TaskBLL.remove_task_from_all_queues(company_id, task_id=task_id)
-        return 1, {"updated": 0}
-
-    user_id = identity.user
-    task = get_task_with_write_access(
-        task_id,
-        company_id=company_id,
-        identity=identity,
-        only=(
-            "id",
-            "company",
-            "execution",
-            "status",
-            "project",
-            "enqueue_status",
-        ),
-    )
-
-    res = TaskBLL.dequeue_and_change_status(
-        task,
-        company_id=company_id,
-        user_id=user_id,
-        status_message=status_message,
-        status_reason=status_reason,
-        remove_from_all_queues=remove_from_all_queues,
-        new_status=new_status,
-    )
-    return 1, res
-
-
 def enqueue_task(
     task_id: str,
     company_id: str,
     identity: Identity,
-    queue_id: str,
     status_message: str,
     status_reason: str,
-    queue_name: str = None,
     validate: bool = False,
     force: bool = False,
-    update_execution_queue: bool = True,
     requirements: Optional[dict] = None,
     priority: Optional[int] = None,
 ) -> Tuple[int, dict]:
-    if queue_id and queue_name:
-        raise errors.bad_request.ValidationError(
-            "Either queue id or queue name should be provided"
-        )
-
+    """
+    Put a task in the queued status. The scheduler places queued tasks on machines that fit them.
+    """
     task = get_task_with_write_access(
         task_id=task_id, company_id=company_id, identity=identity
     )
-    if queue_id or queue_name:
-        # A job must be runnable: its commit exists on GitHub and the App can read its repository.
-        from apiserver.idp.github_check import build_from_config as _github, check_submission
+    # A job must be runnable: its commit exists on GitHub and the App can read its repository.
+    from apiserver.idp.github_check import build_from_config as _github, check_submission
 
-        check_submission(task, _github())
-    if not update_execution_queue:
-        if not (
-            task.status == TaskStatus.queued and task.execution and task.execution.queue
-        ):
-            raise errors.bad_request.ValidationError(
-                "Cannot skip setting execution queue for a task "
-                "that is not enqueued or does not have execution queue set"
-            )
-
-    if queue_name:
-        queue = queue_bll.get_by_name(
-            company_id=company_id, queue_name=queue_name, only=("id",)
-        )
-        if not queue:
-            queue = queue_bll.create(company_id=company_id, name=queue_name)
-        queue_id = queue.id
-
-    if not queue_id:
-        # try to get default queue
-        queue_id = queue_bll.get_default(company_id).id
+    check_submission(task, _github())
 
     user_id = identity.user
     if validate:
@@ -269,35 +185,6 @@ def enqueue_task(
     if priority is not None:
         scheduling["priority"] = priority
     Task.objects(id=task_id).update(multi=False, **scheduling)
-
-    try:
-        queue_bll.add_task(company_id=company_id, queue_id=queue_id, task_id=task.id)
-    except Exception:
-        # failed enqueueing, revert to previous state
-        ChangeStatusRequest(
-            task=task,
-            current_status_override=TaskStatus.queued,
-            new_status=task.status,
-            force=True,
-            status_reason="failed enqueueing",
-            user_id=user_id,
-        ).execute(enqueue_status=None)
-        raise
-
-    # set the current queue ID in the task
-    if update_execution_queue:
-        if task.execution:
-            Task.objects(id=task_id).update(execution__queue=queue_id, multi=False)
-        else:
-            Task.objects(id=task_id).update(
-                execution=Execution(queue=queue_id), multi=False
-            )
-        nested_set(res, ("fields", "execution.queue"), queue_id)
-
-    # make sure that the task is not queued in any other queue
-    TaskBLL.remove_task_from_all_queues(
-        company_id=company_id, task_id=task_id, exclude=queue_id
-    )
     return 1, res
 
 
@@ -352,18 +239,13 @@ def delete_task(
         )
 
     def delete_task_core(task_: Task, force_: bool) -> CleanupResult:
-        try:
-            TaskBLL.dequeue_and_change_status(
-                task_,
-                company_id=company_id,
-                user_id=user_id,
-                status_message=status_message,
-                status_reason=status_reason,
-                remove_from_all_queues=True,
-            )
-        except APIError:
-            # dequeue may fail if the task was not enqueued
-            pass
+        TaskBLL.set_status_for_stop(
+            task_,
+            company_id=company_id,
+            user_id=user_id,
+            status_message=status_message,
+            status_reason=status_reason,
+        )
 
         res = cleanup_task(
             company=company_id,
@@ -414,18 +296,7 @@ def reset_task(
     if not force and task.status == TaskStatus.published:
         raise errors.bad_request.InvalidTaskStatus(task_id=task.id, status=task.status)
 
-    dequeued = {}
     updates = {}
-
-    try:
-        dequeued = TaskBLL.dequeue(
-            task, company_id=company_id, user_id=user_id, silent_fail=True
-        )
-    except APIError:
-        # dequeue may fail if the task was not enqueued
-        pass
-
-    TaskBLL.remove_task_from_all_queues(company_id=company_id, task_id=task.id)
 
     cleaned_up = cleanup_task(
         company=company_id,
@@ -460,7 +331,6 @@ def reset_task(
             unset__script=1,
         )
     else:
-        updates.update(unset__execution__queue=1)
         if task.execution and task.execution.artifacts:
             updates.update(
                 set__execution__artifacts={
@@ -481,7 +351,7 @@ def reset_task(
         **updates,
     )
 
-    return dequeued, cleaned_up, res
+    return cleaned_up, res
 
 
 def publish_task(
@@ -562,7 +432,6 @@ def stop_task(
         "system_tags",
         "last_worker",
         "last_update",
-        "execution.queue",
         "type",
     )
     task = get_task_with_write_access(
@@ -590,15 +459,6 @@ def stop_task(
         )
 
         if set_stopped:
-            if is_queued:
-                try:
-                    TaskBLL.dequeue(
-                        task_, company_id=company_id, user_id=user_id, silent_fail=True
-                    )
-                except APIError:
-                    # dequeue may fail if the task was not enqueued
-                    pass
-
             new_status = TaskStatus.stopped
             status_message = f"Stopped by {user_name}"
         else:

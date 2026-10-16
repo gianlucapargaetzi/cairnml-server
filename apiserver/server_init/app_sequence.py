@@ -6,7 +6,6 @@ from flask_compress import Compress
 from flask_cors import CORS
 from packaging.version import Version
 
-from apiserver.bll.queue.queue_metrics import MetricsRefresher
 from apiserver.bll.task.non_responsive_tasks_watchdog import NonResponsiveTasksWatchdog
 from apiserver.database import db
 from apiserver.bll.statistics.stats_reporter import StatisticsReporter
@@ -123,7 +122,6 @@ class AppSequence:
     def _start_worker(self):
         check_updates_thread.start()
         StatisticsReporter.start()
-        MetricsRefresher.start()
         NonResponsiveTasksWatchdog.start()
         self._start_idp_sync()
 

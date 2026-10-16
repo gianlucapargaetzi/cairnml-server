@@ -16,6 +16,4 @@ class DeleteRunsRequest(models.Base):
 
 class StartPipelineRequest(models.Base):
     task = fields.StringField(required=True)
-    queue = fields.StringField(required=True)
     args = ListField(Arg)
-    verify_watched_queue = fields.BoolField(default=False)
