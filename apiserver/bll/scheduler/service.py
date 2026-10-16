@@ -105,7 +105,13 @@ def _pending_tasks(company: str) -> List[PendingTask]:
 def register_worker(company, device, name, capacity: dict, reserved: dict, can_enforce: dict, agent_version: str):
     existing = SchedulerWorker.objects(id=name).first()
     if existing and existing.device != device:
-        raise errors.forbidden.NoWritePermission(worker=name)
+        # a worker belongs to the device that registered it; another device takes the name over only once
+        # that device is revoked (the machine was enrolled again)
+        old = Device.objects(id=existing.device).only("revoked").first()
+        if not (old and old.revoked):
+            raise errors.forbidden.NoWritePermission(worker=name)
+        existing.update(device=device)
+        existing.reload()
     now = _now()
     doc = dict(
         company=company,
