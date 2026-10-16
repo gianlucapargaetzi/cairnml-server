@@ -25,10 +25,9 @@ redis = redman.connection("apiserver")
 
 
 def get_auth_func(auth_type):
+    # Only identity-provider tokens are accepted; access keys and passwords are gone.
     if auth_type == AuthType.bearer_token:
         return authorize_token
-    elif auth_type == AuthType.basic:
-        return authorize_credentials
     raise errors.unauthorized.BadAuthType()
 
 
@@ -174,6 +173,8 @@ def check_idp_token(jwt_token: str) -> None:
 
     claims = Token.decode(jwt_token)
     kind = claims.get("kind")
+    if kind is None:
+        raise errors.unauthorized.InvalidToken("token is not an identity-provider token")
     try:
         if kind in DEVICE_KINDS:
             device = Device.objects(id=claims.get("device")).first()
