@@ -3,8 +3,9 @@ set -x
 set -e
 
 cd /opt/open-webapp/
-npm ci --legacy-peer-deps
+corepack enable && corepack prepare pnpm@10 --activate
+pnpm install --frozen-lockfile
 
 cd /opt/open-webapp/
-npm run build
-npm run build-widgets
+pnpm run build
+pnpm run build-widgets
