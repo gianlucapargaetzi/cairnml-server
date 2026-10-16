@@ -282,6 +282,8 @@ class Task(AttributedDocument):
     """ Compute the task needs (cpus, ram_gb, gpus, disk_gb, max_runtime_min), or empty for a whole machine """
     priority = IntField(default=50)
     """ Higher runs first, 0 to 100 """
+    failure = SafeDictField()
+    """ Why the task failed: {reason, detail, exit_code, worker, reserved, peak} """
     last_update = DateTimeField()
     last_change = DateTimeField()
     last_iteration = IntField(default=DEFAULT_LAST_ITERATION)
