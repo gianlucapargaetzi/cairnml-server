@@ -297,9 +297,21 @@ def sync(company: str, device: str, worker_name: str, jobs: Iterable[dict], usag
             set__usage=job_usage
         )
 
+    # a claimed job whose task is no longer running (stopped by a user, or changed elsewhere) ends here
+    cancelled = []
+    for r in Reservation.objects(worker=worker.id, state=ReservationState.claimed):
+        task = Task.objects(id=r.task).only("status").first()
+        if task is not None and task.status == TaskStatus.in_progress:
+            continue
+        r.update(state=ReservationState.released, released_at=now, release_reason="cancelled")
+        if worker.exclusive_task == r.task:
+            worker.update(exclusive_task=None)
+        record_event(company, "cancelled", task=r.task, worker=worker.id, now=now)
+        cancelled.append(r.task)
+
     expected = {r.task for r in _live_reservations(company, worker=worker.id) if r.state == ReservationState.claimed}
     reported = set(usage_by_task)
-    stale = sorted(reported - expected)
+    stale = sorted((reported - expected) | set(cancelled))
 
     placement_pass(company, now)
     offers = [
