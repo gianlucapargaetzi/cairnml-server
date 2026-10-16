@@ -140,8 +140,6 @@ class Execution(EmbeddedDocument, ProperDictMixin):
     model_labels = ModelLabels()
     framework = StringField()
     artifacts: Dict[str, Artifact] = SafeMapField(field=EmbeddedDocumentField(Artifact))
-    queue = StringField(reference_field="Queue")
-    """ Queue ID where task was queued """
 
 
 class TaskType(object):
@@ -240,7 +238,6 @@ class Task(AttributedDocument):
             "project",
             "parent",
             "hyperparams.*",
-            "execution.queue",
             "models.input.model",
         ),
         range_fields=("created", "started", "active_duration", "last_metrics.*", "last_iteration"),

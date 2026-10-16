@@ -42,7 +42,6 @@ class StartedResponse(UpdateResponse):
 
 class EnqueueResponse(UpdateResponse):
     queued = IntField()
-    queue_watched = BoolField()
 
 
 class EnqueueBatchItem(UpdateBatchItem):
@@ -51,30 +50,15 @@ class EnqueueBatchItem(UpdateBatchItem):
 
 class EnqueueManyResponse(BatchResponse):
     succeeded: Sequence[EnqueueBatchItem] = ListField(EnqueueBatchItem)
-    queue_watched = BoolField()
-
-
-class DequeueResponse(UpdateResponse):
-    dequeued = IntField()
-
-
-class DequeueBatchItem(UpdateBatchItem):
-    dequeued: bool = BoolField()
-
-
-class DequeueManyResponse(BatchResponse):
-    succeeded: Sequence[DequeueBatchItem] = ListField(DequeueBatchItem)
 
 
 class ResetResponse(UpdateResponse):
-    dequeued = DictField()
     events = DictField()
     deleted_models = IntField()
     urls = DictField()
 
 
 class ResetBatchItem(UpdateBatchItem):
-    dequeued: bool = BoolField()
     deleted_models = IntField()
     urls = DictField()
 
@@ -96,22 +80,13 @@ class UpdateRequest(TaskUpdateRequest):
     status_message = StringField(default="")
 
 
-class DequeueRequest(UpdateRequest):
-    remove_from_all_queues = BoolField(default=False)
-    new_status = StringField()
-
-
 class StopRequest(UpdateRequest):
     include_pipeline_steps = BoolField(default=False)
 
 
 class EnqueueRequest(UpdateRequest):
-    queue = StringField()
     requirements = DictField()
     priority = IntField()
-    queue_name = StringField()
-    verify_watched_queue = BoolField(default=False)
-    update_execution_queue = BoolField(default=True)
 
 
 class DeleteRequest(UpdateRequest):
@@ -303,16 +278,8 @@ class StopManyRequest(TaskBatchRequest):
     include_pipeline_steps = BoolField(default=False)
 
 
-class DequeueManyRequest(TaskBatchRequest):
-    remove_from_all_queues = BoolField(default=False)
-    new_status = StringField()
-
-
 class EnqueueManyRequest(TaskBatchRequest):
-    queue = StringField()
-    queue_name = StringField()
     validate_tasks = BoolField(default=False)
-    verify_watched_queue = BoolField(default=False)
 
 
 class DeleteManyRequest(TaskBatchRequest):

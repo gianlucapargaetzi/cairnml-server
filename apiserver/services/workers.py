@@ -66,7 +66,6 @@ def get_count(call: APICall, company_id: str, request: GetCountRequest):
 def register(call: APICall, company_id, request: RegisterRequest):
     worker = request.worker
     timeout = request.timeout
-    queues = request.queues
 
     if not timeout:
         timeout = config.get("apiserver.workers.default_timeout", 10 * 60)
@@ -81,11 +80,9 @@ def register(call: APICall, company_id, request: RegisterRequest):
         user_id=call.identity.user,
         worker=worker,
         ip=call.real_ip,
-        queues=queues,
         timeout=timeout,
         tags=request.tags,
         system_tags=request.system_tags,
-        resources=request.resources,
     )
 
 

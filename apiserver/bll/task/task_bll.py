@@ -9,7 +9,6 @@ from six import string_types
 import apiserver.database.utils as dbutils
 from apiserver.apierrors import errors, APIError
 from apiserver.apimodels.tasks import TaskInputModel
-from apiserver.bll.queue import QueueBLL
 from apiserver.bll.organization import OrgBLL, Tags
 from apiserver.bll.project import ProjectBLL
 from apiserver.bll.util import update_project_time
@@ -32,7 +31,6 @@ from apiserver.database.model.task.task import (
     Script,
 )
 from apiserver.database.model import EntityVisibility
-from apiserver.database.model.queue import Queue
 from apiserver.database.utils import (
     get_company_or_none_constraint,
     id as create_id,
@@ -56,7 +54,6 @@ from .utils import (
 
 log = config.logger(__file__)
 org_bll = OrgBLL()
-queue_bll = QueueBLL()
 project_bll = ProjectBLL()
 
 
@@ -292,7 +289,6 @@ class TaskBLL:
                 for k, a in artifacts.items()
                 if a.get("mode", DEFAULT_ARTIFACT_MODE) != ArtifactModes.output
             }
-        execution_dict.pop("queue", None)
 
         new_project_data = None
         if not project and new_project_name:
@@ -510,38 +506,21 @@ class TaskBLL:
 
         return ret
 
-    @staticmethod
-    def remove_task_from_all_queues(
-        company_id: str, task_id: str, exclude: str = None
-    ) -> int:
-        more = {}
-        if exclude:
-            more["id__ne"] = exclude
-        return Queue.objects(company=company_id, entries__task=task_id, **more).update(
-            pull__entries__task=task_id, last_update=datetime.now(timezone.utc)
-        )
-
     @classmethod
-    def dequeue_and_change_status(
+    def set_status_for_stop(
         cls,
         task: Task,
         company_id: str,
         user_id: str,
         status_message: str,
         status_reason: str,
-        remove_from_all_queues=False,
         new_status=None,
         new_status_for_aborted_task=None,
     ):
-        try:
-            cls.dequeue(task, company_id=company_id, user_id=user_id, silent_fail=True)
-        except APIError:
-            # dequeue may fail if the queue was deleted
-            pass
-
-        if remove_from_all_queues:
-            cls.remove_task_from_all_queues(company_id=company_id, task_id=task.id)
-
+        """
+        Change the status of a task that is stopped, reset or aborted. A task that is not queued or running
+        keeps its status.
+        """
         if task.status not in [TaskStatus.queued, TaskStatus.in_progress]:
             return {"updated": 0}
 
@@ -556,38 +535,3 @@ class TaskBLL:
             user_id=user_id,
             force=True,
         ).execute(enqueue_status=None)
-
-    @classmethod
-    def dequeue(cls, task: Task, company_id: str, user_id: str, silent_fail=False):
-        """
-        Dequeue the task from the queue
-        :param task: task to dequeue
-        :param company_id: task's company ID.
-        :param silent_fail: do not throw exceptions. APIError is still thrown
-        :raise errors.bad_request.InvalidTaskId: if the task's status is not queued
-        :raise errors.bad_request.MissingRequiredFields: if the task is not queued
-        :raise APIError or errors.server_error.TransactionError: if internal call to queues.remove_task fails
-        :return: the result of queues.remove_task call. None in case of silent failure
-        """
-        if task.status not in (TaskStatus.queued,):
-            if silent_fail:
-                return
-            raise errors.bad_request.InvalidTaskId(
-                status=task.status, expected=TaskStatus.queued
-            )
-
-        if not task.execution or not task.execution.queue:
-            if silent_fail:
-                return
-            raise errors.bad_request.MissingRequiredFields(
-                "task has no queue value", field="execution.queue"
-            )
-
-        return {
-            "removed": queue_bll.remove_task(
-                company_id=company_id,
-                user_id=user_id,
-                queue_id=task.execution.queue,
-                task_id=task.id,
-            )
-        }

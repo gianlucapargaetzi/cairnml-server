@@ -57,13 +57,12 @@ class TestPipelines(TestService):
         self.assertEqual(len(res.tasks), 0)
 
     def test_delete_runs(self):
-        queue = self.api.queues.get_default().id
         task_name = "pipelines test"
         project, task = self._temp_project_and_task(name=task_name)
         args = [{"name": "hello", "value": "test"}]
         pipeline_tasks = [
             self.api.pipelines.start_pipeline(
-                task=task, queue=queue, args=args
+                task=task, args=args
             ).pipeline
             for _ in range(2)
         ]
@@ -81,12 +80,11 @@ class TestPipelines(TestService):
         self.assertEqual([task], [t.id for t in tasks])
 
     def test_start_pipeline(self):
-        queue = self.api.queues.get_default().id
         task_name = "pipelines test"
         project, task = self._temp_project_and_task(name=task_name)
         args = [{"name": "hello", "value": "test"}]
 
-        res = self.api.pipelines.start_pipeline(task=task, queue=queue, args=args)
+        res = self.api.pipelines.start_pipeline(task=task, args=args)
         pipeline_task = res.pipeline
         self.assertTrue(res.enqueued)
         pipeline = self.api.tasks.get_all_ex(id=[pipeline_task]).tasks[0]
@@ -108,20 +106,6 @@ class TestPipelines(TestService):
             },
         )
 
-        # watched queue
-        queue = self._temp_queue("test pipelines")
-        project, task = self._temp_project_and_task(name="pipelines test1")
-        res = self.api.pipelines.start_pipeline(
-            task=task, queue=queue, verify_watched_queue=True
-        )
-        self.assertEqual(res.queue_watched, False)
-
-        self.api.workers.register(worker="test pipelines", queues=[queue])
-        project, task = self._temp_project_and_task(name="pipelines test2")
-        res = self.api.pipelines.start_pipeline(
-            task=task, queue=queue, verify_watched_queue=True
-        )
-        self.assertEqual(res.queue_watched, True)
 
     def _temp_project_and_task(self, name) -> Tuple[str, str]:
         project = self.create_temp(
@@ -143,5 +127,3 @@ class TestPipelines(TestService):
             ),
         )
 
-    def _temp_queue(self, queue_name, **kwargs):
-        return self.create_temp("queues", name=queue_name, **kwargs)

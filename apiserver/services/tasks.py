@@ -34,7 +34,6 @@ from apiserver.apimodels.tasks import (
     PingRequest,
     EnqueueRequest,
     EnqueueResponse,
-    DequeueResponse,
     CloneRequest,
     AddOrUpdateArtifactsRequest,
     GetTypesRequest,
@@ -58,15 +57,11 @@ from apiserver.apimodels.tasks import (
     PublishManyRequest,
     EnqueueManyResponse,
     EnqueueBatchItem,
-    DequeueBatchItem,
-    DequeueManyResponse,
     ResetManyResponse,
     ResetBatchItem,
     CompletedRequest,
     CompletedResponse,
     GetAllReq,
-    DequeueRequest,
-    DequeueManyRequest,
     UpdateTagsRequest,
     StopRequest,
     UnarchiveManyRequest,
@@ -77,7 +72,7 @@ from apiserver.bll.event import EventBLL
 from apiserver.bll.model import ModelBLL
 from apiserver.bll.organization import OrgBLL, Tags
 from apiserver.bll.project import ProjectBLL
-from apiserver.bll.queue import QueueBLL
+from apiserver.bll.scheduler.service import placement_pass
 from apiserver.bll.task import (
     TaskBLL,
     ChangeStatusRequest,
@@ -101,7 +96,6 @@ from apiserver.bll.task.param_utils import (
 from apiserver.bll.task.task_operations import (
     stop_task,
     enqueue_task,
-    dequeue_task,
     reset_task,
     archive_task,
     delete_task,
@@ -150,7 +144,6 @@ task_fields = set(Task.get_fields())
 
 task_bll = TaskBLL()
 event_bll = EventBLL()
-queue_bll = QueueBLL()
 org_bll = OrgBLL()
 project_bll = ProjectBLL()
 
@@ -928,34 +921,19 @@ def delete_configuration(
     response_data_model=EnqueueResponse,
 )
 def enqueue(call: APICall, company_id, request: EnqueueRequest):
-    if request.verify_watched_queue and not request.update_execution_queue:
-        raise errors.bad_request.ValidationError(
-            "verify_watched_queue cannot be used with update_execution_queue=False"
-        )
-
     requirements = validate_requirements(request.requirements)
     priority = validate_priority(request.priority)
     queued, res = enqueue_task(
         task_id=request.task,
         company_id=company_id,
         identity=call.identity,
-        queue_id=request.queue,
         status_message=request.status_message,
         status_reason=request.status_reason,
-        queue_name=request.queue_name,
         force=request.force,
-        update_execution_queue=request.update_execution_queue,
         requirements=requirements,
         priority=priority,
     )
-    from apiserver.bll.scheduler.service import placement_pass
-
     placement_pass(company_id)
-    if request.verify_watched_queue:
-        res_queue = nested_get(res, ("fields", "execution.queue"))
-        if res_queue:
-            res["queue_watched"] = queue_bll.check_for_workers(company_id, res_queue)
-
     call.result.data_model = EnqueueResponse(queued=queued, **res)
 
 
@@ -970,69 +948,17 @@ def enqueue_many(call: APICall, company_id, request: EnqueueManyRequest):
             enqueue_task,
             company_id=company_id,
             identity=call.identity,
-            queue_id=request.queue,
             status_message=request.status_message,
             status_reason=request.status_reason,
-            queue_name=request.queue_name,
             validate=request.validate_tasks,
         ),
         ids=request.ids,
     )
-    extra = {}
-    if request.verify_watched_queue and results:
-        _id, (queued, res) = results[0]
-        res_queue = nested_get(res, ("fields", "execution.queue"))
-        if res_queue:
-            extra["queue_watched"] = queue_bll.check_for_workers(company_id, res_queue)
-
+    placement_pass(company_id)
     call.result.data_model = EnqueueManyResponse(
         succeeded=[
             EnqueueBatchItem(id=_id, queued=bool(queued), **res)
             for _id, (queued, res) in results
-        ],
-        failed=failures,
-        **extra,
-    )
-
-
-@endpoint(
-    "tasks.dequeue",
-    response_data_model=DequeueResponse,
-)
-def dequeue(call: APICall, company_id, request: DequeueRequest):
-    dequeued, res = dequeue_task(
-        task_id=request.task,
-        company_id=company_id,
-        identity=call.identity,
-        status_message=request.status_message,
-        status_reason=request.status_reason,
-        remove_from_all_queues=request.remove_from_all_queues,
-        new_status=request.new_status,
-    )
-    call.result.data_model = DequeueResponse(dequeued=dequeued, **res)
-
-
-@endpoint(
-    "tasks.dequeue_many",
-    response_data_model=DequeueManyResponse,
-)
-def dequeue_many(call: APICall, company_id, request: DequeueManyRequest):
-    results, failures = run_batch_operation(
-        func=partial(
-            dequeue_task,
-            company_id=company_id,
-            identity=call.identity,
-            status_message=request.status_message,
-            status_reason=request.status_reason,
-            remove_from_all_queues=request.remove_from_all_queues,
-            new_status=request.new_status,
-        ),
-        ids=request.ids,
-    )
-    call.result.data_model = DequeueManyResponse(
-        succeeded=[
-            DequeueBatchItem(id=_id, dequeued=bool(dequeued), **res)
-            for _id, (dequeued, res) in results
         ],
         failed=failures,
     )
@@ -1110,7 +1036,7 @@ def _delete_task_events(
 )
 def reset(call: APICall, company_id, request: ResetRequest):
     task_id = request.task
-    dequeued, cleanup_res, updates = reset_task(
+    cleanup_res, updates = reset_task(
         task_id=task_id,
         company_id=company_id,
         identity=call.identity,
@@ -1128,7 +1054,6 @@ def reset(call: APICall, company_id, request: ResetRequest):
     res = ResetResponse(
         **updates,
         **cleanup_res.to_res_dict(request.return_file_urls),
-        dequeued=dequeued,
     )
     call.result.data_model = res
 
@@ -1153,12 +1078,11 @@ def reset_many(call: APICall, company_id, request: ResetManyRequest):
 
     succeeded = []
     tasks = {}
-    for _id, (dequeued, cleanup, res) in results:
+    for _id, (cleanup, res) in results:
         tasks[_id] = cleanup
         succeeded.append(
             ResetBatchItem(
                 id=_id,
-                dequeued=bool(dequeued.get("removed")) if dequeued else False,
                 **cleanup.to_res_dict(request.return_file_urls),
                 **res,
             )

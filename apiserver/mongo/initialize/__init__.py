@@ -5,7 +5,7 @@ from apiserver.config_repo import config
 from apiserver.config.info import get_default_company
 from .migration import _apply_migrations, check_mongo_empty, get_last_server_version
 from .pre_populate import PrePopulate
-from .util import _ensure_company, _ensure_default_queue, _ensure_uuid
+from .util import _ensure_company, _ensure_uuid
 
 log = config.logger(__package__)
 
@@ -51,9 +51,7 @@ def init_mongo_data():
 
         _ensure_uuid()
 
-        company_id = _ensure_company(get_default_company(), "clearml", log)
-
-        _ensure_default_queue(company_id)
+        _ensure_company(get_default_company(), "clearml", log)
 
     except Exception as ex:
         log.exception(f"Failed initializing mongodb: {str(ex)}")
