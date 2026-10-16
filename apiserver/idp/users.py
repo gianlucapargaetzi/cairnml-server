@@ -35,4 +35,15 @@ def upsert_idp_user(issuer: str, subject: str, username: str, idp_roles, admin_r
         user.name = username
         user.role = role
     user.save()
+    _ensure_profile(user)
     return user
+
+
+def _ensure_profile(user: User) -> None:
+    """The profile (name, company, preferences) that the API reads for get_current_user."""
+    from apiserver.database.model.user import User as Profile
+
+    if Profile.objects(id=user.id).first() is None:
+        Profile(id=user.id, company=user.company, name=user.name, created=datetime.utcnow()).save()
+    else:
+        Profile.objects(id=user.id).update_one(set__name=user.name)

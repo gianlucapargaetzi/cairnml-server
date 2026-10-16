@@ -1,3 +1,4 @@
+from apiserver.tests.idp.bearer import suite_bearer
 from operator import itemgetter
 from typing import Sequence, List, Tuple
 
@@ -326,7 +327,7 @@ class TestTasksHyperparams(TestService):
         )
         params = self._param_dict_from_list(self._new_params_from_legacy(legacy_params))
 
-        old_api = APIClient(base_url="http://localhost:8008/v2.8")
+        old_api = APIClient(base_url="http://localhost:8008/v2.8", session_token=suite_bearer())
         task = old_api.tasks.get_all_ex(id=[task_id]).tasks[0]
         self.assertEqual(legacy_params, task.execution.parameters)
         self.assertEqual(legacy_config, task.execution.model_desc)

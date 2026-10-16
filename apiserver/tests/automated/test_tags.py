@@ -1,3 +1,4 @@
+from apiserver.tests.idp.bearer import suite_bearer
 from datetime import datetime
 from time import sleep
 from typing import Sequence
@@ -36,7 +37,7 @@ class TestTags(TestService):
 
     def testBackwardsCompatibility(self):
         new_api = self.api
-        self.api = APIClient(base_url="http://localhost:8008/v2.2")
+        self.api = APIClient(base_url="http://localhost:8008/v2.2", session_token=suite_bearer())
         entity_tags = {
             "model": "archived",
             "project": "public",
