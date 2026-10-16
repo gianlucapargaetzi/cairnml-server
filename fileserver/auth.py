@@ -3,9 +3,8 @@ from hashlib import sha256
 from typing import Optional
 
 import attr
+import requests
 from flask import abort, Response, Request
-from redis import StrictRedis
-from clearml_agent.backend_api import Session
 from werkzeug.exceptions import HTTPException
 
 from config import config
@@ -20,15 +19,32 @@ class TokenInfo:
     user: str
 
 
-class FileserverSession(Session):
-    @property
-    def client(self):
-        return "fileserver"
+def fetch_token_info(api_server: str, token: str) -> TokenInfo:
+    """Ask the API server whom the caller's own token belongs to.
 
-    @client.setter
-    def client(self, _):
-        # do not allow the base class to override the client
-        pass
+    The file server holds no credential of its own: the token is the caller's, and the API server
+    applies its checks to it (a revoked device or a disabled user is refused there). Raises an
+    HTTPException for a refused token (401) or a failed check (500).
+    """
+    try:
+        res = requests.post(
+            f"{api_server}/v2.8/users.get_current_user",
+            headers={"Authorization": f"Bearer {token}"},
+            json={},
+            timeout=10,
+        )
+    except requests.RequestException:
+        log.exception("Could not reach the API server to check a token")
+        abort(500)
+
+    if res.status_code in (401, 403):
+        abort(401)
+    if res.status_code != 200:
+        log.error(f"Token check failed (status={res.status_code})")
+        abort(500)
+
+    user = res.json()["data"]["user"]
+    return TokenInfo(company=user["company"]["id"], user=user["id"])
 
 
 class AuthHandler:
@@ -44,14 +60,8 @@ class AuthHandler:
         return cls._instance
 
     def __init__(self):
-        self.session = FileserverSession(
-            api_key=config.get("secure.credentials.fileserver.user_key"),
-            secret_key=config.get("secure.credentials.fileserver.user_secret"),
-            host=config.get("hosts.api_server"),
-            initialize_logging=False,
-        )
-
-        self.redis: StrictRedis = redman.connection("fileserver")
+        self.api_server = config.get("hosts.api_server")
+        self.redis = redman.connection("fileserver")
 
     def _validate_and_get_token_info(self, token: str) -> TokenInfo:
         token_hash = sha256(token.encode()).hexdigest() if len(token) > 256 else token
@@ -61,39 +71,18 @@ class AuthHandler:
             return TokenInfo(**json.loads(token_data))
 
         try:
-            res = self.session.send_request(
-                service="auth", action="validate_token", json={"token": token}
-            )
-
-            if res.status_code == 500:
-                log.error("Error validating token")
-                abort(Response(f"Internal error (status={res.status_code})", 500))
-            elif res.status_code != 200:
-                log.error("Error validating token")
-                abort(res.status_code)
-
-            data = res.json()["data"]
-            if not data["valid"]:
-                log.error(f"Error validating token: {data['msg']}")
-                abort(Response(data["msg"], 401))
-
-            info = TokenInfo(
-                company=data.get("company", "unknown"),
-                user=data.get("user"),
-            )
-
-            timeout_sec = config.get(
-                "fileserver.auth.tokens_cache_threshold_sec", 12 * 60 * 60
-            )
-            self.redis.setex(key, time=timeout_sec, value=json.dumps(attr.asdict(info)))
-
-            return info
-
+            info = fetch_token_info(self.api_server, token)
         except HTTPException:
             raise
         except Exception:
-            log.exception("Failed decoding token")
+            log.exception("Failed checking a token")
             abort(500)
+
+        # Cached only briefly (fileserver.auth.tokens_cache_threshold_sec): a revoked device must lose
+        # file access within about a minute, not after the cache has run out.
+        timeout_sec = config.get("fileserver.auth.tokens_cache_threshold_sec", 60)
+        self.redis.setex(key, time=timeout_sec, value=json.dumps(attr.asdict(info)))
+        return info
 
     def validate(self, request: Request):
         token = self.get_token(request)
