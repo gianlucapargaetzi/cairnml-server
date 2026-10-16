@@ -278,6 +278,10 @@ class Task(AttributedDocument):
     last_worker_report = DateTimeField()
     last_device = StringField()
     """ The agent device that started the task; only it may get a job token for the task """
+    requirements = SafeDictField()
+    """ Compute the task needs (cpus, ram_gb, gpus, disk_gb, max_runtime_min), or empty for a whole machine """
+    priority = IntField(default=50)
+    """ Higher runs first, 0 to 100 """
     last_update = DateTimeField()
     last_change = DateTimeField()
     last_iteration = IntField(default=DEFAULT_LAST_ITERATION)

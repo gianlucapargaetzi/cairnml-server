@@ -107,6 +107,8 @@ class StopRequest(UpdateRequest):
 
 class EnqueueRequest(UpdateRequest):
     queue = StringField()
+    requirements = DictField()
+    priority = IntField()
     queue_name = StringField()
     verify_watched_queue = BoolField(default=False)
     update_execution_queue = BoolField(default=True)

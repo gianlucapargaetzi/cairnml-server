@@ -10,6 +10,7 @@ from pymongo import UpdateOne
 
 from apiserver.apierrors import errors
 from apiserver.apierrors.errors.bad_request import InvalidTaskId
+from apiserver.bll.scheduler.model import validate_priority, validate_requirements
 from apiserver.apimodels.base import (
     UpdateResponse,
     IdResponse,
@@ -932,6 +933,8 @@ def enqueue(call: APICall, company_id, request: EnqueueRequest):
             "verify_watched_queue cannot be used with update_execution_queue=False"
         )
 
+    requirements = validate_requirements(request.requirements)
+    priority = validate_priority(request.priority)
     queued, res = enqueue_task(
         task_id=request.task,
         company_id=company_id,
@@ -942,6 +945,8 @@ def enqueue(call: APICall, company_id, request: EnqueueRequest):
         queue_name=request.queue_name,
         force=request.force,
         update_execution_queue=request.update_execution_queue,
+        requirements=requirements,
+        priority=priority,
     )
     if request.verify_watched_queue:
         res_queue = nested_get(res, ("fields", "execution.queue"))
