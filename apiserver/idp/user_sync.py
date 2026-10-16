@@ -48,7 +48,8 @@ def fetch_answers(directory, users) -> dict:
     answers = {}
     for user in users:
         try:
-            answers[user.idp_subject] = directory.get_user(user.idp_subject)
+            # The directory knows the user by its id; the stored subject is "issuer|id".
+            answers[user.idp_subject] = directory.get_user(user.idp_subject.split("|", 1)[-1])
         except DirectoryError as exc:
             answers[user.idp_subject] = exc
     return answers
