@@ -48,3 +48,20 @@ class TestTestOnlySettings(TestCase):
     def test_both_are_allowed_in_a_test_run(self):
         env = {"CLEARML_TEST_MODE": "1", "CLEARML_ALLOW_CONFIG_SECRET": "1"}
         self.assertEqual(self.check(env, **{"apiserver.idp.jwks_file": "/tmp/jwks.json"}), [])
+
+
+class TestCookieSettings(TestCase):
+    def check(self, url, secure):
+        from apiserver.idp.legacy import cookie_settings_problems
+
+        return cookie_settings_problems(settings(**{"apiserver.idp.public_url": url,
+                                                     "apiserver.auth.cookies.secure": secure}))
+
+    def test_https_with_a_secure_cookie_starts(self):
+        self.assertEqual(self.check("https://clearml.example", True), [])
+
+    def test_https_with_an_insecure_cookie_is_refused(self):
+        self.assertEqual(len(self.check("https://clearml.example", False)), 1)
+
+    def test_plain_http_may_use_an_insecure_cookie(self):
+        self.assertEqual(self.check("http://mlops-clearml:8008", False), [])
