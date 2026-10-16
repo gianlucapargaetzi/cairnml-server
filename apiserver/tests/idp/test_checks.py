@@ -50,3 +50,14 @@ class TestJobChecks(TestCase):
     def test_missing_task_is_refused(self):
         with self.assertRaises(AccessDenied):
             check_job(None, owner())
+
+
+class TestWebSessionChecks(TestCase):
+    def test_enabled_user_may_use_a_web_session(self):
+        from apiserver.idp.checks import check_user
+        check_user(owner())
+
+    def test_disabled_user_may_not_use_a_web_session(self):
+        from apiserver.idp.checks import check_user
+        with self.assertRaises(AccessDenied):
+            check_user(owner(disabled=True))

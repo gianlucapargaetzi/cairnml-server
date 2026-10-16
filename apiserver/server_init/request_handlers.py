@@ -67,6 +67,10 @@ class RequestHandlers:
                 415,
             )
 
+        refusal = self._csrf_refusal()
+        if refusal:
+            return refusal
+
         try:
             call = self._create_api_call(request)
             load_data_callback = partial(self._load_call_data, req=request)
@@ -185,6 +189,23 @@ class RequestHandlers:
         call.set_error_result(msg=msg, code=code, subcode=subcode)
         return call
 
+    @staticmethod
+    def _csrf_refusal():
+        """A change made with the session cookie must come from the web app's own origin.
+
+        Requests that carry a bearer token are not cookie sessions and are not checked here.
+        """
+        if request.method in ("GET", "HEAD", "OPTIONS"):
+            return None
+        cookie_name = config.get("apiserver.auth.session_auth_cookie_name")
+        if not request.cookies.get(cookie_name) or request.headers.get("Authorization"):
+            return None
+        allowed = _origin_of(config.get("apiserver.idp.web_url"))
+        sent = request.headers.get("Origin") or _origin_of(request.headers.get("Referer", ""))
+        if not sent or sent != allowed:
+            return "Cross-site request refused", 403
+        return None
+
     def _get_session_auth_cookie(self, req):
         return req.cookies.get(config.get("apiserver.auth.session_auth_cookie_name"))
 
@@ -253,3 +274,10 @@ class RequestHandlers:
             )
         except Exception as ex:
             call.set_error_result(msg=ex.args[0] if ex.args else type(ex).__name__)
+
+
+def _origin_of(url: str) -> str:
+    from urllib.parse import urlsplit
+
+    parts = urlsplit(url or "")
+    return f"{parts.scheme}://{parts.netloc}" if parts.scheme and parts.netloc else ""

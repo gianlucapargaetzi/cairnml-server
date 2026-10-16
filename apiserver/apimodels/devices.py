@@ -21,3 +21,8 @@ class DeviceListRequest(Base):
 
 class RevokeRequest(Base):
     id = StringField(required=True)
+
+
+class IdpCallbackRequest(Base):
+    state = StringField(required=True)
+    code = StringField(required=True)

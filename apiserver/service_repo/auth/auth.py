@@ -170,7 +170,7 @@ def check_idp_token(jwt_token: str) -> None:
     from apiserver.database.model.auth import User
     from apiserver.database.model.device import Device
     from apiserver.database.model.task.task import Task
-    from apiserver.idp.checks import DEVICE_KINDS, AccessDenied, check_device, check_job
+    from apiserver.idp.checks import DEVICE_KINDS, AccessDenied, check_device, check_job, check_user
 
     claims = Token.decode(jwt_token)
     kind = claims.get("kind")
@@ -183,6 +183,9 @@ def check_idp_token(jwt_token: str) -> None:
             task = Task.objects(id=claims.get("task")).only("status", "user").first()
             owner = User.objects(id=task.user).first() if task else None
             check_job(task.status if task else None, owner)
+        elif kind == "web":
+            owner = User.objects(id=claims["identity"]["user"]).first()
+            check_user(owner)
     except AccessDenied as exc:
         raise errors.unauthorized.InvalidToken(str(exc)) from None
 

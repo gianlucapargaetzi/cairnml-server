@@ -33,3 +33,9 @@ def check_job(task_status, owner) -> None:
         raise AccessDenied(f"task is {task_status}")
     if owner is None or owner.idp_disabled:
         raise AccessDenied("owner disabled or unknown")
+
+
+def check_user(owner) -> None:
+    """A web session works only while its user is enabled."""
+    if owner is None or owner.idp_disabled:
+        raise AccessDenied("user disabled or unknown")
