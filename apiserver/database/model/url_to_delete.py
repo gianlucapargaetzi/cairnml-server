@@ -11,6 +11,7 @@ class StorageType(StrEnum):
     s3 = "s3"
     azure = "azure"
     gs = "gs"
+    datachunk = "datachunk"
     unknown = "unknown"
 
 

@@ -19,11 +19,13 @@ from google.cloud import storage as google_storage
 from mongoengine import Q
 from mypy_boto3_s3.service_resource import Bucket as AWSBucket
 
+from apiserver.bll import datachunks
 from apiserver.bll.auth import AuthBLL
 from apiserver.bll.storage import StorageBLL
 from apiserver.config.info import get_default_company
 from apiserver.config_repo import config
 from apiserver.database import db
+from apiserver.database.model.datachunk import Datachunk
 from apiserver.database.model.url_to_delete import UrlToDelete, StorageType, DeletionStatus
 
 log = config.logger(f"JOB-{Path(__file__).name}")
@@ -171,6 +173,52 @@ def delete_urls(urls_query: Q, storage: Storage):
             missing_ids = ids_to_delete - deleted_ids - failed_ids
             if missing_ids:
                 mark_retry_failed(list(missing_ids), "Not succeeded")
+
+
+class DatachunkStorage(Storage):
+    """Objects stored through datachunk:// locations: removed from the object store, with their records."""
+
+    class Client(Storage.Client):
+        def __init__(self, company: str):
+            self.company = company
+
+        @property
+        def chunk_size(self) -> int:
+            return 1000
+
+        def get_path(self, url: UrlToDelete) -> str:
+            if not datachunks.is_location(url.url):
+                raise ValueError("Not a datachunk location")
+            return url.url
+
+        def delete_many(
+            self, paths: Sequence[str]
+        ) -> Tuple[Sequence[str], Mapping[str, Sequence[str]]]:
+            deleted, errors = [], defaultdict(list)
+            for path in paths:
+                try:
+                    kind, task_id, name = datachunks.parse_location(path)
+                    chunks = list(
+                        Datachunk.objects(company=self.company, task=task_id, kind=kind, name=name)
+                    )
+                    datachunks.delete(company=self.company, chunks=chunks)
+                    deleted.append(path)
+                except Exception as ex:
+                    errors[str(ex)].append(path)
+            return deleted, dict(errors)
+
+    @property
+    def name(self) -> str:
+        return "Datachunk"
+
+    def __init__(self, company: str):
+        self.company = company
+
+    def group_urls(self, urls: Sequence[UrlToDelete]) -> Mapping[str, Sequence[UrlToDelete]]:
+        return bucketize(urls, key=lambda u: "datachunk" if datachunks.is_location(u.url) else None)
+
+    def get_client(self, base: str, urls: Sequence[UrlToDelete]) -> Client:
+        return self.Client(self.company)
 
 
 class FileserverStorage(Storage):
@@ -558,6 +606,10 @@ class GoogleCloudStorage(Storage):
         )
 
 
+PENDING_UPLOAD_MAX_AGE = timedelta(hours=24)
+PURGE_PENDING_EVERY = timedelta(hours=1)
+
+
 def run_delete_loop(fileserver_host: str):
     storage_helpers = {
         StorageType.fileserver: partial(
@@ -566,9 +618,16 @@ def run_delete_loop(fileserver_host: str):
         StorageType.s3: AWSStorage,
         StorageType.azure: AzureStorage,
         StorageType.gs: GoogleCloudStorage,
+        StorageType.datachunk: DatachunkStorage,
     }
+    next_purge = datetime.utcnow()
     while True:
         now = datetime.utcnow()
+        if now >= next_purge:
+            removed = datachunks.purge_stale_pending(PENDING_UPLOAD_MAX_AGE)
+            if removed:
+                log.info(f"Removed {removed} uploads that were never committed")
+            next_purge = now + PURGE_PENDING_EVERY
         urls_query = (
             Q(status__ne=DeletionStatus.failed)
             & Q(retry_count__lt=max_retries)
