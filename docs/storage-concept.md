@@ -92,7 +92,7 @@ SDK                       Gateway                    API server          Store
  |   size, sha256}   ----> |  task readable? ------>  |                   |
  |                         |  <-- task tags, project  |                   |
  |                         |  route(kind, task)       |                   |
- |                         |  key = <project>/<task>/<kind>/<name>        |
+ |                         |  bucket = kind, key = <project>/<task>/<name> |
  |  <-- {location,         |  sign PUT (if direct)  ----------------->    |
  |        method, url,     |                                              |
  |        headers, expires}|                                              |
@@ -119,8 +119,9 @@ All paths are under the gateway's public host. Every call carries the user's IdP
 | `POST /storage/v1/delete` | `locations` | per-location result. The API server's async delete job calls this. |
 | `GET /storage/v1/backends` | none (admin) | the registry, without secrets |
 
-`location` has the form `<backend>://<key>`. It is what the SDK stores in the task and the
-artifact record. Existing URLs of the form `http://<files-host>/<path>` keep working through a
+`location` has the form `<backend>://<kind>/<key>`, where `<kind>` selects the bucket (or
+folder, for the `local` and `sftp` backends) inside the backend. It is what the SDK stores in the
+task and the artifact record. Existing URLs of the form `http://<files-host>/<path>` keep working through a
 legacy route, which maps `<path>` to the `local` backend.
 
 ### 3.4 Adapter interface
@@ -157,24 +158,26 @@ refused, an expired URL refused, a key outside the allowed prefix refused.
 
 - A presigned URL is valid for one key and one method. The TTL is at most 900 s. The size is
   bound in the signature (S3: `content-length` in the signed headers).
-- The key is built by the server from `<project>/<task>/<kind>/<name>` after the name is
+- The key is built by the server from `<project>/<task>/<name>` after the name is
   sanitised. The SDK cannot choose a prefix outside its task.
 - `prepare-upload` requires write access to the task (checked with the API server, cached as the
   file server does today). `prepare-download` requires read access to the task.
 - The gateway writes an audit event for each prepare call and each commit (`storage.prepare`,
   `storage.commit`), like the other endpoints of the identity layer.
 - Store credentials live in secret files read by the gateway. The SDK never receives them.
-- The S3 bucket is reachable only with the gateway's service user. Otherwise a user with raw keys
-  could still bypass the gateway. The RustFS policy in `deploy/nas/init.py` is the place for this.
+- Each S3 bucket (one per kind) is reachable only with the gateway's service user. Otherwise a
+  user with raw keys could still bypass the gateway. The RustFS policy in `deploy/nas/init.py` is
+  the place for this.
 
 ### 3.6 Changes to the SDK
 
 - `clearml/storage/helper.py`: a `GatewayDriver` that calls `prepare-upload`, uploads to `url`
   with the given headers (plain `requests` for signed HTTP, the same flow for every direct
   adapter), then calls `commit`. Download calls `prepare-download` and follows the URL.
-- The `kind` is set by the call site: `upload_artifact` sends `artifact`, `Dataset` sends
-  `dataset`, `OutputModel` sends `model`, `report_image` sends `debug`. The router checks it against the
-  task's tags, so a dataset task cannot write an artifact into the dataset backend by mistake.
+- The `kind` is set by the call site: `upload_artifact` sends `artifact`, `OutputModel` sends
+  `model`, debug images send `debug`, and `Dataset` sends `dataset`. The gateway checks only the
+  dataset case: kind `dataset` is refused unless the task carries the `dataset` system tag. Tags
+  cannot tell artifacts, models and debug images apart, so those kinds are trusted from the SDK.
 - The default output (`development.default_output_uri`) points to the gateway in the config we
   ship. Users who set an `s3://` URI themselves keep the old direct path, and that path is only
   safe if the bucket is restricted as in 3.5.
@@ -219,16 +222,18 @@ clients, paramiko or asyncssh).
 Each adapter is tested against a real store: RustFS for S3, an SFTP test container for SFTP,
 Azurite for Azure, and fake-gcs-server for GCS.
 
-## 6. Decisions still open
+## 6. Decisions
 
-1. **Kind routing source.** The router trusts the SDK's `kind` and checks it against the task's
-   tags, or it takes `kind` from the task tags alone. The second needs no SDK field, but costs
-   a lookup per upload, which can be cached.
-2. **Checksums.** Store `sha256` at commit, or only the size. The SDK already computes hashes for
-   artifacts, so storing them is cheap.
-3. **Buckets.** One bucket per backend with prefixes per kind, or one bucket per kind. One bucket
-   per backend is simpler to restrict.
-4. **Local copy duration.** How long the gateway keeps the `local` backend after an artifact is
-   moved to a store.
-5. **Web app downloads.** Keep the `302` from `/storage/v1/files/...` (no web change), or have
-   the web app request signed URLs itself.
+Taken:
+
+1. **Kind source.** The SDK sends `kind` with each upload. The gateway checks only the dataset
+   case, against the task's `dataset` system tag. Tags cannot distinguish artifacts, models and
+   debug images, so the server trusts those kinds.
+2. **Checksums.** Size and `sha256` are stored at commit. Commit compares them with the object in
+   the store.
+3. **Buckets.** One bucket per kind (`artifact`, `dataset`, `model`, `debug`) in each object
+   store. Each bucket gets its own policy for the gateway's service user.
+4. **Local copy.** After an object passes the checksum check in its target store, the gateway
+   deletes the `local` copy. Locations then resolve only through the store.
+5. **Web app downloads.** The web app keeps its `/files` links. The gateway answers with a `302`
+   to a signed URL, or streams the bytes for SFTP and local storage. The web app does not change.
