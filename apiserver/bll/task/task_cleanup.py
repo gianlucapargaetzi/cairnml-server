@@ -138,6 +138,7 @@ def collect_debug_image_urls(
 
 
 supported_storage_types = {
+    "datachunk://": StorageType.datachunk,
     "s3://": StorageType.s3,
     "azure://": StorageType.azure,
     "gs://": StorageType.gs,

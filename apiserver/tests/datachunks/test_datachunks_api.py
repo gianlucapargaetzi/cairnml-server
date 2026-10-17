@@ -213,3 +213,61 @@ class TestJobTokensForStorage(TestCase):
         Task.objects(id=self.task_id).update_one(set__status="completed")
         response = _post("datachunks.commit", {"id": grant["id"]}, self.job)
         self.assertEqual(response.status_code, 401, response.text)
+
+
+class TestTaskDeletion(TestCase):
+    """Deleting a task removes the objects behind its artifacts. The async delete job does the work."""
+
+    @classmethod
+    def setUpClass(cls):
+        db.db.initialize()
+
+    def test_deleting_a_task_removes_its_stored_objects(self):
+        import time
+
+        user = suite_bearer()
+        task_id = _new_task()
+        body = b"to be deleted " + uuid.uuid4().bytes
+        name = f"gone/{uuid.uuid4().hex}.bin"
+        grant = _post("datachunks.prepare_upload",
+                      {"task": task_id, "kind": "artifact", "name": name, "size": len(body), "sha256": _sha(body)},
+                      user).json()["data"]
+        self.assertEqual(requests.put(grant["url"], data=body, headers=grant["headers"], timeout=20).status_code, 200)
+        self.assertEqual(_post("datachunks.commit", {"id": grant["id"]}, user).status_code, 200)
+        location = f"datachunk://artifact/{task_id}/{name}"
+        registered = requests.post(
+            f"{SERVER}/v2.10/tasks.add_or_update_artifacts",
+            json={"task": task_id, "artifacts": [{"key": "report", "type": "custom", "uri": location,
+                                                  "content_size": len(body), "hash": _sha(body)}]},
+            headers=_bearer(user), timeout=20)
+        self.assertEqual(registered.status_code, 200, registered.text)
+
+        chunk = Datachunk.objects(id=grant["id"]).first()
+        bucket, key = chunk.bucket, chunk.key
+
+        self.assertEqual(_post("tasks.delete", {"task": task_id}, user).status_code, 200)
+
+        deadline = time.monotonic() + 120
+        while time.monotonic() < deadline and Datachunk.objects(id=grant["id"]).first():
+            time.sleep(2)
+        self.assertIsNone(Datachunk.objects(id=grant["id"]).first(), "the async delete job did not run")
+        with self.assertRaises(ClientError):
+            bll._internal().head_object(Bucket=bucket, Key=key)
+
+
+class TestPendingUploads(TestCase):
+    @classmethod
+    def setUpClass(cls):
+        db.db.initialize()
+
+    def test_an_upload_that_was_never_committed_is_purged(self):
+        from datetime import timedelta
+
+        task_id = _new_task()
+        self.addCleanup(lambda: Task.objects(id=task_id).delete())
+        grant = _post("datachunks.prepare_upload",
+                      {"task": task_id, "kind": "artifact", "name": f"never/{uuid.uuid4().hex}.bin",
+                       "size": 3, "sha256": _sha(b"abc")}, suite_bearer()).json()["data"]
+        self.assertIsNotNone(Datachunk.objects(id=grant["id"]).first())
+        bll.purge_stale_pending(timedelta(seconds=0))
+        self.assertIsNone(Datachunk.objects(id=grant["id"]).first())

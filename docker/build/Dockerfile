@@ -13,7 +13,6 @@ RUN /bin/bash -c '/tmp/internal_files/build_webapp.sh'
 FROM python:3.11-slim-bookworm
 COPY --chmod=744 docker/build/internal_files/entrypoint.sh /opt/clearml/
 COPY --chmod=744 docker/build/internal_files/update_from_env.py /opt/clearml/utilities/
-COPY fileserver /opt/clearml/fileserver/
 COPY apiserver /opt/clearml/apiserver/
 
 COPY --chmod=744 docker/build/internal_files/final_image_preparation.sh /tmp/internal_files/

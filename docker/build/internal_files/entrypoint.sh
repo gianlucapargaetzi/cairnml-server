@@ -6,7 +6,7 @@ mkdir -p /var/log/clearml
 SERVER_TYPE=$1
 
 if (( $# < 1 )) ; then
-    echo "The server type was not stated. It should be either apiserver, webserver or fileserver."
+    echo "The server type was not stated. It should be either apiserver, webserver or async_delete."
     sleep 60
     exit 1
 
@@ -63,9 +63,8 @@ EOF
         /usr/share/nginx/html/configuration.json
 
     export NGINX_APISERVER_ADDR=${NGINX_APISERVER_ADDRESS:-http://apiserver:8008}
-    export NGINX_FILESERVER_ADDR=${NGINX_FILESERVER_ADDRESS:-http://fileserver:8081}
     export COMMENT_IPV6_LISTEN=$([ "$DISABLE_NGINX_IPV6" = "true" ] && echo "#" || echo "")
-    envsubst '${COMMENT_IPV6_LISTEN} ${NGINX_APISERVER_ADDR} ${NGINX_FILESERVER_ADDR}' < /etc/nginx/clearml.conf.template > /etc/nginx/sites-enabled/default
+    envsubst '${COMMENT_IPV6_LISTEN} ${NGINX_APISERVER_ADDR}' < /etc/nginx/clearml.conf.template > /etc/nginx/sites-enabled/default
 
     if [[ -n "${CLEARML_SERVER_SUB_PATH}" ]]; then
       mkdir -p /etc/nginx/default.d/
@@ -79,14 +78,11 @@ EOF
     #start the server
     /usr/sbin/nginx -g "daemon off;"
 
-elif [[ ${SERVER_TYPE} == "fileserver" ]]; then
-    cd /opt/clearml/fileserver/
-    if [ "$FILESERVER_USE_GUNICORN" = true ] ; then
-      gunicorn -t 600 --bind=0.0.0.0:8081 fileserver:app
-    else
-      python3 fileserver.py
-    fi
+elif [[ ${SERVER_TYPE} == "async_delete" ]]; then
+    # Removes the objects of deleted tasks and models from storage (the URLs are queued by the API server).
+    cd /opt/clearml/
+    python3 -m apiserver.jobs.async_urls_delete
 
 else
-    echo "Server type ${SERVER_TYPE} is invalid. Please choose either apiserver, webserver or fileserver."
+    echo "Server type ${SERVER_TYPE} is invalid. Please choose either apiserver, webserver or async_delete."
 fi

@@ -9,6 +9,7 @@ import re
 import uuid
 from datetime import datetime, timedelta
 from functools import lru_cache
+from urllib.parse import unquote
 
 import boto3
 from botocore.config import Config
@@ -40,6 +41,19 @@ def validate_digest(sha256: str) -> str:
     if not sha256 or not _SHA256_RE.fullmatch(sha256):
         raise errors.bad_request.ValidationError("sha256 must be 64 lowercase hex characters")
     return sha256
+
+
+LOCATION_PREFIX = "datachunk://"
+
+
+def is_location(url: str) -> bool:
+    return bool(url) and url.startswith(LOCATION_PREFIX)
+
+
+def parse_location(url: str) -> tuple:
+    """(kind, task id, name) of a datachunk://<kind>/<task>/<name> location. Segments may be percent-encoded."""
+    kind, task_id, name = url[len(LOCATION_PREFIX):].split("/", 2)
+    return unquote(kind), unquote(task_id), unquote(name)
 
 
 def build_key(project: str, task_id: str, name: str) -> str:
@@ -201,6 +215,20 @@ def prepare_download(*, company: str, chunk: Datachunk) -> dict:
         "sha256": chunk.sha256,
         "expires_at": (datetime.utcnow() + timedelta(seconds=_ttl())).isoformat(),
     }
+
+
+def purge_stale_pending(older_than: timedelta) -> int:
+    """Removes uploads that were requested but never committed. Any bytes that did arrive are removed too."""
+    cutoff = datetime.utcnow() - older_than
+    removed = 0
+    for chunk in Datachunk.objects(state=DatachunkState.pending, created__lt=cutoff):
+        try:
+            _internal().delete_object(Bucket=chunk.bucket, Key=chunk.key)
+        except ClientError:
+            pass
+        chunk.delete()
+        removed += 1
+    return removed
 
 
 def delete(*, company: str, chunks) -> int:
