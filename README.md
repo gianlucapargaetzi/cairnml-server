@@ -25,7 +25,7 @@ The **ClearML Server** contains the following components:
 * RESTful API for:
     * Documenting and logging experiment information, statistics and results
     * Querying experiments history, logs and results
-* Locally-hosted file server for storing images and models making them easily accessible using the Web-App
+* Object storage (S3) for artifacts, datasets, models and debug images, served through the API server
 
 You can quickly [deploy](#launching-the-clearml-server)  your **ClearML Server** using Docker, AWS EC2 AMI, or Kubernetes. 
 
@@ -38,18 +38,16 @@ The **ClearML Server** has two supported configurations:
 - Single IP (domain) with the following open ports
     - Web application on port 8080
     - API service on port 8008
-    - File storage service on port 8081
 
 - Sub-Domain configuration with default http/s ports (80 or 443)
     - Web application on sub-domain: app.\*.\*
     - API service on sub-domain: api.\*.\*
-    - File storage service on sub-domain: files.\*.\*
     
 ## Launching The ClearML Server
 
 ### Prerequisites
 
-The ports 8080/8081/8008 must be available for the **ClearML Server** services.
+The ports 8080/8008 must be available for the **ClearML Server** services.
    
 For example, to see if port `8080` is in use:
 
@@ -79,7 +77,7 @@ Launch The **ClearML Server** in any of the following formats:
 
 In order to set up the **ClearML** client to work with your **ClearML Server**:
 - Run the `clearml-init` command for an interactive setup.
-- Or manually edit `~/clearml.conf` file, making sure the server settings (`api_server`, `web_server`, `file_server`) are configured correctly, for example:
+- Or manually edit `~/clearml.conf` file, making sure the server settings (`api_server`, `web_server`) are configured correctly, for example:
 
         api {
             # API server on port 8008
@@ -87,9 +85,6 @@ In order to set up the **ClearML** client to work with your **ClearML Server**:
 
             # web_server on port 8080
             web_server: "http://localhost:8080"
-
-            # file server on port 8081
-            files_server: "http://localhost:8081"
         }
 
 **Note**: If you have set up your **ClearML Server** in a sub-domain configuration, then there is no need to specify a port number,

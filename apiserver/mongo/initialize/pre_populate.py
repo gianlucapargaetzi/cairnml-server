@@ -1,6 +1,5 @@
 import hashlib
 import importlib
-import os
 import re
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -24,25 +23,17 @@ from typing import (
     Callable,
     Iterable,
 )
-from urllib.parse import unquote, urlparse
 from uuid import uuid4, UUID, uuid5
 from zipfile import ZipFile, ZIP_BZIP2
 
 import attr
 import mongoengine
 from boltons.iterutils import chunked_iter, first
-from furl import furl
 from mongoengine import Q, Document
 
 from apiserver.bll.event import EventBLL
 from apiserver.bll.event.event_common import EventType
 from apiserver.bll.project import project_ids_with_children
-from apiserver.bll.task.artifacts import get_artifact_id
-from apiserver.bll.task.param_utils import (
-    split_param_name,
-    hyperparams_default_section,
-    hyperparams_legacy_type,
-)
 from apiserver.config_repo import config
 from apiserver.config.info import get_default_company
 from apiserver.database.model import EntityVisibility, User
@@ -51,18 +42,12 @@ from apiserver.database.model.model import Model
 from apiserver.database.model.project import Project
 from apiserver.database.model.task.task import (
     Task,
-    ArtifactModes,
     TaskStatus,
-    TaskModelTypes,
-    TaskModelNames,
 )
 from apiserver.database.utils import get_options
 from apiserver.service_repo.auth import Identity
 from apiserver.utilities import json
-from apiserver.utilities.dicts import nested_get, nested_set, nested_delete
-from apiserver.utilities.parameter_key_escaper import ParameterKeyEscaper
 
-replace_s3_scheme = os.getenv("CLEARML_REPLACE_S3_SCHEME")
 
 
 def _print(msg: str):
@@ -70,7 +55,6 @@ def _print(msg: str):
     print(f"{time} {msg}")
 
 
-UrlTranslation = Tuple[str, str]
 
 
 class PrePopulate:
@@ -82,11 +66,6 @@ class PrePopulate:
     metadata_filename = "metadata.json"
     users_filename = "users.json"
     zip_args = dict(mode="w", compression=ZIP_BZIP2)
-    artifacts_ext = ".artifacts"
-    img_source_regex = re.compile(
-        r"['\"]source['\"]:\s?['\"](https?://(?:localhost:8081|files.*?)/.*?)['\"]",
-        flags=re.IGNORECASE,
-    )
     _name_guid_ns = UUID("bda3acc1-e612-506c-bade-80071b6cf039")
     _example_id_prefix = "e-"
     task_cls: Type[Task]
@@ -197,27 +176,6 @@ class PrePopulate:
             )
         )
 
-    @staticmethod
-    def _filter_artifacts(artifacts: Sequence[str]) -> Sequence[str]:
-        def is_fileserver_link(a: str) -> bool:
-            a = a.lower()
-            if a.startswith("https://files."):
-                return True
-            if a.startswith("http"):
-                parsed = urlparse(a)
-                if parsed.scheme in {"http", "https"} and parsed.netloc.endswith(
-                    "8081"
-                ):
-                    return True
-            return False
-
-        fileserver_links = [a for a in artifacts if is_fileserver_link(a)]
-        _print(
-            f"Found {len(fileserver_links)} files on the fileserver from {len(artifacts)} total"
-        )
-
-        return fileserver_links
-
     @classmethod
     def export_to_zip(
         cls,
@@ -225,14 +183,12 @@ class PrePopulate:
         experiments: Sequence[str] = None,
         projects: Sequence[str] = None,
         company: str = None,
-        artifacts_path: str = None,
         task_statuses: Sequence[str] = None,
         tag_exported_entities: bool = False,
         metadata: Mapping[str, Any] = None,
         export_events: bool = True,
         export_users: bool = False,
         project_split: bool = False,
-        url_trans: UrlTranslation = None,
     ) -> Sequence[str]:
         cls._init_entity_types()
 
@@ -272,14 +228,13 @@ class PrePopulate:
                         zfile.writestr(cls.metadata_filename, meta_str)
                     if export_users:
                         cls._export_users(zfile)
-                    artifacts = cls._export(
+                    cls._export(
                         zfile,
                         entities=entities,
                         hash_=hash_,
                         tag_entities=tag_exported_entities,
                         export_events=export_events,
                         cleanup_users=not export_users,
-                        url_trans=url_trans,
                     )
             except:
                 temp_file.unlink(missing_ok=True)
@@ -291,12 +246,6 @@ class PrePopulate:
             temp_file.replace(file_with_hash)
             files = [str(file_with_hash)]
 
-            artifacts = cls._filter_artifacts(artifacts)
-            if artifacts and artifacts_path and os.path.isdir(artifacts_path):
-                artifacts_file = file_with_hash.with_suffix(cls.artifacts_ext)
-                with ZipFile(artifacts_file, **cls.zip_args) as zfile:
-                    cls._export_artifacts(zfile, artifacts, artifacts_path)
-                files.append(str(artifacts_file))
 
             cls._write_update_file(
                 map_file,
@@ -339,7 +288,6 @@ class PrePopulate:
     def import_from_zip(
         cls,
         filename: str,
-        artifacts_path: str,
         company_id: Optional[str] = None,
         user_id: str = "",
         user_name: str = "",
@@ -387,68 +335,6 @@ class PrePopulate:
                 user_mapping=user_mapping,
             )
 
-        if artifacts_path and os.path.isdir(artifacts_path):
-            artifacts_file = Path(filename).with_suffix(cls.artifacts_ext)
-            if artifacts_file.is_file():
-                _print(f"Unzipping artifacts into {artifacts_path}")
-                with ZipFile(artifacts_file) as zfile:
-                    zfile.extractall(artifacts_path)
-
-    @classmethod
-    def upgrade_zip(cls, filename) -> Sequence:
-        hash_ = hashlib.md5()
-        task_file = cls._get_base_filename(cls.task_cls) + ".json"
-        temp_file = Path("temp.zip")
-        file = Path(filename)
-        with ZipFile(file) as reader, ZipFile(temp_file, **cls.zip_args) as writer:
-            for file_info in reader.filelist:
-                if file_info.orig_filename == task_file:
-                    with reader.open(file_info) as f:
-                        content = cls._upgrade_tasks(f)
-                else:
-                    content = reader.read(file_info)
-                writer.writestr(file_info, content)
-                hash_.update(content)
-
-        base_file_name, _, old_hash = file.stem.rpartition("_")
-        new_hash = hash_.hexdigest()
-        if old_hash == new_hash:
-            _print(f"The file {filename} was not updated")
-            temp_file.unlink()
-            return []
-
-        new_file = file.with_name(f"{base_file_name}_{new_hash}{file.suffix}")
-        temp_file.replace(new_file)
-        upadated = [str(new_file)]
-
-        artifacts_file = file.with_suffix(cls.artifacts_ext)
-        if artifacts_file.is_file():
-            new_artifacts = new_file.with_suffix(cls.artifacts_ext)
-            artifacts_file.replace(new_artifacts)
-            upadated.append(str(new_artifacts))
-
-        _print(f"File {str(file)} replaced with {str(new_file)}")
-        file.unlink()
-
-        return upadated
-
-    @classmethod
-    def _upgrade_tasks(cls, f: IO[bytes]) -> bytes:
-        """
-        Build content array that contains upgraded tasks from the passed file
-        For each task the old execution.parameters and model.design are
-        converted to the new structure.
-        The fix is done on Task objects (not the dictionary) so that
-        the fields are serialized back in the same order as they were in the original file
-        """
-        with BytesIO() as temp:
-            with cls.JsonLinesWriter(temp) as w:
-                for line in cls.json_lines(f):
-                    task_data = cls.task_cls.from_json(line).to_proper_dict()
-                    cls._upgrade_task_data(task_data)
-                    new_task = cls.task_cls(**task_data)
-                    w.write(new_task.to_json())
-            return temp.getvalue()
 
     @classmethod
     def update_featured_projects_order(cls):
@@ -678,17 +564,6 @@ class PrePopulate:
         except AttributeError:
             pass
 
-    @staticmethod
-    def _translate_url(url_: str, url_trans: UrlTranslation) -> str:
-        if not (url_ and url_trans):
-            return url_
-
-        source, target = url_trans
-        if not url_.startswith(source):
-            return url_
-
-        return target + url_[len(source):]
-
     @classmethod
     def _export_task_events(
         cls,
@@ -696,9 +571,7 @@ class PrePopulate:
         base_filename: str,
         writer: ZipFile,
         hash_,
-        url_trans: UrlTranslation,
-    ) -> Sequence[str]:
-        artifacts = []
+    ):
         filename = f"{base_filename}_{task.id}{cls.events_file_suffix}.json"
         _print(f"Writing task events into {writer.filename}:{filename}")
 
@@ -718,22 +591,6 @@ class PrePopulate:
                         break
                     scroll_id = res.next_scroll_id
                     for event in res.events:
-                        event_type = event.get("type")
-                        if event_type == EventType.metrics_image.value:
-                            url = cls._get_fixed_url(event.get("url"))
-                            if url:
-                                artifacts.append(url)
-                                event["url"] = cls._translate_url(url, url_trans)
-                        elif event_type == EventType.metrics_plot.value:
-                            plot_str: str = event.get("plot_str", "")
-                            if plot_str:
-                                for match in cls.img_source_regex.findall(plot_str):
-                                    url = cls._get_fixed_url(match)
-                                    artifacts.append(url)
-                                    new_url = cls._translate_url(url, url_trans)
-                                    if match != new_url:
-                                        plot_str = plot_str.replace(match, new_url)
-                                event["plot_str"] = plot_str
                         w.write(json.dumps(event))
                         events_count += 1
                     _print(f"Got {events_count} events for task {task.id}")
@@ -741,22 +598,6 @@ class PrePopulate:
             data = f.getvalue()
             hash_.update(data)
             writer.writestr(filename, data)
-
-        return artifacts
-
-    @staticmethod
-    def _get_fixed_url(url: Optional[str]) -> Optional[str]:
-        if not (replace_s3_scheme and url and url.lower().startswith("s3://")):
-            return url
-
-        try:
-            fixed = furl(url)
-            fixed.scheme = "https"
-            fixed.host += ".s3.amazonaws.com"
-            return fixed.url
-        except Exception as ex:
-            _print(f"Failed processing link {url}. " + str(ex))
-            return url
 
     @classmethod
     def _export_entity_related_data(
@@ -766,51 +607,9 @@ class PrePopulate:
         base_filename: str,
         writer: ZipFile,
         hash_,
-        url_trans: UrlTranslation,
     ):
         if entity_cls == cls.task_cls:
-            return [
-                *cls._get_task_output_artifacts(entity, url_trans),
-                *cls._export_task_events(
-                    entity, base_filename, writer, hash_, url_trans
-                ),
-            ]
-
-        if entity_cls == cls.model_cls:
-            url = cls._get_fixed_url(entity.uri)
-            entity.uri = cls._translate_url(url, url_trans)
-            return [url] if url else []
-
-        return []
-
-    @classmethod
-    def _get_task_output_artifacts(cls, task: Task, url_trans: UrlTranslation) -> Sequence[str]:
-        if not task.execution.artifacts:
-            return []
-
-        artifact_urls = []
-        for a in task.execution.artifacts.values():
-            if a.mode == ArtifactModes.output:
-                url = cls._get_fixed_url(a.uri)
-                a.uri = cls._translate_url(url, url_trans)
-                if url and a.mode == ArtifactModes.output:
-                    artifact_urls.append(url)
-
-        return artifact_urls
-
-    @classmethod
-    def _export_artifacts(
-        cls, writer: ZipFile, artifacts: Sequence[str], artifacts_path: str
-    ):
-        unique_paths = set(unquote(str(furl(artifact).path)) for artifact in artifacts)
-        _print(f"Writing {len(unique_paths)} artifacts into {writer.filename}")
-        for path in unique_paths:
-            path = path.lstrip("/")
-            full_path = os.path.join(artifacts_path, path)
-            if os.path.isfile(full_path):
-                writer.write(full_path, path)
-            else:
-                _print(f"Artifact {full_path} not found")
+            cls._export_task_events(entity, base_filename, writer, hash_)
 
     @classmethod
     def _export_users(cls, writer: ZipFile):
@@ -860,14 +659,12 @@ class PrePopulate:
         tag_entities: bool = False,
         export_events: bool = True,
         cleanup_users: bool = True,
-        url_trans: UrlTranslation = None,
-    ) -> Sequence[str]:
+    ):
         """
-        Export the requested experiments, projects and models and return the list of artifact files
+        Export the requested experiments, projects and models.
         Always do the export on sorted items since the order of items influence hash
         The projects should be sorted by name so that on import the hierarchy is correctly restored from top to bottom
         """
-        artifacts = []
         now = datetime.now(timezone.utc)
         for cls_ in sorted(entities, key=attrgetter("__name__")):
             items = sorted(entities[cls_], key=attrgetter("name", "id"))
@@ -876,10 +673,8 @@ class PrePopulate:
             base_filename = cls._get_base_filename(cls_)
             if export_events:
                 for item in items:
-                    artifacts.extend(
-                        cls._export_entity_related_data(
-                            cls_, item, base_filename, writer, hash_, url_trans
-                        )
+                    cls._export_entity_related_data(
+                        cls_, item, base_filename, writer, hash_
                     )
             filename = base_filename + ".json"
             _print(f"Writing {len(items)} items into {writer.filename}:{filename}")
@@ -894,8 +689,6 @@ class PrePopulate:
 
             if tag_entities:
                 cls._add_tag(items, now.strftime(cls.export_tag))
-
-        return artifacts
 
     @staticmethod
     def json_lines(file: IO[bytes]):
@@ -1098,111 +891,25 @@ class PrePopulate:
         return getattr(module, class_name)
 
     @classmethod
-    def _upgrade_project_data(cls, project_data: dict) -> dict:
+    def _remove_incompatible_project_fields(cls, project_data: dict) -> dict:
         cls._remove_incompatible_fields(cls.project_cls, project_data)
-
-        if not project_data.get("basename"):
-            name: str = project_data["name"]
-            _, _, basename = name.rpartition("/")
-            project_data["basename"] = basename
-
         return project_data
 
     @classmethod
-    def _upgrade_model_data(cls, model_data: dict) -> dict:
+    def _remove_incompatible_model_fields(cls, model_data: dict) -> dict:
         cls._remove_incompatible_fields(cls.model_cls, model_data)
-
-        metadata_key = "metadata"
-        metadata = model_data.get(metadata_key)
-        if isinstance(metadata, list):
-            metadata = {
-                ParameterKeyEscaper.escape(item["key"]): item
-                for item in metadata
-                if isinstance(item, dict) and "key" in item
-            }
-            model_data[metadata_key] = metadata
         return model_data
+
+    @classmethod
+    def _remove_incompatible_task_fields(cls, task_data: dict) -> dict:
+        cls._remove_incompatible_fields(cls.task_cls, task_data)
+        return task_data
 
     @staticmethod
     def _remove_incompatible_fields(cls_: Type[Document], data: dict):
         for field in ("company_origin",):
             if field not in cls_._db_field_map:
                 data.pop(field, None)
-
-    @classmethod
-    def _upgrade_task_data(cls, task_data: dict) -> dict:
-        """
-        Migrate from execution/parameters and model_desc to hyperparams and configuration fiields
-        Upgrade artifacts list to dict
-        Migrate from execution.model and output.model to the new models field
-        Move docker_cmd contents into the container field
-        :param task_data: Upgraded in place
-        :return: The upgraded task data
-        """
-        cls._remove_incompatible_fields(cls.task_cls, task_data)
-
-        for old_param_field, new_param_field, default_section in (
-            ("execution.parameters", "hyperparams", hyperparams_default_section),
-            ("execution.model_desc", "configuration", None),
-        ):
-            legacy_path = old_param_field.split(".")
-            legacy = nested_get(task_data, legacy_path)
-            if legacy:
-                for full_name, value in legacy.items():
-                    section, name = split_param_name(full_name, default_section)
-                    new_path = list(filter(None, (new_param_field, section, name)))
-                    if not nested_get(task_data, new_path):
-                        new_param = dict(
-                            name=name, type=hyperparams_legacy_type, value=str(value)
-                        )
-                        if section is not None:
-                            new_param["section"] = section
-                        nested_set(task_data, path=new_path, value=new_param)
-            nested_delete(task_data, legacy_path)
-
-        artifacts_path = ("execution", "artifacts")
-        artifacts = nested_get(task_data, artifacts_path)
-        if isinstance(artifacts, list):
-            nested_set(
-                task_data,
-                path=artifacts_path,
-                value={get_artifact_id(a): a for a in artifacts},
-            )
-
-        models = task_data.get("models", {})
-        now = datetime.now(timezone.utc)
-        for old_field, type_ in (
-            ("execution.model", TaskModelTypes.input),
-            ("output.model", TaskModelTypes.output),
-        ):
-            old_path = old_field.split(".")
-            old_model = nested_get(task_data, old_path)
-            new_models = [
-                m for m in models.get(type_, []) if m.get("model") is not None
-            ]
-            name = TaskModelNames[type_]
-            if old_model and not any(
-                m
-                for m in new_models
-                if m.get("model") == old_model or m.get("name") == name
-            ):
-                model_item = {"model": old_model, "name": name, "updated": now}
-                if type_ == TaskModelTypes.input:
-                    new_models = [model_item, *new_models]
-                else:
-                    new_models = [*new_models, model_item]
-            models[type_] = new_models
-            nested_delete(task_data, old_path)
-        task_data["models"] = models
-
-        docker_cmd_path = ("execution", "docker_cmd")
-        docker_cmd = nested_get(task_data, docker_cmd_path)
-        if docker_cmd and not task_data.get("container"):
-            image, _, arguments = docker_cmd.partition(" ")
-            task_data["container"] = {"image": image, "arguments": arguments}
-        nested_delete(task_data, docker_cmd_path)
-
-        return task_data
 
     @classmethod
     def _import_entity(
@@ -1221,9 +928,9 @@ class PrePopulate:
         tasks = []
         override_project_count = 0
         data_upgrade_funcs: Mapping[Type, Callable] = {
-            cls.task_cls: cls._upgrade_task_data,
-            cls.model_cls: cls._upgrade_model_data,
-            cls.project_cls: cls._upgrade_project_data,
+            cls.task_cls: cls._remove_incompatible_task_fields,
+            cls.model_cls: cls._remove_incompatible_model_fields,
+            cls.project_cls: cls._remove_incompatible_project_fields,
         }
         for item in cls.json_lines(f):
             if old_to_new_ids:

@@ -26,7 +26,6 @@ COPY --from=webapp_builder /opt/open-webapp/dist/report-widgets /usr/share/nginx
 
 EXPOSE 8080
 EXPOSE 8008
-EXPOSE 8081
 
 ARG VERSION
 ARG BUILD

@@ -7,17 +7,11 @@ from apiserver.database.model import AttributedDocument
 
 
 class StorageType(StrEnum):
-    fileserver = "fileserver"
     s3 = "s3"
     azure = "azure"
     gs = "gs"
     datachunk = "datachunk"
     unknown = "unknown"
-
-
-class FileType(StrEnum):
-    file = "file"
-    folder = "folder"
 
 
 class DeletionStatus(StrEnum):
@@ -46,7 +40,6 @@ class UrlToDelete(AttributedDocument):
     task = StringField(required=True)
     created = DateTimeField(required=True)
     storage_type = EnumField(StorageType, default=StorageType.unknown)
-    type = EnumField(FileType, default=FileType.file)
     retry_count = IntField(default=0)
     last_failure_time = DateTimeField()
     last_failure_reason = StringField()
