@@ -1,6 +1,8 @@
 from jsonmodels.fields import IntField, StringField
 from jsonmodels.models import Base
 
+from apiserver.apimodels import ListField
+
 
 class PrepareUploadRequest(Base):
     task = StringField(required=True)
@@ -17,6 +19,14 @@ class PrepareUploadRequest(Base):
 
 class CommitRequest(Base):
     id = StringField(required=True)
+    parts = ListField([dict])
+    """ Multipart uploads only: [{number, etag}] for every part, as the part uploads returned them """
+
+
+class PreparePartRequest(Base):
+    id = StringField(required=True)
+    part = IntField(required=True)
+    """ 1-based part number """
 
 
 class PrepareDownloadRequest(Base):

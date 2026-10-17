@@ -91,10 +91,14 @@ class TestGitToken(TestCase):
         self.addCleanup(lambda: Task.objects(id=self.task_id).delete())
         Task.objects(id=self.task_id).update_one(set__status="queued", set__last_device=self.device_id)
 
-    def test_without_a_configured_app_no_repository_token_is_given(self):
+    def test_a_task_without_a_github_repository_gets_no_repository_token(self):
+        from apiserver.idp.github_check import build_from_config
+
         response = call("devices.git_token", {"task": self.task_id}, token=self.agent_token)
         self.assertEqual(response.status_code, 400)
-        self.assertIn("GitHub is not configured", response.text)
+        # The message depends on whether this deployment has a GitHub App configured.
+        expected = "the task's repository is not on GitHub" if build_from_config() else "GitHub is not configured"
+        self.assertIn(expected, response.text)
 
     def test_a_job_token_for_another_task_is_refused(self):
         token = call("devices.job_token", {"task": self.task_id}, token=self.agent_token).json()["data"]["access_token"]

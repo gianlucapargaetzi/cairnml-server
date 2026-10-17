@@ -10,6 +10,7 @@ from apiserver.apierrors import errors
 from apiserver.bll import datachunks as bll
 from apiserver.config_repo import config
 from apiserver.database.model.datachunk import Datachunk, DatachunkState
+from apiserver.idp.tokens import read_claims
 from apiserver.service_repo.auth import Token
 from apiserver.service_repo.auth.auth import check_idp_token, is_token_revoked
 
@@ -23,7 +24,8 @@ def _encoded_token() -> str:
     return request.cookies.get(config.get("apiserver.auth.session_auth_cookie_name"), "")
 
 
-def _company() -> str:
+def _caller() -> tuple:
+    """(company, the task of a job token or None) for the caller, from a bearer token or the session cookie."""
     encoded = _encoded_token()
     if not encoded:
         raise errors.unauthorized.NoCredentials()
@@ -34,12 +36,15 @@ def _company() -> str:
     if is_token_revoked(token):
         raise errors.unauthorized.InvalidToken("revoked token")
     check_idp_token(encoded)
-    return token.identity.company
+    claims = read_claims(encoded)
+    job_task = claims.get("task") if claims.get("kind") == "job" else None
+    return token.identity.company, job_task
 
 
 def download(kind: str, task_id: str, name: str) -> Response:
     try:
-        company = _company()
+        company, job_task = _caller()
+        bll.check_read_access(company=company, task_id=task_id, job_task=job_task)
     except errors.BaseError as error:
         return Response(error.msg, status=error.code, mimetype="text/plain")
 
