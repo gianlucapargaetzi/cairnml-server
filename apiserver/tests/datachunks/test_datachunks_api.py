@@ -19,7 +19,8 @@ from apiserver.bll import datachunks as bll
 from apiserver.database.model.datachunk import Datachunk
 from apiserver.database.model.task.task import Task
 from apiserver.tests.idp.bearer import suite_bearer
-from apiserver.tests.idp.test_devices_api import API, call, idp_token
+from apiserver.config_repo import config
+from apiserver.tests.idp.test_devices_api import API, SERVER, call, idp_token
 from apiserver.tests.idp.test_job_tokens_api import _agent, _new_task
 
 
@@ -147,6 +148,31 @@ class TestDatachunksApi(TestCase):
         self.assertEqual(_post("datachunks.commit", {"id": grant["id"]}, self.user).status_code, 200)
         self.addCleanup(lambda: Datachunk.objects(id=grant["id"]).delete())
         return grant["id"]
+
+    def test_browser_link_redirects_to_the_presigned_url_for_a_bearer_token(self):
+        name = f"browser/{uuid.uuid4().hex} x.bin"
+        self._store(name=name)
+        url = f"{SERVER}/datachunks/artifact/{self.task_id}/{name}"
+        response = requests.get(url, headers=_bearer(self.user), allow_redirects=False, timeout=20)
+        self.assertEqual(response.status_code, 302, response.text)
+        self.assertEqual(urllib.request.urlopen(response.headers["Location"], timeout=20).read(), self.body)
+
+    def test_browser_link_accepts_the_session_cookie(self):
+        name = f"cookie/{uuid.uuid4().hex}.bin"
+        self._store(name=name)
+        cookie = {config.get("apiserver.auth.session_auth_cookie_name"): self.user}
+        url = f"{SERVER}/datachunks/artifact/{self.task_id}/{name}"
+        response = requests.get(url, cookies=cookie, allow_redirects=False, timeout=20)
+        self.assertEqual(response.status_code, 302, response.text)
+
+    def test_browser_link_without_credentials_is_refused(self):
+        url = f"{SERVER}/datachunks/artifact/{self.task_id}/anything.bin"
+        self.assertEqual(requests.get(url, allow_redirects=False, timeout=20).status_code, 401)
+
+    def test_browser_link_to_a_missing_object_is_not_found(self):
+        url = f"{SERVER}/datachunks/artifact/{self.task_id}/never-uploaded.bin"
+        response = requests.get(url, headers=_bearer(self.user), allow_redirects=False, timeout=20)
+        self.assertEqual(response.status_code, 404)
 
     def test_download_before_commit_is_refused(self):
         grant = _post("datachunks.prepare_upload", self.upload_request(), self.user).json()["data"]
