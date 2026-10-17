@@ -60,6 +60,9 @@ class RequestHandlers:
             return "", 200
         if "/static/" in request.path:
             return
+        if request.path.startswith("/datachunks/"):
+            # plain file downloads, not API calls: the route checks its own credentials
+            return
 
         if request.content_encoding:
             return (

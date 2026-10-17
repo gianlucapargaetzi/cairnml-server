@@ -29,6 +29,7 @@ from apiserver.service_repo import ServiceRepo
 from apiserver.sync import distributed_lock
 from apiserver.updates import check_updates_thread
 from apiserver.utilities.env import get_bool
+from apiserver.server_init import datachunk_download
 
 log = config.logger(__file__)
 
@@ -50,6 +51,7 @@ class AppSequence:
     def _attach_request_handlers(self, request_handlers: RequestHandlers):
         self.app.before_request(request_handlers.before_request)
         self.app.after_request(request_handlers.after_request)
+        datachunk_download.register(self.app)
 
     def _configure(self):
         CORS(self.app, **config.get("apiserver.cors"))
