@@ -4,13 +4,26 @@ from apiserver.config_repo import config
 from apiserver.service_repo.auth import Identity, Token
 
 
+def _version_claims() -> dict:
+    """What the SDK reads from a token to learn the server's API level and feature set (as the old login did)."""
+    from apiserver.config.info import get_build_number, get_version
+    from apiserver.service_repo import ServiceRepo
+
+    return {
+        "api_version": str(ServiceRepo.max_endpoint_version()),
+        "server_version": str(get_version()),
+        "server_build": str(get_build_number()),
+        "feature_set": "basic",
+    }
+
+
 def issue_access_token(user_id: str, company_id: str, device_id: str, kind: str, role: str,
                        user_name: str = "", company_name: str = "") -> str:
     """Token for a device (kind 'client' or 'agent'): carries the person's identity and the device."""
     identity = Identity(user=user_id, company=company_id, role=role,
                         user_name=user_name, company_name=company_name)
     ttl = config.get("apiserver.idp.access_token_ttl_sec")
-    return Token.create_encoded_token(identity, expiration_sec=ttl, kind=kind, device=device_id)
+    return Token.create_encoded_token(identity, expiration_sec=ttl, kind=kind, device=device_id, **_version_claims())
 
 
 def device_of_bearer(authorization):
@@ -35,4 +48,6 @@ def issue_job_token(owner, task_id: str, device_id: str) -> str:
 
     identity = Identity(user=owner.id, company=owner.company, role=owner.role, user_name=owner.name)
     ttl = config.get("apiserver.idp.job_token_ttl_sec")
-    return Token.create_encoded_token(identity, expiration_sec=ttl, kind="job", task=task_id, device=device_id)
+    return Token.create_encoded_token(
+        identity, expiration_sec=ttl, kind="job", task=task_id, device=device_id, **_version_claims()
+    )
