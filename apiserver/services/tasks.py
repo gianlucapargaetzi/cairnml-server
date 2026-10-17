@@ -994,7 +994,6 @@ def _delete_task_events(
                     company=company_id,
                     user=user_id,
                     urls=urls,
-                    can_delete_folders=False,
                 )
 
         event_urls = delete_task_events_and_collect_urls(
@@ -1018,7 +1017,6 @@ def _delete_task_events(
                 company=company_id,
                 user=user_id,
                 urls=event_urls,
-                can_delete_folders=False,
             )
     else:
         event_bll.delete_task_events(company_id, task_ids, wait_for_delete=sync_delete)

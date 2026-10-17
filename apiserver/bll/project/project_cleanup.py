@@ -196,7 +196,6 @@ def delete_project(
                 company=company,
                 user=user,
                 urls=event_urls | model_urls | artifact_urls,
-                can_delete_folders=True,
             )
             for urls in (event_urls, model_urls, artifact_urls):
                 urls.difference_update(scheduled)

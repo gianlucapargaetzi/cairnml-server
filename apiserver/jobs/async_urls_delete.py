@@ -3,7 +3,6 @@ from abc import ABC, ABCMeta, abstractmethod
 from argparse import ArgumentParser
 from collections import defaultdict
 from datetime import datetime, timedelta
-from functools import partial
 from itertools import chain
 from pathlib import Path
 from time import sleep
@@ -11,7 +10,6 @@ from typing import Sequence, Optional, Tuple, Mapping, TypeVar, Hashable, Generi
 from urllib.parse import urlparse
 
 import boto3
-import requests
 from azure.storage.blob import ContainerClient, PartialBatchErrorException
 from boltons.iterutils import bucketize, chunked_iter
 from furl import furl
@@ -20,9 +18,7 @@ from mongoengine import Q
 from mypy_boto3_s3.service_resource import Bucket as AWSBucket
 
 from apiserver.bll import datachunks
-from apiserver.bll.auth import AuthBLL
 from apiserver.bll.storage import StorageBLL
-from apiserver.config.info import get_default_company
 from apiserver.config_repo import config
 from apiserver.database import db
 from apiserver.database.model.datachunk import Datachunk
@@ -219,103 +215,6 @@ class DatachunkStorage(Storage):
 
     def get_client(self, base: str, urls: Sequence[UrlToDelete]) -> Client:
         return self.Client(self.company)
-
-
-class FileserverStorage(Storage):
-    class Client(Storage.Client):
-        timeout = conf.get("fileserver.timeout_sec", 300)
-
-        def __init__(self, session: requests.Session, host: str):
-            self.session = session
-            self.delete_url = furl(host).add(path="delete_many").url
-
-        @property
-        def chunk_size(self) -> int:
-            return 10000
-
-        def get_path(self, url: UrlToDelete) -> str:
-            path = url.url.strip("/")
-            if not path:
-                raise ValueError("Empty path")
-
-            return path
-
-        def delete_many(
-            self, paths: Sequence[str]
-        ) -> Tuple[Sequence[str], Mapping[str, Sequence[str]]]:
-            res = self.session.post(
-                url=self.delete_url, json={"files": list(paths)}, timeout=self.timeout
-            )
-            res.raise_for_status()
-            res_data = res.json()
-            return list(res_data.get("deleted", {})), res_data.get("errors", {})
-
-    token_expiration_sec = conf.get("fileserver.token_expiration_sec", 600)
-
-    def __init__(self, company: str, fileserver_host: str = None):
-        fileserver_host = fileserver_host or config.get("hosts.fileserver", None)
-        self.host = fileserver_host.rstrip("/")
-        if not self.host:
-            log.warning("Fileserver host not configured")
-
-        def _parse_url_prefix(prefix) -> Tuple[str, str]:
-            url = furl(prefix)
-            host = f"{url.scheme}://{url.netloc}" if url.scheme else None
-            return host, str(url.path).rstrip("/")
-
-        url_prefixes = [
-            _parse_url_prefix(p) for p in conf.get("fileserver.url_prefixes", [])
-        ]
-        if not any(self.host == host for host, _ in url_prefixes):
-            url_prefixes.append((self.host, ""))
-        self.url_prefixes = url_prefixes
-
-        self.company = company
-
-    @property
-    def name(self) -> str:
-        return "Fileserver"
-
-    def _resolve_base_url(self, url: UrlToDelete) -> Optional[str]:
-        """
-        For the url return the base_url containing schema, optional host and bucket name
-        """
-        if not url.url:
-            return None
-
-        try:
-            parsed = furl(url.url)
-            url_host = f"{parsed.scheme}://{parsed.netloc}" if parsed.scheme else None
-            url_path = str(parsed.path)
-        except Exception:
-            return None
-
-        for host, path_prefix in self.url_prefixes:
-            if host and url_host != host:
-                continue
-            if path_prefix and not url_path.startswith(path_prefix + "/"):
-                continue
-            url.url = url_path[len(path_prefix or "") :]
-            return self.host
-
-    def group_urls(
-        self, urls: Sequence[UrlToDelete]
-    ) -> Mapping[str, Sequence[UrlToDelete]]:
-        return bucketize(urls, key=self._resolve_base_url)
-
-    def get_client(self, base: str, urls: Sequence[UrlToDelete]) -> Client:
-        host = base
-        token = AuthBLL.get_token_for_user(
-            user_id="__apiserver__",
-            company_id=get_default_company(),
-            expiration_sec=self.token_expiration_sec,
-        ).token
-        session = requests.session()
-        session.headers.update({"Authorization": "Bearer {}".format(token)})
-        res = session.get(url=host, timeout=self.Client.timeout)
-        res.raise_for_status()
-
-        return self.Client(session, host)
 
 
 class AzureStorage(Storage):
@@ -610,11 +509,8 @@ PENDING_UPLOAD_MAX_AGE = timedelta(hours=24)
 PURGE_PENDING_EVERY = timedelta(hours=1)
 
 
-def run_delete_loop(fileserver_host: str):
+def run_delete_loop():
     storage_helpers = {
-        StorageType.fileserver: partial(
-            FileserverStorage, fileserver_host=fileserver_host
-        ),
         StorageType.s3: AWSStorage,
         StorageType.azure: AzureStorage,
         StorageType.gs: GoogleCloudStorage,
@@ -662,13 +558,10 @@ def run_delete_loop(fileserver_host: str):
 def main():
     parser = ArgumentParser(description=__doc__)
 
-    parser.add_argument(
-        "--fileserver-host", "-fh", help="Fileserver host address", type=str,
-    )
-    args = parser.parse_args()
+    parser.parse_args()
 
     db.initialize()
-    run_delete_loop(args.fileserver_host)
+    run_delete_loop()
 
 
 if __name__ == "__main__":

@@ -5,7 +5,6 @@ from typing import Sequence, Set, Tuple, Union
 
 import attr
 from boltons.iterutils import partition, bucketize, first, chunked_iter
-from furl import furl
 from mongoengine import NotUniqueError
 from pymongo.errors import DuplicateKeyError
 
@@ -19,7 +18,6 @@ from apiserver.database.model.task.task import Task, TaskStatus, ArtifactModes
 from apiserver.database.model.url_to_delete import (
     StorageType,
     UrlToDelete,
-    FileType,
     DeletionStatus,
 )
 from apiserver.database.utils import id as db_id
@@ -144,23 +142,12 @@ supported_storage_types = {
     "gs://": StorageType.gs,
 }
 
-supported_storage_types.update(
-    {
-        p: StorageType.fileserver
-        for p in config.get(
-            "services.async_urls_delete.fileserver.url_prefixes",
-            ["https://", "http://"],
-        )
-    }
-)
-
 
 def schedule_for_delete(
     company: str,
     user: str,
     task_id: str,
     urls: Set[str],
-    can_delete_folders: bool,
 ) -> Set[str]:
     urls_per_storage = bucketize(
         urls,
@@ -174,22 +161,9 @@ def schedule_for_delete(
 
     processed_urls = set()
     for storage_type, storage_urls in urls_per_storage.items():
-        delete_folders = (storage_type == StorageType.fileserver) and can_delete_folders
         scheduled_to_delete = set()
         for url in storage_urls:
-            folder = None
-            if delete_folders:
-                try:
-                    parsed = furl(url)
-                    if parsed.path and len(parsed.path.segments) > 1:
-                        folder = parsed.remove(
-                            args=True, fragment=True, path=parsed.path.segments[-1]
-                        ).url.rstrip("/")
-                except Exception as ex:
-                    log.warning(f"Could not parse url: {url}. {str(ex)}")
-
-            to_delete = folder or url
-            if to_delete in scheduled_to_delete:
+            if url in scheduled_to_delete:
                 processed_urls.add(url)
                 continue
 
@@ -198,14 +172,13 @@ def schedule_for_delete(
                     id=db_id(),
                     company=company,
                     user=user,
-                    url=to_delete,
+                    url=url,
                     task=task_id,
                     created=datetime.utcnow(),
                     storage_type=storage_type,
-                    type=FileType.folder if folder else FileType.file,
                 ).save()
             except (DuplicateKeyError, NotUniqueError):
-                existing = UrlToDelete.objects(company=company, url=to_delete).first()
+                existing = UrlToDelete.objects(company=company, url=url).first()
                 if existing:
                     existing.update(
                         user=user,
@@ -217,7 +190,7 @@ def schedule_for_delete(
                         status=DeletionStatus.created,
                     )
             processed_urls.add(url)
-            scheduled_to_delete.add(to_delete)
+            scheduled_to_delete.add(url)
 
     return processed_urls
 

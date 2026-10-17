@@ -21,10 +21,7 @@ def _pre_populate(company_id: str, zip_file: str):
     else:
         log.info(f"Pre-populating using {zip_file}")
 
-        PrePopulate.import_from_zip(
-            zip_file,
-            artifacts_path=config.get("apiserver.pre_populate.artifacts_path", None),
-        )
+        PrePopulate.import_from_zip(zip_file)
 
 
 def _resolve_zip_files(zip_files: Union[Sequence[str], str]) -> Sequence[str]:

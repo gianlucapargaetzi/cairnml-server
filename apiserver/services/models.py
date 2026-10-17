@@ -590,7 +590,6 @@ def _delete_model_events(
                 company=company_id,
                 user=user_id,
                 urls=model_urls,
-                can_delete_folders=False,
             )
 
         event_urls = delete_task_events_and_collect_urls(
@@ -605,7 +604,6 @@ def _delete_model_events(
                 company=company_id,
                 user=user_id,
                 urls=event_urls,
-                can_delete_folders=False,
             )
 
     event_bll.delete_task_events(
