@@ -49,6 +49,8 @@ class Datachunk(AttributedDocument):
     """ Hex digest, required: the commit refuses an object whose digest differs """
 
     content_type = StringField(default="")
+    upload_id = StringField(default="")
+    """ S3 multipart upload id, for objects above the single-PUT limit; empty for a single PUT """
     state = EnumField(DatachunkState, default=DatachunkState.pending)
     created = DateTimeField(required=True)
     stored = DateTimeField()

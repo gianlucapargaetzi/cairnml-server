@@ -5,6 +5,7 @@ upload is recorded first as a Datachunk, and a commit checks the stored object a
 """
 
 import base64
+import hashlib
 import re
 import uuid
 from datetime import datetime, timedelta
@@ -20,8 +21,9 @@ from apiserver.config_repo import config
 from apiserver.database.model.datachunk import Datachunk, DatachunkKind, DatachunkState
 from apiserver.idp.secrets import read_secret
 
-# One presigned PUT carries at most this many bytes. Larger objects need multipart upload, which is later work.
-MAX_SINGLE_PUT_BYTES = 5 * 1024**3
+# S3 accepts at most this many parts in one multipart upload, and at least 5 MiB for every part but the last.
+MAX_PARTS = 10000
+MIN_PART_BYTES = 5 * 1024**2
 
 _CONTROL_RE = re.compile(r"[\x00-\x1f\x7f]")
 _SHA256_RE = re.compile(r"[0-9a-f]{64}")
@@ -92,6 +94,18 @@ def _ttl() -> int:
     return int(config.get("apiserver.storage.presign_ttl_sec"))
 
 
+def multipart_plan(size: int) -> tuple:
+    """(part bytes, number of parts) for an object of this size, or None when one PUT is enough."""
+    if size < int(config.get("apiserver.storage.multipart_threshold_bytes")):
+        return None
+    part_bytes = max(
+        int(config.get("apiserver.storage.multipart_part_bytes")),
+        MIN_PART_BYTES,
+        -(-size // MAX_PARTS),
+    )
+    return part_bytes, -(-size // part_bytes)
+
+
 def check_kind_allowed(kind: str, task_tags) -> DatachunkKind:
     try:
         parsed = DatachunkKind(kind)
@@ -114,16 +128,13 @@ def prepare_upload(
     sha256: str,
     content_type: str = "",
 ) -> dict:
-    """Records a pending Datachunk and returns a presigned PUT for its bytes."""
+    """Records a pending Datachunk. A small object gets a presigned PUT; a large one gets a multipart upload,
+    and its parts are signed one at a time with prepare_part."""
     kind_enum = check_kind_allowed(kind, task_tags)
     name = sanitise_name(name)
     sha256 = validate_digest(sha256)
     if not isinstance(size, int) or size < 0:
         raise errors.bad_request.ValidationError("size must be a non-negative integer")
-    if size > MAX_SINGLE_PUT_BYTES:
-        raise errors.bad_request.ValidationError(
-            "object is larger than one upload; multipart upload is not available yet", size=size
-        )
 
     key = build_key(project, task_id, name)
     bucket = kind_enum.value
@@ -142,8 +153,22 @@ def prepare_upload(
         state=DatachunkState.pending,
         created=datetime.utcnow(),
     )
-    chunk.save()
+    plan = multipart_plan(size)
+    expires = (datetime.utcnow() + timedelta(seconds=_ttl())).isoformat()
+    if plan:
+        part_bytes, parts = plan
+        params = {"Bucket": bucket, "Key": key}
+        if content_type:
+            params["ContentType"] = content_type
+        chunk.upload_id = _internal().create_multipart_upload(**params)["UploadId"]
+        chunk.save()
+        return {
+            "id": chunk.id,
+            "multipart": {"part_bytes": part_bytes, "parts": parts},
+            "expires_at": expires,
+        }
 
+    chunk.save()
     checksum = _b64_digest(sha256)
     params = {"Bucket": bucket, "Key": key, "ContentLength": size, "ChecksumSHA256": checksum}
     headers = {"x-amz-checksum-sha256": checksum}
@@ -151,17 +176,34 @@ def prepare_upload(
         params["ContentType"] = content_type
         headers["Content-Type"] = content_type
     url = _signer().generate_presigned_url("put_object", Params=params, ExpiresIn=_ttl())
-    return {
-        "id": chunk.id,
-        "method": "PUT",
-        "url": url,
-        "headers": headers,
-        "expires_at": (datetime.utcnow() + timedelta(seconds=_ttl())).isoformat(),
-    }
+    return {"id": chunk.id, "method": "PUT", "url": url, "headers": headers, "expires_at": expires}
 
 
-def commit(*, company: str, chunk_id: str) -> Datachunk:
-    """Checks the stored object against its record. A mismatch deletes the object and fails the commit."""
+def prepare_part(*, company: str, chunk_id: str, part: int) -> dict:
+    """A presigned PUT for one part of a multipart upload. Signed when asked, so URLs never expire mid-upload."""
+    chunk = Datachunk.objects(id=chunk_id, company=company).first()
+    if not chunk or not chunk.upload_id or chunk.state != DatachunkState.pending:
+        raise errors.bad_request.ValidationError("no multipart upload is open for this datachunk", id=chunk_id)
+    part_bytes, parts = multipart_plan(chunk.size)
+    if not 1 <= part <= parts:
+        raise errors.bad_request.ValidationError("part number out of range", part=part, parts=parts)
+    length = min(part_bytes, chunk.size - (part - 1) * part_bytes)
+    url = _signer().generate_presigned_url(
+        "upload_part",
+        Params={"Bucket": chunk.bucket, "Key": chunk.key, "UploadId": chunk.upload_id,
+                "PartNumber": part, "ContentLength": length},
+        ExpiresIn=_ttl(),
+    )
+    return {"id": chunk.id, "part": part, "method": "PUT", "url": url,
+            "headers": {"Content-Length": str(length)},
+            "expires_at": (datetime.utcnow() + timedelta(seconds=_ttl())).isoformat()}
+
+
+def commit(*, company: str, chunk_id: str, parts=None) -> Datachunk:
+    """Checks the stored object against its record. A mismatch deletes the object and fails the commit.
+
+    A multipart upload is completed from the parts the client sent (number and ETag). Its sha256 cannot come from
+    S3, so the server reads the stored object and hashes it."""
     chunk = Datachunk.objects(id=chunk_id, company=company).first()
     if not chunk:
         raise errors.bad_request.InvalidId("datachunk not found", id=chunk_id)
@@ -169,6 +211,8 @@ def commit(*, company: str, chunk_id: str) -> Datachunk:
         return chunk
 
     client = _internal()
+    if chunk.upload_id:
+        _complete_multipart(client, chunk, parts)
     try:
         head = client.head_object(Bucket=chunk.bucket, Key=chunk.key, ChecksumMode="ENABLED")
     except ClientError:
@@ -177,7 +221,10 @@ def commit(*, company: str, chunk_id: str) -> Datachunk:
     problems = []
     if head.get("ContentLength") != chunk.size:
         problems.append("size")
-    if head.get("ChecksumSHA256") != _b64_digest(chunk.sha256):
+    if chunk.upload_id:
+        if _stored_sha256(client, chunk) != chunk.sha256:
+            problems.append("sha256")
+    elif head.get("ChecksumSHA256") != _b64_digest(chunk.sha256):
         problems.append("sha256")
     if problems:
         client.delete_object(Bucket=chunk.bucket, Key=chunk.key)
@@ -186,8 +233,47 @@ def commit(*, company: str, chunk_id: str) -> Datachunk:
 
     chunk.state = DatachunkState.stored
     chunk.stored = datetime.utcnow()
+    chunk.upload_id = ""
     chunk.save()
     return chunk
+
+
+def _complete_multipart(client, chunk: Datachunk, parts) -> None:
+    if not parts:
+        raise errors.bad_request.ValidationError("a multipart upload needs its parts (number and etag)")
+    _, expected = multipart_plan(chunk.size)
+    numbers = sorted(int(p["number"]) for p in parts)
+    if numbers != list(range(1, expected + 1)):
+        raise errors.bad_request.ValidationError("parts are missing or repeated", expected=expected)
+    try:
+        client.complete_multipart_upload(
+            Bucket=chunk.bucket,
+            Key=chunk.key,
+            UploadId=chunk.upload_id,
+            MultipartUpload={"Parts": [{"PartNumber": int(p["number"]), "ETag": p["etag"]} for p in
+                                       sorted(parts, key=lambda p: int(p["number"]))]},
+        )
+    except ClientError as error:
+        raise errors.bad_request.ValidationError("the parts could not be assembled", reason=str(error)) from None
+
+
+def _stored_sha256(client, chunk: Datachunk) -> str:
+    digest = hashlib.sha256()
+    body = client.get_object(Bucket=chunk.bucket, Key=chunk.key)["Body"]
+    for block in body.iter_chunks(chunk_size=8 * 1024**2):
+        digest.update(block)
+    return digest.hexdigest()
+
+
+def check_read_access(*, company: str, task_id: str, job_task) -> None:
+    """Reading data needs the same kind of access as writing it: a job token reads only its own task's data,
+    and any other caller must belong to the company that owns the task."""
+    from apiserver.database.model.task.task import Task
+
+    if job_task is not None and job_task != task_id:
+        raise errors.unauthorized.InvalidToken("a job token only reads its own task's data")
+    if not Task.objects(id=task_id, company=company).only("id").first():
+        raise errors.bad_request.InvalidTaskId(id=task_id)
 
 
 def find_stored(*, company: str, task_id: str, kind: str, name: str) -> Datachunk:
@@ -221,9 +307,12 @@ def purge_stale_pending(older_than: timedelta) -> int:
     """Removes uploads that were requested but never committed. Any bytes that did arrive are removed too."""
     cutoff = datetime.utcnow() - older_than
     removed = 0
+    client = _internal()
     for chunk in Datachunk.objects(state=DatachunkState.pending, created__lt=cutoff):
         try:
-            _internal().delete_object(Bucket=chunk.bucket, Key=chunk.key)
+            if chunk.upload_id:
+                client.abort_multipart_upload(Bucket=chunk.bucket, Key=chunk.key, UploadId=chunk.upload_id)
+            client.delete_object(Bucket=chunk.bucket, Key=chunk.key)
         except ClientError:
             pass
         chunk.delete()

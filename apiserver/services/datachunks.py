@@ -1,7 +1,13 @@
 """Object storage endpoints. The bytes never pass through this server: it signs the URL, then checks the commit."""
 
 from apiserver.apierrors import errors
-from apiserver.apimodels.datachunks import CommitRequest, DeleteRequest, PrepareDownloadRequest, PrepareUploadRequest
+from apiserver.apimodels.datachunks import (
+    CommitRequest,
+    DeleteRequest,
+    PrepareDownloadRequest,
+    PreparePartRequest,
+    PrepareUploadRequest,
+)
 from apiserver.bll import datachunks as bll
 from apiserver.bll.task.utils import get_task_with_write_access
 from apiserver.database.model.datachunk import Datachunk
@@ -52,8 +58,17 @@ def commit(call: APICall, company: str, request: CommitRequest):
     if not chunk:
         raise errors.bad_request.InvalidId("datachunk not found", id=request.id)
     _require_task_access(call, company, chunk.task)
-    stored = bll.commit(company=company, chunk_id=request.id)
+    stored = bll.commit(company=company, chunk_id=request.id, parts=request.parts)
     call.result.data = {"id": stored.id, "state": stored.state}
+
+
+@endpoint("datachunks.prepare_part")
+def prepare_part(call: APICall, company: str, request: PreparePartRequest):
+    chunk = Datachunk.objects(id=request.id, company=company).only("task").first()
+    if not chunk:
+        raise errors.bad_request.InvalidId("datachunk not found", id=request.id)
+    _require_task_access(call, company, chunk.task)
+    call.result.data = bll.prepare_part(company=company, chunk_id=request.id, part=request.part)
 
 
 def _by_id_or_name(company: str, request) -> Datachunk:
@@ -70,6 +85,7 @@ def _by_id_or_name(company: str, request) -> Datachunk:
 @endpoint("datachunks.prepare_download")
 def prepare_download(call: APICall, company: str, request: PrepareDownloadRequest):
     chunk = _by_id_or_name(company, request)
+    bll.check_read_access(company=company, task_id=chunk.task, job_task=_job_task(call))
     call.result.data = bll.prepare_download(company=company, chunk=chunk)
 
 

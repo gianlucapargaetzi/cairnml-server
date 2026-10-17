@@ -13,6 +13,7 @@ from unittest import TestCase
 
 import requests
 from botocore.exceptions import ClientError
+from unittest import SkipTest
 
 from apiserver import database as db
 from apiserver.bll import datachunks as bll
@@ -208,6 +209,48 @@ class TestJobTokensForStorage(TestCase):
         response = _post("datachunks.prepare_upload", self.request(self.other_task), self.job)
         self.assertIn(response.status_code, (401, 403), response.text)
 
+    def _stored_in(self, task_id):
+        """An object stored for a task by a person with write access; returns its name."""
+        body = b"stored for " + task_id.encode() + uuid.uuid4().bytes
+        name = f"reads/{uuid.uuid4().hex}.bin"
+        user = suite_bearer()
+        grant = _post("datachunks.prepare_upload",
+                      {"task": task_id, "kind": "artifact", "name": name, "size": len(body), "sha256": _sha(body)},
+                      user).json()["data"]
+        self.assertEqual(requests.put(grant["url"], data=body, headers=grant["headers"], timeout=20).status_code, 200)
+        self.assertEqual(_post("datachunks.commit", {"id": grant["id"]}, user).status_code, 200)
+        self.addCleanup(lambda: Datachunk.objects(id=grant["id"]).delete())
+        return name
+
+    def test_a_job_downloads_its_own_tasks_data(self):
+        name = self._stored_in(self.task_id)
+        url = f"{SERVER}/datachunks/artifact/{self.task_id}/{name}"
+        response = requests.get(url, headers=_bearer(self.job), allow_redirects=False, timeout=20)
+        self.assertEqual(response.status_code, 302, response.text)
+        response = _post("datachunks.prepare_download", {"task": self.task_id, "kind": "artifact", "name": name},
+                         self.job)
+        self.assertEqual(response.status_code, 200, response.text)
+
+    def test_a_job_cannot_download_another_tasks_data(self):
+        name = self._stored_in(self.other_task)
+        url = f"{SERVER}/datachunks/artifact/{self.other_task}/{name}"
+        response = requests.get(url, headers=_bearer(self.job), allow_redirects=False, timeout=20)
+        self.assertEqual(response.status_code, 401, response.text)
+        response = _post("datachunks.prepare_download", {"task": self.other_task, "kind": "artifact", "name": name},
+                         self.job)
+        self.assertEqual(response.status_code, 401, response.text)
+
+    def test_a_person_downloads_data_of_a_task_in_their_company(self):
+        name = self._stored_in(self.other_task)
+        url = f"{SERVER}/datachunks/artifact/{self.other_task}/{name}"
+        response = requests.get(url, headers=_bearer(suite_bearer()), allow_redirects=False, timeout=20)
+        self.assertEqual(response.status_code, 302, response.text)
+
+    def test_a_download_for_a_task_that_does_not_exist_is_refused(self):
+        response = _post("datachunks.prepare_download",
+                         {"task": uuid.uuid4().hex, "kind": "artifact", "name": "x.bin"}, suite_bearer())
+        self.assertIn(response.status_code, (400, 404), response.text)
+
     def test_a_job_token_is_refused_once_its_task_stops(self):
         grant = _post("datachunks.prepare_upload", self.request(self.task_id), self.job).json()["data"]
         Task.objects(id=self.task_id).update_one(set__status="completed")
@@ -271,3 +314,78 @@ class TestPendingUploads(TestCase):
         self.assertIsNotNone(Datachunk.objects(id=grant["id"]).first())
         bll.purge_stale_pending(timedelta(seconds=0))
         self.assertIsNone(Datachunk.objects(id=grant["id"]).first())
+
+
+class TestMultipartUploads(TestCase):
+    """Objects at or above the multipart threshold. The test runs when the threshold is small enough to test
+    cheaply: start the server with CLEARML__apiserver__storage__multipart_threshold_bytes=16777216 and
+    CLEARML__apiserver__storage__multipart_part_bytes=5242880. Otherwise it is skipped."""
+
+    @classmethod
+    def setUpClass(cls):
+        db.db.initialize()
+        threshold = int(config.get("apiserver.storage.multipart_threshold_bytes"))
+        if threshold > 64 * 1024 * 1024:
+            raise SkipTest(f"multipart threshold is {threshold} bytes; lower it to test multipart uploads")
+        cls.threshold = threshold
+        cls.part_bytes = int(config.get("apiserver.storage.multipart_part_bytes"))
+
+    def setUp(self):
+        self.user = suite_bearer()
+        self.task_id = _new_task()
+        self.addCleanup(lambda: Task.objects(id=self.task_id).delete())
+        self.body = bytes(range(256)) * ((self.threshold + 1024 * 1024) // 256)
+        self.sha = _sha(self.body)
+
+    def _start(self, **overrides):
+        request = {"task": self.task_id, "kind": "artifact", "name": f"big/{uuid.uuid4().hex}.bin",
+                   "size": len(self.body), "sha256": self.sha}
+        request.update(overrides)
+        response = _post("datachunks.prepare_upload", request, self.user)
+        self.assertEqual(response.status_code, 200, response.text)
+        grant = response.json()["data"]
+        self.addCleanup(lambda: Datachunk.objects(id=grant["id"]).delete())
+        return grant
+
+    def _send_parts(self, grant, skip=()):
+        parts = []
+        count = grant["multipart"]["parts"]
+        for number in range(1, count + 1):
+            if number in skip:
+                continue
+            part = _post("datachunks.prepare_part", {"id": grant["id"], "part": number}, self.user).json()["data"]
+            start = (number - 1) * grant["multipart"]["part_bytes"]
+            block = self.body[start:start + grant["multipart"]["part_bytes"]]
+            response = requests.put(part["url"], data=block, headers=part["headers"], timeout=60)
+            self.assertEqual(response.status_code, 200, response.text)
+            parts.append({"number": number, "etag": response.headers["ETag"]})
+        return parts
+
+    def test_a_large_object_is_uploaded_in_parts_and_reads_back_intact(self):
+        grant = self._start()
+        self.assertIn("multipart", grant)
+        self.assertEqual(grant["multipart"]["parts"], -(-len(self.body) // grant["multipart"]["part_bytes"]))
+        parts = self._send_parts(grant)
+        committed = _post("datachunks.commit", {"id": grant["id"], "parts": parts}, self.user)
+        self.assertEqual(committed.status_code, 200, committed.text)
+        download = _post("datachunks.prepare_download", {"id": grant["id"]}, self.user).json()["data"]
+        self.assertEqual(urllib.request.urlopen(download["url"], timeout=60).read(), self.body)
+
+    def test_a_missing_part_is_refused(self):
+        grant = self._start()
+        parts = self._send_parts(grant, skip=(2,))
+        response = _post("datachunks.commit", {"id": grant["id"], "parts": parts}, self.user)
+        self.assertEqual(response.status_code, 400, response.text)
+
+    def test_a_large_object_with_the_wrong_checksum_is_removed(self):
+        grant = self._start(sha256=_sha(b"something else"))
+        parts = self._send_parts(grant)
+        response = _post("datachunks.commit", {"id": grant["id"], "parts": parts}, self.user)
+        self.assertEqual(response.status_code, 400, response.text)
+        self.assertIsNone(Datachunk.objects(id=grant["id"]).first())
+
+    def test_a_part_number_outside_the_upload_is_refused(self):
+        grant = self._start()
+        response = _post("datachunks.prepare_part", {"id": grant["id"], "part": grant["multipart"]["parts"] + 1},
+                         self.user)
+        self.assertEqual(response.status_code, 400, response.text)
