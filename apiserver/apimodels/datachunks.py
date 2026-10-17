@@ -20,4 +20,16 @@ class CommitRequest(Base):
 
 
 class PrepareDownloadRequest(Base):
-    id = StringField(required=True)
+    id = StringField()
+    """ Either the datachunk id, or task, kind and name (the newest stored object with that name) """
+    task = StringField()
+    kind = StringField()
+    name = StringField()
+
+
+class DeleteRequest(Base):
+    id = StringField()
+    """ Either the datachunk id, or task, kind and name (every record with that name) """
+    task = StringField()
+    kind = StringField()
+    name = StringField()

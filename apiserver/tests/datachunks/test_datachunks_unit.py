@@ -16,11 +16,12 @@ SHA = hashlib.sha256(b"payload").hexdigest()
 
 
 class TestNames(TestCase):
-    def test_nested_names_are_accepted(self):
+    def test_nested_names_and_names_with_spaces_are_accepted(self):
         self.assertEqual(bll.sanitise_name("weights/model.pt"), "weights/model.pt")
+        self.assertEqual(bll.sanitise_name("my plot (1).png"), "my plot (1).png")
 
     def test_names_that_escape_or_are_malformed_are_refused(self):
-        for name in ("../x", "/abs", "a//b", "a/./b", "a/../b", "", "a b", "x" * 256, "a;b"):
+        for name in ("../x", "/abs", "a//b", "a/./b", "a/../b", "", "a\nb", "x" * 1025, "a\x00b"):
             with self.subTest(name=name), self.assertRaises(errors.bad_request.ValidationError):
                 bll.sanitise_name(name)
 

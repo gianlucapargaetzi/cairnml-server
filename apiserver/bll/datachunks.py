@@ -22,14 +22,14 @@ from apiserver.idp.secrets import read_secret
 # One presigned PUT carries at most this many bytes. Larger objects need multipart upload, which is later work.
 MAX_SINGLE_PUT_BYTES = 5 * 1024**3
 
-_NAME_RE = re.compile(r"[A-Za-z0-9._/-]+")
+_CONTROL_RE = re.compile(r"[\x00-\x1f\x7f]")
 _SHA256_RE = re.compile(r"[0-9a-f]{64}")
 DATASET_TAG = "dataset"
 
 
 def sanitise_name(name: str) -> str:
-    """A relative object name made of safe characters, with no empty, dot or dot-dot parts."""
-    if not name or len(name) > 255 or not _NAME_RE.fullmatch(name):
+    """A relative object name: any printable characters, no empty, dot or dot-dot parts, no leading slash."""
+    if not name or len(name) > 1024 or _CONTROL_RE.search(name):
         raise errors.bad_request.ValidationError("invalid name", name=name)
     if name.startswith("/") or any(part in ("", ".", "..") for part in name.split("/")):
         raise errors.bad_request.ValidationError("invalid name", name=name)
@@ -176,20 +176,47 @@ def commit(*, company: str, chunk_id: str) -> Datachunk:
     return chunk
 
 
-def prepare_download(*, company: str, chunk_id: str) -> dict:
-    chunk = Datachunk.objects(id=chunk_id, company=company).first()
+def find_stored(*, company: str, task_id: str, kind: str, name: str) -> Datachunk:
+    """The newest stored object for a task, kind and name. Re-uploads replace it once committed."""
+    chunk = (
+        Datachunk.objects(company=company, task=task_id, kind=kind, name=name, state=DatachunkState.stored)
+        .order_by("-stored")
+        .first()
+    )
     if not chunk:
-        raise errors.bad_request.InvalidId("datachunk not found", id=chunk_id)
+        raise errors.bad_request.InvalidId("no stored object with this name", task=task_id, kind=kind, name=name)
+    return chunk
+
+
+def prepare_download(*, company: str, chunk: Datachunk) -> dict:
     if chunk.state != DatachunkState.stored:
-        raise errors.bad_request.ValidationError("datachunk is not stored", id=chunk_id)
+        raise errors.bad_request.ValidationError("datachunk is not stored", id=chunk.id)
     url = _signer().generate_presigned_url(
         "get_object", Params={"Bucket": chunk.bucket, "Key": chunk.key}, ExpiresIn=_ttl()
     )
     return {
         "id": chunk.id,
         "url": url,
+        "size": chunk.size,
+        "sha256": chunk.sha256,
         "expires_at": (datetime.utcnow() + timedelta(seconds=_ttl())).isoformat(),
     }
+
+
+def delete(*, company: str, chunks) -> int:
+    """Removes the objects and their records. A missing object is not an error: the record goes anyway."""
+    client = _internal()
+    removed = 0
+    for chunk in chunks:
+        if chunk.company != company:
+            continue
+        try:
+            client.delete_object(Bucket=chunk.bucket, Key=chunk.key)
+        except ClientError:
+            pass
+        chunk.delete()
+        removed += 1
+    return removed
 
 
 def delete_objects(bucket_key_pairs) -> None:

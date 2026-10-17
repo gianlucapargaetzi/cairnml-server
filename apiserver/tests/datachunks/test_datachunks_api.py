@@ -12,8 +12,10 @@ import uuid
 from unittest import TestCase
 
 import requests
+from botocore.exceptions import ClientError
 
 from apiserver import database as db
+from apiserver.bll import datachunks as bll
 from apiserver.database.model.datachunk import Datachunk
 from apiserver.database.model.task.task import Task
 from apiserver.tests.idp.bearer import suite_bearer
@@ -106,6 +108,45 @@ class TestDatachunksApi(TestCase):
     def test_no_token_is_refused(self):
         response = requests.post(f"{API}/datachunks.prepare_upload", json=self.upload_request(), timeout=20)
         self.assertEqual(response.status_code, 401)
+
+    def test_download_by_task_kind_and_name_returns_the_newest_stored_object(self):
+        name = f"metrics/{uuid.uuid4().hex}.png"
+        first = self._store(name=name)
+        second = self._store(name=name, body=b"second version " + uuid.uuid4().bytes)
+        response = _post("datachunks.prepare_download",
+                         {"task": self.task_id, "kind": "artifact", "name": name}, self.user)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["data"]["id"], second)
+        self.assertNotEqual(first, second)
+
+    def test_names_with_spaces_round_trip(self):
+        self._store(name=f"my plot {uuid.uuid4().hex} (1).png")
+
+    def test_delete_by_name_removes_the_object_and_the_record(self):
+        name = f"gone/{uuid.uuid4().hex}.bin"
+        chunk_id = self._store(name=name)
+        chunk = Datachunk.objects(id=chunk_id).first()
+        response = _post("datachunks.delete", {"task": self.task_id, "kind": "artifact", "name": name}, self.user)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["data"]["deleted"], 1)
+        self.assertFalse(Datachunk.objects(id=chunk_id).first())
+        with self.assertRaises(ClientError):
+            bll._internal().head_object(Bucket=chunk.bucket, Key=chunk.key)
+        gone = _post("datachunks.prepare_download", {"task": self.task_id, "kind": "artifact", "name": name}, self.user)
+        self.assertEqual(gone.status_code, 400, gone.text)
+
+    def test_delete_without_an_identifier_is_refused(self):
+        response = _post("datachunks.delete", {"task": self.task_id}, self.user)
+        self.assertEqual(response.status_code, 400, response.text)
+
+    def _store(self, name, body=None):
+        body = self.body if body is None else body
+        grant = _post("datachunks.prepare_upload",
+                      self.upload_request(name=name, size=len(body), sha256=_sha(body)), self.user).json()["data"]
+        self.assertEqual(self.put(dict(grant, headers=grant["headers"]), data=body), 200)
+        self.assertEqual(_post("datachunks.commit", {"id": grant["id"]}, self.user).status_code, 200)
+        self.addCleanup(lambda: Datachunk.objects(id=grant["id"]).delete())
+        return grant["id"]
 
     def test_download_before_commit_is_refused(self):
         grant = _post("datachunks.prepare_upload", self.upload_request(), self.user).json()["data"]
