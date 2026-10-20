@@ -204,6 +204,17 @@ def _fail_task(task: Task, now: datetime, reason: str, detail: str, user_id: str
     ).execute(completed=now, failure=failure)
 
 
+def sweep(company: str, now: Optional[datetime] = None) -> List[str]:
+    """Expire the offers nobody claimed and find the workers that stopped syncing. Run on the sweep timer, so a
+    stopped worker is marked lost without waiting for a placement pass. Returns the workers marked lost."""
+    now = now or _now()
+    with _company_lock(company) as acquired:
+        if not acquired:
+            return []
+        expire_offers(company, now)
+        return mark_lost_workers(company, now)
+
+
 def placement_pass(company: str, now: Optional[datetime] = None) -> int:
     """Make offers for the pending tasks that fit. Returns the number of offers made."""
     now = now or _now()

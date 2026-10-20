@@ -126,6 +126,13 @@ class AppSequence:
         StatisticsReporter.start()
         NonResponsiveTasksWatchdog.start()
         self._start_idp_sync()
+        self._start_scheduler_sweep()
+
+    @staticmethod
+    def _start_scheduler_sweep():
+        from apiserver.bll.scheduler.sweep import start_from_config
+
+        start_from_config()
 
     @staticmethod
     def _start_idp_sync():
