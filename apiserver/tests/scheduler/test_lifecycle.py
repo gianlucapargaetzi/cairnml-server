@@ -58,6 +58,11 @@ class SchedulerLifecycleTest(TestService):
         self.assertEqual(SchedulerWorker.objects(id=self.worker).first().state, "lost")
         self.assertEqual(Task.objects(id=task).first().status, "queued")
 
+    def test_the_sweep_marks_a_stopped_worker_lost_without_a_placement_pass(self):
+        """The sweep timer finds the stopped worker by itself: no task is queued, so no placement pass runs."""
+        service.sweep(self.company, now=T0 + timedelta(minutes=5))
+        self.assertEqual(SchedulerWorker.objects(id=self.worker).first().state, "lost")
+
     def test_a_job_lost_twice_fails_with_the_worker_lost_reason(self):
         task = self.new_queued_task()
         service.claim(self.company, self.agent.device, self.worker, task, now=T0)
