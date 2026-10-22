@@ -24,8 +24,11 @@ def repo_of(repository: str):
 def check_submission(task, app) -> None:
     """Raise a validation error when the task's GitHub repository or commit cannot be used."""
     repo = repo_of(task.script.repository)
-    if repo is None or app is None:
+    if repo is None:
         return
+    if app is None:
+        raise errors.bad_request.ValidationError(
+            f"GitHub is not set up: the job's repository {repo} cannot be checked without the GitHub App")
     commit = task.script.version_num
     if not commit:
         raise errors.bad_request.ValidationError(f"no commit is recorded for {repo}: commit and push first")
