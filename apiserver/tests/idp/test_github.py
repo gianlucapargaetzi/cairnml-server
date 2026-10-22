@@ -102,3 +102,13 @@ class TestGitHubApp(TestCase):
         with self.assertRaises(RepoNotAccessible):
             app(http).installation_token("acme/proj")
         self.assertIn("timeout", http.requests[0][2])
+
+
+class TestAppId(TestCase):
+    def test_an_integer_app_id_is_sent_as_a_string_claim(self):
+        """An app id read from the environment is a number; the JWT issuer must still be a string."""
+        pem, public_key = _pem_pair()
+        token = GitHubApp(123, pem, API, http=FakeHttp({}), clock=lambda: 1000.0)._app_jwt()
+        claims = jwt.decode(token, public_key, algorithms=["RS256"],
+                            options={"verify_iat": False, "verify_exp": False})
+        self.assertEqual(claims["iss"], "123")
