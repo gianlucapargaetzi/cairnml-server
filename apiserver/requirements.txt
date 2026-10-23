@@ -4,8 +4,8 @@ bcrypt>=3.1.4
 boltons>=19.1.0
 boto3>=1.26
 boto3-stubs[s3]>=1.26
-cairnml>=1.10.3
-cairnml-agent>=1.5.2
+cairnml>=0.0.1
+cairnml-agent>=0.0.1
 dpath>=1.4.2,<2.0
 elasticsearch==8.17.0
 fastjsonschema>=2.8
