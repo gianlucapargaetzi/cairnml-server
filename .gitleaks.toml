@@ -1,0 +1,16 @@
+title = "cairnml"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Public defaults inherited from ClearML (refused at startup by the server) and key-handling code that is not a secret"
+paths = [
+  '''apiserver/config/default/.*\.conf''',
+  '''fileserver/config/default/.*\.conf''',
+  '''apiserver/idp/secrets\.py''',
+  '''apiserver/service_repo/auth/payload/token\.py''',
+  '''apiserver/tests/idp/test_secrets\.py''',
+  '''.*/idp/keys\.py''',
+  '''.*\.(conf|ipynb)''',
+]
