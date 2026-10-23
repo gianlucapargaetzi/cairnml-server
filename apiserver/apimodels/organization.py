@@ -71,6 +71,7 @@ class UsageAggFields(StringEnum):
 class WorkloadBreakdownKeys(StringEnum):
     project = auto()
     user = auto()
+    queue = auto()
 
 
 class GetProjectWorkloadsRequest(models.Base):

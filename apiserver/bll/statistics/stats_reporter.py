@@ -16,6 +16,7 @@ from apiserver.bll.workers import WorkerStats, WorkerBLL
 from apiserver.config_repo import config
 from apiserver.config.info import get_deployment_type
 from apiserver.database.model import Company, User
+from apiserver.database.model.queue import Queue
 from apiserver.database.model.task.task import Task
 from apiserver.utilities.dicts import nested_get
 from apiserver.utilities.json import dumps
@@ -108,6 +109,7 @@ class StatisticsReporter:
                 "version": current_version,
                 "deployment": get_deployment_type(),
                 "uuid": get_server_uuid(),
+                "queues": {"count": Queue.objects(company=company_id).count()},
                 "users": {"count": User.objects(company=company_id).count()},
                 "resources": ResourceMonitor.get_stats(),
                 "experiments": next(
