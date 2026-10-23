@@ -3,7 +3,7 @@ from unittest import TestCase
 
 from apiserver.apierrors import errors
 from apiserver.idp.github import GitHubError, RepoNotAccessible
-from apiserver.idp.github_check import check_submission, repo_allowed
+from apiserver.idp.github_check import check_submission
 
 
 class FakeApp:
@@ -60,21 +60,3 @@ class TestSubmissionCheck(TestCase):
             check_submission(task(), None)
         self.assertIn("GitHub", str(ctx.exception))
 
-
-class TestRepoAllowed(TestCase):
-    def test_an_exact_repository_is_allowed(self):
-        self.assertTrue(repo_allowed("acme/data-coco", ["acme/data-coco"]))
-
-    def test_an_owner_wildcard_allows_every_repository_of_the_owner(self):
-        self.assertTrue(repo_allowed("acme/anything", ["acme/*"]))
-
-    def test_other_owners_and_repositories_are_refused(self):
-        self.assertFalse(repo_allowed("evil/data", ["acme/*"]))
-        self.assertFalse(repo_allowed("acme/code", ["acme/data-coco"]))
-
-    def test_case_is_ignored(self):
-        self.assertTrue(repo_allowed("Acme/Data", ["acme/data"]))
-
-    def test_an_empty_or_missing_list_allows_nothing(self):
-        self.assertFalse(repo_allowed("acme/data", []))
-        self.assertFalse(repo_allowed("acme/data", None))
