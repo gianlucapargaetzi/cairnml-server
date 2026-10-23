@@ -61,7 +61,7 @@ class LoginRefused(Exception):
 
 def finish_login(store, http, verifier, issuer: str, client_id: str, redirect_uri: str,
                  state: str, code: str, admin_role: str):
-    """Exchange the code for tokens and create the ClearML user. Returns (user, identity).
+    """Exchange the code for tokens and create the CairnML user. Returns (user, identity).
 
     Each state is used once: it is removed from the store before anything else happens.
     """

@@ -20,14 +20,14 @@ from apiserver.idp.assertion import make_assertion
 from apiserver.idp.keys import private_key_to_pem
 
 IDP_ISSUER = "http://mlops-idp:8180/realms/mlops"
-SDK_CLIENT = "clearml-sdk"
+SDK_CLIENT = "cairnml-sdk"
 SERVER = os.environ.get("SM_API_URL", "http://localhost:8008")
 PUBLIC_URL = os.environ.get("TEST_PUBLIC_URL", "http://localhost:8008")
 API = f"{SERVER}/v2.8"
 
 
 def _idp_key():
-    directory = os.environ.get("TEST_IDP_DIR", "/opt/clearml/test-idp")
+    directory = os.environ.get("TEST_IDP_DIR", "/opt/cairnml/test-idp")
     with open(os.path.join(directory, "idp_private.pem"), "rb") as handle:
         return serialization.load_pem_private_key(handle.read(), password=None)
 

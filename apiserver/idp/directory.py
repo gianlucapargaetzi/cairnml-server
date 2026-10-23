@@ -1,7 +1,7 @@
 """Asks the IdP whether a user still exists, is enabled and which roles they hold.
 
 Ported from the mlops server (services/directory.py). httpx is replaced by requests, which the
-ClearML server already ships; the behaviour is unchanged.
+CairnML server already ships; the behaviour is unchanged.
 """
 
 from __future__ import annotations

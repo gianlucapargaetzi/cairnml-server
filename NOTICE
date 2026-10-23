@@ -1,0 +1,9 @@
+cairnml-server
+Modifications Copyright 2026 Gianluca Pargaetzi
+
+This product is based on the ClearML Server (https://github.com/allegroai/clearml-server),
+Copyright 2025 ClearML Inc., licensed under the Server Side Public License v1 (SSPL). See LICENSE.
+
+It is an unofficial, modified version. It is not created, sponsored, endorsed or supported by
+ClearML, Inc. "ClearML" is a trademark of ClearML, Inc. The changes made to the original code are
+recorded in this repository's history.

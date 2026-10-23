@@ -16,9 +16,9 @@ from .auth_type import AuthType
 from .payload import Payload
 
 # The signing secret comes from a file in the secrets mount. The configuration value is only used
-# when CLEARML_ALLOW_CONFIG_SECRET=1 (tests), and it may be the public default in that case.
+# when CAIRNML_ALLOW_CONFIG_SECRET=1 (tests), and it may be the public default in that case.
 DEFAULT_TOKEN_SECRET = "Rq8FW84sSqVgq7WvBB_4EzNl9y8z8IGiDXX3C345_a5AZfcwZcwCIA"
-if os.environ.get("CLEARML_ALLOW_CONFIG_SECRET") == "1":
+if os.environ.get("CAIRNML_ALLOW_CONFIG_SECRET") == "1":
     token_secret = config.get("secure.auth.token_secret")
 else:
     token_secret = read_secret("token_secret")

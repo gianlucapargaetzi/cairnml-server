@@ -3,21 +3,21 @@ FROM node:24-bookworm-slim as webapp_builder
 USER root
 WORKDIR /opt
 
-# The web app is our fork of clearml-web. It is passed as the named build context "clearml_web"
-# (deploy/clearml/compose.yaml does this), so the image contains the fork's changes and not an
-# upstream tag. Build with: --build-context clearml_web=<path to the clearml-web fork>
-COPY --from=clearml_web . /opt/open-webapp
+# The web app is our fork of cairnml-web. It is passed as the named build context "cairnml_web"
+# (deploy/cairnml/compose.yaml does this), so the image contains the fork's changes and not an
+# upstream tag. Build with: --build-context cairnml_web=<path to the cairnml-web fork>
+COPY --from=cairnml_web . /opt/open-webapp
 COPY --chmod=744 docker/build/internal_files/build_webapp.sh /tmp/internal_files/
 RUN /bin/bash -c '/tmp/internal_files/build_webapp.sh'
 
 FROM python:3.11-slim-bookworm
-COPY --chmod=744 docker/build/internal_files/entrypoint.sh /opt/clearml/
-COPY --chmod=744 docker/build/internal_files/update_from_env.py /opt/clearml/utilities/
-COPY apiserver /opt/clearml/apiserver/
+COPY --chmod=744 docker/build/internal_files/entrypoint.sh /opt/cairnml/
+COPY --chmod=744 docker/build/internal_files/update_from_env.py /opt/cairnml/utilities/
+COPY apiserver /opt/cairnml/apiserver/
 
 COPY --chmod=744 docker/build/internal_files/final_image_preparation.sh /tmp/internal_files/
-COPY docker/build/internal_files/clearml.conf.template /tmp/internal_files/
-COPY docker/build/internal_files/clearml_subpath.conf.template /tmp/internal_files/
+COPY docker/build/internal_files/cairnml.conf.template /tmp/internal_files/
+COPY docker/build/internal_files/cairnml_subpath.conf.template /tmp/internal_files/
 RUN /bin/bash -c '/tmp/internal_files/final_image_preparation.sh'
 
 # The Angular application builder writes the app into build/browser; that folder replaces nginx's default page.
@@ -29,8 +29,8 @@ EXPOSE 8008
 
 ARG VERSION
 ARG BUILD
-ENV CLEARML_SERVER_VERSION=${VERSION}
-ENV CLEARML_SERVER_BUILD=${BUILD}
+ENV CAIRNML_SERVER_VERSION=${VERSION}
+ENV CAIRNML_SERVER_BUILD=${BUILD}
 
-WORKDIR /opt/clearml/
-ENTRYPOINT ["/opt/clearml/entrypoint.sh"]
+WORKDIR /opt/cairnml/
+ENTRYPOINT ["/opt/cairnml/entrypoint.sh"]

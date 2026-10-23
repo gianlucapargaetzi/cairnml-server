@@ -8,7 +8,7 @@ from apiserver.database.model.auth import Role, User
 
 
 def user_id_for(issuer: str, subject: str) -> str:
-    """The same identity always maps to the same user id; no ClearML password is involved."""
+    """The same identity always maps to the same user id; no CairnML password is involved."""
     return uuid.uuid5(uuid.NAMESPACE_URL, f"{issuer}|{subject}").hex
 
 
@@ -17,7 +17,7 @@ def role_for(idp_roles, admin_role: str) -> str:
 
 
 def upsert_idp_user(issuer: str, subject: str, username: str, idp_roles, admin_role: str) -> User:
-    """Create the ClearML user for this identity on first sight; keep its role in step with the IdP."""
+    """Create the CairnML user for this identity on first sight; keep its role in step with the IdP."""
     user_id = user_id_for(issuer, subject)
     user = User.objects(id=user_id).first()
     role = role_for(idp_roles, admin_role)

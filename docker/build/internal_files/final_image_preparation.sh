@@ -9,13 +9,13 @@ apt-get install -y python3-setuptools python3-dev build-essential nginx gettext 
 
 python3 -m ensurepip
 python3 -m pip install --upgrade pip
-python3 -m pip install -r /opt/clearml/apiserver/requirements.txt
-mkdir -p /opt/clearml/log
-mkdir -p /opt/clearml/config
+python3 -m pip install -r /opt/cairnml/apiserver/requirements.txt
+mkdir -p /opt/cairnml/log
+mkdir -p /opt/cairnml/config
 ln -svf /dev/stdout /var/log/nginx/access.log
 ln -svf /dev/stderr /var/log/nginx/error.log
-mv /tmp/internal_files/clearml.conf.template /etc/nginx/clearml.conf.template
-mv /tmp/internal_files/clearml_subpath.conf.template /etc/nginx/clearml_subpath.conf.template
+mv /tmp/internal_files/cairnml.conf.template /etc/nginx/cairnml.conf.template
+mv /tmp/internal_files/cairnml_subpath.conf.template /etc/nginx/cairnml_subpath.conf.template
 
 rm -d -r "$(pip cache dir)"
 apt-get clean

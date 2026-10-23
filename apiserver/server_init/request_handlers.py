@@ -22,7 +22,7 @@ log = config.logger(__file__)
 
 class RequestHandlers:
     _request_strip_prefix = config.get("apiserver.request.strip_prefix", None)
-    _server_header = config.get("apiserver.response.headers.server", "clearml")
+    _server_header = config.get("apiserver.response.headers.server", "cairnml")
     _basic_cookie_settings = config.get("apiserver.auth.cookies")
     _custom_cookie_settings = {
         c["name"]: c["settings"]

@@ -1,4 +1,4 @@
-"""Applies the identity provider's answers to ClearML users every sync interval.
+"""Applies the identity provider's answers to CairnML users every sync interval.
 
 Ported from the mlops server (services/user_sync.py). A user the IdP reports as gone or disabled
 loses access on the next pass; a lookup that fails changes nothing. If every user comes back gone
@@ -12,7 +12,7 @@ import threading
 from apiserver.idp.directory import DirectoryError, DirectoryUser
 from apiserver.idp.users import role_for
 
-log = logging.getLogger("clearml.idp.sync")
+log = logging.getLogger("cairnml.idp.sync")
 
 
 def _gone(answer) -> bool:

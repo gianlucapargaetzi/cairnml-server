@@ -54,12 +54,12 @@ class CheckUpdatesThread(Thread):
     @property
     def component_name(self) -> str:
         return config.get(
-            "apiserver.check_for_updates.component_name", "clearml-server"
+            "apiserver.check_for_updates.component_name", "cairnml-server"
         )
 
     def _check_new_version_available(self) -> Optional[_VersionResponse]:
         url = config.get(
-            "apiserver.check_for_updates.url", "https://updates.clear.ml/updates",
+            "apiserver.check_for_updates.url", "",
         )
 
         uid = Settings.get_by_key("server.uuid")

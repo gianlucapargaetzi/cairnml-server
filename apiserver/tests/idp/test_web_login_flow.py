@@ -15,7 +15,7 @@ from apiserver.idp.verifier import get_verifier
 from apiserver.idp.web_login import LoginRefused, finish_login, start_login
 
 ISSUER = "http://mlops-idp:8180/realms/mlops"
-WEB = "clearml-web"
+WEB = "cairnml-web"
 REDIRECT = "http://localhost:8008/api/login.idp_callback"
 
 
@@ -48,7 +48,7 @@ class FakeHttp:
 
 
 def _sign(claims):
-    with open(os.path.join(os.environ.get("TEST_IDP_DIR", "/opt/clearml/test-idp"), "idp_private.pem"), "rb") as h:
+    with open(os.path.join(os.environ.get("TEST_IDP_DIR", "/opt/cairnml/test-idp"), "idp_private.pem"), "rb") as h:
         key = serialization.load_pem_private_key(h.read(), password=None)
     now = int(time.time())
     base = {"iss": ISSUER, "iat": now, "exp": now + 300, "azp": WEB, "realm_access": {"roles": []}}

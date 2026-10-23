@@ -3,27 +3,27 @@ services:
   apiserver:
     command:
     - apiserver
-    container_name: clearml-apiserver
-    image: clearml/server:latest
+    container_name: cairnml-apiserver
+    image: cairnml/server:latest
     restart: unless-stopped
     volumes:
-    - c:/opt/clearml/logs:/var/log/clearml
-    - c:/opt/clearml/config:/opt/clearml/config
+    - c:/opt/cairnml/logs:/var/log/cairnml
+    - c:/opt/cairnml/config:/opt/cairnml/config
     depends_on:
       - redis
       - mongo
       - elasticsearch
     environment:
-      CLEARML_ELASTIC_SERVICE_HOST: elasticsearch
-      CLEARML_ELASTIC_SERVICE_PORT: 9200
-      CLEARML_MONGODB_SERVICE_HOST: mongo
-      CLEARML_MONGODB_SERVICE_PORT: 27017
-      CLEARML_REDIS_SERVICE_HOST: redis
-      CLEARML_REDIS_SERVICE_PORT: 6379
-      CLEARML_SERVER_DEPLOYMENT_TYPE: win10
-      CLEARML__apiserver__pre_populate__enabled: "true"
-      CLEARML__apiserver__pre_populate__zip_files: "/opt/clearml/db-pre-populate"
-      CLEARML__services__async_urls_delete__enabled: "true"
+      CAIRNML_ELASTIC_SERVICE_HOST: elasticsearch
+      CAIRNML_ELASTIC_SERVICE_PORT: 9200
+      CAIRNML_MONGODB_SERVICE_HOST: mongo
+      CAIRNML_MONGODB_SERVICE_PORT: 27017
+      CAIRNML_REDIS_SERVICE_HOST: redis
+      CAIRNML_REDIS_SERVICE_PORT: 6379
+      CAIRNML_SERVER_DEPLOYMENT_TYPE: win10
+      CAIRNML__apiserver__pre_populate__enabled: "true"
+      CAIRNML__apiserver__pre_populate__zip_files: "/opt/cairnml/db-pre-populate"
+      CAIRNML__services__async_urls_delete__enabled: "true"
     ports:
     - "8008:8008"
     networks:
@@ -33,17 +33,17 @@ services:
   elasticsearch:
     networks:
       - backend
-    container_name: clearml-elastic
+    container_name: cairnml-elastic
     environment:
       bootstrap.memory_lock: "true"
-      cluster.name: clearml
+      cluster.name: cairnml
       cluster.routing.allocation.node_initial_primaries_recoveries: "500"
       cluster.routing.allocation.disk.watermark.low: 500mb
       cluster.routing.allocation.disk.watermark.high: 500mb
       cluster.routing.allocation.disk.watermark.flood_stage: 500mb
       discovery.type: "single-node"
       http.compression_level: "7"
-      node.name: clearml
+      node.name: cairnml
       reindex.remote.whitelist: "'*.*'"
       xpack.security.enabled: "false"
     ulimits:
@@ -56,37 +56,37 @@ services:
     image: elasticsearch:8.19.9
     restart: unless-stopped
     volumes:
-      - c:/opt/clearml/data/elastic_7:/usr/share/elasticsearch/data
+      - c:/opt/cairnml/data/elastic_7:/usr/share/elasticsearch/data
       - /usr/share/elasticsearch/logs
 
   mongo:
     networks:
       - backend
-    container_name: clearml-mongo
+    container_name: cairnml-mongo
     image: mongo:8.0.15
     restart: unless-stopped
     command: --setParameter internalQueryMaxBlockingSortMemoryUsageBytes=196100200
     volumes:
-    - c:/opt/clearml/data/mongo_4/db:/data/db
-    - c:/opt/clearml/data/mongo_4/configdb:/data/configdb
+    - c:/opt/cairnml/data/mongo_4/db:/data/db
+    - c:/opt/cairnml/data/mongo_4/configdb:/data/configdb
 
   redis:
     networks:
       - backend
-    container_name: clearml-redis
+    container_name: cairnml-redis
     image: redis:8.2.3
     restart: unless-stopped
     volumes:
-    - c:/opt/clearml/data/redis:/data
+    - c:/opt/cairnml/data/redis:/data
 
   webserver:
     command:
     - webserver
-    container_name: clearml-webserver
-    image: clearml/server:latest
+    container_name: cairnml-webserver
+    image: cairnml/server:latest
     restart: unless-stopped
     volumes:
-    - c:/clearml/logs:/var/log/clearml
+    - c:/cairnml/logs:/var/log/cairnml
     depends_on:
       - apiserver
     ports:
@@ -102,25 +102,25 @@ services:
       - mongo
       - elasticsearch
     container_name: async_delete
-    image: clearml/server:latest
+    image: cairnml/server:latest
     networks:
       - backend
     restart: unless-stopped
     environment:
-      CLEARML_ELASTIC_SERVICE_HOST: elasticsearch
-      CLEARML_ELASTIC_SERVICE_PORT: 9200
-      CLEARML_MONGODB_SERVICE_HOST: mongo
-      CLEARML_MONGODB_SERVICE_PORT: 27017
-      CLEARML_REDIS_SERVICE_HOST: redis
-      CLEARML_REDIS_SERVICE_PORT: 6379
-      PYTHONPATH: /opt/clearml/apiserver
+      CAIRNML_ELASTIC_SERVICE_HOST: elasticsearch
+      CAIRNML_ELASTIC_SERVICE_PORT: 9200
+      CAIRNML_MONGODB_SERVICE_HOST: mongo
+      CAIRNML_MONGODB_SERVICE_PORT: 27017
+      CAIRNML_REDIS_SERVICE_HOST: redis
+      CAIRNML_REDIS_SERVICE_PORT: 6379
+      PYTHONPATH: /opt/cairnml/apiserver
     entrypoint:
       - python3
       - -m
       - jobs.async_urls_delete
     volumes:
-    - c:/opt/clearml/logs:/var/log/clearml
-    - c:/opt/clearml/config:/opt/clearml/config
+    - c:/opt/cairnml/logs:/var/log/cairnml
+    - c:/opt/cairnml/config:/opt/cairnml/config
 
 networks:
   backend:

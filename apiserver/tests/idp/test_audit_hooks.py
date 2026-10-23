@@ -61,5 +61,5 @@ class TestAuditHooks(TestCase):
     def test_a_cross_site_cookie_change_is_recorded(self):
         before = AuditEvent.objects(action="csrf.refused").count()
         requests.post(f"{API}/devices.get_all", json={}, headers={"Origin": "http://evil.example"},
-                      cookies={"clearml_token_basic": "x"}, timeout=20)
+                      cookies={"cairnml_token_basic": "x"}, timeout=20)
         self.assertGreater(AuditEvent.objects(action="csrf.refused").count(), before)
