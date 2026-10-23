@@ -389,3 +389,39 @@ class TestMultipartUploads(TestCase):
         response = _post("datachunks.prepare_part", {"id": grant["id"], "part": grant["multipart"]["parts"] + 1},
                          self.user)
         self.assertEqual(response.status_code, 400, response.text)
+
+
+class TestDatasetCredentialsApi(TestCase):
+    """The keys for the dataset bucket: they work on that bucket and nowhere else."""
+
+    @classmethod
+    def setUpClass(cls):
+        db.db.initialize()
+
+    def test_the_keys_read_and_write_the_dataset_bucket_only(self):
+        import boto3
+
+        response = _post("datachunks.dataset_credentials", {}, suite_bearer())
+        self.assertEqual(response.status_code, 200, response.text)
+        keys = response.json()["data"]
+        self.assertEqual(keys["bucket"], "dataset")
+        s3 = boto3.client(
+            "s3",
+            endpoint_url=keys["endpoint"],
+            region_name=keys["region"],
+            aws_access_key_id=keys["access_key"],
+            aws_secret_access_key=keys["secret_key"],
+            aws_session_token=keys["session_token"],
+        )
+        name = f"e2e/{uuid.uuid4().hex}"
+        s3.put_object(Bucket="dataset", Key=name, Body=b"1")
+        self.assertEqual(s3.get_object(Bucket="dataset", Key=name)["Body"].read(), b"1")
+        self.assertIn(name, [o["Key"] for o in s3.list_objects_v2(Bucket="dataset", Prefix=name).get("Contents", [])])
+        with self.assertRaises(ClientError):
+            s3.put_object(Bucket="model", Key=name, Body=b"1")
+        with self.assertRaises(ClientError):
+            s3.delete_object(Bucket="dataset", Key=name)
+
+    def test_a_caller_without_a_token_gets_no_keys(self):
+        response = requests.post(f"{API}/datachunks.dataset_credentials", json={}, timeout=20)
+        self.assertIn(response.status_code, (401, 403))

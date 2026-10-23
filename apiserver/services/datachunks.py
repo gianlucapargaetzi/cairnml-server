@@ -9,6 +9,7 @@ from apiserver.apimodels.datachunks import (
     PrepareUploadRequest,
 )
 from apiserver.bll import datachunks as bll
+from apiserver.bll.dataset_credentials import dataset_credentials
 from apiserver.bll.task.utils import get_task_with_write_access
 from apiserver.database.model.datachunk import Datachunk
 from apiserver.database.model.task.task import Task
@@ -102,3 +103,8 @@ def delete(call: APICall, company: str, request: DeleteRequest):
     for task_id in {chunk.task for chunk in chunks}:
         _require_task_access(call, company, task_id)
     call.result.data = {"deleted": bll.delete(company=company, chunks=chunks)}
+
+
+@endpoint("datachunks.dataset_credentials")
+def get_dataset_credentials(call: APICall, company: str, _):
+    call.result.data = dataset_credentials()
