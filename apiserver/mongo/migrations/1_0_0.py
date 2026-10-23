@@ -106,7 +106,7 @@ def _migrate_project_names(db: Database):
         if not name:
             continue
 
-        max_tries = int(os.getenv("CLEARML_MIGRATION_PROJECT_RENAME_MAX_TRIES", 10))
+        max_tries = int(os.getenv("CAIRNML_MIGRATION_PROJECT_RENAME_MAX_TRIES", 10))
         iteration = 0
         for iteration in range(max_tries):
             new_name = name.replace("/", "_" * (iteration + 1))

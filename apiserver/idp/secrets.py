@@ -10,7 +10,7 @@ class SecretMissing(Exception):
 
 
 def secrets_dir() -> str:
-    return os.environ.get("CLEARML_SECRETS_DIR", DEFAULT_SECRETS_DIR)
+    return os.environ.get("CAIRNML_SECRETS_DIR", DEFAULT_SECRETS_DIR)
 
 
 def read_secret(name: str) -> str:
@@ -36,8 +36,8 @@ DEFAULT_SESSION_SECRET = "V8gcW3EneNDcNfO7G_TSUsWe7uLozyacc9_I33o7bxUo8rCN31VLRg
 
 def session_secret() -> str:
     """The web session key: read from the secrets folder. The configuration value is used only when
-    CLEARML_ALLOW_CONFIG_SECRET=1 (tests), and the repository default is refused otherwise."""
-    if os.environ.get("CLEARML_ALLOW_CONFIG_SECRET") == "1":
+    CAIRNML_ALLOW_CONFIG_SECRET=1 (tests), and the repository default is refused otherwise."""
+    if os.environ.get("CAIRNML_ALLOW_CONFIG_SECRET") == "1":
         from apiserver.config_repo import config
 
         return config.get("secure.http.session_secret.apiserver")

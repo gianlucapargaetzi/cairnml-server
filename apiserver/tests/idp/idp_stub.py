@@ -19,7 +19,7 @@ class FakeIdp:
         jwk.update(kid=self.kid, alg="RS256", use="sig")
         return {"keys": [jwk]}
 
-    def token(self, sub="sub-dev", username="dev", roles=(), azp="clearml-sdk", iss=None,
+    def token(self, sub="sub-dev", username="dev", roles=(), azp="cairnml-sdk", iss=None,
               run_in=300, key=None, extra=None, kid=None) -> str:
         now = int(time.time())
         claims = {

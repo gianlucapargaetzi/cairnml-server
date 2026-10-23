@@ -1,9 +1,9 @@
-"""A copy of clearml/datasets/footprint.py in the SDK, which defines the footprint. Keep the two the same: the server
+"""A copy of cairnml/datasets/footprint.py in the SDK, which defines the footprint. Keep the two the same: the server
 uses it to check a dataset repository before it is registered. (The golden-vector test in both suites catches drift.)
 
 The footprint of a dataset repository: a record that a dataset was checked, which anyone can verify from git alone.
 
-``clearml-dataset check`` validates the data and writes ``dataset.lock.json`` next to ``data.dvc``. The lock copies the
+``cairnml-dataset check`` validates the data and writes ``dataset.lock.json`` next to ``data.dvc``. The lock copies the
 size, file count and content hash that DVC wrote to ``data.dvc``, says in which format the data was read (native, or
 through an adapter), and ends with a checksum of everything above it. ``verify`` recomputes what it can from files that
 are in git, so it needs no data, no server and no key:
@@ -15,8 +15,8 @@ are in git, so it needs no data, no server and no key:
 
 It is not a signature. Someone who writes a matching lock by hand gets past it; that fails when the dataset is used.
 
-This file uses only the standard library and does not import the rest of the SDK, because ``clearml-dataset init``
-copies it to ``.clearml/verify.py`` in each dataset repository, where a GitHub Action runs it as a script.
+This file uses only the standard library and does not import the rest of the SDK, because ``cairnml-dataset init``
+copies it to ``.cairnml/verify.py`` in each dataset repository, where a GitHub Action runs it as a script.
 """
 
 import hashlib
@@ -30,12 +30,12 @@ FOOTPRINT_VERSION = 1
 LOCK_FILE = "dataset.lock.json"
 CONFIG_FILE = "dataset.yaml"
 DVC_FILE = "data.dvc"
-VERIFY_SCRIPT = ".clearml/verify.py"
+VERIFY_SCRIPT = ".cairnml/verify.py"
 MAX_TRACKED_BYTES = 1024 * 1024
 
 # What may be tracked by git at the top of a dataset repository. The data itself is in DVC.
 ALLOWED_TOP_LEVEL = {
-    DVC_FILE, CONFIG_FILE, LOCK_FILE, ".gitignore", ".dvcignore", ".dvc", ".github", ".clearml",
+    DVC_FILE, CONFIG_FILE, LOCK_FILE, ".gitignore", ".dvcignore", ".dvc", ".github", ".cairnml",
     "README.md", "README", "LICENSE", "LICENSE.md", "NOTICE", "docs",
 }
 
@@ -127,8 +127,8 @@ def verify_files(files: Mapping[str, Optional[bytes]], sizes: Mapping[str, int])
     :param sizes: size in bytes of every file tracked by git, by path
     """
     problems: List[str] = []
-    for name, hint in ((DVC_FILE, "run 'clearml-dataset add'"), (CONFIG_FILE, "run 'clearml-dataset init'"),
-                       (LOCK_FILE, "run 'clearml-dataset commit' to check the data and write it")):
+    for name, hint in ((DVC_FILE, "run 'cairnml-dataset add'"), (CONFIG_FILE, "run 'cairnml-dataset init'"),
+                       (LOCK_FILE, "run 'cairnml-dataset commit' to check the data and write it")):
         if _blank(files, name):
             problems.append(f"{name} is missing: {hint}")
     if problems:
@@ -146,15 +146,15 @@ def verify_files(files: Mapping[str, Optional[bytes]], sizes: Mapping[str, int])
     if lock.get("version") != FOOTPRINT_VERSION:
         problems.append(f"{LOCK_FILE} has version {lock.get('version')!r}; this tool reads {FOOTPRINT_VERSION}")
     if lock.get("footprint") != checksum(lock):
-        problems.append(f"the checksum in {LOCK_FILE} does not match its content: it was edited; run 'clearml-dataset check'")
+        problems.append(f"the checksum in {LOCK_FILE} does not match its content: it was edited; run 'cairnml-dataset check'")
     if lock.get("dvc") != dvc:
         problems.append(
             f"{LOCK_FILE} was written for other data than {DVC_FILE} holds "
-            f"(lock: {lock.get('dvc')}, data.dvc: {dvc}): the data changed after the check; run 'clearml-dataset commit'"
+            f"(lock: {lock.get('dvc')}, data.dvc: {dvc}): the data changed after the check; run 'cairnml-dataset commit'"
         )
     fmt = lock.get("format") or {}
     if fmt.get("kind") != wanted.get("kind") or fmt.get("name") != wanted.get("name"):
-        problems.append(f"{LOCK_FILE} was made for format {fmt} but {CONFIG_FILE} asks for {wanted}; run 'clearml-dataset check'")
+        problems.append(f"{LOCK_FILE} was made for format {fmt} but {CONFIG_FILE} asks for {wanted}; run 'cairnml-dataset check'")
     if fmt.get("kind") == "adapter" and not _SHA.fullmatch(str(fmt.get("registry_commit", ""))):
         problems.append(f"{LOCK_FILE} does not say which commit of the adapter registry was used")
     if not isinstance(lock.get("samples"), int) or lock["samples"] < 1:

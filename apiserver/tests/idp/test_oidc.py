@@ -3,7 +3,7 @@ from unittest import TestCase
 from apiserver.idp.oidc import OidcError, OidcVerifier
 from apiserver.tests.idp.idp_stub import FakeIdp
 
-CLIENT = "clearml-sdk"
+CLIENT = "cairnml-sdk"
 
 
 class TestOidcVerifier(TestCase):

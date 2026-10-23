@@ -13,7 +13,7 @@ class TestSecrets(TestCase):
     def setUp(self):
         self._dir = tempfile.TemporaryDirectory()
         self.addCleanup(self._dir.cleanup)
-        self._env = mock.patch.dict(os.environ, {"CLEARML_SECRETS_DIR": self._dir.name})
+        self._env = mock.patch.dict(os.environ, {"CAIRNML_SECRETS_DIR": self._dir.name})
         self._env.start()
         self.addCleanup(self._env.stop)
 

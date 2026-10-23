@@ -11,7 +11,7 @@ class DeviceKind(object):
     client = "client"
     """ A person's laptop or workstation running the SDK """
     agent = "agent"
-    """ A machine running clearml-agent """
+    """ A machine running cairnml-agent """
 
 
 class Device(DbModelMixin, Document):

@@ -405,7 +405,7 @@ def download_for_get_all(call: APICall, company, request: DownloadForGetAllReque
         return project.basename[: conf.get("download.max_project_name_length", 60)]
 
     call.result.filename = "-".join(
-        filter(None, ("clearml", get_project_name(), f"{request.entity_type}s.csv"))
+        filter(None, ("cairnml", get_project_name(), f"{request.entity_type}s.csv"))
     )
     call.result.content_type = "text/csv"
     call.result.raw_data = stream_with_context(generate())

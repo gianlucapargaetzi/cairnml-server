@@ -318,8 +318,8 @@ class TestPendingUploads(TestCase):
 
 class TestMultipartUploads(TestCase):
     """Objects at or above the multipart threshold. The test runs when the threshold is small enough to test
-    cheaply: start the server with CLEARML__apiserver__storage__multipart_threshold_bytes=16777216 and
-    CLEARML__apiserver__storage__multipart_part_bytes=5242880. Otherwise it is skipped."""
+    cheaply: start the server with CAIRNML__apiserver__storage__multipart_threshold_bytes=16777216 and
+    CAIRNML__apiserver__storage__multipart_part_bytes=5242880. Otherwise it is skipped."""
 
     @classmethod
     def setUpClass(cls):

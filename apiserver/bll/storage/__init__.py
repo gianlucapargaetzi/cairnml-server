@@ -7,7 +7,7 @@ from typing import Optional, Sequence
 
 import attr
 from boltons.cacheutils import cachedproperty
-from clearml.backend_config.bucket_config import (
+from cairnml.backend_config.bucket_config import (
     S3BucketConfigurations,
     AzureContainerConfigurations,
     GSBucketConfigurations,

@@ -12,10 +12,10 @@ class TestSessionSecret(TestCase):
     def setUp(self):
         self.dir = tempfile.TemporaryDirectory()
         self.addCleanup(self.dir.cleanup)
-        self.env = mock.patch.dict(os.environ, {"CLEARML_SECRETS_DIR": self.dir.name}, clear=False)
+        self.env = mock.patch.dict(os.environ, {"CAIRNML_SECRETS_DIR": self.dir.name}, clear=False)
         self.env.start()
         self.addCleanup(self.env.stop)
-        os.environ.pop("CLEARML_ALLOW_CONFIG_SECRET", None)
+        os.environ.pop("CAIRNML_ALLOW_CONFIG_SECRET", None)
 
     def write(self, value):
         with open(os.path.join(self.dir.name, "session_secret"), "w", encoding="utf-8") as handle:

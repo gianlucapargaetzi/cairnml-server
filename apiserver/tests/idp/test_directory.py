@@ -46,7 +46,7 @@ def token_reply(token="t1"):
 
 class TestKeycloakDirectory(TestCase):
     def directory(self, routes):
-        return KeycloakDirectory(ISSUER, "clearml-server", "secret", http=FakeHttp(routes), clock=lambda: 0.0)
+        return KeycloakDirectory(ISSUER, "cairnml-server", "secret", http=FakeHttp(routes), clock=lambda: 0.0)
 
     def test_enabled_user_with_roles(self):
         d = self.directory({

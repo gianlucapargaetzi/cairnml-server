@@ -6,7 +6,7 @@ import jwt
 from apiserver.idp.assertion import AssertionInvalid, MAX_LIFETIME, make_assertion, unverified_issuer, verify_assertion
 from apiserver.idp.keys import generate_private_key
 
-AUD = "https://clearml.example.org"
+AUD = "https://cairnml.example.org"
 
 
 class TestAssertion(TestCase):

@@ -1,4 +1,4 @@
-"""Short-lived access tokens issued by the ClearML server after a device proves its key."""
+"""Short-lived access tokens issued by the CairnML server after a device proves its key."""
 
 from apiserver.config_repo import config
 from apiserver.service_repo.auth import Identity, Token

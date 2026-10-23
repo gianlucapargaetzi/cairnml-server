@@ -15,7 +15,7 @@ from apiserver.idp.users import upsert_idp_user
 
 API = f"{os.environ.get('SM_API_URL', 'http://localhost:8008')}/v2.8"
 WEB = config.get("apiserver.idp.web_url")
-COOKIE = "clearml_token_basic"
+COOKIE = "cairnml_token_basic"
 
 
 class TestOriginCheck(TestCase):

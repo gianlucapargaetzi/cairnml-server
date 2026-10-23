@@ -30,7 +30,7 @@ class TestKeyLifespan(TestCase):
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
         self.addCleanup(self.server.shutdown)
         url = f"http://127.0.0.1:{self.server.server_address[1]}/certs"
-        self.verifier = OidcVerifier(FakeIdp.ISSUER, "clearml-sdk", jwks_url=url, key_lifespan_sec=1)
+        self.verifier = OidcVerifier(FakeIdp.ISSUER, "cairnml-sdk", jwks_url=url, key_lifespan_sec=1)
 
     def test_a_removed_key_is_refused_once_the_key_set_expires(self):
         token = self.idp.token()

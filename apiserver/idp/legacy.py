@@ -25,12 +25,12 @@ def legacy_settings_in_use(get: Callable = config.get) -> List[str]:
 
 def test_only_settings_in_use(get: Callable = config.get, env: Mapping = os.environ) -> List[str]:
     """Settings that exist for the test suite. They are refused unless the server runs as a test run."""
-    test_run = env.get("CLEARML_TEST_MODE") == "1"
+    test_run = env.get("CAIRNML_TEST_MODE") == "1"
     problems = []
     if get("apiserver.idp.jwks_file", "") and not test_run:
-        problems.append("apiserver.idp.jwks_file is test-only: it needs CLEARML_TEST_MODE=1")
-    if env.get("CLEARML_ALLOW_CONFIG_SECRET") == "1" and not test_run:
-        problems.append("CLEARML_ALLOW_CONFIG_SECRET=1 is test-only: it needs CLEARML_TEST_MODE=1")
+        problems.append("apiserver.idp.jwks_file is test-only: it needs CAIRNML_TEST_MODE=1")
+    if env.get("CAIRNML_ALLOW_CONFIG_SECRET") == "1" and not test_run:
+        problems.append("CAIRNML_ALLOW_CONFIG_SECRET=1 is test-only: it needs CAIRNML_TEST_MODE=1")
     return problems
 
 
