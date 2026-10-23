@@ -35,6 +35,8 @@ jobs:
           sudo mkdir -p /var/log/cairnml && sudo chown "$USER" /var/log/cairnml
           mkdir -p "$CAIRNML_SECRETS_DIR"
           echo -n test > "$CAIRNML_SECRETS_DIR/s3_secret_key"
+      # The server requires cairnml and cairnml-agent from PyPI. Until they are released there, install them from git.
+      - run: python -m pip install "cairnml @ git+https://github.com/gianlucapargaetzi/cairnml.git@main" "cairnml-agent @ git+https://github.com/gianlucapargaetzi/cairnml-agent.git@main"
       - run: python -m pip install -r apiserver/requirements.txt pytest
       # The unit tests that need only Redis. The API tests need MongoDB and Elasticsearch and run in the end-to-end suite.
       - run: python -m pytest -q apiserver/tests/idp/test_assertion.py apiserver/tests/idp/test_audit.py apiserver/tests/idp/test_checks.py apiserver/tests/idp/test_config.py apiserver/tests/idp/test_directory.py apiserver/tests/idp/test_github_check.py apiserver/tests/idp/test_github.py apiserver/tests/idp/test_jwks_lifespan.py apiserver/tests/idp/test_models.py apiserver/tests/idp/test_oidc.py apiserver/tests/idp/test_replay.py apiserver/tests/idp/test_secrets.py apiserver/tests/idp/test_session_secret.py apiserver/tests/idp/test_token_identity.py apiserver/tests/idp/test_tokens.py apiserver/tests/idp/test_users.py apiserver/tests/datachunks/test_datachunks_unit.py apiserver/tests/datachunks/test_dataset_credentials_unit.py apiserver/tests/datachunks/test_dataset_registry_unit.py
