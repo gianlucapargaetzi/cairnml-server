@@ -7,7 +7,7 @@ services:
     command:
     - apiserver
     container_name: cairnml-apiserver
-    image: cairnml/server:latest
+    image: gianlucapargaetzi/cairnml-server:latest
     restart: unless-stopped
     volumes:
     - /opt/cairnml/logs:/var/log/cairnml
@@ -88,7 +88,7 @@ services:
     container_name: cairnml-webserver
     # environment:
     #  CAIRNML_SERVER_SUB_PATH : cairnml-web # Allow Cairnml to be served with a URL path prefix.
-    image: cairnml/server:latest
+    image: gianlucapargaetzi/cairnml-server:latest
     restart: unless-stopped
     depends_on:
       - apiserver
@@ -105,7 +105,7 @@ services:
       - mongo
       - elasticsearch
     container_name: async_delete
-    image: cairnml/server:latest
+    image: gianlucapargaetzi/cairnml-server:latest
     networks:
       - backend
     restart: unless-stopped
