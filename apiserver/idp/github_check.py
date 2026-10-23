@@ -2,6 +2,7 @@
 be installed on its repository. Otherwise the job is refused at once with a clear message, instead of
 failing later in the agent when it tries to clone."""
 
+from fnmatch import fnmatchcase
 from urllib.parse import urlsplit
 
 from apiserver.apierrors import errors
@@ -19,6 +20,11 @@ def repo_of(repository: str):
     if path.endswith(".git"):
         path = path[:-4]
     return path if path.count("/") == 1 else None
+
+
+def repo_allowed(repo: str, patterns) -> bool:
+    """True when 'owner/name' matches one of the allowed patterns ('owner/name' or 'owner/*'), ignoring case."""
+    return any(fnmatchcase(repo.lower(), str(pattern).lower()) for pattern in patterns or ())
 
 
 def check_submission(task, app) -> None:

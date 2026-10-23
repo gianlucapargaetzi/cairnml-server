@@ -186,7 +186,7 @@ def git_token(call: APICall, _company, request: GitTokenRequest):
     from apiserver.database.model.task.task import Task
     from apiserver.idp.checks import AccessDenied, check_job_issue
     from apiserver.idp.github import GitHubError, RepoNotAccessible
-    from apiserver.idp.github_check import build_from_config, repo_of
+    from apiserver.idp.github_check import build_from_config, repo_allowed, repo_of
     from apiserver.service_repo.auth import Token
 
     claims = Token.decode(_bearer(call))
@@ -207,9 +207,17 @@ def git_token(call: APICall, _company, request: GitTokenRequest):
     app = build_from_config()
     if app is None:
         raise errors.bad_request.ValidationError("GitHub is not configured")
-    repo = repo_of(task.script.repository)
-    if repo is None:
-        raise errors.bad_request.ValidationError("the task's repository is not on GitHub")
+    if request.repository:
+        repo = repo_of(request.repository)
+        if repo is None:
+            raise errors.bad_request.ValidationError("the repository is not on GitHub")
+        if not repo_allowed(repo, config.get("apiserver.idp.dataset_repositories", [])):
+            audit(claims.get("device") or "unknown", "git_token.refused", device=claims.get("device"), task=request.task, reason=f"{repo} is not an allowed dataset repository")
+            raise errors.bad_request.ValidationError(f"{repo} is not an allowed dataset repository")
+    else:
+        repo = repo_of(task.script.repository)
+        if repo is None:
+            raise errors.bad_request.ValidationError("the task's repository is not on GitHub")
     try:
         token = app.installation_token(repo)
     except RepoNotAccessible:
