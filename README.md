@@ -31,7 +31,6 @@ You can quickly [deploy](#launching-the-cairnml-server)  your **CairnML Server**
 ## System design
 
 
-![Alt Text](docs/CairnML_Server_Diagram.png)
 
 The **CairnML Server** has two supported configurations:
 - Single IP (domain) with the following open ports
