@@ -1,8 +1,7 @@
 """The end-to-end suite's reset: removes what the suite made, so a stack that is kept running starts each session from
 the same state. Off unless apiserver.e2e.reset_enabled is set, which only the suite's own test stack does (see
 tests/e2e/stack/compose.yaml). Admin only. It removes what carries the configured name prefix, and nothing else:
-projects with the prefix (with their contents), tasks with the prefix, and scheduler workers with the prefix together
-with their reservations. Scheduler events of the company are cleared too, so each session reads only its own events.
+projects with the prefix (with their contents), and tasks with the prefix.
 """
 
 from apiserver.apierrors import errors
@@ -10,7 +9,6 @@ from apiserver.bll.project.project_cleanup import delete_project
 from apiserver.bll.task.task_operations import delete_task
 from apiserver.config_repo import config
 from apiserver.database.model.project import Project
-from apiserver.database.model.scheduler import Reservation, SchedulerEvent, SchedulerWorker
 from apiserver.database.model.task.task import Task
 from apiserver.database.model.url_to_delete import UrlToDelete
 from apiserver.service_repo import APICall, endpoint
@@ -99,15 +97,7 @@ def e2e_reset(call: APICall, company_id, _):
                 sync_delete=True,
             )
 
-    workers = [w.id for w in SchedulerWorker.objects(company=company_id, id__startswith=prefix).only("id")]
-    released = Reservation.objects(company=company_id, worker__in=workers).delete() if workers else 0
-    removed_workers = SchedulerWorker.objects(company=company_id, id__in=workers).delete() if workers else 0
-    events = SchedulerEvent.objects(company=company_id).delete()
-
     call.result.data = {
         "projects": removed_projects,
         "tasks": removed_tasks,
-        "workers": removed_workers,
-        "reservations": released,
-        "scheduler_events": events,
     }

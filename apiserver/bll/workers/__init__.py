@@ -18,13 +18,15 @@ from apiserver.apimodels.workers import (
     WorkerEntry,
     StatusReportRequest,
     WorkerResponseEntry,
-    MachineStats,
+    QueueEntry,
+    MachineStats, Resources,
 )
 from apiserver.config_repo import config
 from apiserver.database.errors import translate_errors_context
 from apiserver.database.model.auth import User
 from apiserver.database.model.company import Company
 from apiserver.database.model.project import Project
+from apiserver.database.model.queue import Queue
 from apiserver.database.model.task.task import Task
 from apiserver.redis_manager import redman
 from apiserver.utilities.dicts import nested_get
@@ -52,9 +54,11 @@ class WorkerBLL:
         user_id: str,
         worker: str,
         ip: str = "",
+        queues: Sequence[str] = None,
         timeout: int = 0,
         tags: Sequence[str] = None,
         system_tags: Sequence[str] = None,
+        resources: Resources = None,
     ) -> WorkerEntry:
         """
         Register a worker
@@ -62,6 +66,7 @@ class WorkerBLL:
         :param user_id: user ID under which this worker is running
         :param worker: worker ID
         :param ip: the real ip of the worker
+        :param queues: queues reported as being monitored by the worker
         :param timeout: registration expiration timeout in seconds
         :param tags: a list of tags for this worker
         :raise bad_request.InvalidUserId: in case the calling user or company does not exist
@@ -70,6 +75,7 @@ class WorkerBLL:
         key = WorkerBLL._get_worker_key(company_id, user_id, worker)
 
         timeout = timeout or int(self.config.get("default_worker_timeout_sec", 10 * 60))
+        queues = queues or []
 
         with translate_errors_context():
             query = dict(id=user_id, company=company_id)
@@ -80,6 +86,15 @@ class WorkerBLL:
             if not company:
                 raise bad_request.InvalidId("invalid company", company=company_id)
 
+            queues_query = Q(company=company_id, id__in=queues)
+            queue_objs = Queue.objects(queues_query).only("id")
+            if len(queue_objs) < len(queues):
+                invalid = set(queues).difference(q.id for q in queue_objs)
+                raise bad_request.InvalidQueueId(ids=invalid)
+
+            if resources and queues:
+                Queue.objects(queues_query).update(resources=resources.to_struct())
+
             now = datetime.utcnow()
             entry = WorkerEntry(
                 key=key,
@@ -87,6 +102,7 @@ class WorkerBLL:
                 user=user.to_proper_dict(),
                 company=company.to_proper_dict(),
                 ip=ip,
+                queues=queues,
                 register_time=now,
                 register_timeout=timeout,
                 last_activity_time=now,
@@ -152,6 +168,10 @@ class WorkerBLL:
 
             now = datetime.utcnow()
             entry.last_activity_time = now
+            entry.queue = report.queue
+
+            if report.queues:
+                entry.queues = report.queues
 
             if not report.task:
                 entry.task = None
@@ -272,6 +292,34 @@ class WorkerBLL:
         ]
 
         task_ids = set(filter(None, (helper.task_id for helper in helpers)))
+        all_queues = set(
+            itertools.chain.from_iterable(helper.queue_ids for helper in helpers)
+        )
+
+        queues_info = {}
+        if all_queues:
+            projection = [
+                {"$match": {"_id": {"$in": list(all_queues)}}},
+                {
+                    "$project": {
+                        "name": 1,
+                        "display_name": 1,
+                        "next_entry": {"$arrayElemAt": ["$entries", 0]},
+                        "num_entries": {"$size": "$entries"},
+                    }
+                },
+            ]
+            queues_info = {res["_id"]: res for res in Queue.aggregate(projection)}
+            task_ids = task_ids.union(
+                filter(
+                    None,
+                    (
+                        nested_get(info, ("next_entry", "task"))
+                        for info in queues_info.values()
+                    ),
+                )
+            )
+
         tasks_info = {}
         if task_ids:
             tasks_info = {
@@ -281,6 +329,23 @@ class WorkerBLL:
                 )
             }
 
+        def update_queue_entries(*entries):
+            for entry in entries:
+                if not entry:
+                    continue
+                info = queues_info.get(entry.id, None)
+                if not info:
+                    continue
+                entry.name = info.get("name", None)
+                entry.display_name = info.get("display_name", None)
+                entry.num_tasks = info.get("num_entries", 0)
+                task_id = nested_get(info, ("next_entry", "task"))
+                if task_id:
+                    task = tasks_info.get(task_id, None)
+                    entry.next_task = IdNameEntry(
+                        id=task_id, name=task.name if task else None
+                    )
+
         for helper in helpers:
             worker = helper.worker
             if helper.task_id:
@@ -288,6 +353,10 @@ class WorkerBLL:
                 if task:
                     worker.task.running_time = (task.active_duration or 0) * 1000
                     worker.task.last_iteration = task.last_iteration
+
+            update_queue_entries(worker.queue)
+            if worker.queues:
+                update_queue_entries(*worker.queues)
 
         return [helper.worker for helper in helpers]
 
@@ -533,11 +602,18 @@ class WorkerBLL:
 class WorkerConversionHelper:
     worker: WorkerResponseEntry
     task_id: str
+    queue_ids: Set[str]
 
     @classmethod
     def from_worker_entry(cls, worker: WorkerEntry):
         data = worker.to_struct()
+        queue = data.pop("queue", None) or None
+        queue_ids = set(data.pop("queues", []))
+        queues = [QueueEntry(id=id) for id in queue_ids]
+        if queue:
+            queue = next((q for q in queues if q.id == queue), None)
         return cls(
-            worker=WorkerResponseEntry(**data),
+            worker=WorkerResponseEntry(queues=queues, queue=queue, **data),
             task_id=worker.task.id if worker.task else None,
+            queue_ids=queue_ids,
         )

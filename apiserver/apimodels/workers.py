@@ -21,11 +21,17 @@ class WorkerRequest(Base):
     tags = ListField(str)
     system_tags = ListField(str)
 
+class Resources(Base):
+    cpu_usage = FloatField()
+    gpu_usage = FloatField()
+
 class RegisterRequest(WorkerRequest):
     timeout = IntField(
         default=int(config.get("services.workers.default_worker_timeout_sec", 10 * 60))
     )
     """ registration timeout in seconds (default is 10min) """
+    queues = ListField(six.string_types)  # list of queues this worker listens to
+    resources = EmbeddedField(Resources)
 
 
 class MachineStats(Base):
@@ -47,6 +53,10 @@ class MachineStats(Base):
 
 class StatusReportRequest(WorkerRequest):
     task = StringField()  # task the worker is running on
+    queue = StringField()  # queue from which task was taken
+    queues = ListField(
+        str
+    )  # list of queues this worker listens to. if None, this will not update the worker's queues list.
     timestamp = IntField(required=True)
     machine_stats = EmbeddedField(MachineStats)
 
@@ -64,6 +74,8 @@ class WorkerEntry(Base, JsonSerializableMixin):
     ip = StringField()
     task = EmbeddedField(IdNameEntry)
     project = EmbeddedField(IdNameEntry)
+    queue = StringField()  # queue from which current task was taken
+    queues = ListField(str)  # list of queues this worker listens to
     register_time = DateTimeField(required=True)
     register_timeout = IntField(required=True)
     last_activity_time = DateTimeField(required=True)
@@ -77,8 +89,16 @@ class CurrentTaskEntry(IdNameEntry):
     last_iteration = IntField()
 
 
+class QueueEntry(IdNameEntry):
+    display_name = StringField()
+    next_task = EmbeddedField(IdNameEntry)
+    num_tasks = IntField()
+
+
 class WorkerResponseEntry(WorkerEntry):
     task = EmbeddedField(CurrentTaskEntry)
+    queue = EmbeddedField(QueueEntry)
+    queues = ListField(QueueEntry)
 
 
 class GetAllRequest(Base):

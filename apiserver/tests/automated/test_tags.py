@@ -134,6 +134,32 @@ class TestTags(TestService):
         ).models
         self.assertFound(model_id, [], models)
 
+    def testQueueTags(self):
+        q_id = self._temp_queue(system_tags=["default"])
+        queues = self.api.queues.get_all_ex(
+            name="Test tags", system_tags=["default"]
+        ).queues
+        self.assertFound(q_id, ["default"], queues)
+
+        queues = self.api.queues.get_all_ex(
+            name="Test tags", system_tags=["-default"]
+        ).queues
+        self.assertNotFound(q_id, queues)
+
+        self.api.queues.update(queue=q_id, system_tags=[])
+        queues = self.api.queues.get_all_ex(
+            name="Test tags", system_tags=["-default"]
+        ).queues
+        self.assertFound(q_id, [], queues)
+
+        # test default queue
+        queues = self.api.queues.get_all(system_tags=["default"]).queues
+        if queues:
+            self.assertEqual(queues[0].id, self.api.queues.get_default().id)
+        else:
+            self.api.queues.update(queue=q_id, system_tags=["default"])
+            self.assertEqual(q_id, self.api.queues.get_default().id)
+
     def testTaskTags(self):
         task_id = self._temp_task(
             name="Test tags", system_tags=["active"]
@@ -183,6 +209,10 @@ class TestTags(TestService):
         self.api.tasks.started(task=task_id)
         sleep(1)
         self.api.tasks.stopped(task=task_id)
+
+    def _temp_queue(self, **kwargs):
+        self.update_missing(kwargs, name="Test tags")
+        return self.create_temp("queues", **kwargs)
 
     def _temp_project(self, **kwargs):
         self.update_missing(kwargs, name="Test tags", description="test")

@@ -66,6 +66,7 @@ def get_count(call: APICall, company_id: str, request: GetCountRequest):
 def register(call: APICall, company_id, request: RegisterRequest):
     worker = request.worker
     timeout = request.timeout
+    queues = request.queues
 
     if not timeout:
         timeout = config.get("apiserver.workers.default_timeout", 10 * 60)
@@ -80,9 +81,11 @@ def register(call: APICall, company_id, request: RegisterRequest):
         user_id=call.identity.user,
         worker=worker,
         ip=call.real_ip,
+        queues=queues,
         timeout=timeout,
         tags=request.tags,
         system_tags=request.system_tags,
+        resources=request.resources,
     )
 
 
@@ -103,6 +106,27 @@ def status_report(call: APICall, company_id, request: StatusReportRequest):
         tags=request.tags,
         system_tags=request.system_tags,
     )
+    _record_machine_usage(company_id, request)
+
+
+def _record_machine_usage(company_id, request: StatusReportRequest) -> None:
+    """The machine usage of a status report, for the monitor: the usage history of the workers."""
+    stats = request.machine_stats
+    if not stats:
+        return
+    cpu = stats.cpu_usage
+    if isinstance(cpu, (list, tuple)):
+        cpu = sum(cpu) / len(cpu) if cpu else None
+    machine = {
+        "cpu_percent": cpu,
+        "ram_used_gb": stats.memory_used / 1024 if stats.memory_used is not None else None,
+    }
+    machine = {k: v for k, v in machine.items() if v is not None}
+    if machine:
+        from datetime import datetime
+        from apiserver.bll.scheduler import usage_history
+
+        usage_history.record(company_id, request.worker, machine, [], datetime.utcnow())
 
 
 @endpoint(

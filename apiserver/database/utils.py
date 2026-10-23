@@ -207,6 +207,7 @@ _system_tag_names = {
     "model": _names_set("active", "archived"),
     "project": _names_set("archived", "public", "default"),
     "task": _names_set("active", "archived", "development"),
+    "queue": _names_set("default"),
 }
 
 _system_tag_prefixes = {"task": _names_set("annotat")}

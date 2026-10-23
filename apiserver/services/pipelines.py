@@ -8,18 +8,20 @@ from apiserver.apimodels.pipelines import (
 )
 from apiserver.bll.organization import OrgBLL
 from apiserver.bll.project import ProjectBLL
-from apiserver.bll.scheduler.service import placement_pass
+from apiserver.bll.queue import QueueBLL
 from apiserver.bll.task import TaskBLL
 from apiserver.bll.task.task_operations import enqueue_task, delete_task
 from apiserver.bll.util import run_batch_operation
 from apiserver.database.model.project import Project
 from apiserver.database.model.task.task import Task, TaskType
 from apiserver.service_repo import APICall, endpoint
+from apiserver.utilities.dicts import nested_get
 from .tasks import _delete_task_events
 
 org_bll = OrgBLL()
 project_bll = ProjectBLL()
 task_bll = TaskBLL()
+queue_bll = QueueBLL()
 
 
 def _update_task_name(task: Task):
@@ -117,12 +119,18 @@ def start_pipeline(call: APICall, company_id: str, request: StartPipelineRequest
         task_id=task.id,
         company_id=company_id,
         identity=call.identity,
+        queue_id=request.queue,
         status_message="Starting pipeline",
         status_reason="",
     )
-    placement_pass(company_id)
+    extra = {}
+    if request.verify_watched_queue and queued:
+        res_queue = nested_get(res, ("fields", "execution.queue"))
+        if res_queue:
+            extra["queue_watched"] = queue_bll.check_for_workers(company_id, res_queue)
 
     call.result.data = dict(
         pipeline=task.id,
         enqueued=bool(queued),
+        **extra,
     )
