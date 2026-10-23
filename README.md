@@ -1,6 +1,5 @@
 <div align="center">
 
-<img src="docs/cairnml_server_logo.png" width="250px">
 
 **CairnML - Auto-Magical Suite of tools to streamline your ML workflow 
 </br>Experiment Manager, ML-Ops and Data-Management**
@@ -14,7 +13,7 @@
 
 ## CairnML Server
 
-The **CairnML Server** is the backend service infrastructure for [CairnML](https://github.com/cairnml/cairnml).
+The **CairnML Server** is the backend service infrastructure for [CairnML](https://github.com/gianlucapargaetzi/cairnml).
 It allows multiple users to collaborate and manage their experiments.
 **CairnML** offers a [free hosted service](https://app.clear.ml/), which is maintained by **CairnML** and open to anyone.
 In order to host your own server, you will need to launch the **CairnML Server** and point **CairnML** to it.
@@ -32,7 +31,6 @@ You can quickly [deploy](#launching-the-cairnml-server)  your **CairnML Server**
 ## System design
 
 
-![Alt Text](docs/CairnML_Server_Diagram.png)
 
 The **CairnML Server** has two supported configurations:
 - Single IP (domain) with the following open ports
@@ -91,9 +89,9 @@ In order to set up the **CairnML** client to work with your **CairnML Server**:
 it will be inferred from the http/s scheme.
 
 After launching the **CairnML Server** and configuring the **CairnML** client to use the **CairnML Server**,
-you can [use](https://github.com/cairnml/cairnml) **CairnML** in your experiments and view them in your **CairnML Server** web server,
+you can [use](https://github.com/gianlucapargaetzi/cairnml) **CairnML** in your experiments and view them in your **CairnML Server** web server,
 for example http://localhost:8080.  
-For more information about the CairnML client, see [**CairnML**](https://github.com/cairnml/cairnml).
+For more information about the CairnML client, see [**CairnML**](https://github.com/gianlucapargaetzi/cairnml).
 
 ## CairnML-Agent Services  <a name="services"></a> 
 
@@ -110,7 +108,7 @@ increased data transparency)
 CairnML-Agent Services container will spin **any** task enqueued into the dedicated `services` queue. 
 Every task launched by CairnML-Agent Services  will be registered as a new node in the system, 
 providing tracking and transparency capabilities.  
-You can also run the CairnML-Agent Services manually, see details in [CairnML-agent services mode](https://github.com/cairnml/cairnml-agent#cairnml-agent-services-mode-)
+You can also run the CairnML-Agent Services manually, see details in [CairnML-agent services mode](https://github.com/clearml/clearml-agent#clearml-agent-services-mode-)
 
 **Note**: It is the user's responsibility to make sure the proper tasks are pushed into the `services` queue. 
 Do not enqueue training / inference tasks into the `services` queue, as it will put unnecessary load on the server.
@@ -133,7 +131,7 @@ To restart the **CairnML Server**, you must first stop the containers, and then 
 
 ## Upgrading <a name="upgrade"></a>
 
-**CairnML Server** releases are also reflected in the [docker compose configuration file](https://github.com/cairnml/cairnml-server/blob/master/docker/docker-compose.yml).  
+**CairnML Server** releases are also reflected in the [docker compose configuration file](https://github.com/clearml/clearml-server/blob/master/docker/docker-compose.yml).  
 We strongly encourage you to keep your **CairnML Server** up to date, by keeping up with the current release.
 
 **Note**: The following upgrade instructions use the Linux OS as an example.
@@ -166,7 +164,7 @@ To upgrade your existing **CairnML Server** deployment:
 1. Download the latest `docker-compose.yml` file.
 
    ```bash
-   curl https://raw.githubusercontent.com/cairnml/cairnml-server/master/docker/docker-compose.yml -o docker-compose.yml 
+   curl https://raw.githubusercontent.com/clearml/clearml-server/master/docker/docker-compose.yml -o docker-compose.yml 
    ```
 
 1. Configure the CairnML-Agent Services (not supported on Windows installation). 
@@ -194,7 +192,7 @@ To upgrade your existing **CairnML Server** deployment:
 If you have any questions, look to the CairnML [FAQ](https://clear.ml/docs/latest/docs/faq), or
 tag your questions on [stackoverflow](https://stackoverflow.com/questions/tagged/cairnml) with '**cairnml**' tag.
 
-For feature requests or bug reports, please use [GitHub issues](https://github.com/cairnml/cairnml-server/issues).
+For feature requests or bug reports, please use [GitHub issues](https://github.com/gianlucapargaetzi/cairnml-server/issues).
 
 Additionally, you can always find us at *cairnml@allegro.ai*
 
