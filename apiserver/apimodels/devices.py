@@ -36,3 +36,5 @@ class JobTokenRequest(Base):
 class GitTokenRequest(Base):
     task = StringField(required=True)
     """ The task whose repository the caller needs to clone """
+    repository = StringField()
+    """ A dataset repository to clone instead of the task's own. Must be allowed in the server's configuration. """
