@@ -10,6 +10,7 @@ says the data was checked, and using the dataset checks it again.
 """
 
 import re
+import time
 from datetime import datetime, timezone
 from typing import Iterable, Optional
 
@@ -115,3 +116,37 @@ def register(
             f"requests on {registry}"
         ) from None
     return {"name": name, "repository": repo, "pull_request": url}
+
+
+# Which repositories a job may get a token for: the registry itself, and every repository its entries point to.
+
+_ALLOWED_TTL_SEC = 60
+_allowed: dict = {}
+
+
+def clear_allowed_cache() -> None:
+    _allowed.clear()
+
+
+def allowed_repositories(app: GitHubApp, registry: str, clock=time.monotonic) -> set:
+    """The registry repository and the repositories of its ``source: repo`` entries, in lower case.
+
+    The registry is the one place that says which dataset repositories exist; a pull request into its default branch is
+    how one is added. The answer is kept for a minute, so a new entry works shortly after its pull request merges.
+    """
+    if not registry:
+        return set()
+    cached = _allowed.get(registry)
+    if cached and clock() - cached[0] < _ALLOWED_TTL_SEC:
+        return cached[1]
+    found = {registry.lower()}
+    for other in app.list_dir(registry, ENTRY_DIR):
+        if not other.endswith(".yaml"):
+            continue
+        text = (app.read_file(registry, f"{ENTRY_DIR}/{other}") or b"").decode(errors="replace")
+        if re.search(r"^source:\s*repo\s*$", text, re.M):
+            linked = _linked_repo(text)
+            if linked:
+                found.add(linked)
+    _allowed[registry] = (clock(), found)
+    return found

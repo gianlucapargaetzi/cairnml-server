@@ -186,7 +186,9 @@ def git_token(call: APICall, _company, request: GitTokenRequest):
     from apiserver.database.model.task.task import Task
     from apiserver.idp.checks import AccessDenied, check_job_issue
     from apiserver.idp.github import GitHubError, RepoNotAccessible
-    from apiserver.idp.github_check import build_from_config, repo_allowed, repo_of
+    from apiserver.bll.dataset_registry import allowed_repositories
+    from apiserver.idp.github import GitHubError
+    from apiserver.idp.github_check import build_from_config, repo_of
     from apiserver.service_repo.auth import Token
 
     claims = Token.decode(_bearer(call))
@@ -211,9 +213,13 @@ def git_token(call: APICall, _company, request: GitTokenRequest):
         repo = repo_of(request.repository)
         if repo is None:
             raise errors.bad_request.ValidationError("the repository is not on GitHub")
-        if not repo_allowed(repo, config.get("apiserver.idp.dataset_repositories", [])):
-            audit(claims.get("device") or "unknown", "git_token.refused", device=claims.get("device"), task=request.task, reason=f"{repo} is not an allowed dataset repository")
-            raise errors.bad_request.ValidationError(f"{repo} is not an allowed dataset repository")
+        try:
+            registered = allowed_repositories(app, config.get("apiserver.dataset_registry.repository", ""))
+        except GitHubError:
+            raise errors.bad_request.ValidationError("the dataset registry could not be read") from None
+        if repo.lower() not in registered:
+            audit(claims.get("device") or "unknown", "git_token.refused", device=claims.get("device"), task=request.task, reason=f"{repo} is not in the dataset registry")
+            raise errors.bad_request.ValidationError(f"{repo} is not a registered dataset repository")
     else:
         repo = repo_of(task.script.repository)
         if repo is None:
