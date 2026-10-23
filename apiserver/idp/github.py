@@ -38,7 +38,8 @@ def valid_repo(repo: str) -> bool:
 
 class GitHubApp:
     def __init__(self, app_id: str, private_key_pem: str, api_url: str, http=None, clock=time.time) -> None:
-        self._app_id = app_id
+        # The id is a number when it comes from the environment; PyJWT needs the issuer as a string.
+        self._app_id = str(app_id)
         self._key = private_key_pem
         self._api = api_url.rstrip("/")
         self._http = http or requests.Session()

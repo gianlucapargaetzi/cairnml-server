@@ -55,5 +55,7 @@ class TestSubmissionCheck(TestCase):
     def test_no_repository_is_not_checked(self):
         check_submission(task(repository=""), None)
 
-    def test_github_is_not_configured_means_no_check(self):
-        check_submission(task(), None)
+    def test_a_github_repository_is_refused_when_the_app_is_not_configured(self):
+        with self.assertRaises(errors.bad_request.ValidationError) as ctx:
+            check_submission(task(), None)
+        self.assertIn("GitHub", str(ctx.exception))
