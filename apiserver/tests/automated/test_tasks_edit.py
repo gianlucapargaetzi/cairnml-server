@@ -21,6 +21,10 @@ class TestTasksEdit(TestService):
         self.update_missing(kwargs, name="test", uri="file:///a/b", labels={})
         return self.create_temp("models", **kwargs)
 
+    def new_queue(self, **kwargs):
+        self.update_missing(kwargs, name="test")
+        return self.create_temp("queues", **kwargs)
+
     def test_task_types(self):
         with self.api.raises(ValidationError):
             task = self.new_task(type="Unsupported")
@@ -181,11 +185,12 @@ class TestTasksEdit(TestService):
         system_tag = "existing-system-tag"
         status_message = "test-status-message"
         status_reason = "test-status-reason"
+        queue_id = self.new_queue()
 
         # Create two tasks with system_tags and enqueue one of them
         dequeued_task_id = self.new_task(system_tags=[system_tag])
         enqueued_task_id = self.new_task(system_tags=[system_tag])
-        self.api.tasks.enqueue(task=enqueued_task_id)
+        self.api.tasks.enqueue(task=enqueued_task_id, queue=queue_id)
 
         self.api.tasks.archive(
             tasks=[enqueued_task_id, dequeued_task_id],
@@ -201,14 +206,23 @@ class TestTasksEdit(TestService):
             self.assertIn(status_message, task.status_message)
             self.assertIn(status_reason, task.status_reason)
 
+        # Check that the queue does not contain the enqueued task anymore
+        queue = self.api.queues.get_by_id(queue=queue_id).queue
+        task_in_queue = next(
+            (True for entry in queue.entries if entry["task"] == enqueued_task_id),
+            False,
+        )
+        self.assertFalse(task_in_queue)
 
     def test_stopped_task_enqueue(self):
+        queue_id = self.new_queue()
         task_id = self.new_task()
         self.api.tasks.started(task=task_id)
         self.api.tasks.stopped(task=task_id)
         projection = ["*", "execution.*"]
         task = self.api.tasks.get_all_ex(id=task_id, projection=projection).tasks[0]
         self.assertEqual(task.status, "stopped")
-        self.api.tasks.enqueue(task=task_id)
+        self.api.tasks.enqueue(task=task_id, queue=queue_id)
         task = self.api.tasks.get_all_ex(id=task_id, projection=projection).tasks[0]
         self.assertEqual(task.status, "queued")
+        self.assertEqual(task.execution.queue.id, queue_id)

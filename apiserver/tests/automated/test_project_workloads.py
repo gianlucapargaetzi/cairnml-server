@@ -11,16 +11,19 @@ class TestProjectWorkloads(TestService):
         self.user = self.api.users.get_current_user().user
 
     def test_workloads(self):
+        queue = self._temp_queue("Workloads test 1")
+        self._create_temp_worker("workloads test", queue, resources={"gpu_usage": 2})
+
         project_name = f"Project Workload {uuid4()}"
         project = self._temp_project(project_name)
         child_project_name = f"{project_name}/Child1"
         child_project = self._temp_project(child_project_name)
         task_root_running = self._create_temp_queued_task(
-            task_name="workloads test1", project=project
+            task_name="workloads test1", queue=queue, project=project
         )
         self.api.tasks.started(task=task_root_running)
         task_child_failed = self._create_temp_queued_task(
-            task_name="workloads test2", project=child_project
+            task_name="workloads test2", queue=queue, project=child_project
         )
         self.api.tasks.started(task=task_child_failed)
         task_child_completed = self._temp_task(
@@ -28,7 +31,7 @@ class TestProjectWorkloads(TestService):
         )
         self.api.tasks.started(task=task_child_completed)
         task_child_not_running = self._create_temp_queued_task(
-            task_name="workloads test4", project=child_project
+            task_name="workloads test4", queue=queue, project=child_project
         )
 
         sleep(5)
@@ -56,6 +59,14 @@ class TestProjectWorkloads(TestService):
             **kwargs,
         )
 
+    def _temp_queue(self, queue_name, **kwargs):
+        return self.create_temp(
+            "queues",
+            name=queue_name,
+            delete_params=self.delete_params,
+            **kwargs,
+        )
+
     def _temp_task(self, task_name, is_development=False, **kwargs):
         task_input = dict(
             name=task_name,
@@ -67,7 +78,10 @@ class TestProjectWorkloads(TestService):
         )
         return self.create_temp("tasks", **task_input)
 
-    def _create_temp_queued_task(self, task_name, **kwargs) -> str:
+    def _create_temp_queued_task(self, task_name, queue, **kwargs) -> str:
         task_id = self._temp_task(task_name, **kwargs)
-        self.api.tasks.enqueue(task=task_id)
+        self.api.tasks.enqueue(task=task_id, queue=queue)
         return task_id
+
+    def _create_temp_worker(self, worker, queue, **more):
+        self.api.workers.register(worker=worker, queues=[queue], **more)
