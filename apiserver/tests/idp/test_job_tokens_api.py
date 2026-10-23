@@ -100,6 +100,18 @@ class TestGitToken(TestCase):
         expected = "the task's repository is not on GitHub" if build_from_config() else "GitHub is not configured"
         self.assertIn(expected, response.text)
 
+    def test_a_repository_that_is_not_allowed_gets_no_token(self):
+        response = call(
+            "devices.git_token",
+            {"task": self.task_id, "repository": "https://github.com/not-allowed/secret-code"},
+            token=self.agent_token,
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertTrue(
+            "is not an allowed dataset repository" in response.text or "GitHub is not configured" in response.text,
+            response.text,
+        )
+
     def test_a_job_token_for_another_task_is_refused(self):
         token = call("devices.job_token", {"task": self.task_id}, token=self.agent_token).json()["data"]["access_token"]
         other = _new_task()
