@@ -131,3 +131,30 @@ class TestGoldenVector(TestCase):
         dvc = fp.parse_dvc_file(DVC)
         lock = fp.build_lock(dvc, {"kind": "native"}, 3, {"image": "image"}, {"class": "class"}, "2.1.13")
         self.assertEqual(lock["footprint"], "275fe1c61757148538b8b2c964aac9c60daca857b04b8fce4e0dbf037118d2f4")
+
+
+class TestAllowedRepositories(TestCase):
+    """The registry is the only list of dataset repositories: a job gets a token for the registry and its entries."""
+
+    def setUp(self):
+        bll.clear_allowed_cache()
+
+    def test_the_registry_itself_and_the_repositories_of_its_own_entries_are_allowed(self):
+        app = FakeApp(entries={
+            "cars.yaml": "source: repo\nlink: https://github.com/Acme/Cars-Data\n",
+            "coco.yaml": "source: huggingface\nlink: hf://datasets/org/coco\nadapter: coco\n",
+            "notes.txt": "source: repo\nlink: https://github.com/acme/not-an-entry\n",
+        })
+        self.assertEqual(bll.allowed_repositories(app, "acme/registry"), {"acme/registry", "acme/cars-data"})
+
+    def test_no_registry_means_nothing_is_allowed(self):
+        self.assertEqual(bll.allowed_repositories(FakeApp(), ""), set())
+
+    def test_a_new_entry_is_seen_after_a_minute(self):
+        app = FakeApp(entries={"cars.yaml": "source: repo\nlink: https://github.com/acme/cars-data\n"})
+        now = [1000.0]
+        first = bll.allowed_repositories(app, "acme/registry", clock=lambda: now[0])
+        app.entries["more.yaml"] = "source: repo\nlink: https://github.com/acme/more-data\n"
+        self.assertEqual(bll.allowed_repositories(app, "acme/registry", clock=lambda: now[0]), first)
+        now[0] += 61
+        self.assertIn("acme/more-data", bll.allowed_repositories(app, "acme/registry", clock=lambda: now[0]))
