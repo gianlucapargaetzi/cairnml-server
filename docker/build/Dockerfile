@@ -25,8 +25,8 @@ FROM agent-${CAIRNML_FROM} AS agent
 
 FROM python:3.11-slim-bookworm
 ARG CAIRNML_FROM
-COPY --chmod=744 docker/build/internal_files/entrypoint.sh /opt/cairnml/
-COPY --chmod=744 docker/build/internal_files/update_from_env.py /opt/cairnml/utilities/
+COPY --chmod=755 docker/build/internal_files/entrypoint.sh /opt/cairnml/
+COPY --chmod=755 docker/build/internal_files/update_from_env.py /opt/cairnml/utilities/
 COPY apiserver /opt/cairnml/apiserver/
 
 COPY --chmod=744 docker/build/internal_files/final_image_preparation.sh /tmp/internal_files/
@@ -38,7 +38,8 @@ RUN --mount=type=bind,from=sdk,source=/,target=/tmp/cairnml-sdk,rw \
     /bin/bash -c '/tmp/internal_files/final_image_preparation.sh'
 
 # The Angular application builder writes the app into build/browser; that folder replaces nginx's default page.
-COPY --from=webapp_builder /opt/open-webapp/build/browser /usr/share/nginx/html
+# The entrypoint writes runtime configuration into the web root, so the server user owns it.
+COPY --chown=cairnml:cairnml --from=webapp_builder /opt/open-webapp/build/browser /usr/share/nginx/html
 COPY --from=webapp_builder /opt/open-webapp/dist/report-widgets /usr/share/nginx/widgets
 
 EXPOSE 8080
@@ -50,4 +51,6 @@ ENV CAIRNML_SERVER_VERSION=${VERSION}
 ENV CAIRNML_SERVER_BUILD=${BUILD}
 
 WORKDIR /opt/cairnml/
+# The processes run as uid 1000, which is the owner of the folders they write to (see final_image_preparation.sh).
+USER cairnml
 ENTRYPOINT ["/opt/cairnml/entrypoint.sh"]
