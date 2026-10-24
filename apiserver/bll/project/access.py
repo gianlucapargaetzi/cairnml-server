@@ -5,7 +5,7 @@ from apiserver.database.model.auth import Role
 from apiserver.database.model.project import Project, ProjectRole, ProjectVisibility
 from apiserver.service_repo.auth import Identity
 
-_ADMIN_ROLES = {"owner", ProjectRole.collaborator}
+_ADMIN_ROLES = {ProjectRole.collaborator}
 _CAPABILITIES = ("read", "write", "delete", "admin", "owner_only")
 
 
@@ -26,7 +26,7 @@ class ProjectAccessBLL:
         if identity.role == Role.admin:
             return "admin"
 
-        root =Project.objects(id=root_id, company=identity.company).only(
+        root = Project.objects(id=root_id, company=identity.company).only(
             "user", "visibility", "members"
         ).first()
         if not root:

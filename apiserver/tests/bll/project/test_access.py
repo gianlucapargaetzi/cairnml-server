@@ -111,3 +111,49 @@ class TestAssertCan:
         make_root(visibility=ProjectVisibility.private)
         for capability in ("read", "write", "delete", "admin", "owner_only"):
             ProjectAccessBLL.assert_can(identity("someone", role=Role.admin), "root1", capability, object_owner="anyone")
+
+
+class TestAssertCanCoverage:
+    def test_read_role_member_is_refused_everything_but_read(self):
+        make_root(members=[("u2", ProjectRole.read)])
+        for capability in ("write", "delete", "admin", "owner_only"):
+            with pytest.raises(errors.forbidden.NoWritePermission):
+                ProjectAccessBLL.assert_can(identity("u2"), "root1", capability, object_owner="someone-else")
+        ProjectAccessBLL.assert_can(identity("u2"), "root1", "read")
+
+    def test_non_member_on_a_public_project_is_refused_everything_but_read(self):
+        make_root(visibility=ProjectVisibility.public)
+        for capability in ("write", "delete", "admin", "owner_only"):
+            with pytest.raises(errors.forbidden.NoWritePermission):
+                ProjectAccessBLL.assert_can(identity("stranger"), "root1", capability, object_owner="someone-else")
+        ProjectAccessBLL.assert_can(identity("stranger"), "root1", "read")
+
+    def test_read_write_is_refused_admin_and_owner_only(self):
+        make_root(members=[("u2", ProjectRole.read_write)])
+        for capability in ("admin", "owner_only"):
+            with pytest.raises(errors.forbidden.NoWritePermission):
+                ProjectAccessBLL.assert_can(identity("u2"), "root1", capability, object_owner="u2")
+
+    def test_collaborator_can_delete_their_own_object(self):
+        make_root(members=[("u2", ProjectRole.collaborator)])
+        ProjectAccessBLL.assert_can(identity("u2"), "root1", "delete", object_owner="u2")
+
+    def test_read_write_can_delete_their_own_object(self):
+        make_root(members=[("u2", ProjectRole.read_write)])
+        ProjectAccessBLL.assert_can(identity("u2"), "root1", "delete", object_owner="u2")
+
+    def test_unrecognized_capability_raises_value_error_for_an_ordinary_role(self):
+        make_root(members=[("u2", ProjectRole.collaborator)])
+        with pytest.raises(ValueError):
+            ProjectAccessBLL.assert_can(identity("u2"), "root1", "bogus")
+
+    def test_unrecognized_capability_raises_value_error_for_owner(self):
+        make_root()
+        with pytest.raises(ValueError):
+            ProjectAccessBLL.assert_can(identity("owner1"), "root1", "bogus")
+
+    def test_company_mismatch_behaves_like_no_role(self):
+        make_root(members=[("u2", ProjectRole.collaborator)])
+        other_company_identity = Identity(user="u2", company="other-company", role=Role.user)
+        with pytest.raises(errors.bad_request.InvalidProjectId):
+            ProjectAccessBLL.assert_can(other_company_identity, "root1", "read")
