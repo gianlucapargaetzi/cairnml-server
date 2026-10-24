@@ -1,4 +1,6 @@
-from typing import Optional
+from typing import Optional, Set
+
+from mongoengine import Q
 
 from apiserver.apierrors import errors
 from apiserver.database.model.auth import Role
@@ -43,6 +45,54 @@ class ProjectAccessBLL:
             return ProjectRole.read
 
         return None
+
+    @staticmethod
+    def visible_projects_query(identity: Identity) -> Q:
+        """
+        Root projects the caller may see: their own, public ones, ones they are a member of,
+        and public (company-less) projects, which every company may see
+        """
+        if identity.role == Role.admin:
+            return Q()
+        return (
+            Q(company=identity.company)
+            & (
+                Q(user=identity.user)
+                | Q(visibility=ProjectVisibility.public)
+                | Q(members__user=identity.user)
+            )
+        ) | Q(company="")
+
+    @staticmethod
+    def visible_project_ids(identity: Identity) -> Optional[Set[str]]:
+        """
+        Ids of all projects the caller may see: the visible roots and all their sub-projects.
+        Returns None for admins, meaning no filter is needed
+        """
+        if identity.role == Role.admin:
+            return None
+
+        root_ids = [
+            p.id
+            for p in Project.objects(
+                Q(parent=None) & ProjectAccessBLL.visible_projects_query(identity)
+            ).only("id")
+        ]
+        visible = set(root_ids)
+        if root_ids:
+            visible.update(Project.objects(path__in=root_ids).scalar("id"))
+        return visible
+
+    @staticmethod
+    def reset_access(project_id: str) -> None:
+        """
+        Put a project back to the default private visibility without members.
+        Used when a move changes whether the project is a root, since visibility and members
+        only apply to roots
+        """
+        Project.objects(id=project_id).update_one(
+            set__visibility=ProjectVisibility.private, set__members=[]
+        )
 
     @staticmethod
     def assert_can(
