@@ -16,14 +16,14 @@ class KeycloakLikeDirectory:
     def get_user(self, subject):
         self.asked.append(subject)
         if subject == "sub-1":
-            return DirectoryUser(enabled=True, roles=("mlops-admin",))
+            return DirectoryUser(enabled=True, roles=("cairnml-admin",))
         return None
 
 
 class TestSubjectSentToTheDirectory(TestCase):
     def test_the_bare_id_is_asked_not_the_issuer_prefixed_subject(self):
         directory = KeycloakLikeDirectory()
-        user = SimpleNamespace(idp_subject="http://mlops-idp:8180/realms/mlops|sub-1")
+        user = SimpleNamespace(idp_subject="http://cairnml-idp:8180/realms/cairnml|sub-1")
         answers = fetch_answers(directory, [user])
         self.assertEqual(directory.asked, ["sub-1"])
         self.assertIsNotNone(answers[user.idp_subject])

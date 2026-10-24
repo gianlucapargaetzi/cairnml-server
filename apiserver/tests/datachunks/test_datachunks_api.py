@@ -4,6 +4,7 @@ Needs the test identity-provider key set (make_test_idp.py), a server with jwks_
 reachable from the server at the public endpoint. See the README of the deployment for the test stack.
 """
 
+import pytest
 import base64
 import hashlib
 import os
@@ -23,6 +24,8 @@ from apiserver.tests.idp.bearer import suite_bearer
 from apiserver.config_repo import config
 from apiserver.tests.idp.test_devices_api import API, SERVER, call, idp_token
 from apiserver.tests.idp.test_job_tokens_api import _agent, _new_task
+
+pytestmark = pytest.mark.integration  # needs MongoDB, Elasticsearch or a running API server
 
 
 def _bearer(token):

@@ -5,17 +5,19 @@ the entry ``source: repo`` and the link to its repository; how the data is read 
 itself, so the entry never needs a change.
 
 The server adds the entry through a pull request, after it has read the dataset repository's default branch with the
-GitHub App and verified its footprint (:mod:`apiserver.bll.dataset_footprint`). It reads only git data: the footprint
+GitHub App and verified its footprint (:mod:`cairnml.datasets.footprint`, shared with the SDK). It reads only git data: the footprint
 says the data was checked, and using the dataset checks it again.
 """
 
+import logging
 import re
+import threading
 import time
 from datetime import datetime, timezone
 from typing import Iterable, Optional
 
 from apiserver.apierrors import errors
-from apiserver.bll import dataset_footprint as footprint
+from cairnml.datasets import footprint
 from apiserver.idp.github import GitHubApp, GitHubError, RepoNotAccessible
 from apiserver.idp.github_check import repo_of
 
@@ -97,11 +99,9 @@ def register(
     try:
         if app.read_file(registry, path) is not None:
             raise errors.bad_request.ValidationError(f"{name} is already registered")
-        for other in app.list_dir(registry, ENTRY_DIR):
-            if other.endswith(".yaml"):
-                text = (app.read_file(registry, f"{ENTRY_DIR}/{other}") or b"").decode(errors="replace")
-                if _linked_repo(text) == repo.lower():
-                    raise errors.bad_request.ValidationError(f"{repo} is already registered as {other[:-5]}")
+        for other, text in app.read_dir_texts(registry, ENTRY_DIR).items():
+            if other.endswith(".yaml") and _linked_repo(text) == repo.lower():
+                raise errors.bad_request.ValidationError(f"{repo} is already registered as {other[:-5]}")
         if app.branch_exists(registry, pending):
             raise errors.bad_request.ValidationError(f"the registration of {name} is already waiting in a pull request")
         url = app.open_registration_pull_request(
@@ -121,7 +121,10 @@ def register(
 # Which repositories a job may get a token for: the registry itself, and every repository its entries point to.
 
 _ALLOWED_TTL_SEC = 60
+_RETRY_AFTER_ERROR_SEC = 10  # how long the last answer is kept after a failed refresh
 _allowed: dict = {}
+_allowed_lock = threading.Lock()
+log = logging.getLogger(__name__)
 
 
 def clear_allowed_cache() -> None:
@@ -133,20 +136,31 @@ def allowed_repositories(app: GitHubApp, registry: str, clock=time.monotonic) ->
 
     The registry is the one place that says which dataset repositories exist; a pull request into its default branch is
     how one is added. The answer is kept for a minute, so a new entry works shortly after its pull request merges.
+    One request reads the whole folder, and only one caller at a time refreshes it. When GitHub cannot be reached the
+    last answer keeps being used, for a short while at a time, instead of failing every job that wants a token.
     """
     if not registry:
         return set()
     cached = _allowed.get(registry)
     if cached and clock() - cached[0] < _ALLOWED_TTL_SEC:
         return cached[1]
-    found = {registry.lower()}
-    for other in app.list_dir(registry, ENTRY_DIR):
-        if not other.endswith(".yaml"):
-            continue
-        text = (app.read_file(registry, f"{ENTRY_DIR}/{other}") or b"").decode(errors="replace")
-        if re.search(r"^source:\s*repo\s*$", text, re.M):
-            linked = _linked_repo(text)
-            if linked:
-                found.add(linked)
-    _allowed[registry] = (clock(), found)
-    return found
+    with _allowed_lock:
+        cached = _allowed.get(registry)  # another caller may have refreshed it while this one waited
+        if cached and clock() - cached[0] < _ALLOWED_TTL_SEC:
+            return cached[1]
+        try:
+            texts = app.read_dir_texts(registry, ENTRY_DIR)
+        except GitHubError:
+            if cached is None:
+                raise
+            log.warning("could not read the dataset registry; using the last answer", exc_info=True)
+            _allowed[registry] = (clock() - _ALLOWED_TTL_SEC + _RETRY_AFTER_ERROR_SEC, cached[1])
+            return cached[1]
+        found = {registry.lower()}
+        for name, text in texts.items():
+            if name.endswith(".yaml") and re.search(r"^source:\s*repo\s*$", text, re.M):
+                linked = _linked_repo(text)
+                if linked:
+                    found.add(linked)
+        _allowed[registry] = (clock(), found)
+        return found

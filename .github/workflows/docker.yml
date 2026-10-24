@@ -14,7 +14,7 @@ permissions:
   contents: read
 
 env:
-  IMAGE: gianlucapargaetzi/cairnml-server
+  IMAGE: ${{ github.repository_owner }}/cairnml-server
 
 jobs:
   docker-build:

@@ -9,7 +9,8 @@ apt-get install -y python3-setuptools python3-dev build-essential nginx gettext 
 
 python3 -m ensurepip
 python3 -m pip install --upgrade pip
-python3 -m pip install -r /opt/cairnml/apiserver/requirements.txt
+# The lock has exact versions and hashes, so two builds of the same commit install the same packages.
+python3 -m pip install --require-hashes -r /opt/cairnml/apiserver/requirements.lock
 mkdir -p /opt/cairnml/log
 mkdir -p /opt/cairnml/config
 ln -svf /dev/stdout /var/log/nginx/access.log

@@ -19,3 +19,4 @@ dist
 code.tar.gz
 server/schema/services/_cache.json
 server/apierrors/errors/*
+apiserver/schema/services/_cache.json

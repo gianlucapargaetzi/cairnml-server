@@ -112,3 +112,44 @@ class TestAppId(TestCase):
         claims = jwt.decode(token, public_key, algorithms=["RS256"],
                             options={"verify_iat": False, "verify_exp": False})
         self.assertEqual(claims["iss"], "123")
+
+
+class TestReadDirTexts(TestCase):
+    """A whole folder is read in one GraphQL request, however many files it holds."""
+
+    GRAPHQL = ("POST", "/graphql")
+    SETUP = {INSTALL: Resp(200, {"id": 77}), TOKEN: Resp(201, {"token": "ghs_x", "expires_at": "2099-01-01T00:00:00Z"})}
+
+    def _entries(self, *names, blob=True):
+        return {"data": {"repository": {"object": {"entries": [
+            {"name": n, "type": "blob" if blob else "tree",
+             "object": {"text": f"text of {n}\n", "isTruncated": False} if blob else {}} for n in names]}}}}
+
+    def test_all_the_files_come_back_from_one_request(self):
+        http = FakeHttp({**self.SETUP, self.GRAPHQL: Resp(200, self._entries("a.yaml", "b.yaml", "c.yaml"))})
+        texts = app(http).read_dir_texts("acme/proj", "datasets")
+        self.assertEqual(texts, {"a.yaml": "text of a.yaml\n", "b.yaml": "text of b.yaml\n", "c.yaml": "text of c.yaml\n"})
+        self.assertEqual(len([r for r in http.requests if r[1].endswith("/graphql")]), 1)
+        sent = [r for r in http.requests if r[1].endswith("/graphql")][0][2]["json"]["variables"]
+        self.assertEqual(sent, {"owner": "acme", "name": "proj", "expr": "HEAD:datasets"})
+
+    def test_a_missing_folder_is_empty(self):
+        http = FakeHttp({**self.SETUP, self.GRAPHQL: Resp(200, {"data": {"repository": {"object": None}}})})
+        self.assertEqual(app(http).read_dir_texts("acme/proj", "datasets"), {})
+
+    def test_subfolders_and_truncated_files_are_left_out(self):
+        body = self._entries("a.yaml")
+        body["data"]["repository"]["object"]["entries"] += [
+            {"name": "sub", "type": "tree", "object": {}},
+            {"name": "big.yaml", "type": "blob", "object": {"text": "x", "isTruncated": True}},
+            {"name": "binary.bin", "type": "blob", "object": {"text": None, "isTruncated": False}},
+        ]
+        http = FakeHttp({**self.SETUP, self.GRAPHQL: Resp(200, body)})
+        self.assertEqual(list(app(http).read_dir_texts("acme/proj", "datasets")), ["a.yaml"])
+
+    def test_a_graphql_error_or_a_failed_request_is_an_error(self):
+        errors = Resp(200, {"errors": [{"message": "Could not resolve to a Repository"}]})
+        with self.assertRaisesRegex(GitHubError, "Could not resolve"):
+            app(FakeHttp({**self.SETUP, self.GRAPHQL: errors})).read_dir_texts("acme/proj", "datasets")
+        with self.assertRaisesRegex(GitHubError, "502"):
+            app(FakeHttp({**self.SETUP, self.GRAPHQL: Resp(502)})).read_dir_texts("acme/proj", "datasets")

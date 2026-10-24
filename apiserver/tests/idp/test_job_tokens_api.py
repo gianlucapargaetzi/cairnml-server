@@ -1,5 +1,6 @@
 """Job tokens over HTTP against the live server and the real database. Run inside the server container."""
 
+import pytest
 import os
 import uuid
 from unittest import TestCase
@@ -12,6 +13,8 @@ from apiserver import database as db
 from apiserver.database.model.task.task import Task
 from apiserver.idp.assertion import make_assertion
 from apiserver.tests.idp.test_devices_api import API, PUBLIC_URL, call, idp_token
+
+pytestmark = pytest.mark.integration  # needs MongoDB, Elasticsearch or a running API server
 
 
 def _public_pem(key):

@@ -1,5 +1,6 @@
 """The old login is gone: no basic credentials, no tokens without a kind, no credential endpoints."""
 
+import pytest
 import base64
 import json
 import os
@@ -11,6 +12,8 @@ from requests.auth import HTTPBasicAuth
 from apiserver.apierrors import errors
 from apiserver.service_repo.auth import Token
 from apiserver.service_repo.auth.auth import get_auth_func
+
+pytestmark = pytest.mark.integration  # needs MongoDB, Elasticsearch or a running API server
 
 API = f"{os.environ.get('SM_API_URL', 'http://localhost:8008')}/v2.8"
 

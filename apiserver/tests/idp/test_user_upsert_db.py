@@ -1,3 +1,4 @@
+import pytest
 from unittest import TestCase
 from uuid import uuid4
 
@@ -5,6 +6,8 @@ from apiserver import database as db
 from apiserver.database.model.auth import Role, User
 from apiserver.database.model.user import User as Profile
 from apiserver.idp.users import upsert_idp_user, user_id_for
+
+pytestmark = pytest.mark.integration  # needs MongoDB, Elasticsearch or a running API server
 
 ADMIN = "admin"
 

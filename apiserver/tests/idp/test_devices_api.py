@@ -5,6 +5,7 @@ server started with apiserver.idp.jwks_file pointing at its jwks.json. Run insid
 container with the server URL in SM_API_URL.
 """
 
+import pytest
 import json
 import os
 import time
@@ -19,7 +20,9 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from apiserver.idp.assertion import make_assertion
 from apiserver.idp.keys import private_key_to_pem
 
-IDP_ISSUER = "http://mlops-idp:8180/realms/mlops"
+pytestmark = pytest.mark.integration  # needs MongoDB, Elasticsearch or a running API server
+
+IDP_ISSUER = "http://cairnml-idp:8180/realms/cairnml"
 SDK_CLIENT = "cairnml-sdk"
 SERVER = os.environ.get("SM_API_URL", "http://localhost:8008")
 PUBLIC_URL = os.environ.get("TEST_PUBLIC_URL", "http://localhost:8008")

@@ -1,5 +1,6 @@
 """Cookie sessions can change things only from the web app's origin. Run inside the server container."""
 
+import pytest
 import os
 import uuid
 from unittest import TestCase
@@ -12,6 +13,8 @@ from apiserver import database as db
 from apiserver.database.model.auth import User
 from apiserver.idp.tokens import issue_access_token
 from apiserver.idp.users import upsert_idp_user
+
+pytestmark = pytest.mark.integration  # needs MongoDB, Elasticsearch or a running API server
 
 API = f"{os.environ.get('SM_API_URL', 'http://localhost:8008')}/v2.8"
 WEB = config.get("apiserver.idp.web_url")

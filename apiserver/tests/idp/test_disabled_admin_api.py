@@ -1,5 +1,6 @@
 """A disabled admin may not enrol an agent, even with a valid sign-in. Run inside the server container."""
 
+import pytest
 import uuid
 from unittest import TestCase
 
@@ -11,6 +12,8 @@ from apiserver.database.model.auth import User
 from apiserver.idp.users import user_id_for
 from apiserver.config_repo import config
 from apiserver.tests.idp.test_devices_api import call, idp_token
+
+pytestmark = pytest.mark.integration  # needs MongoDB, Elasticsearch or a running API server
 
 ISSUER = config.get("apiserver.idp.issuer")
 

@@ -25,16 +25,18 @@ jobs:
       CAIRNML_SECRETS_DIR: /tmp/cairnml-secrets
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      # Python 3.11 is the version of the image, and requirements.lock was made for it.
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
-          python-version: "3.12"
+          python-version: "3.11"
           cache: pip
-          cache-dependency-path: apiserver/requirements.txt
-      - name: Prepare the log folder and a test secret
+          cache-dependency-path: apiserver/requirements.lock
+      - name: A test secret
         run: |
-          sudo mkdir -p /var/log/cairnml && sudo chown "$USER" /var/log/cairnml
           mkdir -p "$CAIRNML_SECRETS_DIR"
           echo -n test > "$CAIRNML_SECRETS_DIR/s3_secret_key"
-      - run: python -m pip install -r apiserver/requirements.txt pytest
-      # The unit tests that need only Redis. The API tests need MongoDB and Elasticsearch and run in the end-to-end suite.
-      - run: python -m pytest -q apiserver/tests/idp/test_assertion.py apiserver/tests/idp/test_audit.py apiserver/tests/idp/test_checks.py apiserver/tests/idp/test_config.py apiserver/tests/idp/test_directory.py apiserver/tests/idp/test_github_check.py apiserver/tests/idp/test_github.py apiserver/tests/idp/test_jwks_lifespan.py apiserver/tests/idp/test_models.py apiserver/tests/idp/test_oidc.py apiserver/tests/idp/test_replay.py apiserver/tests/idp/test_secrets.py apiserver/tests/idp/test_session_secret.py apiserver/tests/idp/test_token_identity.py apiserver/tests/idp/test_tokens.py apiserver/tests/idp/test_users.py apiserver/tests/datachunks/test_datachunks_unit.py apiserver/tests/datachunks/test_dataset_credentials_unit.py apiserver/tests/datachunks/test_dataset_registry_unit.py
+      - run: python -m pip install --require-hashes -r apiserver/requirements.lock
+      - run: python -m pip install pytest
+      # Everything that does not need MongoDB, Elasticsearch or a running API server. The tests that do carry the
+      # "integration" marker and run in the end-to-end suite.
+      - run: python -m pytest -q -m "not integration" apiserver/tests

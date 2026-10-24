@@ -7,7 +7,7 @@ import json
 from unittest import TestCase
 
 from apiserver.apierrors import errors
-from apiserver.bll import dataset_footprint as fp
+from cairnml.datasets import footprint as fp
 from apiserver.bll import dataset_registry as bll
 from apiserver.idp.github import GitHubError, RepoNotAccessible
 
@@ -30,6 +30,8 @@ class FakeApp:
         self.installed = installed
         self.write_ok = write_ok
         self.opened = []
+        self.folder_reads = 0
+        self.github_down = False
 
     def default_branch_head(self, repo):
         if not self.installed:
@@ -46,6 +48,12 @@ class FakeApp:
 
     def list_dir(self, repo, path, ref=None):
         return list(self.entries)
+
+    def read_dir_texts(self, repo, path):
+        self.folder_reads += 1
+        if self.github_down:
+            raise GitHubError("folder read failed: 502")
+        return dict(self.entries)
 
     def branch_exists(self, repo, branch):
         return self.pending
@@ -149,6 +157,43 @@ class TestAllowedRepositories(TestCase):
 
     def test_no_registry_means_nothing_is_allowed(self):
         self.assertEqual(bll.allowed_repositories(FakeApp(), ""), set())
+
+    def test_the_whole_folder_is_read_in_one_request_however_many_entries_there_are(self):
+        app = FakeApp(entries={f"d{i}.yaml": f"source: repo\nlink: https://github.com/acme/d{i}\n" for i in range(40)})
+        self.assertEqual(len(bll.allowed_repositories(app, "acme/registry")), 41)
+        self.assertEqual(app.folder_reads, 1)
+
+    def test_concurrent_callers_refresh_the_answer_once(self):
+        import threading
+
+        app = FakeApp(entries={"cars.yaml": "source: repo\nlink: https://github.com/acme/cars-data\n"})
+        results = []
+        threads = [threading.Thread(target=lambda: results.append(bll.allowed_repositories(app, "acme/registry")))
+                   for _ in range(12)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        self.assertEqual(app.folder_reads, 1)
+        self.assertTrue(all(result == results[0] for result in results))
+
+    def test_when_github_cannot_be_reached_the_last_answer_keeps_being_used(self):
+        app = FakeApp(entries={"cars.yaml": "source: repo\nlink: https://github.com/acme/cars-data\n"})
+        now = [1000.0]
+        first = bll.allowed_repositories(app, "acme/registry", clock=lambda: now[0])
+        app.github_down = True
+        now[0] += 61
+        self.assertEqual(bll.allowed_repositories(app, "acme/registry", clock=lambda: now[0]), first)
+        reads = app.folder_reads
+        now[0] += 5  # still inside the short retry pause: GitHub is not asked again
+        self.assertEqual(bll.allowed_repositories(app, "acme/registry", clock=lambda: now[0]), first)
+        self.assertEqual(app.folder_reads, reads)
+
+    def test_without_an_earlier_answer_a_github_failure_is_raised(self):
+        app = FakeApp()
+        app.github_down = True
+        with self.assertRaises(GitHubError):
+            bll.allowed_repositories(app, "acme/registry")
 
     def test_a_new_entry_is_seen_after_a_minute(self):
         app = FakeApp(entries={"cars.yaml": "source: repo\nlink: https://github.com/acme/cars-data\n"})

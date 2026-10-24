@@ -4,7 +4,7 @@ import requests
 
 from apiserver.idp.directory import DirectoryError, KeycloakDirectory
 
-ISSUER = "http://idp.test/realms/mlops"
+ISSUER = "http://idp.test/realms/cairnml"
 
 
 class Resp:

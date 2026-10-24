@@ -1,6 +1,7 @@
 """Devices (laptops and agents) enrol with their IdP sign-in and their public key, then exchange
 a signed assertion for short-lived access tokens. Ported from the mlops server's enrol and exchange."""
 
+import jwt
 import uuid
 from datetime import datetime
 
@@ -152,7 +153,7 @@ def _caller_device_id(call: APICall) -> str:
 
     try:
         claims = Token.decode(_bearer(call))
-    except Exception:
+    except jwt.PyJWTError:  # forged, expired or not a token at all
         raise errors.unauthorized.InvalidToken("invalid token") from None
     if claims.get("kind") != DeviceKind.agent:
         raise errors.unauthorized.InvalidToken("only an agent may get a job token")

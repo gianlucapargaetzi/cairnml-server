@@ -1,5 +1,6 @@
 """Every security event writes an audit record. Run inside the server container against the live server."""
 
+import pytest
 import uuid
 from unittest import TestCase
 
@@ -12,6 +13,8 @@ from apiserver.database.model.task.task import Task
 from apiserver.idp.assertion import make_assertion
 from apiserver.tests.idp.test_devices_api import API, PUBLIC_URL, call, idp_token
 from apiserver.tests.idp.test_job_tokens_api import _agent, _new_task, _public_pem
+
+pytestmark = pytest.mark.integration  # needs MongoDB, Elasticsearch or a running API server
 
 
 def events(action, **detail_match):

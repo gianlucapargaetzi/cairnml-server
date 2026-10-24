@@ -1,5 +1,6 @@
 """Short-lived access tokens issued by the CairnML server after a device proves its key."""
 
+import jwt
 from apiserver.config_repo import config
 from apiserver.service_repo.auth import Identity, Token
 
@@ -32,7 +33,7 @@ def device_of_bearer(authorization):
         return None
     try:
         claims = Token.decode(authorization[len("Bearer "):])
-    except Exception:
+    except jwt.PyJWTError:  # forged, expired or not a token at all
         return None
     return claims.get("device") if claims.get("kind") == "agent" else None
 
