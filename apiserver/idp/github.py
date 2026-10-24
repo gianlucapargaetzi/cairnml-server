@@ -158,6 +158,37 @@ class GitHubApp:
             raise GitHubError(f"folder listing failed: {response.status_code}")
         return [item["name"] for item in response.json() if item.get("type") == "file"]
 
+    def read_dir_texts(self, repo: str, path: str) -> dict:
+        """The text of every file in a folder of the default branch, by name, in one request.
+
+        Reading a folder file by file takes one request per file; this takes one however many files there are.
+        Returns an empty dict when there is no such folder. Files that are not text, or too large to come back whole,
+        are left out.
+        """
+        owner, name = repo.split("/", 1)
+        query = (
+            "query($owner: String!, $name: String!, $expr: String!) { repository(owner: $owner, name: $name) "
+            "{ object(expression: $expr) { ... on Tree { entries { name type object { ... on Blob { text isTruncated } } } } } } }"
+        )
+        response = self._send(
+            "POST", f"{self._api}/graphql", headers=self._read_headers(repo),
+            json={"query": query, "variables": {"owner": owner, "name": name, "expr": f"HEAD:{path}"}},
+        )
+        if response.status_code != 200:
+            raise GitHubError(f"folder read failed: {response.status_code}")
+        body = response.json()
+        if body.get("errors"):
+            raise GitHubError("folder read failed: " + "; ".join(e.get("message", "?") for e in body["errors"]))
+        tree = ((body.get("data") or {}).get("repository") or {}).get("object")
+        if not tree:
+            return {}
+        texts = {}
+        for entry in tree.get("entries") or []:
+            blob = entry.get("object") or {}
+            if entry.get("type") == "blob" and blob.get("text") is not None and not blob.get("isTruncated"):
+                texts[entry["name"]] = blob["text"]
+        return texts
+
     def branch_exists(self, repo: str, branch: str) -> bool:
         response = self._send("GET", f"{self._api}/repos/{repo}/git/ref/heads/{branch}", headers=self._read_headers(repo))
         if response.status_code == 404:
