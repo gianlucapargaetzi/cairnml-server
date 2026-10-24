@@ -21,6 +21,7 @@ from mongoengine import Q, Document
 from apiserver import database
 from apiserver.apierrors import errors
 from apiserver.apimodels.projects import ProjectChildrenType
+from apiserver.bll.project.access import ProjectAccessBLL
 from apiserver.config_repo import config
 from apiserver.database.model import EntityVisibility, AttributedDocument, User
 from apiserver.database.model.base import GetMixin
@@ -292,7 +293,9 @@ class ProjectBLL:
     ) -> str:
         """
         Find a project named `project_name` or create a new one.
-        Returns project ID
+        Returns project ID.
+        The caller must have write access to the project that is returned or to the project the new
+        one is created in, so that no content is placed in a project it cannot write to
         """
         if not project_id and not project_name:
             raise errors.bad_request.ValidationError("project id or name required")
@@ -301,9 +304,14 @@ class ProjectBLL:
             project = Project.objects(company=company, id=project_id).only("id").first()
             if not project:
                 raise errors.bad_request.InvalidProjectId(id=project_id)
+            ProjectAccessBLL.assert_can(
+                identity, project_id, "write", object_owner=identity.user
+            )
             return project_id
 
         project_name, _ = _validate_project_name(project_name)
+        # Checks the project found by this name, or the deepest visible parent a new one is created in
+        ProjectAccessBLL.assert_can_write_destination(identity, company, project_name)
         project = _get_writable_project_from_name(
             company=company, name=project_name, identity=identity
         )

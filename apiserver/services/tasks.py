@@ -133,7 +133,6 @@ from apiserver.database.utils import (
 )
 from apiserver.service_repo import APICall, endpoint
 from apiserver.service_repo.auth import Identity
-from apiserver.services.projects import _assert_can_admin_destination
 from apiserver.services.utils import (
     conform_tag_fields,
     conform_output_tags,
@@ -225,13 +224,12 @@ def _assert_destination_project(
     identity: Identity, task: Task, new_project: Optional[str]
 ) -> None:
     """
-    A task moved to another project by update or edit needs write on that project as well.
-    Moves through the `move` endpoint have their own, stricter check
+    A task moved to another project by update or edit needs admin on that project, the same rule
+    the `move` endpoint applies. Otherwise a collaborator could move tasks through the generic
+    edit path that `move` gates behind admin
     """
     if new_project and new_project != task.project:
-        ProjectAccessBLL.assert_can(
-            identity, new_project, "write", object_owner=task.user
-        )
+        ProjectAccessBLL.assert_can(identity, new_project, "admin")
 
 
 def set_task_status_from_call(
@@ -1632,7 +1630,9 @@ def move(call: APICall, company_id: str, request: MoveRequest):
     if request.project:
         ProjectAccessBLL.assert_can(call.identity, request.project, "admin")
     elif request.project_name:
-        _assert_can_admin_destination(call.identity, company_id, request.project_name)
+        ProjectAccessBLL.assert_can_admin_destination(
+            call.identity, company_id, request.project_name
+        )
     updated_projects = set(t.project for t in tasks if t.project)
 
     project_id = project_bll.move_under_project(

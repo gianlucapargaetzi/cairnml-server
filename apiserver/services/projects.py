@@ -26,10 +26,6 @@ from apiserver.bll.organization import OrgBLL, Tags
 from apiserver.bll.project.access import ProjectAccessBLL
 from apiserver.bll.project import ProjectBLL, ProjectQueries
 from apiserver.bll.project.project_bll import pipeline_tag, reports_tag
-from apiserver.bll.project.sub_projects import (
-    _get_writable_project_from_name,
-    _validate_project_name,
-)
 from apiserver.bll.project.project_cleanup import (
     delete_project,
     validate_project_delete,
@@ -95,26 +91,6 @@ def _effective_projects(identity, requested: Optional[Sequence[str]]) -> Optiona
         return requested
     visible = ProjectAccessBLL.visible_project_ids(identity)
     return visible if visible is None else list(visible)
-
-
-def _assert_can_admin_destination(identity, company: str, location: Optional[str]):
-    """
-    Check admin on the project that a move to `location` lands in. That is the deepest existing
-    project along the location that the caller can see, the same one _ensure_project picks.
-    Locations that do not exist yet are created by the move and need no check
-    """
-    name, _ = _validate_project_name(location or "", raise_if_empty=False)
-    if not name:
-        return
-
-    parts = name.split("/")
-    for depth in range(len(parts), 0, -1):
-        found = _get_writable_project_from_name(
-            company, "/".join(parts[:depth]), identity
-        )
-        if found:
-            ProjectAccessBLL.assert_can(identity, found.id, "admin")
-            return
 
 
 @endpoint("projects.get_by_id")
@@ -393,7 +369,9 @@ def _reset_cached_tags(company: str, projects: Sequence[str]):
 def move(call: APICall, company: str, request: MoveRequest):
     identity = call.identity
     ProjectAccessBLL.assert_can(identity, request.project, "admin")
-    _assert_can_admin_destination(identity, company, request.new_location)
+    ProjectAccessBLL.assert_can_admin_destination(
+        identity, company, request.new_location
+    )
     was_root = not Project.objects(id=request.project).only("parent").first().parent
 
     moved, affected_projects = ProjectBLL.move_project(

@@ -6,7 +6,12 @@ from apiserver.apierrors import errors
 from apiserver.tests.db import ensure_db
 from apiserver.bll.project.project_bll import ProjectBLL
 from apiserver.database.model.auth import Role
-from apiserver.database.model.project import Project, ProjectVisibility
+from apiserver.database.model.project import (
+    Project,
+    ProjectMember,
+    ProjectRole,
+    ProjectVisibility,
+)
 from apiserver.service_repo.auth import Identity
 
 ensure_db()
@@ -53,9 +58,11 @@ def test_creating_a_project_with_a_name_that_collides_with_a_visible_project_is_
 
 
 def test_find_or_create_reuses_a_visible_project_with_the_same_name():
+    # The caller needs write on the project it reuses. A public project alone gives read only
     Project(
         id="public1", company=COMPANY, user="owner1", name="Bar", basename="Bar",
         created=datetime.utcnow(), visibility=ProjectVisibility.public,
+        members=[ProjectMember(user="owner2", role=ProjectRole.read_write, added=datetime.utcnow(), added_by="owner1")],
     ).save()
 
     found_id = ProjectBLL.find_or_create(

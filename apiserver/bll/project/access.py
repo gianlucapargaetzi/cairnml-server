@@ -129,3 +129,54 @@ class ProjectAccessBLL:
         raise errors.forbidden.NoWritePermission(
             f"role '{role}' does not have '{capability}' access to project {project_id}"
         )
+
+    @staticmethod
+    def _assert_can_destination(
+        identity: Identity,
+        company: str,
+        location: Optional[str],
+        capability: str,
+    ) -> None:
+        """
+        Check `capability` on the project that content placed at `location` lands in. That is the
+        deepest existing project along the location that the caller can see, the same one the
+        project lookup picks. Locations that do not exist yet are created and need no check
+        """
+        # Imported here because sub_projects imports this module at the top
+        from apiserver.bll.project.sub_projects import (
+            _get_writable_project_from_name,
+            _validate_project_name,
+        )
+
+        name, _ = _validate_project_name(location or "", raise_if_empty=False)
+        if not name:
+            return
+
+        parts = name.split("/")
+        for depth in range(len(parts), 0, -1):
+            found = _get_writable_project_from_name(
+                company, "/".join(parts[:depth]), identity
+            )
+            if found:
+                ProjectAccessBLL.assert_can(
+                    identity, found.id, capability, object_owner=identity.user
+                )
+                return
+
+    @staticmethod
+    def assert_can_admin_destination(
+        identity: Identity, company: str, location: Optional[str]
+    ) -> None:
+        """
+        Admin on the project a move to `location` lands in
+        """
+        ProjectAccessBLL._assert_can_destination(identity, company, location, "admin")
+
+    @staticmethod
+    def assert_can_write_destination(
+        identity: Identity, company: str, location: Optional[str]
+    ) -> None:
+        """
+        Write on the project that content created or placed at `location` lands in
+        """
+        ProjectAccessBLL._assert_can_destination(identity, company, location, "write")

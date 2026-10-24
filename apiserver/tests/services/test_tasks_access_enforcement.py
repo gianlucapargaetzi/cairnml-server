@@ -16,6 +16,7 @@ from apiserver.apimodels.tasks import (
     UpdateTagsRequest,
 )
 from apiserver.apimodels.base import MoveRequest
+from apiserver.bll.project import ProjectBLL
 from apiserver.bll.project.access import ProjectAccessBLL
 from apiserver.database.model.auth import Role
 from apiserver.database.model.project import Project, ProjectMember, ProjectRole, ProjectVisibility
@@ -279,3 +280,100 @@ def test_edit_cannot_move_a_task_into_a_project_the_caller_cannot_write(company)
 def test_visible_ids_for_a_stranger_do_not_include_the_private_project(company):
     make_root(company, id_="privroot")
     assert "privroot" not in ProjectAccessBLL.visible_project_ids(identity(company, "stranger"))
+
+
+def test_edit_move_needs_admin_on_the_destination_not_just_write(company):
+    # A read_write user has write on their own task in the destination, but not admin, so the
+    # move through edit is refused. Before, it passed the write check and bypassed move's admin gate
+    make_root(company, id_="src", members=[("u2", ProjectRole.read_write)])
+    make_root(company, id_="dst", members=[("u2", ProjectRole.read_write)])
+    make_task(company, "src", "u2")
+    from apiserver.apimodels.tasks import UpdateRequest
+
+    with pytest.raises(errors.forbidden.NoWritePermission):
+        svc.edit(
+            FakeCall(identity(company, "u2"), data={"task": "task1", "project": "dst"}),
+            company,
+            UpdateRequest(task="task1"),
+        )
+    assert Task.objects(id="task1").first().project == "src"
+
+
+def test_update_move_needs_admin_on_the_destination_not_just_write(company):
+    make_root(company, id_="src", members=[("u2", ProjectRole.read_write)])
+    make_root(company, id_="dst", members=[("u2", ProjectRole.read_write)])
+    make_task(company, "src", "u2")
+    from apiserver.apimodels.tasks import UpdateRequest
+
+    with pytest.raises(errors.forbidden.NoWritePermission):
+        svc.update(
+            FakeCall(identity(company, "u2"), data={"task": "task1", "project": "dst"}),
+            company,
+            UpdateRequest(task="task1"),
+        )
+    assert Task.objects(id="task1").first().project == "src"
+
+
+def test_find_or_create_by_id_needs_write_on_the_project(company):
+    make_root(company, id_="dst", members=[("u2", ProjectRole.read)])
+    with pytest.raises(errors.forbidden.NoWritePermission):
+        ProjectBLL.find_or_create(
+            user="u2",
+            company=company,
+            identity=identity(company, "u2"),
+            project_name=None,
+            description="",
+            project_id="dst",
+        )
+
+
+def test_find_or_create_by_name_refuses_a_read_only_project(company):
+    make_root(company, id_="dst", members=[("u2", ProjectRole.read)])
+    with pytest.raises(errors.forbidden.NoWritePermission):
+        ProjectBLL.find_or_create(
+            user="u2",
+            company=company,
+            identity=identity(company, "u2"),
+            project_name="Project-dst",
+            description="",
+        )
+
+
+def test_find_or_create_refuses_to_create_under_a_read_only_parent(company):
+    make_root(company, id_="dst", members=[("u2", ProjectRole.read)])
+    with pytest.raises(errors.forbidden.NoWritePermission):
+        ProjectBLL.find_or_create(
+            user="u2",
+            company=company,
+            identity=identity(company, "u2"),
+            project_name="Project-dst/new-child",
+            description="",
+        )
+    assert Project.objects(company=company, name="Project-dst/new-child").first() is None
+
+
+def test_find_or_create_creates_under_a_writable_parent(company):
+    make_root(company, id_="dst", members=[("u2", ProjectRole.read_write)])
+    found = ProjectBLL.find_or_create(
+        user="u2",
+        company=company,
+        identity=identity(company, "u2"),
+        project_name="Project-dst/new-child",
+        description="",
+    )
+    assert Project.objects(id=found, company=company).first() is not None
+
+
+def test_clone_into_a_read_only_project_by_name_is_refused(company):
+    make_root(company, id_="src", members=[("u2", ProjectRole.read_write)])
+    make_root(company, id_="dst", members=[("u2", ProjectRole.read)])
+    make_task(company, "src", "u2")
+    from apiserver.apimodels.tasks import CloneRequest
+
+    with pytest.raises(errors.forbidden.NoWritePermission):
+        svc.clone_task(
+            FakeCall(identity(company, "u2")),
+            company,
+            CloneRequest(task="task1", new_project_name="Project-dst/child"),
+        )
+    assert Project.objects(company=company, name="Project-dst/child").first() is None
