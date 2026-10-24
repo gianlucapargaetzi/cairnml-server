@@ -18,6 +18,14 @@ jobs:
         image: redis:8.2.3
         ports:
           - 6379:6379
+      # The project-access unit tests (ProjectAccessBLL and the service-layer enforcement tests) save real
+      # documents, so they need a real MongoDB; they are not integration tests (no Elasticsearch, no running API
+      # server), so they stay out of the "integration" marker and run here. The default config already points at
+      # 127.0.0.1:27017, so no env override is needed.
+      mongo:
+        image: mongo:8.0.15
+        ports:
+          - 27017:27017
     env:
       CAIRNML_REDIS_SERVICE_HOST: localhost
       CAIRNML_REDIS_SERVICE_PORT: "6379"
@@ -37,8 +45,8 @@ jobs:
           echo -n test > "$CAIRNML_SECRETS_DIR/s3_secret_key"
       - run: python -m pip install --require-hashes -r apiserver/requirements.lock
       - run: python -m pip install pytest
-      # Everything that does not need MongoDB, Elasticsearch or a running API server. The tests that do carry the
-      # "integration" marker and run in the end-to-end suite.
+      # Everything that does not need Elasticsearch or a running API server (MongoDB is available above). The
+      # tests that still need those carry the "integration" marker and run in the end-to-end suite.
       - run: python -m pytest -q -m "not integration" apiserver/tests
 
   # Not a required check, so it does not block a merge. It runs the same unit tests against the SDK and the agent from
@@ -52,6 +60,10 @@ jobs:
         image: redis:8.2.3
         ports:
           - 6379:6379
+      mongo:
+        image: mongo:8.0.15
+        ports:
+          - 27017:27017
     env:
       CAIRNML_REDIS_SERVICE_HOST: localhost
       CAIRNML_REDIS_SERVICE_PORT: "6379"
