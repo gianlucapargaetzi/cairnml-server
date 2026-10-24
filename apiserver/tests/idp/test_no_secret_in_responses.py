@@ -1,5 +1,6 @@
 """The server's own secrets never appear in an API answer, successful or refused. Run inside the server container."""
 
+import pytest
 import os
 from unittest import TestCase
 
@@ -8,6 +9,8 @@ import requests
 from apiserver.idp.secrets import SecretMissing, read_secret
 from apiserver.tests.idp.bearer import suite_bearer
 from apiserver.tests.idp.test_devices_api import API
+
+pytestmark = pytest.mark.integration  # needs MongoDB, Elasticsearch or a running API server
 
 ENDPOINTS = [
     ("login.supported_modes", {}),

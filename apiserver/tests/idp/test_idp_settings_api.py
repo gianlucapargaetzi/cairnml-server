@@ -1,9 +1,12 @@
+import pytest
 import os
 from unittest import TestCase
 
 import requests
 
 from apiserver.config_repo import config
+
+pytestmark = pytest.mark.integration  # needs MongoDB, Elasticsearch or a running API server
 
 API = f"{os.environ.get('SM_API_URL', 'http://localhost:8008')}/v2.8"
 

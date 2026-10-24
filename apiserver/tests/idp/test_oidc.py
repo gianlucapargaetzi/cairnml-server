@@ -20,7 +20,7 @@ class TestOidcVerifier(TestCase):
 
     def test_wrong_issuer_is_refused(self):
         with self.assertRaises(OidcError):
-            self.verifier.verify(self.idp.token(iss="http://evil.test/realms/mlops"))
+            self.verifier.verify(self.idp.token(iss="http://evil.test/realms/cairnml"))
 
     def test_token_for_another_client_is_refused(self):
         with self.assertRaises(OidcError):

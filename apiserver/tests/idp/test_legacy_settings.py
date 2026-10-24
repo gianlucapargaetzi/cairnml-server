@@ -1,6 +1,9 @@
+import pytest
 from unittest import TestCase
 
 from apiserver.idp.legacy import check_no_legacy_settings, legacy_settings_in_use
+
+pytestmark = pytest.mark.integration  # needs MongoDB, Elasticsearch or a running API server
 
 
 def settings(**values):
@@ -64,4 +67,4 @@ class TestCookieSettings(TestCase):
         self.assertEqual(len(self.check("https://cairnml.example", False)), 1)
 
     def test_plain_http_may_use_an_insecure_cookie(self):
-        self.assertEqual(self.check("http://mlops-cairnml:8008", False), [])
+        self.assertEqual(self.check("http://cairnml:8008", False), [])

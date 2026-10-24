@@ -1,0 +1,8 @@
+.git
+.github
+**/__pycache__
+**/*.pyc
+apiserver/tests
+docs
+*.md
+!README.md
