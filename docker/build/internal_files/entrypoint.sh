@@ -12,7 +12,6 @@ if (( $# < 1 )) ; then
 
 elif [[ ${SERVER_TYPE} == "apiserver" ]]; then
     cd /opt/cairnml/
-    python3 -m apiserver.apierrors_generator
 
     if [[ -n $CAIRNML_USE_GUNICORN ]]; then
       MAX_REQUESTS=
