@@ -8,6 +8,7 @@ import pytest
 from apiserver.apierrors import errors
 from apiserver.apimodels.projects import (
     DeleteRequest,
+    GetUniqueMetricsRequest,
     MergeRequest,
     MoveRequest,
     ProjectRequest,
@@ -136,6 +137,66 @@ def test_reading_tags_of_a_private_project_is_refused_to_a_stranger(company):
             company,
             ProjectTagsRequest(projects=["tagpriv"]),
         )
+
+
+class Recorder:
+    def __init__(self, result):
+        self.result = result
+        self.calls = []
+
+    def __call__(self, *args, **kwargs):
+        self.calls.append((args, kwargs))
+        return self.result
+
+
+def test_project_tags_with_no_visible_projects_is_empty_not_company_wide(company, monkeypatch):
+    make_project(company, "tagsecret")
+    recorder = Recorder((["secret"], []))
+    monkeypatch.setattr(svc.project_bll, "get_project_tags", recorder)
+    call = FakeCall(identity(company, "stranger"))
+    svc.get_project_tags(call, company, ProjectTagsRequest())
+    assert recorder.calls == []
+    assert call.result.data == {"tags": [], "system_tags": []}
+
+
+def test_project_tags_for_a_user_without_a_filter_is_limited_to_their_visible_projects(company, monkeypatch):
+    public = make_project(company, "tagpub", visibility=ProjectVisibility.public)
+    recorder = Recorder((["t"], []))
+    monkeypatch.setattr(svc.project_bll, "get_project_tags", recorder)
+    svc.get_project_tags(FakeCall(identity(company, "stranger")), company, ProjectTagsRequest())
+    (_, kwargs), = recorder.calls
+    assert kwargs["projects"] is not None
+    assert public.id in kwargs["projects"]
+
+
+def test_project_tags_for_admin_without_a_filter_stays_unrestricted(company, monkeypatch):
+    make_project(company, "tagadminpriv")
+    recorder = Recorder(([], []))
+    monkeypatch.setattr(svc.project_bll, "get_project_tags", recorder)
+    svc.get_project_tags(FakeCall(identity(company, "boss", role=Role.admin)), company, ProjectTagsRequest())
+    (_, kwargs), = recorder.calls
+    assert not kwargs["projects"]  # no filter: the request default (empty list) passes through unchanged
+
+
+def test_unique_metric_variants_with_no_visible_projects_is_empty(company, monkeypatch):
+    make_project(company, "metpriv")
+    recorder = Recorder([])
+    monkeypatch.setattr(svc.project_queries, "get_unique_metric_variants", recorder)
+    call = FakeCall(identity(company, "stranger"))
+    svc.get_unique_metric_variants(call, company, GetUniqueMetricsRequest())
+    assert recorder.calls == []
+    assert call.result.data == {"metrics": []}
+
+
+def test_unique_metric_variants_for_admin_without_a_project_stays_unrestricted(company, monkeypatch):
+    make_project(company, "metadminpriv")
+    recorder = Recorder([])
+    monkeypatch.setattr(svc.project_queries, "get_unique_metric_variants", recorder)
+    svc.get_unique_metric_variants(
+        FakeCall(identity(company, "boss", role=Role.admin)), company, GetUniqueMetricsRequest()
+    )
+    (args, _), = recorder.calls
+    assert args[1] is None
 
 
 def test_update_refuses_a_read_write_member(company):
