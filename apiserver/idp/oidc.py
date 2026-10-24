@@ -60,7 +60,7 @@ class OidcVerifier:
             )
         except OidcError:
             raise
-        except Exception as exc:  # PyJWTError, network errors fetching the JWKS
+        except jwt.PyJWTError as exc:  # a bad token, or a key set that could not be fetched (PyJWKClientError)
             raise OidcError("invalid token") from exc
         accepted = list(clients) if clients is not None else self._client_ids
         if claims.get("azp") not in accepted:
