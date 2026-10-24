@@ -73,9 +73,10 @@ def identity(company, user, role=Role.user):
 
 
 class FakeCall:
-    def __init__(self, ident, data=None):
+    def __init__(self, ident, data=None, batched=None):
         self.identity = ident
         self.data = data if data is not None else {}
+        self.batched_data = batched
         self.requested_endpoint_version = PartialVersion("2.30")
         self.result = SimpleNamespace(data=None, data_model=None)
 
@@ -377,3 +378,70 @@ def test_clone_into_a_read_only_project_by_name_is_refused(company):
             CloneRequest(task="task1", new_project_name="Project-dst/child"),
         )
     assert Project.objects(company=company, name="Project-dst/child").first() is None
+
+
+def test_update_batch_move_needs_admin_on_the_destination(company):
+    make_root(company, id_="src", members=[("u2", ProjectRole.read_write)])
+    make_root(company, id_="dst", members=[("u2", ProjectRole.read_write)])
+    make_task(company, "src", "u2")
+
+    with pytest.raises(errors.forbidden.NoWritePermission):
+        svc.update_batch(
+            FakeCall(
+                identity(company, "u2"),
+                batched=[{"task": "task1", "project": "dst"}],
+            ),
+            company,
+            None,
+        )
+    assert Task.objects(id="task1").first().project == "src"
+
+
+def test_update_batch_is_all_or_nothing_when_one_destination_is_refused(company):
+    make_root(company, id_="src", members=[("u2", ProjectRole.read_write)])
+    make_root(company, id_="dst", members=[("u2", ProjectRole.read_write)])
+    make_task(company, "src", "u2", id_="move-task")
+    make_task(company, "src", "u2", id_="rename-task")
+
+    with pytest.raises(errors.forbidden.NoWritePermission):
+        svc.update_batch(
+            FakeCall(
+                identity(company, "u2"),
+                batched=[
+                    {"task": "rename-task", "name": "renamed"},
+                    {"task": "move-task", "project": "dst"},
+                ],
+            ),
+            company,
+            None,
+        )
+    # The rename alone would have been allowed, but the batch is refused as a whole
+    assert Task.objects(id="rename-task").first().name == "Task-rename-task"
+    assert Task.objects(id="move-task").first().project == "src"
+
+
+def test_an_owner_can_move_a_task_between_two_projects_they_administer(company):
+    make_root(company, id_="src", owner="u2")
+    make_root(company, id_="dst", owner="u2")
+    make_task(company, "src", "u2")
+
+    result = svc.move(
+        FakeCall(identity(company, "u2"), data={"project": "dst"}),
+        company,
+        MoveRequest(ids=["task1"], project="dst"),
+    )
+    assert result == {"project_id": "dst"}
+    assert Task.objects(id="task1").first().project == "dst"
+
+
+def test_a_collaborator_can_move_a_task_between_two_projects_they_administer(company):
+    make_root(company, id_="src", members=[("u2", ProjectRole.collaborator)])
+    make_root(company, id_="dst", members=[("u2", ProjectRole.collaborator)])
+    make_task(company, "src", "owner1")
+
+    svc.move(
+        FakeCall(identity(company, "u2"), data={"project": "dst"}),
+        company,
+        MoveRequest(ids=["task1"], project="dst"),
+    )
+    assert Task.objects(id="task1").first().project == "dst"
