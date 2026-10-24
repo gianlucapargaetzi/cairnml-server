@@ -8,7 +8,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 
 
 class FakeIdp:
-    ISSUER = "http://idp.test/realms/mlops"
+    ISSUER = "http://idp.test/realms/cairnml"
 
     def __init__(self) -> None:
         self._key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
