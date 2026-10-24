@@ -1,5 +1,6 @@
 import logging
 import logging.config
+import sys
 import os
 import platform
 from functools import reduce
@@ -226,7 +227,48 @@ class BasicConfig:
         logging_config = self.get("logging", None)
         if not logging_config:
             return
-        logging.config.dictConfig(logging_config)
+        logging.config.dictConfig(without_unwritable_file_handlers(logging_config))
+
+
+def without_unwritable_file_handlers(logging_config):
+    """The logging configuration, minus the file handlers whose folder cannot be written.
+
+    The default configuration logs to /var/log/cairnml as well as to the console. Where that folder does not exist and
+    cannot be created (a laptop, a CI runner, a test run, a container with a read-only file system) the server logs to
+    the console only, instead of refusing to start. A warning on stderr says which handlers were left out.
+    """
+    handlers = logging_config.get("handlers", None) or {}
+    dropped = []
+    for name, handler in handlers.items():
+        filename = handler.get("filename", None)
+        if not filename:
+            continue
+        folder = os.path.dirname(os.path.abspath(filename))
+        try:
+            os.makedirs(folder, exist_ok=True)
+            writable = os.access(folder, os.W_OK)
+        except OSError:
+            writable = False
+        if not writable:
+            dropped.append((name, folder))
+    if not dropped:
+        return logging_config
+    names = {name for name, _folder in dropped}
+    for name, folder in dropped:
+        print(f"logging: cannot write to {folder}; the {name} handler is left out, logging to the console only", file=sys.stderr)
+
+    def keep(handler_names):
+        return [h for h in handler_names if h not in names]
+
+    result = dict(logging_config)
+    result["handlers"] = {name: handler for name, handler in handlers.items() if name not in names}
+    if "root" in result:
+        result["root"] = dict(result["root"], handlers=keep(result["root"].get("handlers", [])))
+    result["loggers"] = {
+        logger: dict(conf, handlers=keep(conf.get("handlers", []))) if "handlers" in conf else conf
+        for logger, conf in (logging_config.get("loggers", None) or {}).items()
+    }
+    return result
 
 
 class ConfigurationError(Exception):
