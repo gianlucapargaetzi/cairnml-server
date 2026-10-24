@@ -1,5 +1,6 @@
 """Database-level test of the directory sync, run inside the server container."""
 
+import pytest
 import uuid
 from unittest import TestCase
 
@@ -9,6 +10,8 @@ from apiserver.idp.checks import AccessDenied, check_device
 from apiserver.idp.directory import DirectoryError, DirectoryUser
 from apiserver.idp.user_sync import sync_once
 from apiserver.idp.users import upsert_idp_user
+
+pytestmark = pytest.mark.integration  # needs MongoDB, Elasticsearch or a running API server
 
 ADMIN = "admin"
 

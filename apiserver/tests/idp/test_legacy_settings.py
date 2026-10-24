@@ -1,6 +1,9 @@
+import pytest
 from unittest import TestCase
 
 from apiserver.idp.legacy import check_no_legacy_settings, legacy_settings_in_use
+
+pytestmark = pytest.mark.integration  # needs MongoDB, Elasticsearch or a running API server
 
 
 def settings(**values):

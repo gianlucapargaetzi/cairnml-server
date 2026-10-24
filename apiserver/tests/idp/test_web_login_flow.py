@@ -1,5 +1,6 @@
 """The web sign-in flow against the real verifier and database, run inside the server container."""
 
+import pytest
 import json
 import os
 import time
@@ -13,6 +14,8 @@ from apiserver import database as db
 from apiserver.database.model.auth import User
 from apiserver.idp.verifier import get_verifier
 from apiserver.idp.web_login import LoginRefused, finish_login, start_login
+
+pytestmark = pytest.mark.integration  # needs MongoDB, Elasticsearch or a running API server
 
 ISSUER = "http://mlops-idp:8180/realms/mlops"
 WEB = "cairnml-web"

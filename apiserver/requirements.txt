@@ -1,3 +1,7 @@
+# The packages the server needs, with the ranges it works with. The image installs from requirements.lock, which has
+# exact versions and hashes. After changing this file, regenerate the lock (Python 3.11, the version of the image):
+#   uv pip compile apiserver/requirements.txt --python-version 3.11 --generate-hashes --no-header \
+#       --annotation-style line -o apiserver/requirements.lock
 attrs>=22.1.0,<23
 azure-storage-blob>=12.13.1
 bcrypt>=3.1.4
