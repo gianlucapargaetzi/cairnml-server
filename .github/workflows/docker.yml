@@ -36,6 +36,7 @@ jobs:
           context: .
           file: docker/build/Dockerfile
           build-contexts: cairnml_web=./web
+          build-args: CAIRNML_FROM=pypi
           load: true
           push: false
           tags: cairnml-server:check
@@ -90,6 +91,7 @@ jobs:
           file: docker/build/Dockerfile
           build-contexts: cairnml_web=./web
           build-args: |
+            CAIRNML_FROM=pypi
             VERSION=${{ github.ref_name }}
             BUILD=${{ github.sha }}
           load: true
@@ -111,6 +113,7 @@ jobs:
           file: docker/build/Dockerfile
           build-contexts: cairnml_web=./web
           build-args: |
+            CAIRNML_FROM=pypi
             VERSION=${{ github.ref_name }}
             BUILD=${{ github.sha }}
           push: true
