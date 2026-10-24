@@ -294,6 +294,7 @@ def create(call: APICall, company: str, _):
             id=ProjectBLL.create(
                 user=identity.user,
                 company=company,
+                identity=identity,
                 **fields,
             )
         )
@@ -328,6 +329,7 @@ def move(call: APICall, company: str, request: MoveRequest):
     moved, affected_projects = ProjectBLL.move_project(
         company=company,
         user=call.identity.user,
+        identity=call.identity,
         project_id=request.project,
         new_location=request.new_location,
     )

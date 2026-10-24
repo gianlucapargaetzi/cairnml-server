@@ -119,7 +119,7 @@ def update_report(call: APICall, company_id: str, request: UpdateReportRequest):
     return UpdateResponse(updated=updated, fields=partial_update_dict)
 
 
-def _ensure_reports_project(company: str, user: str, name: str):
+def _ensure_reports_project(company: str, user: str, identity: Identity, name: str):
     name = name.strip("/")
     _, _, basename = name.rpartition("/")
     if basename != reports_project_name:
@@ -128,6 +128,7 @@ def _ensure_reports_project(company: str, user: str, name: str):
     return project_bll.find_or_create(
         user=user,
         company=company,
+        identity=identity,
         project_name=name,
         description="Reports project",
         system_tags=[reports_tag, EntityVisibility.hidden.value],
@@ -147,7 +148,7 @@ def create_report(call: APICall, company_id: str, request: CreateReportRequest):
         project_name = ""
 
     project_id = _ensure_reports_project(
-        company=company_id, user=user_id, name=project_name
+        company=company_id, user=user_id, identity=call.identity, name=project_name
     )
     task = task_bll.create(
         company=company_id,
@@ -323,13 +324,14 @@ def move(call: APICall, company_id: str, request: MoveReportRequest):
             project_name = ""
 
     project_id = _ensure_reports_project(
-        company=company_id, user=user_id, name=project_name
+        company=company_id, user=user_id, identity=call.identity, name=project_name
     )
 
     project_bll.move_under_project(
         entity_cls=Task,
         user=call.identity.user,
         company=company_id,
+        identity=call.identity,
         ids=[request.task],
         project=project_id,
     )

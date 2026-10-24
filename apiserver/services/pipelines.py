@@ -109,6 +109,7 @@ def start_pipeline(call: APICall, company_id: str, request: StartPipelineRequest
     task, _ = task_bll.clone_task(
         company_id=company_id,
         user_id=call.identity.user,
+        identity=call.identity,
         task_id=request.task,
         hyperparams_overrides=hyperparams,
     )

@@ -750,6 +750,7 @@ def move(call: APICall, company_id: str, request: MoveRequest):
             entity_cls=Model,
             user=call.identity.user,
             company=company_id,
+            identity=call.identity,
             ids=request.ids,
             project=request.project,
             project_name=request.project_name,

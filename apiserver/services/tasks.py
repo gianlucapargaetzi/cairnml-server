@@ -581,6 +581,7 @@ def clone_task(call: APICall, company_id, request: CloneRequest):
     task, new_project = task_bll.clone_task(
         company_id=company_id,
         user_id=call.identity.user,
+        identity=call.identity,
         task_id=request.task,
         name=request.new_task_name,
         comment=request.new_task_comment,
@@ -1503,6 +1504,7 @@ def move(call: APICall, company_id: str, request: MoveRequest):
         entity_cls=Task,
         user=call.identity.user,
         company=company_id,
+        identity=call.identity,
         ids=request.ids,
         project=request.project,
         project_name=request.project_name,
