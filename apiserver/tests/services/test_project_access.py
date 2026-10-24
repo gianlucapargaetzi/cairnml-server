@@ -1,5 +1,6 @@
 # apiserver/tests/services/test_project_access.py
 from datetime import datetime
+from types import SimpleNamespace
 import pytest
 from apiserver.apierrors import errors
 from apiserver.apimodels.project_access import (
@@ -37,6 +38,16 @@ def identity(user, role=Role.user):
 class FakeCall:
     def __init__(self, ident):
         self.identity = ident
+        self.result = SimpleNamespace(data=None, data_model=None)
+
+
+def make_sub(root_id="root1", sub_id="sub1"):
+    sub = Project(
+        id=sub_id, company=COMPANY, user="someone", name="Root/Sub", basename="Sub",
+        created=datetime.utcnow(), parent=root_id, path=[root_id],
+    )
+    sub.save()
+    return sub
 
 
 def test_owner_can_add_a_member():
@@ -102,3 +113,26 @@ def test_only_owner_or_admin_can_transfer():
     make_root(members=[("u2", ProjectRole.collaborator), ("u3", ProjectRole.read)])
     with pytest.raises(errors.forbidden.NoWritePermission):
         svc.transfer_ownership(FakeCall(identity("u2")), COMPANY, TransferOwnershipRequest(project="root1", new_owner="u3"))
+
+
+def test_admin_can_transfer_ownership():
+    make_root(members=[("u2", ProjectRole.read)])
+    svc.transfer_ownership(FakeCall(identity("admin1", role=Role.admin)), COMPANY, TransferOwnershipRequest(project="root1", new_owner="u2"))
+    assert Project.objects(id="root1").first().user == "u2"
+
+
+def test_the_owner_cannot_be_added_as_a_member():
+    make_root()
+    make_user("owner1")
+    with pytest.raises(errors.bad_request.InvalidUserId):
+        svc.add_member(FakeCall(identity("owner1")), COMPANY, AddMemberRequest(project="root1", user="owner1", role=ProjectRole.read))
+    assert Project.objects(id="root1").first().members == []
+
+
+def test_access_on_a_sub_project_is_decided_by_the_roots_members():
+    make_root(members=[("u2", ProjectRole.read)])
+    make_sub()
+    call = FakeCall(identity("u2"))
+    svc.get_members(call, COMPANY, GetMembersRequest(project="sub1"))
+    assert call.result.data["owner"] == "owner1"
+    assert [m["user"] for m in call.result.data["members"]] == ["u2"]

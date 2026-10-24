@@ -49,7 +49,7 @@ def get_members(call: APICall, company_id: str, request: GetMembersRequest):
     ProjectAccessBLL.assert_can(call.identity, request.project, "read")
 
     root = _load_root(company_id, root_id)
-    return {
+    call.result.data = {
         "owner": root.user,
         "members": [
             {"user": m.user, "role": m.role, "added": m.added, "added_by": m.added_by}
@@ -58,7 +58,7 @@ def get_members(call: APICall, company_id: str, request: GetMembersRequest):
     }
 
 
-@endpoint("projects.add_member")
+@endpoint("projects.add_member", response_data_model=UpdateResponse)
 def add_member(call: APICall, company_id: str, request: AddMemberRequest):
     root_id = _resolve_root_id(call, request.project)
     ProjectAccessBLL.assert_can(call.identity, request.project, "admin")
@@ -89,7 +89,7 @@ def add_member(call: APICall, company_id: str, request: AddMemberRequest):
     return UpdateResponse(updated=1)
 
 
-@endpoint("projects.update_member_role")
+@endpoint("projects.update_member_role", response_data_model=UpdateResponse)
 def update_member_role(call: APICall, company_id: str, request: UpdateMemberRoleRequest):
     root_id = _resolve_root_id(call, request.project)
     ProjectAccessBLL.assert_can(call.identity, request.project, "admin")
@@ -102,7 +102,7 @@ def update_member_role(call: APICall, company_id: str, request: UpdateMemberRole
     return UpdateResponse(updated=1)
 
 
-@endpoint("projects.remove_member")
+@endpoint("projects.remove_member", response_data_model=UpdateResponse)
 def remove_member(call: APICall, company_id: str, request: RemoveMemberRequest):
     root_id = _resolve_root_id(call, request.project)
     ProjectAccessBLL.assert_can(call.identity, request.project, "admin")
@@ -115,7 +115,7 @@ def remove_member(call: APICall, company_id: str, request: RemoveMemberRequest):
     return UpdateResponse(updated=1)
 
 
-@endpoint("projects.set_visibility")
+@endpoint("projects.set_visibility", response_data_model=UpdateResponse)
 def set_visibility(call: APICall, company_id: str, request: SetVisibilityRequest):
     root_id = _resolve_root_id(call, request.project)
     ProjectAccessBLL.assert_can(call.identity, request.project, "admin")
@@ -129,7 +129,7 @@ def set_visibility(call: APICall, company_id: str, request: SetVisibilityRequest
     return UpdateResponse(updated=1)
 
 
-@endpoint("projects.transfer_ownership")
+@endpoint("projects.transfer_ownership", response_data_model=UpdateResponse)
 def transfer_ownership(call: APICall, company_id: str, request: TransferOwnershipRequest):
     root_id = _resolve_root_id(call, request.project)
     ProjectAccessBLL.assert_can(call.identity, request.project, "owner_only")
