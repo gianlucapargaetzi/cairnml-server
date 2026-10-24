@@ -220,16 +220,22 @@ def _scope_query(query: Q, identity: Identity) -> Q:
     return query if scope is None else query & scope
 
 
-def _assert_destination_project(
-    identity: Identity, task: Task, new_project: Optional[str]
-) -> None:
+def _assert_destination_project(identity: Identity, task: Task, fields: dict) -> None:
     """
     A task moved to another project by update or edit needs admin on that project, the same rule
     the `move` endpoint applies. Otherwise a collaborator could move tasks through the generic
-    edit path that `move` gates behind admin
+    edit path that `move` gates behind admin. Clearing the project needs admin on the current one:
+    a projectless task is open to the whole company, so clearing is a move out of the project
     """
-    if new_project and new_project != task.project:
+    if "project" not in fields:
+        return
+    new_project = fields["project"]
+    if new_project == task.project:
+        return
+    if new_project:
         ProjectAccessBLL.assert_can(identity, new_project, "admin")
+    elif task.project:
+        ProjectAccessBLL.assert_can(identity, task.project, "admin")
 
 
 def set_task_status_from_call(
@@ -725,9 +731,7 @@ def update(call: APICall, company_id, req_model: UpdateRequest):
         if not partial_update_dict:
             return UpdateResponse(updated=0)
 
-        _assert_destination_project(
-            call.identity, task, partial_update_dict.get("project")
-        )
+        _assert_destination_project(call.identity, task, partial_update_dict)
 
         updated_count, updated_fields = Task.safe_update(
             company_id=company_id,
@@ -811,7 +815,7 @@ def update_batch(call: APICall, company_id, _):
             task = tasks[id]
             fields, valid_fields = prepare_update_fields(call, data)
             # Checked for every item before the bulk write below, so that a failure changes nothing
-            _assert_destination_project(call.identity, task, fields.get("project"))
+            _assert_destination_project(call.identity, task, fields)
             partial_update_dict = Task.get_safe_update_dict(fields)
             if not partial_update_dict:
                 continue
@@ -873,7 +877,7 @@ def edit(call: APICall, company_id, req_model: UpdateRequest):
                 call, valid_fields=edit_fields, output=task.output, previous_task=task
             )
 
-        _assert_destination_project(call.identity, task, fields.get("project"))
+        _assert_destination_project(call.identity, task, fields)
 
         for key in fields:
             field = getattr(task, key, None)

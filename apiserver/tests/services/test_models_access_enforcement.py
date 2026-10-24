@@ -285,3 +285,94 @@ def test_edit_cannot_move_a_model_into_a_project_the_caller_cannot_admin(company
             UpdateModelRequest(model="model1"),
         )
     assert Model.objects(id="model1").first().project == "src"
+
+
+def test_clearing_the_project_through_edit_is_refused_before_any_change(company):
+    # edit parses the project as a Project id, so an empty value is refused by the parser
+    make_root(company, id_="root1", members=[("u2", ProjectRole.read_write)])
+    make_model(company, "root1", "u2")
+    with pytest.raises(errors.bad_request.FieldsValueError):
+        svc.edit(
+            FakeCall(identity(company, "u2"), data={"project": ""}),
+            company,
+            UpdateModelRequest(model="model1"),
+        )
+    assert Model.objects(id="model1").first().project == "root1"
+
+
+def test_clearing_the_project_helper_needs_admin_on_the_current_project(company):
+    # Direct check of the destination helper: a read_write owner has write but not admin
+    from apiserver.services.models import _assert_destination_project
+
+    make_root(company, id_="root1", members=[("u2", ProjectRole.read_write)])
+    model = make_model(company, "root1", "u2")
+    with pytest.raises(errors.forbidden.NoWritePermission):
+        _assert_destination_project(identity(company, "u2"), model, {"project": ""})
+    # no project key, or the same project: nothing to check
+    _assert_destination_project(identity(company, "u2"), model, {})
+    _assert_destination_project(identity(company, "u2"), model, {"project": "root1"})
+
+
+def test_read_write_owner_cannot_clear_the_project_through_update(company):
+    make_root(company, id_="root1", members=[("u2", ProjectRole.read_write)])
+    make_model(company, "root1", "u2")
+    with pytest.raises(errors.forbidden.NoWritePermission):
+        svc.update(
+            FakeCall(identity(company, "u2"), data={"project": ""}),
+            company,
+            UpdateModelRequest(model="model1"),
+        )
+    assert Model.objects(id="model1").first().project == "root1"
+
+
+def test_read_write_owner_cannot_clear_the_project_with_null_through_update(company):
+    # update does not parse the call data, so an explicit null reaches the check as well
+    make_root(company, id_="root1", members=[("u2", ProjectRole.read_write)])
+    make_model(company, "root1", "u2")
+    with pytest.raises(errors.forbidden.NoWritePermission):
+        svc.update(
+            FakeCall(identity(company, "u2"), data={"project": None}),
+            company,
+            UpdateModelRequest(model="model1"),
+        )
+    assert Model.objects(id="model1").first().project == "root1"
+
+
+def test_admin_can_list_models_in_private_projects(company):
+    make_root(company, id_="privroot")
+    make_model(company, "privroot", "owner1", id_="hidden-model")
+    call = FakeCall(identity(company, "admin-user", role=Role.admin))
+    svc.get_all(call, company, None)
+    assert "hidden-model" in {m["id"] for m in call.result.data["models"]}
+
+
+def test_admin_gets_frameworks_of_private_projects_without_a_filter(company):
+    make_root(company, id_="privroot")
+    make_model(company, "privroot", "owner1", id_="m-priv", framework="PrivateFramework")
+    call = FakeCall(identity(company, "admin-user", role=Role.admin))
+    svc.get_frameworks(call, company, GetFrameworksRequest())
+    assert "PrivateFramework" in call.result.data["frameworks"]
+
+
+def test_admin_can_move_a_model_into_a_private_project(company):
+    make_root(company, id_="src")
+    make_root(company, id_="dst")
+    make_model(company, "src", "owner1")
+    svc.move(
+        FakeCall(identity(company, "admin-user", role=Role.admin), data={"project": "dst"}),
+        company,
+        MoveRequest(ids=["model1"], project="dst"),
+    )
+    assert Model.objects(id="model1").first().project == "dst"
+
+
+def test_admin_can_clear_the_project_of_a_model(company):
+    # update passes the project through unparsed, so this is the path that can clear it
+    make_root(company, id_="root1")
+    make_model(company, "root1", "owner1")
+    svc.update(
+        FakeCall(identity(company, "admin-user", role=Role.admin), data={"project": ""}),
+        company,
+        UpdateModelRequest(model="model1"),
+    )
+    assert not Model.objects(id="model1").first().project

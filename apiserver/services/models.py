@@ -133,15 +133,21 @@ def _assert_models_access(
         _assert_model_access(identity, model, capability, object_owner=object_owner)
 
 
-def _assert_destination_project(
-    identity: Identity, model: Model, new_project: Optional[str]
-) -> None:
+def _assert_destination_project(identity: Identity, model: Model, fields: dict) -> None:
     """
     A model moved to another project by update or edit needs admin on that project, the same rule
-    the `move` endpoint applies
+    the `move` endpoint applies. Clearing the project needs admin on the current one: a projectless
+    model is open to the whole company, so clearing is a move out of the project
     """
-    if new_project and new_project != model.project:
+    if "project" not in fields:
+        return
+    new_project = fields["project"]
+    if new_project == model.project:
+        return
+    if new_project:
         ProjectAccessBLL.assert_can(identity, new_project, "admin")
+    elif model.project:
+        ProjectAccessBLL.assert_can(identity, model.project, "admin")
 
 
 @endpoint("models.get_by_id")
@@ -534,7 +540,7 @@ def edit(call: APICall, company_id, request: UpdateModelRequest):
 
     fields = parse_model_fields(call, create_fields)
     fields = prepare_update_fields(call, company_id, fields)
-    _assert_destination_project(call.identity, model, fields.get("project"))
+    _assert_destination_project(call.identity, model, fields)
 
     for key in fields:
         field = getattr(model, key, None)
@@ -580,7 +586,7 @@ def _update_model(call: APICall, company_id, model_id, object_owner=None):
     model = ModelBLL.get_company_model_by_id(company_id=company_id, model_id=model_id)
     _assert_model_access(call.identity, model, "write", object_owner=object_owner)
     data = prepare_update_fields(call, company_id, call.data)
-    _assert_destination_project(call.identity, model, data.get("project"))
+    _assert_destination_project(call.identity, model, data)
     task_id = data.get("task")
     iteration = data.get("iteration")
     if task_id and iteration is not None:
