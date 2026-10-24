@@ -5,8 +5,8 @@ from apiserver.database.model.auth import Role
 from apiserver.database.model.project import Project, ProjectRole, ProjectVisibility
 from apiserver.service_repo.auth import Identity
 
-_WRITE_ROLES = {"owner", ProjectRole.collaborator}
 _ADMIN_ROLES = {"owner", ProjectRole.collaborator}
+_CAPABILITIES = ("read", "write", "delete", "admin", "owner_only")
 
 
 class ProjectAccessBLL:
@@ -19,13 +19,14 @@ class ProjectAccessBLL:
 
     @staticmethod
     def get_role(identity: Identity, project_id: str) -> Optional[str]:
-        if identity.role == Role.admin:
-            return "admin"
-
         root_id = ProjectAccessBLL.resolve_root_id(project_id, identity.company)
         if not root_id:
             return None
-        root = Project.objects(id=root_id, company=identity.company).only(
+
+        if identity.role == Role.admin:
+            return "admin"
+
+        root =Project.objects(id=root_id, company=identity.company).only(
             "user", "visibility", "members"
         ).first()
         if not root:
@@ -50,6 +51,9 @@ class ProjectAccessBLL:
         capability: str,
         object_owner: Optional[str] = None,
     ) -> None:
+        if capability not in _CAPABILITIES:
+            raise ValueError(f"unknown capability: {capability}")
+
         role = ProjectAccessBLL.get_role(identity, project_id)
         if role is None:
             raise errors.bad_request.InvalidProjectId(id=project_id)
@@ -71,8 +75,6 @@ class ProjectAccessBLL:
         elif capability == "delete":
             if role in (ProjectRole.collaborator, ProjectRole.read_write) and is_own:
                 return
-        else:
-            raise ValueError(f"unknown capability: {capability}")
 
         raise errors.forbidden.NoWritePermission(
             f"role '{role}' does not have '{capability}' access to project {project_id}"

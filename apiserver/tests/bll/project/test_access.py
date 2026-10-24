@@ -64,6 +64,11 @@ class TestGetRole:
     def test_a_missing_project_id_gets_no_role(self):
         assert ProjectAccessBLL.get_role(identity("anyone"), "does-not-exist") is None
 
+    def test_an_admin_gets_no_role_on_a_project_that_does_not_exist(self):
+        assert ProjectAccessBLL.get_role(identity("anyone", role=Role.admin), "never-created") is None
+        with pytest.raises(errors.bad_request.InvalidProjectId):
+            ProjectAccessBLL.assert_can(identity("anyone", role=Role.admin), "never-created", "read")
+
     def test_a_project_in_another_company_gets_no_role(self):
         make_root()
         other_company_identity = Identity(user="owner1", company="other-company", role=Role.user)
