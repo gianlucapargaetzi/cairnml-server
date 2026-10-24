@@ -8,7 +8,12 @@ import pytest
 from apiserver.apierrors import errors
 from apiserver.apimodels.projects import (
     DeleteRequest,
+    GetParamsRequest,
     GetUniqueMetricsRequest,
+    ProjectHyperparamValuesRequest,
+    ProjectModelMetadataValuesRequest,
+    ProjectTaskParentsRequest,
+    ProjectUserNamesRequest,
     MergeRequest,
     MoveRequest,
     ProjectRequest,
@@ -197,6 +202,81 @@ def test_unique_metric_variants_for_admin_without_a_project_stays_unrestricted(c
     )
     (args, _), = recorder.calls
     assert args[1] is None
+
+
+# (endpoint, request factory, (object, method) it hands the work to, its stub result, its empty shape)
+EMPTY_CASES = [
+    pytest.param(
+        svc.get_task_tags, ProjectTagsRequest, (svc.org_bll, "get_tags"),
+        {"tags": [], "system_tags": []}, {"tags": [], "system_tags": []},
+        id="task_tags",
+    ),
+    pytest.param(
+        svc.get_model_tags, ProjectTagsRequest, (svc.org_bll, "get_tags"),
+        {"tags": [], "system_tags": []}, {"tags": [], "system_tags": []},
+        id="model_tags",
+    ),
+    pytest.param(
+        svc.get_model_metadata_keys, GetParamsRequest, (svc.project_queries, "get_model_metadata_keys"),
+        (0, 0, []), {"total": 0, "remaining": 0, "keys": []},
+        id="model_metadata_keys",
+    ),
+    pytest.param(
+        svc.get_model_metadata_values,
+        lambda: ProjectModelMetadataValuesRequest(key="k"),
+        (svc.project_queries, "get_model_metadata_distinct_values"),
+        (0, []), {"total": 0, "values": []},
+        id="model_metadata_values",
+    ),
+    pytest.param(
+        svc.get_hyper_parameters, GetParamsRequest, (svc.project_queries, "get_aggregated_project_parameters"),
+        (0, 0, []), {"total": 0, "remaining": 0, "parameters": []},
+        id="hyper_parameters",
+    ),
+    pytest.param(
+        svc.get_hyperparam_values,
+        lambda: ProjectHyperparamValuesRequest(section="s", name="n"),
+        (svc.project_queries, "get_task_hyperparam_distinct_values"),
+        (0, []), {"total": 0, "values": []},
+        id="hyperparam_values",
+    ),
+    pytest.param(
+        svc.get_task_parents, ProjectTaskParentsRequest, (svc.ProjectBLL, "get_task_parents"),
+        [], {"parents": []},
+        id="task_parents",
+    ),
+    pytest.param(
+        svc.get_user_names, ProjectUserNamesRequest, (svc.ProjectBLL, "get_entity_users"),
+        [], {"users": []},
+        id="user_names",
+    ),
+]
+
+
+@pytest.mark.parametrize("endpoint, make_request, target, stub_result, empty_shape", EMPTY_CASES)
+def test_project_less_read_with_no_visible_projects_returns_the_empty_shape(
+    company, monkeypatch, endpoint, make_request, target, stub_result, empty_shape
+):
+    make_project(company, "emptypriv")
+    recorder = Recorder(stub_result)
+    monkeypatch.setattr(target[0], target[1], recorder)
+    call = FakeCall(identity(company, "stranger"))
+    endpoint(call, company, make_request())
+    assert recorder.calls == []
+    assert call.result.data == empty_shape
+
+
+@pytest.mark.parametrize("endpoint, make_request, target, stub_result, empty_shape", EMPTY_CASES)
+def test_project_less_read_for_admin_stays_unrestricted(
+    company, monkeypatch, endpoint, make_request, target, stub_result, empty_shape
+):
+    make_project(company, "adminpriv")
+    recorder = Recorder(stub_result)
+    monkeypatch.setattr(target[0], target[1], recorder)
+    endpoint(FakeCall(identity(company, "boss", role=Role.admin)), company, make_request())
+    (_, kwargs), = recorder.calls
+    # No filter: the downstream call receives no project list (None, or the request default of an empty list)
+    assert not kwargs.get("projects", kwargs.get("project_ids"))
 
 
 def test_update_refuses_a_read_write_member(company):
