@@ -375,3 +375,60 @@ def test_reset_access_clears_visibility_and_members(company):
     refreshed = Project.objects(id="rsroot").first()
     assert refreshed.visibility == ProjectVisibility.private
     assert refreshed.members == []
+
+
+def test_merge_refuses_a_collaborator_even_with_admin_on_both_sides(company):
+    # merge removes the source project outright, so admin (which a collaborator has) is not
+    # enough: only the owner may do this, the same bar projects.delete already uses
+    make_project(company, "ownmsrc", members=[("u2", ProjectRole.collaborator)])
+    make_project(company, "ownmdst", members=[("u2", ProjectRole.collaborator)])
+    with pytest.raises(errors.forbidden.NoWritePermission):
+        svc.merge(
+            FakeCall(identity(company, "u2")),
+            company,
+            MergeRequest(project="ownmsrc", destination_project="ownmdst"),
+        )
+    assert Project.objects(id="ownmsrc").first() is not None
+
+
+def test_merge_allows_the_owner(company):
+    make_project(company, "realmsrc")
+    make_project(company, "realmdst")
+    svc.merge(
+        FakeCall(identity(company, "owner1")),
+        company,
+        MergeRequest(project="realmsrc", destination_project="realmdst"),
+    )
+    assert Project.objects(id="realmsrc").first() is None
+
+
+def test_move_refuses_a_collaborator_moving_a_root_under_another_root(company):
+    # moving a root changes who governs it (role resolution follows the current root), so a
+    # collaborator (admin, not owner) demoting someone's root under their own tree must be
+    # refused, even though they administer both sides
+    make_project(company, "ownmvsrc", members=[("u2", ProjectRole.collaborator)])
+    make_project(company, "ownmvdst", owner="u2")
+    with pytest.raises(errors.forbidden.NoWritePermission):
+        svc.move(
+            FakeCall(identity(company, "u2")),
+            company,
+            MoveRequest(project="ownmvsrc", new_location="ownmvdst"),
+        )
+    moved = Project.objects(id="ownmvsrc").first()
+    assert moved.parent is None
+    # the original owner must still be the owner: role resolution still follows this root
+    assert ProjectAccessBLL.get_role(identity(company, "owner1"), "ownmvsrc") == "owner"
+
+
+def test_move_allows_a_collaborator_to_move_a_sub_project_they_administer(company):
+    # a sub-project move does not change who governs the root, so admin (not owner_only) is the
+    # right bar here, unchanged from before
+    root = make_project(company, "subadminroot", members=[("u2", ProjectRole.collaborator)])
+    sub = make_project(company, "subadminchild", parent=root)
+    make_project(company, "subadmindst", parent=root)
+    svc.move(
+        FakeCall(identity(company, "u2")),
+        company,
+        MoveRequest(project=sub.id, new_location="subadminroot/subadmindst"),
+    )
+    assert Project.objects(id=sub.id).first().parent is not None

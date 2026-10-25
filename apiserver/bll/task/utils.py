@@ -7,6 +7,7 @@ from mongoengine import Q
 from mongoengine.base import UPDATE_OPERATORS
 
 from apiserver.apierrors import errors
+from apiserver.bll.project.access import ProjectAccessBLL
 from apiserver.bll.util import update_project_time
 from apiserver.config_repo import config
 from apiserver.database.errors import translate_errors_context
@@ -183,7 +184,7 @@ def get_many_tasks_for_writing(
     throw_on_forbidden: bool = True,
 ) -> Sequence[Task]:
     if only:
-        missing = [f for f in ("company",) if f not in only]
+        missing = [f for f in ("company", "project", "user") if f not in only]
         if missing:
             only = [*only, *missing]
 
@@ -201,6 +202,21 @@ def get_many_tasks_for_writing(
         return result
 
     forbidden_tasks = {task.id for task in result if not task.company}
+
+    def no_project_access(task: Task) -> bool:
+        if not task.project:
+            return False
+        try:
+            ProjectAccessBLL.assert_can(
+                identity, task.project, "write", object_owner=task.user
+            )
+            return False
+        except errors.bad_request.InvalidProjectId:
+            return True
+        except errors.forbidden.NoWritePermission:
+            return True
+
+    forbidden_tasks |= {task.id for task in result if no_project_access(task)}
     if forbidden_tasks:
         if throw_on_forbidden:
             raise errors.forbidden.NoWritePermission(
@@ -224,9 +240,16 @@ def get_task_with_write_access(
     """
     query = dict(id=task_id, company=company_id)
 
-    task = Task.get_for_writing(_only=only, **query)
+    # project/user decide write access below, so they are always fetched regardless of `only`
+    access_fields = {"project", "user"}
+    full_only = set(only) | access_fields if only else None
+    task = Task.get_for_writing(_only=full_only, **query)
     if not task:
         raise errors.bad_request.InvalidTaskId(**query)
+    if task.project:
+        ProjectAccessBLL.assert_can(
+            identity, task.project, "write", object_owner=task.user
+        )
 
     return task
 

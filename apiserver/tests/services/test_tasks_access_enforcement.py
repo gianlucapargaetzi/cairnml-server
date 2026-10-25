@@ -181,9 +181,11 @@ def test_admin_can_delete_anyones_task(company, monkeypatch):
 
 
 def test_get_by_id_refuses_a_task_in_a_private_project_to_a_stranger(company):
+    # the task must look exactly as missing as a genuinely unknown id would: a project-revealing
+    # error here would tell the stranger the project exists, even though they cannot see it
     make_root(company)
     make_task(company, "root1", "owner1")
-    with pytest.raises(errors.bad_request.InvalidProjectId):
+    with pytest.raises(errors.bad_request.InvalidTaskId):
         svc.get_by_id(FakeCall(identity(company, "stranger")), company, TaskRequest(task="task1"))
 
 
@@ -480,3 +482,23 @@ def test_a_collaborator_can_move_a_task_between_two_projects_they_administer(com
         MoveRequest(ids=["task1"], project="dst"),
     )
     assert Task.objects(id="task1").first().project == "dst"
+
+
+def test_create_gives_the_same_error_for_a_hidden_and_a_missing_project_even_with_another_bad_field(company):
+    # parse_from_call checks fields in order; without an early access check, a hidden project
+    # (which exists, so its own field check passes) would let parsing continue to a later,
+    # unrelated bad field and raise THAT field's error, while a missing project (which stops
+    # parsing immediately) never would -- the two outcomes differing is itself a leak
+    make_root(company)  # private, outsider has no role at all
+    call_data = {
+        "name": "new-task",
+        "type": "training",
+        "project": "root1",
+        "container": "not-a-dict",
+    }
+    with pytest.raises(errors.bad_request.InvalidProjectId):
+        svc.create(FakeCall(identity(company, "outsider"), data=call_data), company, None)
+
+    missing_data = {**call_data, "project": "no-such-project"}
+    with pytest.raises(errors.bad_request.InvalidProjectId):
+        svc.create(FakeCall(identity(company, "outsider"), data=missing_data), company, None)

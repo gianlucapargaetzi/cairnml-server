@@ -32,6 +32,7 @@ from apiserver.config_repo import config
 from apiserver.database.model.queue import Queue
 from apiserver.database.model.task.task import Task, TaskStatus
 from apiserver.service_repo import APICall, endpoint
+from apiserver.services.tasks import _assert_tasks_access
 from apiserver.services.utils import (
     conform_tag_fields,
     conform_output_tags,
@@ -168,6 +169,9 @@ def update_added_task_properties(queue: str, task: str, update_execution_queue: 
 
 @endpoint("queues.move_task_to_queue")
 def move_task_to_queue(call: APICall, company_id, request: MoveTaskToQueueRequest):
+    # queues aren't project-scoped, so this and the other by-task-id endpoints below need their
+    # own check, the same "write" bar tasks.enqueue/dequeue already use for the same operations
+    _assert_tasks_access(company_id, call.identity, [request.task], "write")
     removed = queue_bll.remove_task(
         company_id=company_id,
         user_id=call.identity.user,
@@ -203,6 +207,7 @@ def move_task_to_queue(call: APICall, company_id, request: MoveTaskToQueueReques
 
 @endpoint("queues.add_task", min_version="2.4")
 def add_task(call: APICall, company_id, request: AddTaskRequest):
+    _assert_tasks_access(company_id, call.identity, [request.task], "write")
     queue_bll.add_task(
         company_id=company_id, queue_id=request.queue, task_id=request.task
     )
@@ -237,6 +242,7 @@ def get_next_task(call: APICall, company_id, request: GetNextTaskRequest):
 
 @endpoint("queues.remove_task", min_version="2.4")
 def remove_task(call: APICall, company_id, request: RemoveTaskRequest):
+    _assert_tasks_access(company_id, call.identity, [request.task], "write")
     call.result.data = {
         "removed": queue_bll.remove_task(
             company_id=company_id,

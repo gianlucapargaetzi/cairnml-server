@@ -316,10 +316,22 @@ last_update_fields = (
 )
 
 
+def _assert_project_field_writable(identity: Identity, call_data: dict) -> None:
+    """
+    Check access on a request's raw "project" value before anything in the request is parsed, so
+    a hidden project and a missing one fail at the exact same point with the exact same error,
+    regardless of what else is in the request (see the identical helper in services/tasks.py)
+    """
+    project = call_data.get("project")
+    if project:
+        ProjectAccessBLL.assert_can(identity, project, "write", object_owner=identity.user)
+
+
 def parse_model_fields(call, valid_fields):
     task_id = call.data.get("task")
     if isinstance(task_id, str) and task_id.startswith(deleted_prefix):
         call.data.pop("task")
+    _assert_project_field_writable(call.identity, call.data)
     fields = parse_from_call(call.data, valid_fields, Model.get_fields())
     conform_tag_fields(call, fields, validate=True)
     escape_metadata(fields)

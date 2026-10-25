@@ -42,8 +42,10 @@ from apiserver.services.events import (
 from apiserver.services.tasks import (
     escape_execution_parameters,
     _hidden_query,
+    _scope_query as _scope_tasks_query,
     conform_task_data,
 )
+from apiserver.services.models import _scope_query as _scope_models_query
 
 org_bll = OrgBLL()
 project_bll = ProjectBLL()
@@ -200,6 +202,7 @@ def get_all_ex(call: APICall, company_id, request: GetAllRequest):
     tasks = Task.get_many_with_join(
         company=company_id,
         query_dict=call_data,
+        query=_scope_tasks_query(Q(), call.identity),
         allow_public=request.allow_public,
         ret_params=ret_params,
     )
@@ -233,11 +236,16 @@ def get_task_data(call: APICall, company_id, request: GetTasksDataRequest):
     call_data = escape_execution_parameters(call.data)
     process_include_subprojects(call_data)
 
+    scope = (
+        _scope_models_query(Q(), call.identity)
+        if request.model_events
+        else _scope_tasks_query(_hidden_query(call_data), call.identity)
+    )
     ret_params = {}
     tasks = entity_cls.get_many_with_join(
         company=company_id,
         query_dict=call_data,
-        query=_hidden_query(call_data),
+        query=scope,
         allow_public=request.allow_public,
         ret_params=ret_params,
     )
@@ -253,7 +261,10 @@ def get_task_data(call: APICall, company_id, request: GetTasksDataRequest):
 
     task_ids = [task["id"] for task in tasks]
     companies = _get_task_or_model_index_companies(
-        company_id, task_ids=task_ids, model_events=request.model_events
+        company_id,
+        task_ids=task_ids,
+        identity=call.identity,
+        model_events=request.model_events,
     )
     if request.debug_images:
         result = event_bll.debug_images_iterator.get_task_events(

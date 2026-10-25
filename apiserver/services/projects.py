@@ -368,11 +368,16 @@ def _reset_cached_tags(company: str, projects: Sequence[str]):
 @endpoint("projects.move", request_data_model=MoveRequest)
 def move(call: APICall, company: str, request: MoveRequest):
     identity = call.identity
-    ProjectAccessBLL.assert_can(identity, request.project, "admin")
+    was_root = not Project.objects(id=request.project).only("parent").first().parent
+    # Moving a root changes who governs it from here on (role resolution always follows the
+    # current root), so demoting someone's independently-owned root under another tree needs the
+    # same owner_only bar delete/merge use, not just admin, which a collaborator also has
+    ProjectAccessBLL.assert_can(
+        identity, request.project, "owner_only" if was_root else "admin"
+    )
     ProjectAccessBLL.assert_can_admin_destination(
         identity, company, request.new_location
     )
-    was_root = not Project.objects(id=request.project).only("parent").first().parent
 
     moved, affected_projects = ProjectBLL.move_project(
         company=company,
@@ -393,7 +398,9 @@ def move(call: APICall, company: str, request: MoveRequest):
 
 @endpoint("projects.merge", request_data_model=MergeRequest)
 def merge(call: APICall, company: str, request: MergeRequest):
-    ProjectAccessBLL.assert_can(call.identity, request.project, "admin")
+    # merge removes the source project, the same as delete, so it needs the same owner_only bar
+    # (admin would let a collaborator destroy a project they don't own)
+    ProjectAccessBLL.assert_can(call.identity, request.project, "owner_only")
     if request.destination_project:
         ProjectAccessBLL.assert_can(call.identity, request.destination_project, "admin")
 

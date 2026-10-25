@@ -27,10 +27,12 @@ from apiserver.database.model.project import Project
 from apiserver.database.model.task.task import Task, TaskType
 from apiserver.redis_manager import redman
 from apiserver.service_repo import endpoint, APICall
-from apiserver.services.models import conform_model_data
+from apiserver.bll.project.access import ProjectAccessBLL
+from apiserver.services.models import conform_model_data, _scope_query as _scope_models_query
 from apiserver.services.tasks import (
     escape_execution_parameters,
     _hidden_query,
+    _scope_query as _scope_tasks_query,
     conform_task_data,
 )
 from apiserver.services.utils import get_tags_filter_dictionary, sort_tags_response
@@ -122,7 +124,16 @@ def get_entities_count(call: APICall, company, request: EntitiesCountRequest):
             elif not data.get("user"):
                 data["user"] = request.active_users
 
-        query = Q()
+        # A count is still a signal: a non-zero count for a hidden project's id would confirm it
+        # exists, so the same visibility scoping the listings use applies here too
+        visible = ProjectAccessBLL.visible_project_ids(call.identity)
+        if visible is None:
+            query = Q()
+        elif entity_cls is Project:
+            query = Q(id__in=list(visible))
+        else:
+            query = Q(project__in=list(visible)) | Q(project=None) | Q(project="")
+
         if (
             entity_cls in (Project, Task)
             and field
@@ -203,7 +214,7 @@ def _get_download_getter_fn(
         tasks = Task.get_many_with_join(
             company=company,
             query_dict=call_data,
-            query=_hidden_query(call_data),
+            query=_scope_tasks_query(_hidden_query(call_data), call.identity),
             allow_public=allow_public,
         )
         conform_task_data(call, tasks)
@@ -213,6 +224,7 @@ def _get_download_getter_fn(
         models = Model.get_many_with_join(
             company=company,
             query_dict=call_data,
+            query=_scope_models_query(Q(), call.identity),
             allow_public=allow_public,
         )
         conform_model_data(call, models)
@@ -398,6 +410,10 @@ def download_for_get_all(call: APICall, company, request: DownloadForGetAllReque
             projects = projects[0]
             if projects is None:
                 return "root"
+        # A hidden project's real name must not leak into the downloaded filename either
+        visible = ProjectAccessBLL.visible_project_ids(call.identity)
+        if visible is not None and projects not in visible:
+            return
         project: Project = Project.objects(id=projects).only("basename").first()
         if not project:
             return
@@ -413,9 +429,17 @@ def download_for_get_all(call: APICall, company, request: DownloadForGetAllReque
 
 @endpoint("organization.get_project_workloads")
 def get_project_workloads(call: APICall, company, request: GetProjectWorkloadsRequest):
+    requested = request.projects
+    if requested:
+        visible = ProjectAccessBLL.visible_project_ids(call.identity)
+        if visible is not None:
+            requested = [p for p in requested if p in visible]
+            if not requested:
+                call.result.data = {}
+                return
     call.result.data = ProjectWorkloads.get_project_workloads(
         company,
-        project_ids=request.projects,
+        project_ids=requested,
         from_date_str=request.from_date,
         to_date_str=request.to_date,
         include_development=request.include_development,
