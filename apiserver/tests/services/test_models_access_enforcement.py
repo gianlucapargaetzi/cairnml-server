@@ -288,10 +288,11 @@ def test_edit_cannot_move_a_model_into_a_project_the_caller_cannot_admin(company
 
 
 def test_clearing_the_project_through_edit_is_refused_before_any_change(company):
-    # edit parses the project as a Project id, so an empty value is refused by the parser
+    # edit parses the project as a Project id; an empty value finds no project, which the parser
+    # reports the same way it reports a hidden one: InvalidProjectId
     make_root(company, id_="root1", members=[("u2", ProjectRole.read_write)])
     make_model(company, "root1", "u2")
-    with pytest.raises(errors.bad_request.FieldsValueError):
+    with pytest.raises(errors.bad_request.InvalidProjectId):
         svc.edit(
             FakeCall(identity(company, "u2"), data={"project": ""}),
             company,

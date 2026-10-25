@@ -41,7 +41,6 @@ from apiserver.bll.task.task_operations import publish_task
 from apiserver.bll.task.utils import get_task_with_write_access, deleted_prefix
 from apiserver.bll.util import run_batch_operation
 from apiserver.config_repo import config
-from apiserver.database.model import validate_id
 from apiserver.database.model.model import Model
 from apiserver.database.model.project import Project
 from apiserver.database.model.task.task import (
@@ -456,7 +455,9 @@ def create(call: APICall, company_id, req_model: CreateModelRequest):
 
     project = req_model.project
     if project:
-        validate_id(Project, company=company_id, project=project)
+        # assert_can already resolves existence (raising InvalidProjectId either way), so a
+        # separate validate_id existence check ahead of it would reveal a hidden project's
+        # existence through a different error than a genuinely missing one gets
         ProjectAccessBLL.assert_can(
             call.identity, project, "write", object_owner=call.identity.user
         )

@@ -329,18 +329,19 @@ def test_clearing_the_project_helper_needs_admin_on_the_current_project_for_task
 
 
 def test_clearing_the_project_through_update_or_edit_is_refused_before_any_change(company):
-    # update and edit parse the project as a Project id, so an empty value is refused by the parser
+    # update and edit parse the project as a Project id; an empty value finds no project, which
+    # the parser reports the same way it reports a hidden one: InvalidProjectId
     from apiserver.apimodels.tasks import UpdateRequest
 
     make_root(company, members=[("u2", ProjectRole.read_write)])
     make_task(company, "root1", "u2")
-    with pytest.raises(errors.bad_request.FieldsValueError):
+    with pytest.raises(errors.bad_request.InvalidProjectId):
         svc.update(
             FakeCall(identity(company, "u2"), data={"project": ""}),
             company,
             UpdateRequest(task="task1"),
         )
-    with pytest.raises(errors.bad_request.FieldsValueError):
+    with pytest.raises(errors.bad_request.InvalidProjectId):
         svc.edit(
             FakeCall(identity(company, "u2"), data={"task": "task1", "project": ""}),
             company,
