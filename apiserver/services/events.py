@@ -290,8 +290,8 @@ def get_vector_metrics_and_variants(
         company_id,
         task_id,
         model_events=model_events,
-    
-        identity=call.identity,)[0]
+        identity=call.identity,
+    )[0]
     call.result.data = dict(
         metrics=event_bll.get_metrics_and_variants(
             task_or_model.get_index_company(), task_id, EventType.metrics_vector
@@ -309,8 +309,8 @@ def get_scalar_metrics_and_variants(
         company_id,
         task_id,
         model_events=model_events,
-    
-        identity=call.identity,)[0]
+        identity=call.identity,
+    )[0]
     call.result.data = dict(
         metrics=event_bll.get_metrics_and_variants(
             task_or_model.get_index_company(), task_id, EventType.metrics_scalar
@@ -331,8 +331,8 @@ def vector_metrics_iter_histogram(
         company_id,
         task_id,
         model_events=model_events,
-    
-        identity=call.identity,)[0]
+        identity=call.identity,
+    )[0]
     metric = request.metric
     variant = request.variant
     iterations, vectors = event_bll.get_vector_metrics_per_iter(
@@ -448,8 +448,8 @@ def get_scalar_metric_data(call, company_id, request: GetScalarMetricDataRequest
         company_id,
         task_id,
         model_events=model_events,
-    
-        identity=call.identity,)[0]
+        identity=call.identity,
+    )[0]
     result = event_bll.get_task_events(
         task_or_model.get_index_company(),
         task_id,
@@ -499,8 +499,9 @@ def scalar_metrics_iter_histogram(
     call, company_id, request: ScalarMetricsIterHistogramRequest
 ):
     task_or_model = _assert_task_or_model_exists(
-        company_id, request.task, model_events=request.model_events
-    , identity=call.identity)[0]
+        company_id, request.task, model_events=request.model_events,
+        identity=call.identity,
+    )[0]
     metrics = event_bll.metrics.get_scalar_metrics_average_per_iter(
         company_id=task_or_model.get_index_company(),
         task_id=request.task,
@@ -737,8 +738,9 @@ def get_task_plots(call, company_id, request: TaskPlotsRequest):
     iters = request.iters
 
     task_or_model = _assert_task_or_model_exists(
-        company_id, task_id, model_events=request.model_events
-    , identity=call.identity)[0]
+        company_id, task_id, model_events=request.model_events,
+        identity=call.identity,
+    )[0]
     result = event_bll.get_task_plots(
         task_or_model.get_index_company(),
         task_id=task_id,
@@ -789,8 +791,9 @@ def task_plots(call, company_id, request: MetricEventsRequest):
     task_metrics = _task_metrics_dict_from_request(request.metrics)
     task_ids = list(task_metrics)
     task_or_models = _assert_task_or_model_exists(
-        company_id, task_ids=task_ids, model_events=request.model_events
-    , identity=call.identity)
+        company_id, task_ids=task_ids, model_events=request.model_events,
+        identity=call.identity,
+    )
     result = event_bll.plots_iterator.get_task_events(
         companies={t.id: t.get_index_company() for t in task_or_models},
         task_metrics=task_metrics,
@@ -854,8 +857,8 @@ def get_debug_images_v1_8(call, company_id, request: LegacyMetricEventsRequest):
         company_id,
         task_id,
         model_events=model_events,
-    
-        identity=call.identity,)[0]
+        identity=call.identity,
+    )[0]
     result = event_bll.get_task_events(
         tasks_or_model.get_index_company(),
         task_id,
@@ -886,8 +889,9 @@ def get_debug_images(call, company_id, request: MetricEventsRequest):
     task_metrics = _task_metrics_dict_from_request(request.metrics)
     task_ids = list(task_metrics)
     task_or_models = _assert_task_or_model_exists(
-        company_id, task_ids=task_ids, model_events=request.model_events
-    , identity=call.identity)
+        company_id, task_ids=task_ids, model_events=request.model_events,
+        identity=call.identity,
+    )
     result = event_bll.debug_images_iterator.get_task_events(
         companies={t.id: t.get_index_company() for t in task_or_models},
         task_metrics=task_metrics,
@@ -913,8 +917,8 @@ def get_debug_image_sample(call, company_id, request: GetVariantSampleRequest):
         company_id,
         request.task,
         model_events=request.model_events,
-    
-        identity=call.identity,)[0]
+        identity=call.identity,
+    )[0]
     res = event_bll.debug_image_sample_history.get_sample_for_variant(
         company_id=task_or_model.get_index_company(),
         task=request.task,
@@ -938,8 +942,8 @@ def next_debug_image_sample(call, company_id, request: NextHistorySampleRequest)
         company_id,
         request.task,
         model_events=request.model_events,
-    
-        identity=call.identity,)[0]
+        identity=call.identity,
+    )[0]
     res = event_bll.debug_image_sample_history.get_next_sample(
         company_id=task_or_model.get_index_company(),
         task=request.task,
@@ -959,8 +963,8 @@ def get_plot_sample(call, company_id, request: GetMetricSamplesRequest):
         company_id,
         request.task,
         model_events=request.model_events,
-    
-        identity=call.identity,)[0]
+        identity=call.identity,
+    )[0]
     res = event_bll.plot_sample_history.get_samples_for_metric(
         company_id=task_or_model.get_index_company(),
         task=request.task,
@@ -982,8 +986,8 @@ def next_plot_sample(call, company_id, request: NextHistorySampleRequest):
         company_id,
         request.task,
         model_events=request.model_events,
-    
-        identity=call.identity,)[0]
+        identity=call.identity,
+    )[0]
     res = event_bll.plot_sample_history.get_next_sample(
         company_id=task_or_model.get_index_company(),
         task=request.task,
@@ -1000,8 +1004,8 @@ def get_task_metrics(call: APICall, company_id, request: TaskMetricsRequest):
         company_id,
         request.tasks,
         model_events=request.model_events,
-    
-        identity=call.identity,)
+        identity=call.identity,
+    )
     res = event_bll.metrics.get_task_metrics(
         task_or_models[0].get_index_company(),
         task_ids=request.tasks,
@@ -1203,8 +1207,9 @@ def scalar_metrics_iter_raw(
 
     task_id = request.task
     task_or_model = _assert_task_or_model_exists(
-        company_id, task_id, model_events=request.model_events
-    , identity=call.identity)[0]
+        company_id, task_id, model_events=request.model_events,
+        identity=call.identity,
+    )[0]
     metric_variants = _get_metric_variants_from_request([request.metric])
 
     if request.count_total and total is None:

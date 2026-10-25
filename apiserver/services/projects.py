@@ -368,7 +368,11 @@ def _reset_cached_tags(company: str, projects: Sequence[str]):
 @endpoint("projects.move", request_data_model=MoveRequest)
 def move(call: APICall, company: str, request: MoveRequest):
     identity = call.identity
-    was_root = not Project.objects(id=request.project).only("parent").first().parent
+    source = Project.objects(id=request.project).only("parent").first()
+    if not source:
+        # Same answer a hidden project gives, from the same place every other endpoint raises it
+        ProjectAccessBLL.assert_can(identity, request.project, "admin")
+    was_root = not source.parent
     # Moving a root changes who governs it from here on (role resolution always follows the
     # current root), so demoting someone's independently-owned root under another tree needs the
     # same owner_only bar delete/merge use, not just admin, which a collaborator also has

@@ -1,4 +1,5 @@
 import csv
+from uuid import uuid4
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from io import StringIO
@@ -430,13 +431,13 @@ def download_for_get_all(call: APICall, company, request: DownloadForGetAllReque
 @endpoint("organization.get_project_workloads")
 def get_project_workloads(call: APICall, company, request: GetProjectWorkloadsRequest):
     requested = request.projects
-    if requested:
-        visible = ProjectAccessBLL.visible_project_ids(call.identity)
-        if visible is not None:
-            requested = [p for p in requested if p in visible]
-            if not requested:
-                call.result.data = {}
-                return
+    visible = ProjectAccessBLL.visible_project_ids(call.identity)
+    if visible is not None:
+        # Substitute a hidden id for one guaranteed not to exist, rather than special-casing the
+        # response: this function has no access awareness of its own, so routing a hidden id
+        # through the exact same "project not found" path it already has gives the same shape a
+        # genuinely missing id gets, instead of risking a response shape that differs from it
+        requested = [p if p in visible else uuid4().hex for p in requested]
     call.result.data = ProjectWorkloads.get_project_workloads(
         company,
         project_ids=requested,

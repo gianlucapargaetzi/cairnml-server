@@ -581,20 +581,6 @@ def conform_task_data(call: APICall, tasks_data: Union[Sequence[dict], dict]):
         artifacts_unprepare_from_saved(fields=data)
 
 
-def _assert_project_field_writable(identity: Identity, call_data: dict) -> None:
-    """
-    Check access on a request's raw "project" value before anything in the request is parsed.
-    parse_from_call itself only converges the error FOR THAT FIELD when the id is not found; a
-    hidden project still passes it (it exists) and parsing continues to other fields, while a
-    missing one stops right there. If any later field is also invalid, its error only appears for
-    the hidden case, which would again tell the two apart. Checking access on the raw value first
-    means both cases stop at the exact same point before any other field is even looked at
-    """
-    project = call_data.get("project")
-    if project:
-        ProjectAccessBLL.assert_can(identity, project, "write", object_owner=identity.user)
-
-
 def prepare_create_fields(
     call: APICall,
     valid_fields=None,
@@ -605,7 +591,7 @@ def prepare_create_fields(
     t_fields = task_fields
     t_fields.add("output_dest")
 
-    _assert_project_field_writable(call.identity, call.data)
+    ProjectAccessBLL.assert_project_field_writable(call.identity, call.data)
     fields = parse_from_call(call.data, valid_fields, t_fields)
 
     # Move output_dest to output.destination
@@ -727,7 +713,7 @@ def prepare_update_fields(call: APICall, call_data):
     )
     t_fields = task_fields
     t_fields.add("output__error")
-    _assert_project_field_writable(call.identity, call_data)
+    ProjectAccessBLL.assert_project_field_writable(call.identity, call_data)
     fields = parse_from_call(call_data, update_fields, t_fields)
     return prepare_for_save(call, fields), valid_fields
 

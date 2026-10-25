@@ -220,7 +220,8 @@ def get_many_tasks_for_writing(
     if forbidden_tasks:
         if throw_on_forbidden:
             raise errors.forbidden.NoWritePermission(
-                f"cannot modify public task(s), ids={tuple(forbidden_tasks)}"
+                f"cannot modify public task(s) or task(s) outside the caller's project access, "
+                f"ids={tuple(forbidden_tasks)}"
             )
         result = [task for task in result if task.id not in forbidden_tasks]
 

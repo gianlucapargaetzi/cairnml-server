@@ -66,11 +66,21 @@ def test_entities_count_counts_visible_tasks_for_a_member(company):
 
 
 def test_get_project_workloads_hides_a_private_project_from_a_stranger(company):
+    # a hidden project's workloads must look exactly like a genuinely missing project's: compare
+    # the two responses directly rather than asserting a fixed shape, since this aggregator has
+    # no access awareness of its own and this endpoint routes a hidden id through its "missing"
+    # path instead of inventing a separate response
     make_root(company)
-    call = FakeCall(identity(company, "stranger"))
+    hidden = FakeCall(identity(company, "stranger"))
     svc.get_project_workloads(
-        call,
+        hidden,
         company,
         GetProjectWorkloadsRequest(projects=["root1"], from_date="2024-01-01", to_date="2024-01-02"),
     )
-    assert call.result.data == {}
+    missing = FakeCall(identity(company, "stranger"))
+    svc.get_project_workloads(
+        missing,
+        company,
+        GetProjectWorkloadsRequest(projects=["no-such-project"], from_date="2024-01-01", to_date="2024-01-02"),
+    )
+    assert hidden.result.data == missing.result.data

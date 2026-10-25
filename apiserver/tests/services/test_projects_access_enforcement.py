@@ -420,6 +420,18 @@ def test_move_refuses_a_collaborator_moving_a_root_under_another_root(company):
     assert ProjectAccessBLL.get_role(identity(company, "owner1"), "ownmvsrc") == "owner"
 
 
+def test_move_refuses_a_missing_project_the_same_way_as_a_hidden_one(company):
+    # was_root used to be computed by fetching the project before any access check; for a
+    # genuinely missing id that fetch returns None, and reading .parent off it crashed instead
+    # of giving the same InvalidProjectId a hidden project gets
+    with pytest.raises(errors.bad_request.InvalidProjectId):
+        svc.move(
+            FakeCall(identity(company, "owner1")),
+            company,
+            MoveRequest(project="no-such-project", new_location="anywhere"),
+        )
+
+
 def test_move_allows_a_collaborator_to_move_a_sub_project_they_administer(company):
     # a sub-project move does not change who governs the root, so admin (not owner_only) is the
     # right bar here, unchanged from before
