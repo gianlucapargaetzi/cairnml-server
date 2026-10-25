@@ -92,6 +92,7 @@ def get_all_ex(call: APICall, company: str, request: GetAllRequest):
     queues = queue_bll.get_queue_infos(
         company_id=company,
         query_dict=call_data,
+        identity=call.identity,
         query=_hidden_query(call_data),
         max_task_entries=request.max_task_entries,
         count_task_entries=request.count_task_entries,
