@@ -105,6 +105,9 @@ def _assert_model_access(
     """
     if not model.project:
         return
+    if ProjectAccessBLL.get_role(identity, model.project) is None:
+        # Same answer a missing model gets, so a hidden model does not reveal its project
+        raise errors.bad_request.InvalidModelId(company=identity.company, id=model.id)
     ProjectAccessBLL.assert_can(
         identity, model.project, capability, object_owner=object_owner or model.user
     )

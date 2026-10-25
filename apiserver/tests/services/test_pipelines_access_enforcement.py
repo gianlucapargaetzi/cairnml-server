@@ -55,7 +55,7 @@ def test_start_pipeline_refuses_a_source_task_in_a_private_project_to_a_stranger
     # not be a way to read a private task's content into a clone without being a member of it
     make_root(company)
     make_task(company, "root1", "owner1")
-    with pytest.raises(errors.bad_request.InvalidProjectId):
+    with pytest.raises(errors.bad_request.InvalidTaskId):
         svc.start_pipeline(
             FakeCall(identity(company, "stranger")),
             company,

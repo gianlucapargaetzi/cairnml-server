@@ -55,7 +55,7 @@ def test_add_task_refuses_a_task_in_a_private_project_to_a_stranger(company):
     # not bypass the same write check tasks.enqueue already requires for the same operation
     make_root(company)
     make_task(company, "root1", "owner1")
-    with pytest.raises(errors.bad_request.InvalidProjectId):
+    with pytest.raises(errors.bad_request.InvalidTaskId):
         svc.add_task(
             FakeCall(identity(company, "stranger")),
             company,
@@ -68,7 +68,7 @@ def test_move_task_to_front_refuses_a_task_in_a_private_project_to_a_stranger(co
     # the same check; this one was missed in the first fix round
     make_root(company)
     make_task(company, "root1", "owner1")
-    with pytest.raises(errors.bad_request.InvalidProjectId):
+    with pytest.raises(errors.bad_request.InvalidTaskId):
         svc.move_task_to_front(
             FakeCall(identity(company, "stranger")),
             company,

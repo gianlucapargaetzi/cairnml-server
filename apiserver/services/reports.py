@@ -26,6 +26,7 @@ from apiserver.services.models import conform_model_data
 from apiserver.services.utils import process_include_subprojects, sort_tags_response
 from apiserver.bll.organization import OrgBLL
 from apiserver.bll.project import ProjectBLL
+from apiserver.bll.project.access import ProjectAccessBLL
 from apiserver.bll.task import TaskBLL, ChangeStatusRequest
 from apiserver.database.model import EntityVisibility
 from apiserver.database.model.project import Project
@@ -41,6 +42,7 @@ from apiserver.services.events import (
 )
 from apiserver.services.tasks import (
     escape_execution_parameters,
+    _assert_task_access,
     _hidden_query,
     _scope_query as _scope_tasks_query,
     conform_task_data,
@@ -142,6 +144,11 @@ def create_report(call: APICall, company_id: str, request: CreateReportRequest):
     user_id = call.identity.user
     project_id = request.project
     if request.project:
+        # A report lands in the reports project under this one, so it needs write here; checked
+        # before the name is read, so a hidden project's name is never read or revealed
+        ProjectAccessBLL.assert_can(
+            call.identity, request.project, "write", object_owner=user_id
+        )
         project = Project.get_for_writing(
             company=company_id, id=project_id, _only=("name",)
         )
@@ -321,10 +328,18 @@ def move(call: APICall, company_id: str, request: MoveReportRequest):
         company_id=company_id,
         task_id=request.task,
         identity=call.identity,
-        only_fields=("project",),
+        only_fields=("project", "user"),
     )
+    # Moving a report mirrors moving a task: admin on where it leaves and where it lands
+    _assert_task_access(call.identity, task, "admin")
     user_id = call.identity.user
     project_name = request.project_name
+    if project_name:
+        ProjectAccessBLL.assert_can_admin_destination(
+            call.identity, company_id, project_name
+        )
+    elif request.project:
+        ProjectAccessBLL.assert_can(call.identity, request.project, "admin")
     if not project_name:
         if request.project:
             project = Project.get_for_writing(

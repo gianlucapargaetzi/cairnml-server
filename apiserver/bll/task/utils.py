@@ -248,6 +248,9 @@ def get_task_with_write_access(
     if not task:
         raise errors.bad_request.InvalidTaskId(**query)
     if task.project:
+        if ProjectAccessBLL.get_role(identity, task.project) is None:
+            # Same answer a missing task gets, so a hidden task does not reveal its project
+            raise errors.bad_request.InvalidTaskId(**query)
         ProjectAccessBLL.assert_can(
             identity, task.project, "write", object_owner=task.user
         )

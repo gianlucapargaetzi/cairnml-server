@@ -63,7 +63,7 @@ def test_prepare_download_refuses_a_task_in_a_private_project_to_a_stranger(comp
     make_root(company)
     make_task(company, "root1", "owner1")
     make_stored_chunk(company, "task1")
-    with pytest.raises(errors.bad_request.InvalidProjectId):
+    with pytest.raises(errors.bad_request.InvalidTaskId):
         svc.prepare_download(
             FakeCall(identity(company, "stranger")),
             company,

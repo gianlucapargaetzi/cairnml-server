@@ -98,10 +98,10 @@ def test_add_event_refuses_a_task_in_a_private_project_to_a_stranger(company):
 
 def test_delete_for_model_refuses_a_model_in_a_private_project_to_a_stranger(company):
     # the model exists (so it is not InvalidModelId), but the stranger has no role on its private
-    # project: the same InvalidProjectId a hidden project gives everywhere else in this feature
+    # project: the same InvalidModelId a genuinely missing model gets
     make_root(company)
     make_model(company, "root1", "owner1")
-    with pytest.raises(errors.bad_request.InvalidProjectId):
+    with pytest.raises(errors.bad_request.InvalidModelId):
         svc.delete_for_model(
             FakeCall(identity(company, "stranger")),
             company,

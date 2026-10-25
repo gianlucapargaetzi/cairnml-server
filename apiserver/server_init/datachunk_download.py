@@ -53,6 +53,9 @@ def _require_task_read_access(identity: Identity, company: str, task_id: str, jo
     if not task:
         raise errors.bad_request.InvalidTaskId(id=task_id)
     if task.project:
+        if ProjectAccessBLL.get_role(identity, task.project) is None:
+            # Same answer a missing task gets, so a hidden task does not reveal its project
+            raise errors.bad_request.InvalidTaskId(id=task_id)
         ProjectAccessBLL.assert_can(identity, task.project, "read", object_owner=task.user)
 
 

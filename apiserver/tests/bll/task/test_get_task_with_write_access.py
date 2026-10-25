@@ -43,15 +43,25 @@ def identity(company, user, role=Role.user):
 def test_refuses_a_task_in_a_private_project_to_a_stranger(company):
     make_root(company)
     make_task(company, "root1", "owner1")
-    with pytest.raises(errors.bad_request.InvalidProjectId):
+    with pytest.raises(errors.bad_request.InvalidTaskId):
         get_task_with_write_access("task1", company_id=company, identity=identity(company, "stranger"))
+
+
+def test_a_hidden_task_gets_the_same_answer_as_a_missing_one(company):
+    make_root(company)
+    make_task(company, "root1", "owner1")
+    with pytest.raises(errors.bad_request.InvalidTaskId) as hidden:
+        get_task_with_write_access("task1", company_id=company, identity=identity(company, "stranger"))
+    with pytest.raises(errors.bad_request.InvalidTaskId) as missing:
+        get_task_with_write_access("no-such-task", company_id=company, identity=identity(company, "stranger"))
+    assert hidden.value.msg.replace("task1", "<id>") == missing.value.msg.replace("no-such-task", "<id>")
 
 
 def test_refuses_even_with_a_restricted_projection(company):
     # project/user must decide access regardless of what the caller asked to load
     make_root(company)
     make_task(company, "root1", "owner1")
-    with pytest.raises(errors.bad_request.InvalidProjectId):
+    with pytest.raises(errors.bad_request.InvalidTaskId):
         get_task_with_write_access(
             "task1", company_id=company, identity=identity(company, "stranger"), only=("id",)
         )

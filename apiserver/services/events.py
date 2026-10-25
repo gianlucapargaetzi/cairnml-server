@@ -1078,6 +1078,9 @@ def _validate_model_for_events_update(
         company_id=company_id, model_id=model_id, only_fields=("id", "ready", "project", "user")
     )
     if model.project:
+        if ProjectAccessBLL.get_role(identity, model.project) is None:
+            # Same answer a missing model gets, so a hidden model does not reveal its project
+            raise errors.bad_request.InvalidModelId(company=company_id, id=model_id)
         ProjectAccessBLL.assert_can(identity, model.project, "write", object_owner=model.user)
     if not allow_locked and model.ready:
         raise errors.bad_request.InvalidModelId(

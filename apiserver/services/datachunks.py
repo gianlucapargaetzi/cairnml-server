@@ -49,6 +49,9 @@ def _require_task_read_access(call: APICall, company: str, task_id: str) -> None
     if not task:
         raise errors.bad_request.InvalidTaskId(id=task_id)
     if task.project:
+        if ProjectAccessBLL.get_role(call.identity, task.project) is None:
+            # Same answer a missing task gets, so a hidden task does not reveal its project
+            raise errors.bad_request.InvalidTaskId(id=task_id)
         ProjectAccessBLL.assert_can(call.identity, task.project, "read", object_owner=task.user)
 
 

@@ -181,6 +181,9 @@ def _assert_task_access(identity: Identity, task: Task, capability: str) -> None
     """
     if not task.project:
         return
+    if ProjectAccessBLL.get_role(identity, task.project) is None:
+        # Same answer a missing task gets, so a hidden task does not reveal its project
+        raise errors.bad_request.InvalidTaskId(id=task.id, company=identity.company)
     ProjectAccessBLL.assert_can(
         identity, task.project, capability, object_owner=task.user
     )
