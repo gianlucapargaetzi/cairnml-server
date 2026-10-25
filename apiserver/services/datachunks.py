@@ -10,6 +10,7 @@ from apiserver.apimodels.datachunks import (
 )
 from apiserver.bll import datachunks as bll
 from apiserver.bll.dataset_credentials import dataset_credentials
+from apiserver.bll.project.access import ProjectAccessBLL
 from apiserver.bll.task.utils import get_task_with_write_access
 from apiserver.database.model.datachunk import Datachunk
 from apiserver.database.model.task.task import Task
@@ -34,6 +35,21 @@ def _require_task_access(call: APICall, company: str, task_id: str) -> None:
             raise errors.forbidden.NoWritePermission("a job token only acts for its own task")
         return
     get_task_with_write_access(task_id=task_id, company_id=company, identity=call.identity, only=("id",))
+
+
+def _require_task_read_access(call: APICall, company: str, task_id: str) -> None:
+    """A job token reads only its own task's data; anyone else needs read access to the task,
+    the same bar the artifact's listing/display already requires elsewhere."""
+    job_task = _job_task(call)
+    if job_task is not None:
+        if job_task != task_id:
+            raise errors.unauthorized.InvalidToken("a job token only reads its own task's data")
+        return
+    task = Task.objects(id=task_id, company=company).only("id", "project", "user").first()
+    if not task:
+        raise errors.bad_request.InvalidTaskId(id=task_id)
+    if task.project:
+        ProjectAccessBLL.assert_can(call.identity, task.project, "read", object_owner=task.user)
 
 
 @endpoint("datachunks.prepare_upload")
@@ -86,7 +102,7 @@ def _by_id_or_name(company: str, request) -> Datachunk:
 @endpoint("datachunks.prepare_download")
 def prepare_download(call: APICall, company: str, request: PrepareDownloadRequest):
     chunk = _by_id_or_name(company, request)
-    bll.check_read_access(company=company, task_id=chunk.task, job_task=_job_task(call))
+    _require_task_read_access(call, company, chunk.task)
     call.result.data = bll.prepare_download(company=company, chunk=chunk)
 
 

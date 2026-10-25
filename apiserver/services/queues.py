@@ -271,6 +271,7 @@ def clear_queue(call: APICall, company_id, request: QueueRequest):
     response_data_model=MoveTaskResponse,
 )
 def move_task_forward(call: APICall, company_id, request: MoveTaskRequest):
+    _assert_tasks_access(company_id, call.identity, [request.task], "write")
     call.result.data_model = MoveTaskResponse(
         position=queue_bll.reposition_task(
             company_id=company_id,
@@ -287,6 +288,7 @@ def move_task_forward(call: APICall, company_id, request: MoveTaskRequest):
     response_data_model=MoveTaskResponse,
 )
 def move_task_backward(call: APICall, company_id, request: MoveTaskRequest):
+    _assert_tasks_access(company_id, call.identity, [request.task], "write")
     call.result.data_model = MoveTaskResponse(
         position=queue_bll.reposition_task(
             company_id=company_id,
@@ -303,6 +305,7 @@ def move_task_backward(call: APICall, company_id, request: MoveTaskRequest):
     response_data_model=MoveTaskResponse,
 )
 def move_task_to_front(call: APICall, company_id, request: TaskRequest):
+    _assert_tasks_access(company_id, call.identity, [request.task], "write")
     call.result.data_model = MoveTaskResponse(
         position=queue_bll.reposition_task(
             company_id=company_id,
@@ -319,6 +322,7 @@ def move_task_to_front(call: APICall, company_id, request: TaskRequest):
     response_data_model=MoveTaskResponse,
 )
 def move_task_to_back(call: APICall, company_id, request: TaskRequest):
+    _assert_tasks_access(company_id, call.identity, [request.task], "write")
     call.result.data_model = MoveTaskResponse(
         position=queue_bll.reposition_task(
             company_id=company_id,

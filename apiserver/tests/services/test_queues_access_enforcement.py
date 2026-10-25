@@ -6,7 +6,7 @@ from uuid import uuid4
 import pytest
 
 from apiserver.apierrors import errors
-from apiserver.apimodels.queues import AddTaskRequest
+from apiserver.apimodels.queues import AddTaskRequest, MoveTaskRequest
 from apiserver.database.model.auth import Role
 from apiserver.database.model.project import Project, ProjectVisibility
 from apiserver.database.model.task.task import Task
@@ -60,4 +60,17 @@ def test_add_task_refuses_a_task_in_a_private_project_to_a_stranger(company):
             FakeCall(identity(company, "stranger")),
             company,
             AddTaskRequest(task="task1", queue=str(uuid4())),
+        )
+
+
+def test_move_task_to_front_refuses_a_task_in_a_private_project_to_a_stranger(company):
+    # reposition-in-queue endpoints are structurally identical to add_task/remove_task and need
+    # the same check; this one was missed in the first fix round
+    make_root(company)
+    make_task(company, "root1", "owner1")
+    with pytest.raises(errors.bad_request.InvalidProjectId):
+        svc.move_task_to_front(
+            FakeCall(identity(company, "stranger")),
+            company,
+            MoveTaskRequest(task="task1", queue=str(uuid4())),
         )
