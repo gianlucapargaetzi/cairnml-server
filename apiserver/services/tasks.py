@@ -1606,6 +1606,9 @@ def delete_artifacts(call: APICall, company_id, request: DeleteArtifactsRequest)
 
 @endpoint("tasks.make_public", min_version="2.9", request_data_model=MakePublicRequest)
 def make_public(call: APICall, company_id, request: MakePublicRequest):
+    # changing visibility (here, the older cross-company "public" mechanism) is Owner/Collaborator
+    # only, same bar the role matrix gives projects.set_visibility
+    _assert_tasks_access(company_id, call.identity, request.ids, "admin")
     call.result.data = Task.set_public(
         company_id=company_id,
         user_id=call.identity.user,
@@ -1617,6 +1620,7 @@ def make_public(call: APICall, company_id, request: MakePublicRequest):
 
 @endpoint("tasks.make_private", min_version="2.9", request_data_model=MakePublicRequest)
 def make_private(call: APICall, company_id, request: MakePublicRequest):
+    _assert_tasks_access(company_id, call.identity, request.ids, "admin")
     call.result.data = Task.set_public(
         company_id=company_id,
         user_id=call.identity.user,

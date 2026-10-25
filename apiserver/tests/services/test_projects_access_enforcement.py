@@ -19,6 +19,7 @@ from apiserver.apimodels.projects import (
     ProjectRequest,
     ProjectTagsRequest,
 )
+from apiserver.apimodels.base import MakePublicRequest
 from apiserver.bll.project.access import ProjectAccessBLL
 from apiserver.database.model.auth import Role
 from apiserver.database.model.project import Project, ProjectMember, ProjectRole, ProjectVisibility
@@ -375,6 +376,15 @@ def test_reset_access_clears_visibility_and_members(company):
     refreshed = Project.objects(id="rsroot").first()
     assert refreshed.visibility == ProjectVisibility.private
     assert refreshed.members == []
+
+
+def test_make_public_refuses_a_read_write_member(company):
+    make_project(company, "pubproj", members=[("u2", ProjectRole.read_write)])
+    with pytest.raises(errors.forbidden.NoWritePermission):
+        svc.make_public(
+            FakeCall(identity(company, "u2")), company, MakePublicRequest(ids=["pubproj"])
+        )
+    assert Project.objects(id="pubproj").first().company == company
 
 
 def test_merge_refuses_a_collaborator_even_with_admin_on_both_sides(company):

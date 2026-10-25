@@ -5,7 +5,7 @@ from uuid import uuid4
 import pytest
 
 from apiserver.apierrors import errors
-from apiserver.apimodels.base import MoveRequest
+from apiserver.apimodels.base import MoveRequest, MakePublicRequest
 from apiserver.apimodels.models import (
     CreateModelRequest,
     DeleteModelRequest,
@@ -367,6 +367,14 @@ def test_admin_can_move_a_model_into_a_private_project(company):
     assert Model.objects(id="model1").first().project == "dst"
 
 
+def test_make_public_refuses_a_read_write_member(company):
+    make_root(company, id_="root1", members=[("u2", ProjectRole.read_write)])
+    make_model(company, "root1", "u2")
+    with pytest.raises(errors.forbidden.NoWritePermission):
+        svc.make_public(FakeCall(identity(company, "u2")), company, MakePublicRequest(ids=["model1"]))
+    assert Model.objects(id="model1").first().company == company
+
+
 def test_admin_can_clear_the_project_of_a_model(company):
     # update passes the project through unparsed, so this is the path that can clear it
     make_root(company, id_="root1")
@@ -377,3 +385,24 @@ def test_admin_can_clear_the_project_of_a_model(company):
         UpdateModelRequest(model="model1"),
     )
     assert not Model.objects(id="model1").first().project
+
+
+def test_get_by_task_id_refuses_a_task_in_a_private_project_to_a_stranger(company):
+    # the deprecated lookup-by-task-id path must not look any different for a hidden task than
+    # for a genuinely missing one
+    from apiserver.database.model.task.task import Task, Models, ModelItem
+    from apiserver.apimodels.models import TaskRequest as ModelsTaskRequest
+
+    make_root(company, id_="root1")
+    make_model(company, "root1", "owner1", id_="out-model")
+    task = Task(
+        id="task1", company=company, user="owner1", name="task1", project="root1",
+        type="training", created=datetime.utcnow(),
+        models=Models(output=[ModelItem(name="output", model="out-model", updated=datetime.utcnow())]),
+    )
+    task.save()
+
+    call = FakeCall(identity(company, "stranger"))
+    call.requested_endpoint_version = PartialVersion("2.9")
+    with pytest.raises(errors.bad_request.InvalidTaskId):
+        svc.get_by_task_id(call, company, ModelsTaskRequest(task="task1"))

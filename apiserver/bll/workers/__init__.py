@@ -28,7 +28,9 @@ from apiserver.database.model.company import Company
 from apiserver.database.model.project import Project
 from apiserver.database.model.queue import Queue
 from apiserver.database.model.task.task import Task
+from apiserver.bll.project.access import ProjectAccessBLL
 from apiserver.redis_manager import redman
+from apiserver.service_repo.auth import Identity
 from apiserver.utilities.dicts import nested_get
 from .stats import WorkerStats
 
@@ -276,6 +278,7 @@ class WorkerBLL:
         self,
         company_id: str,
         last_seen: int,
+        identity: Identity,
         tags: Sequence[str] = None,
         system_tags: Sequence[str] = None,
         worker_pattern: str = None,
@@ -325,9 +328,17 @@ class WorkerBLL:
             tasks_info = {
                 task.id: task
                 for task in Task.objects(id__in=task_ids).only(
-                    "name", "started", "last_iteration", "active_duration"
+                    "name", "started", "last_iteration", "active_duration", "project"
                 )
             }
+
+        visible = ProjectAccessBLL.visible_project_ids(identity)
+
+        def task_visible(task_id: Optional[str]) -> bool:
+            if visible is None or not task_id:
+                return True
+            task = tasks_info.get(task_id)
+            return not task or not task.project or task.project in visible
 
         def update_queue_entries(*entries):
             for entry in entries:
@@ -340,7 +351,7 @@ class WorkerBLL:
                 entry.display_name = info.get("display_name", None)
                 entry.num_tasks = info.get("num_entries", 0)
                 task_id = nested_get(info, ("next_entry", "task"))
-                if task_id:
+                if task_id and task_visible(task_id):
                     task = tasks_info.get(task_id, None)
                     entry.next_task = IdNameEntry(
                         id=task_id, name=task.name if task else None
@@ -357,6 +368,14 @@ class WorkerBLL:
             update_queue_entries(worker.queue)
             if worker.queues:
                 update_queue_entries(*worker.queues)
+
+        # A worker's current task/project came from its own status report, stored verbatim with
+        # no visibility awareness; redact what a caller cannot see rather than let this listing
+        # reveal a private project's or task's real name to the whole company
+        for helper in helpers:
+            if not task_visible(helper.task_id):
+                helper.worker.task = None
+                helper.worker.project = None
 
         return [helper.worker for helper in helpers]
 

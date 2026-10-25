@@ -15,7 +15,7 @@ from apiserver.apimodels.tasks import (
     TaskRequest,
     UpdateTagsRequest,
 )
-from apiserver.apimodels.base import MoveRequest
+from apiserver.apimodels.base import MoveRequest, MakePublicRequest
 from apiserver.bll.project import ProjectBLL
 from apiserver.bll.project.access import ProjectAccessBLL
 from apiserver.database.model.auth import Role
@@ -482,6 +482,23 @@ def test_a_collaborator_can_move_a_task_between_two_projects_they_administer(com
         MoveRequest(ids=["task1"], project="dst"),
     )
     assert Task.objects(id="task1").first().project == "dst"
+
+
+def test_make_public_refuses_a_read_write_member(company):
+    # changing visibility is Owner/Collaborator only; a read_write member (even on their own task)
+    # must not be able to make it public
+    make_root(company, members=[("u2", ProjectRole.read_write)])
+    make_task(company, "root1", "u2")
+    with pytest.raises(errors.forbidden.NoWritePermission):
+        svc.make_public(FakeCall(identity(company, "u2")), company, MakePublicRequest(ids=["task1"]))
+    assert Task.objects(id="task1").first().company == company
+
+
+def test_make_public_allows_a_collaborator(company):
+    make_root(company, members=[("u2", ProjectRole.collaborator)])
+    make_task(company, "root1", "owner1")
+    svc.make_public(FakeCall(identity(company, "u2")), company, MakePublicRequest(ids=["task1"]))
+    assert Task.objects(id="task1").first().company == ""
 
 
 def test_create_gives_the_same_error_for_a_hidden_and_a_missing_project_even_with_another_bad_field(company):

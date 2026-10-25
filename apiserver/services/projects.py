@@ -632,6 +632,11 @@ def get_model_tags(call: APICall, company, request: ProjectTagsRequest):
     "projects.make_public", min_version="2.9", request_data_model=MakePublicRequest
 )
 def make_public(call: APICall, company_id, request: MakePublicRequest):
+    # changing visibility (here, the older cross-company "public" mechanism) is Owner/Collaborator
+    # only, same bar the role matrix gives projects.set_visibility; check every id before any of
+    # them changes, so the batch is all-or-nothing like every other batch endpoint here
+    for project_id in request.ids:
+        ProjectAccessBLL.assert_can(call.identity, project_id, "admin")
     call.result.data = Project.set_public(
         company_id=company_id,
         user_id=call.identity.user,
@@ -645,6 +650,8 @@ def make_public(call: APICall, company_id, request: MakePublicRequest):
     "projects.make_private", min_version="2.9", request_data_model=MakePublicRequest
 )
 def make_private(call: APICall, company_id, request: MakePublicRequest):
+    for project_id in request.ids:
+        ProjectAccessBLL.assert_can(call.identity, project_id, "admin")
     call.result.data = Project.set_public(
         company_id=company_id,
         user_id=call.identity.user,

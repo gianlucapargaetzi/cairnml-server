@@ -176,10 +176,17 @@ def get_by_task_id(call: APICall, company_id, request: TaskRequest):
 
     task_id = request.task
 
-    query = dict(id=task_id, company=company_id)
-    task = Task.get(_only=["models"], **query)
+    from apiserver.services.tasks import _scope_query as _scope_tasks_query
+
+    task = Task.get_many(
+        company=company_id,
+        query=_scope_tasks_query(Q(id=task_id), call.identity),
+        override_projection=["models"],
+        allow_public=True,
+        return_dicts=False,
+    ).first()
     if not task:
-        raise errors.bad_request.InvalidTaskId(**query)
+        raise errors.bad_request.InvalidTaskId(id=task_id, company=company_id)
     if not task.models or not task.models.output:
         raise errors.bad_request.MissingTaskFields(field="models.output")
 
@@ -830,6 +837,9 @@ def unarchive_many(call: APICall, company_id, request: BatchRequest):
 
 @endpoint("models.make_public", min_version="2.9", request_data_model=MakePublicRequest)
 def make_public(call: APICall, company_id, request: MakePublicRequest):
+    # changing visibility (here, the older cross-company "public" mechanism) is Owner/Collaborator
+    # only, same bar the role matrix gives projects.set_visibility
+    _assert_models_access(company_id, call.identity, request.ids, "admin")
     call.result.data = Model.set_public(
         company_id=company_id,
         user_id=call.identity.user,
@@ -843,6 +853,7 @@ def make_public(call: APICall, company_id, request: MakePublicRequest):
     "models.make_private", min_version="2.9", request_data_model=MakePublicRequest
 )
 def make_private(call: APICall, company_id, request: MakePublicRequest):
+    _assert_models_access(company_id, call.identity, request.ids, "admin")
     call.result.data = Model.set_public(
         company_id=company_id,
         user_id=call.identity.user,
