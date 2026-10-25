@@ -50,13 +50,20 @@ conf = config.get("services.organization")
 @endpoint("organization.get_tags", request_data_model=TagsRequest)
 def get_tags(call: APICall, company, request: TagsRequest):
     filter_dict = get_tags_filter_dictionary(request.filter)
+    visible = ProjectAccessBLL.visible_project_ids(call.identity)
+    projects = None if visible is None else list(visible)
     ret = defaultdict(set)
+    # An empty project list means "no filter" to the tag lookup, so a caller who sees no project gets none
+    if projects is not None and not projects:
+        call.result.data = sort_tags_response(ret)
+        return
     for entity in Tags.Model, Tags.Task:
         tags = org_bll.get_tags(
             company,
             entity,
             include_system=request.include_system,
             filter_=filter_dict,
+            projects=projects,
         )
         for field, vals in tags.items():
             ret[field] |= vals

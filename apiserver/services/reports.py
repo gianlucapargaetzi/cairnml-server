@@ -458,5 +458,9 @@ def delete(call: APICall, company_id, request: DeleteReportRequest):
 
 @endpoint("reports.get_tags")
 def get_tags(call: APICall, company_id: str, _):
-    tags = Task.objects(company=company_id, type=TaskType.report).distinct(field="tags")
+    tags = Task.objects(
+        _scope_tasks_query(
+            Q(company=company_id) & Q(type=TaskType.report), call.identity
+        )
+    ).distinct(field="tags")
     call.result.data = sort_tags_response({"tags": tags})

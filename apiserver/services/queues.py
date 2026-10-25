@@ -32,7 +32,7 @@ from apiserver.config_repo import config
 from apiserver.database.model.queue import Queue
 from apiserver.database.model.task.task import Task, TaskStatus
 from apiserver.service_repo import APICall, endpoint
-from apiserver.services.tasks import _assert_tasks_access
+from apiserver.services.tasks import _assert_tasks_access, _scope_query as _scope_tasks_query
 from apiserver.services.utils import (
     conform_tag_fields,
     conform_output_tags,
@@ -416,7 +416,13 @@ def peek_task(call: APICall, company_id: str, request: QueueRequest):
     queue = queue_bll.get_by_id(
         company_id=company_id, queue_id=queue_id, max_task_entries=1
     )
-    return {"task": queue.entries[0].task if queue.entries else None}
+    task_id = queue.entries[0].task if queue.entries else None
+    # A head task the caller cannot see is reported exactly as a missing one, so it does not reveal itself
+    if task_id and not Task.objects(
+        _scope_tasks_query(Q(id=task_id) & Q(company=company_id), call.identity)
+    ).only("id").first():
+        task_id = None
+    return {"task": task_id}
 
 
 @endpoint("queues.get_num_entries", min_version="2.15")
