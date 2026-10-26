@@ -70,6 +70,9 @@ for _ in $(seq 1 90); do
 done
 [ "$ok" = 1 ] || { echo "keycloak did not become ready" >&2; exit 1; }
 $K set-password -r master --username "$ADMIN_USER" --new-password "$ADMIN_PW" >/dev/null
+# The stack runs on a LAN reached by its address over plain HTTP. The default SSL policy of the master realm
+# would refuse that, and the admin console signs in there.
+$K update realms/master -s sslRequired=NONE
 if $K get users -r cairnml -q username="$ADMIN_USER" --fields username | grep -q "\"username\""; then
   $K set-password -r cairnml --username "$ADMIN_USER" --new-password "$ADMIN_PW" >/dev/null
 else
