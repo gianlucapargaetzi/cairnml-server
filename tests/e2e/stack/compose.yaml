@@ -1,0 +1,213 @@
+# The stack the end-to-end suite runs against: a second, separate stack with its own state, secrets, realm and admin.
+# It runs on 127.0.0.1 only. Every service uses the host's network (network_mode: host), so the same address
+# (127.0.0.1 and the ports chosen by support/stack.py) is the one the suite, the browser, the containers and the
+# agent all use. Nothing here depends on this machine's own network address, and nothing is shared with deploy/.
+#
+# support/stack.py starts it with the variables below set in the environment. Ports are chosen free on 127.0.0.1.
+name: cairnml-e2e
+
+x-cairnml-build: &cairnml_build
+  build:
+    context: ../../..
+    dockerfile: docker/build/Dockerfile
+    args:
+      CAIRNML_FROM: source
+    additional_contexts:
+      cairnml_web: ${CAIRNML_WEB_DIR:-../../../web}
+      cairnml_sdk: ../../../cairnml
+      cairnml_agent: ../../../cairnml-agent
+  image: cairnml-server-fork:local
+  restart: "no"
+  network_mode: host
+
+services:
+  idp:
+    image: quay.io/keycloak/keycloak:26.0
+    restart: "no"
+    network_mode: host
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${E2E_KC_ADMIN}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${E2E_KC_ADMIN_PASSWORD}
+      KC_HOSTNAME: http://${E2E_HOST}:${E2E_IDP_PORT}
+      KC_HTTP_HOST: ${E2E_BIND}
+      KC_HTTP_PORT: ${E2E_IDP_PORT}
+      KC_HTTP_MANAGEMENT_PORT: ${E2E_IDP_MANAGEMENT_PORT}
+      KC_HOSTNAME_STRICT: "false"
+      KC_HTTP_ENABLED: "true"
+    volumes:
+      - ${E2E_STATE}/realm-cairnml.json:/opt/keycloak/data/import/realm-cairnml.json:ro
+      - ${E2E_STATE}/data/idp:/opt/keycloak/data/h2
+
+  rustfs:
+    image: rustfs/rustfs@sha256:1803faef57627e2d9c2e7d89d655d712ddded5389040054987163043fecb6a3c
+    restart: "no"
+    network_mode: host
+    environment:
+      RUSTFS_ACCESS_KEY: ${E2E_RUSTFS_USER}
+      RUSTFS_SECRET_KEY: ${E2E_RUSTFS_PASSWORD}
+      RUSTFS_ADDRESS: ${E2E_BIND}:${E2E_STORAGE_PORT}
+      RUSTFS_CONSOLE_ENABLE: "false"
+    volumes:
+      - ${E2E_STATE}/data/rustfs:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:${E2E_STORAGE_PORT}/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  rustfs-init:
+    image: python:3.12-slim
+    depends_on:
+      rustfs:
+        condition: service_healthy
+    network_mode: host
+    command: ["python", "/init.py"]
+    environment:
+      CAIRNML_STORAGE_ENDPOINT: http://127.0.0.1:${E2E_STORAGE_PORT}
+      RUSTFS_ROOT_USER: ${E2E_RUSTFS_USER}
+      RUSTFS_ROOT_PASSWORD: ${E2E_RUSTFS_PASSWORD}
+      CAIRNML_S3_ACCESS_KEY: ${E2E_S3_ACCESS_KEY}
+      CAIRNML_S3_SECRET_KEY_FILE: /run/secrets-dir/s3_secret_key
+    volumes:
+      - ${E2E_STATE}/init.py:/init.py:ro
+      - ${E2E_STATE}/secrets:/run/secrets-dir:ro
+    restart: "no"
+
+  mongo:
+    image: mongo:8.0.15
+    restart: "no"
+    network_mode: host
+    command: --port ${E2E_MONGO_PORT} --bind_ip 127.0.0.1 --setParameter internalQueryMaxBlockingSortMemoryUsageBytes=196100200
+    volumes:
+      - ${E2E_STATE}/data/mongo/db:/data/db
+      - ${E2E_STATE}/data/mongo/configdb:/data/configdb
+
+  redis:
+    image: redis:8.2.3
+    restart: "no"
+    network_mode: host
+    command: ["redis-server", "--port", "${E2E_REDIS_PORT}", "--bind", "127.0.0.1"]
+    volumes:
+      - ${E2E_STATE}/data/redis:/data
+
+  elasticsearch:
+    image: elasticsearch:8.19.9
+    restart: "no"
+    network_mode: host
+    environment:
+      bootstrap.memory_lock: "true"
+      cluster.name: cairnml
+      cluster.routing.allocation.node_initial_primaries_recoveries: "500"
+      cluster.routing.allocation.disk.watermark.low: 500mb
+      cluster.routing.allocation.disk.watermark.high: 500mb
+      cluster.routing.allocation.disk.watermark.flood_stage: 500mb
+      discovery.type: "single-node"
+      http.compression_level: "7"
+      http.port: ${E2E_ES_PORT}
+      transport.port: ${E2E_ES_TRANSPORT_PORT}
+      network.host: 127.0.0.1
+      node.name: cairnml
+      reindex.remote.whitelist: "'*.*'"
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: "-Xms1g -Xmx1g"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    volumes:
+      - ${E2E_STATE}/data/elastic:/usr/share/elasticsearch/data
+
+  apiserver:
+    <<: *cairnml_build
+    command: [apiserver]
+    depends_on:
+      - redis
+      - mongo
+      - elasticsearch
+      - rustfs-init
+      - idp
+    environment:
+      CAIRNML_SECRETS_DIR: /run/secrets-dir
+      CAIRNML__apiserver__listen__ip: ${E2E_BIND}
+      CAIRNML__apiserver__listen__port: ${E2E_API_PORT}
+      CAIRNML_ELASTIC_SERVICE_HOST: 127.0.0.1
+      CAIRNML_ELASTIC_SERVICE_PORT: ${E2E_ES_PORT}
+      CAIRNML_MONGODB_SERVICE_HOST: 127.0.0.1
+      CAIRNML_MONGODB_SERVICE_PORT: ${E2E_MONGO_PORT}
+      CAIRNML_REDIS_SERVICE_HOST: 127.0.0.1
+      CAIRNML_REDIS_SERVICE_PORT: ${E2E_REDIS_PORT}
+      CAIRNML_SERVER_DEPLOYMENT_TYPE: linux
+      CAIRNML__apiserver__idp__issuer: http://${E2E_HOST}:${E2E_IDP_PORT}/realms/cairnml
+      CAIRNML__apiserver__idp__public_url: http://${E2E_HOST}:${E2E_API_PORT}
+      CAIRNML__apiserver__idp__web_url: http://${E2E_HOST}:${E2E_WEB_PORT}
+      CAIRNML__apiserver__idp__web_client_id: cairnml-web
+      CAIRNML__apiserver__idp__sdk_client_id: cairnml-sdk
+      CAIRNML__apiserver__idp__directory_client_id: cairnml-server
+      CAIRNML__apiserver__idp__sync_enabled: "true"
+      CAIRNML__apiserver__idp__admin_role: cairnml-admin
+      # How long a job token lasts (one hour in production). A test may lower it, for its own run (set_job_token_ttl).
+      CAIRNML__apiserver__idp__job_token_ttl_sec: ${E2E_JOB_TOKEN_TTL_SEC:-3600}
+      CAIRNML__apiserver__auth__cookies__secure: "false"
+      CAIRNML__apiserver__idp__github_app_id: ""
+      CAIRNML__apiserver__idp__github_api_url: https://api.github.com
+      CAIRNML__services__async_urls_delete__enabled: "true"
+      CAIRNML__apiserver__storage__endpoint: http://127.0.0.1:${E2E_STORAGE_PORT}
+      CAIRNML__apiserver__storage__public_endpoint: http://${E2E_HOST}:${E2E_STORAGE_PORT}
+      CAIRNML__apiserver__storage__access_key: ${E2E_S3_ACCESS_KEY}
+      # Timers of the test stack only (see docs/e2e_testing/E2E.md, speed section, items 3 and 4): a stopped agent is lost after about 6 s,
+      # and the directory is read every 5 s. The production defaults are in cairnml-server's config.
+      CAIRNML__services__scheduler__sync_interval_sec: "2"
+      CAIRNML__services__scheduler__sweep_interval_sec: "1"
+      CAIRNML__apiserver__idp__sync_interval_sec: "5"
+      # The suite's reset (system.e2e_reset) is off by default in the server; the suite's own stack turns it on.
+      CAIRNML__apiserver__e2e__reset_enabled: "true"
+      CAIRNML__apiserver__e2e__name_prefix: "e2e"
+    volumes:
+      - ${E2E_STATE}/data/logs:/var/log/cairnml
+      - ${E2E_STATE}/secrets:/run/secrets-dir:ro
+
+  async-delete:
+    image: cairnml-server-fork:local
+    pull_policy: never
+    restart: "no"
+    network_mode: host
+    command: [async_delete]
+    depends_on:
+      - redis
+      - mongo
+      - rustfs-init
+    environment:
+      CAIRNML_SECRETS_DIR: /run/secrets-dir
+      CAIRNML_MONGODB_SERVICE_HOST: 127.0.0.1
+      CAIRNML_MONGODB_SERVICE_PORT: ${E2E_MONGO_PORT}
+      CAIRNML_REDIS_SERVICE_HOST: 127.0.0.1
+      CAIRNML_REDIS_SERVICE_PORT: ${E2E_REDIS_PORT}
+      CAIRNML_SERVER_DEPLOYMENT_TYPE: linux
+      CAIRNML__apiserver__storage__endpoint: http://127.0.0.1:${E2E_STORAGE_PORT}
+      CAIRNML__apiserver__storage__public_endpoint: http://${E2E_HOST}:${E2E_STORAGE_PORT}
+      CAIRNML__apiserver__storage__access_key: ${E2E_S3_ACCESS_KEY}
+      CAIRNML__services__async_urls_delete__enabled: "true"
+    volumes:
+      - ${E2E_STATE}/data/logs:/var/log/cairnml
+      - ${E2E_STATE}/secrets:/run/secrets-dir:ro
+
+  webserver:
+    image: cairnml-server-fork:local
+    pull_policy: never
+    restart: "no"
+    network_mode: host
+    command: [webserver]
+    depends_on:
+      - apiserver
+    environment:
+      NGINX_APISERVER_ADDRESS: http://127.0.0.1:${E2E_API_PORT}
+    volumes:
+      # The web app finds its API on port 8008 of the same host unless this file says otherwise; here it says
+      # to use the web server's own /api route (see docs/e2e_testing/E2E.md, "Addresses").
+      - ${E2E_STATE}/configs:/mnt/external_files/configs:ro
+      # The image's nginx template listens on port 80; this copy listens on the port the suite chose.
+      - ${E2E_STATE}/nginx/cairnml.conf.template:/etc/nginx/cairnml.conf.template:ro

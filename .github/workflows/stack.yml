@@ -1,0 +1,33 @@
+name: stack
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Shell scripts
+        run: git ls-files -z '*.sh' | xargs -0 shellcheck -S warning
+      - name: Compose file is valid
+        run: cd deploy && docker compose --env-file .env.example config -q
+      - name: Python files compile
+        run: python3 -m compileall -q tests deploy
+
+  pins:
+    name: pins
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Every pin is a commit on the main branch of its repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/check-pins.sh

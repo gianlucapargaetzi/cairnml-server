@@ -62,7 +62,8 @@ EOF
         /usr/share/nginx/html/configuration.json
 
     export NGINX_APISERVER_ADDR=${NGINX_APISERVER_ADDRESS:-http://apiserver:8008}
-    export COMMENT_IPV6_LISTEN=$([ "$DISABLE_NGINX_IPV6" = "true" ] && echo "#" || echo "")
+    COMMENT_IPV6_LISTEN=$([ "$DISABLE_NGINX_IPV6" = "true" ] && echo "#" || echo "")
+    export COMMENT_IPV6_LISTEN
     envsubst '${COMMENT_IPV6_LISTEN} ${NGINX_APISERVER_ADDR}' < /etc/nginx/cairnml.conf.template > /etc/nginx/sites-enabled/default
 
     if [[ -n "${CAIRNML_SERVER_SUB_PATH}" ]]; then

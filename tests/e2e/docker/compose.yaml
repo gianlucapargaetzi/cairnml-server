@@ -1,0 +1,30 @@
+# The isolated environment for the end-to-end suite (docs/e2e_testing/E2E.md, The isolated environment). The host runs one container, dind: a Docker daemon of
+# its own. Inside it run everything the suite uses: the test runner (built and started by inside.sh), the CairnML stack,
+# the agent's job containers. Nothing of it runs on the host's Docker daemon, and nothing is published to the host.
+#
+# The repository is mounted at /workspace, and the shared folders at /e2e-state and /e2e-cache, at the same paths as
+# inside the runner: a folder the suite or the agent creates is then the same folder for the nested daemon.
+name: cairnml-e2e-env
+
+services:
+  dind:
+    image: docker:27-dind
+    privileged: true
+    command: ["dockerd"]
+    environment:
+      DOCKER_TLS_CERTDIR: ""
+    volumes:
+      - ../../..:/workspace
+      - e2e-dind-data:/var/lib/docker
+      - e2e-state:/e2e-state
+      - e2e-cache:/e2e-cache
+    healthcheck:
+      test: ["CMD", "docker", "info"]
+      interval: 3s
+      timeout: 10s
+      retries: 40
+
+volumes:
+  e2e-dind-data:
+  e2e-state:
+  e2e-cache:

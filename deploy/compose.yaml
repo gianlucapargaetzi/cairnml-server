@@ -1,0 +1,284 @@
+# The whole stack: the sign-in service (Keycloak) and the CairnML server built from our forks.
+#
+# Started by scripts/bootstrap.sh. Compose reads deploy/.env from this folder, so the variables
+# there apply to every service. By hand, from deploy/:
+#   docker compose up -d --build
+#
+# The server is this repository. The SDK, the agent and the web app are fetched by scripts/fetch-sources.sh, each at the
+# commit its file in docker/build/ names (the web app can come from CAIRNML_WEB_DIR instead).
+# The stack's data and secrets live in CAIRNML_HOME (default ~/.local/share/cairnml), outside this repository.
+# The service names are the ones the fork's web server expects (it finds the API server by name).
+name: cairnml
+
+x-cairnml-build: &cairnml_build
+  build:
+    context: ..
+    dockerfile: docker/build/Dockerfile
+    args:
+      CAIRNML_FROM: source
+    additional_contexts:
+      cairnml_web: ${CAIRNML_WEB_DIR:-../web}
+      cairnml_sdk: ../cairnml
+      cairnml_agent: ../cairnml-agent
+  image: cairnml-server-fork:local
+  restart: unless-stopped
+
+services:
+  cairnml-idp:
+    image: quay.io/keycloak/keycloak:26.0
+    container_name: cairnml-idp
+    restart: unless-stopped
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_ADMIN:-kcadmin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_ADMIN_PASSWORD:?set KC_ADMIN_PASSWORD in deploy/.env}
+      KC_HOSTNAME: http://cairnml-idp:8180
+      KC_HTTP_PORT: "8180"
+      KC_HOSTNAME_STRICT: "false"
+      KC_HTTP_ENABLED: "true"
+    volumes:
+      - ./idp/realm-cairnml.json:/opt/keycloak/data/import/realm-cairnml.json:ro
+      - ${CAIRNML_HOME:-${HOME}/.local/share/cairnml}/data/idp:/opt/keycloak/data/h2
+    ports:
+      - "8180:8180"
+    healthcheck:
+      # Ready when the realm has been imported: its discovery document answers. The image has no curl, and Keycloak
+      # fails on a request without a Host header, so the request has one.
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/8180 && printf 'GET /realms/cairnml/.well-known/openid-configuration HTTP/1.1\\r\\nHost: localhost:8180\\r\\nConnection: close\\r\\n\\r\\n' >&3 && head -n1 <&3 | grep -q ' 200 '"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 40s
+    networks:
+      - cairnml
+
+  rustfs:
+    # Object storage for artifacts, datasets, models and debug data. Pinned by digest: the
+    # version the presigned-URL behaviour was checked against.
+    image: rustfs/rustfs@sha256:1803faef57627e2d9c2e7d89d655d712ddded5389040054987163043fecb6a3c
+    container_name: cairnml-rustfs
+    restart: unless-stopped
+    environment:
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ROOT_USER:-rustfsadmin}
+      RUSTFS_SECRET_KEY: ${RUSTFS_ROOT_PASSWORD:?set RUSTFS_ROOT_PASSWORD in deploy/.env}
+      RUSTFS_CONSOLE_ENABLE: "true"
+    volumes:
+      - ${CAIRNML_HOME:-${HOME}/.local/share/cairnml}/data/rustfs:/data
+    ports:
+      # The S3 API is published so clients can PUT and GET through the presigned URLs.
+      # The console stays on loopback.
+      - "${CAIRNML_STORAGE_PORT:-9000}:9000"
+      - "127.0.0.1:9001:9001"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:9000/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - cairnml
+
+  rustfs-init:
+    # Creates the four buckets and the server's restricted service user. Re-running is safe.
+    image: python:3.12-slim
+    container_name: cairnml-rustfs-init
+    depends_on:
+      rustfs:
+        condition: service_healthy
+    command: ["python", "/init.py"]
+    environment:
+      CAIRNML_STORAGE_ENDPOINT: http://rustfs:9000
+      RUSTFS_ROOT_USER: ${RUSTFS_ROOT_USER:-rustfsadmin}
+      RUSTFS_ROOT_PASSWORD: ${RUSTFS_ROOT_PASSWORD:?set RUSTFS_ROOT_PASSWORD in deploy/.env}
+      CAIRNML_S3_ACCESS_KEY: ${CAIRNML_S3_ACCESS_KEY:-cairnml-server}
+      CAIRNML_S3_SECRET_KEY_FILE: /run/secrets-dir/s3_secret_key
+    volumes:
+      - ./storage/init.py:/init.py:ro
+      - ${CAIRNML_HOME:-${HOME}/.local/share/cairnml}/secrets/cairnml:/run/secrets-dir:ro
+    restart: "no"
+    networks:
+      - cairnml
+
+  mongo:
+    image: mongo:8.0.15
+    container_name: cairnml-mongo
+    restart: unless-stopped
+    command: --setParameter internalQueryMaxBlockingSortMemoryUsageBytes=196100200
+    volumes:
+      - ${CAIRNML_HOME:-${HOME}/.local/share/cairnml}/data/cairnml/mongo/db:/data/db
+      - ${CAIRNML_HOME:-${HOME}/.local/share/cairnml}/data/cairnml/mongo/configdb:/data/configdb
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
+    networks:
+      - backend
+
+  redis:
+    image: redis:8.2.3
+    container_name: cairnml-redis
+    restart: unless-stopped
+    volumes:
+      - ${CAIRNML_HOME:-${HOME}/.local/share/cairnml}/data/cairnml/redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - backend
+
+  elasticsearch:
+    image: elasticsearch:8.19.9
+    container_name: cairnml-elastic
+    restart: unless-stopped
+    environment:
+      bootstrap.memory_lock: "true"
+      cluster.name: cairnml
+      cluster.routing.allocation.node_initial_primaries_recoveries: "500"
+      cluster.routing.allocation.disk.watermark.low: 500mb
+      cluster.routing.allocation.disk.watermark.high: 500mb
+      cluster.routing.allocation.disk.watermark.flood_stage: 500mb
+      discovery.type: "single-node"
+      http.compression_level: "7"
+      node.name: cairnml
+      reindex.remote.whitelist: "'*.*'"
+      xpack.security.enabled: "false"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    volumes:
+      - ${CAIRNML_HOME:-${HOME}/.local/share/cairnml}/data/cairnml/elastic:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS 'http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s' >/dev/null"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+      start_period: 40s
+    networks:
+      - backend
+
+  apiserver:
+    <<: *cairnml_build
+    container_name: cairnml-apiserver
+    command:
+      - apiserver
+    depends_on:
+      redis: {condition: service_healthy}
+      mongo: {condition: service_healthy}
+      elasticsearch: {condition: service_healthy}
+      rustfs-init: {condition: service_completed_successfully}
+      cairnml-idp: {condition: service_healthy}
+    environment:
+      CAIRNML_SECRETS_DIR: /run/secrets-dir
+      CAIRNML_ELASTIC_SERVICE_HOST: elasticsearch
+      CAIRNML_ELASTIC_SERVICE_PORT: 9200
+      CAIRNML_MONGODB_SERVICE_HOST: mongo
+      CAIRNML_MONGODB_SERVICE_PORT: 27017
+      CAIRNML_REDIS_SERVICE_HOST: redis
+      CAIRNML_REDIS_SERVICE_PORT: 6379
+      CAIRNML_SERVER_DEPLOYMENT_TYPE: linux
+      CAIRNML__apiserver__idp__issuer: http://cairnml-idp:8180/realms/cairnml
+      CAIRNML__apiserver__idp__public_url: http://cairnml:8008
+      CAIRNML__apiserver__idp__web_url: http://cairnml:8080
+      CAIRNML__apiserver__idp__web_client_id: cairnml-web
+      CAIRNML__apiserver__idp__sdk_client_id: cairnml-sdk
+      CAIRNML__apiserver__idp__directory_client_id: cairnml-server
+      CAIRNML__apiserver__idp__sync_enabled: "true"
+      # The realm's admin role is cairnml-admin (bootstrap.sh gives the admin login that role).
+      CAIRNML__apiserver__idp__admin_role: cairnml-admin
+      # Set CAIRNML_COOKIE_SECURE=true when the addresses above are https; the server refuses to start otherwise.
+      CAIRNML__apiserver__auth__cookies__secure: ${CAIRNML_COOKIE_SECURE:-false}
+      CAIRNML__apiserver__idp__github_app_id: ${GITHUB_APP_ID:-}
+      CAIRNML__apiserver__idp__github_api_url: ${GITHUB_API_URL:-https://api.github.com}
+      # The dataset registry (owner/name of its repository) and the owners whose dataset repositories may be registered
+      # in it, e.g. CAIRNML_DATASET_REGISTRY=acme/external-datasets and CAIRNML_DATASET_OWNERS='["acme"]' in deploy/.env.
+      # The registry is also the list of dataset repositories a job may clone: nothing else lists them.
+      CAIRNML__apiserver__dataset_registry__repository: ${CAIRNML_DATASET_REGISTRY:-}
+      CAIRNML__apiserver__dataset_registry__allowed_owners: ${CAIRNML_DATASET_OWNERS:-[]}
+      CAIRNML__services__async_urls_delete__enabled: "true"
+      # Object storage: internal address for the server's own calls, public address that presigned
+      # URLs name. Clients must be able to reach the public one.
+      CAIRNML__apiserver__storage__endpoint: http://rustfs:9000
+      CAIRNML__apiserver__storage__public_endpoint: ${CAIRNML_STORAGE_PUBLIC_URL:-http://localhost:9000}
+      CAIRNML__apiserver__storage__access_key: ${CAIRNML_S3_ACCESS_KEY:-cairnml-server}
+    volumes:
+      - ${CAIRNML_HOME:-${HOME}/.local/share/cairnml}/data/cairnml/logs:/var/log/cairnml
+      # Read-only: token_secret, session_secret, idp_directory_secret, github_app_key.
+      - ${CAIRNML_HOME:-${HOME}/.local/share/cairnml}/secrets/cairnml:/run/secrets-dir:ro
+    ports:
+      - "8008:8008"
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8008/debug.ping', timeout=4)"]
+      interval: 10s
+      timeout: 6s
+      retries: 20
+      start_period: 60s
+    networks:
+      - backend
+      - frontend
+      - cairnml
+
+
+  async-delete:
+    # Removes objects of deleted tasks and models from storage. Uses the image the API server builds.
+    image: cairnml-server-fork:local
+    pull_policy: never
+    restart: unless-stopped
+    container_name: cairnml-async-delete
+    command:
+      - async_delete
+    depends_on:
+      redis: {condition: service_healthy}
+      mongo: {condition: service_healthy}
+      rustfs-init: {condition: service_completed_successfully}
+    environment:
+      CAIRNML_SECRETS_DIR: /run/secrets-dir
+      CAIRNML_MONGODB_SERVICE_HOST: mongo
+      CAIRNML_MONGODB_SERVICE_PORT: 27017
+      CAIRNML_REDIS_SERVICE_HOST: redis
+      CAIRNML_REDIS_SERVICE_PORT: 6379
+      CAIRNML_SERVER_DEPLOYMENT_TYPE: linux
+      CAIRNML__apiserver__storage__endpoint: http://rustfs:9000
+      CAIRNML__apiserver__storage__public_endpoint: ${CAIRNML_STORAGE_PUBLIC_URL:-http://localhost:9000}
+      CAIRNML__apiserver__storage__access_key: ${CAIRNML_S3_ACCESS_KEY:-cairnml-server}
+      CAIRNML__services__async_urls_delete__enabled: "true"
+    volumes:
+      - ${CAIRNML_HOME:-${HOME}/.local/share/cairnml}/data/cairnml/logs:/var/log/cairnml
+      - ${CAIRNML_HOME:-${HOME}/.local/share/cairnml}/secrets/cairnml:/run/secrets-dir:ro
+    networks:
+      - backend
+      - cairnml
+
+  webserver:
+    # Uses the image the API server builds; building it again here would race with it.
+    image: cairnml-server-fork:local
+    pull_policy: never
+    restart: unless-stopped
+    container_name: cairnml-webserver
+    command:
+      - webserver
+    depends_on:
+      apiserver: {condition: service_healthy}
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - backend
+      - frontend
+
+networks:
+  backend:
+  frontend:
+  cairnml:
+    name: cairnml
