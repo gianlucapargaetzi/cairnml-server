@@ -6,6 +6,7 @@ content is what the server stored, not what the uploading process still has in m
 
 import hashlib
 import json
+import uuid
 from urllib.parse import unquote
 
 import pytest
@@ -111,9 +112,12 @@ def test_download_link_serves_the_stored_bytes_from_object_storage(client_home, 
 
 
 def test_a_member_who_is_not_the_owner_cannot_delete_the_run(client_home, member_account, project, tmp_path):
-    """Object access follows the owner: another plain user may not change the admin's run.
+    """Object access follows the project: a plain user with no role on the admin's private project may not change its runs.
 
-    Expect: the other user's delete is refused with 401 or 403. Known open: cairnml-server #3 (the policy is not built yet).
+    The member is not on the project, so the delete is refused exactly as a genuinely missing task is: the same 400
+    and the same message, not a 401 or 403 that would reveal the task and its project exist.
+
+    Expect: the member's delete of the owner's task and of a missing task are refused with the same 400 response.
     """
     from support import client
     from support.api import Api, ApiError
@@ -128,7 +132,13 @@ def test_a_member_who_is_not_the_owner_cannot_delete_the_run(client_home, member
     try:
         with pytest.raises(ApiError) as refused:
             member_api.authed("tasks.delete", {"task": owner_run["task_id"], "force": True})
-        assert refused.value.status in (401, 403)
+        missing_id = uuid.uuid4().hex
+        with pytest.raises(ApiError) as missing:
+            member_api.authed("tasks.delete", {"task": missing_id, "force": True})
+        assert refused.value.status == missing.value.status == 400
+        # the two messages differ only in the id each request named
+        assert refused.value.message.replace(owner_run["task_id"], "<id>") == \
+            missing.value.message.replace(missing_id, "<id>")
     finally:
         client.logout(home)
 
