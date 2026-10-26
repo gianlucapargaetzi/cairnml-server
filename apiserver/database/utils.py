@@ -97,6 +97,16 @@ def parse_from_call(call_data, fields, cls_fields, discard_none_values=True):
             if desc:
                 if issubclass(desc, Document):
                     if not desc.objects(id=value).only("id"):
+                        # Projects are visibility-controlled: a project a caller cannot see must look
+                        # exactly like one that does not exist (see ProjectAccessBLL), so this early,
+                        # unscoped existence check cannot raise its own distinct error for them. The
+                        # real existence+access check happens later; here we raise the same error it
+                        # raises, so a genuinely missing id and a hidden one look identical.
+                        from apiserver.database.model.project import Project
+                        from apiserver.apierrors import errors
+
+                        if desc is Project:
+                            raise errors.bad_request.InvalidProjectId(id=value)
                         raise ParseCallError(
                             "expecting %s id" % desc.__name__, id=value, field=field
                         )

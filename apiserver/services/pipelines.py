@@ -16,7 +16,7 @@ from apiserver.database.model.project import Project
 from apiserver.database.model.task.task import Task, TaskType
 from apiserver.service_repo import APICall, endpoint
 from apiserver.utilities.dicts import nested_get
-from .tasks import _delete_task_events
+from .tasks import _delete_task_events, _assert_tasks_access
 
 org_bll = OrgBLL()
 project_bll = ProjectBLL()
@@ -43,8 +43,13 @@ def _update_task_name(task: Task):
 
 @endpoint("pipelines.delete_runs")
 def delete_runs(call: APICall, company_id: str, request: DeleteRunsRequest):
+    # delete_task (below) already requires write access per task via get_task_with_write_access,
+    # so a hidden project's runs cannot actually be deleted; company-scoping this lookup too keeps
+    # it from matching anything outside the caller's own company in the first place
     existing_runs = set(
-        Task.objects(project=request.project, type=TaskType.controller).scalar("id")
+        Task.objects(
+            company=company_id, project=request.project, type=TaskType.controller
+        ).scalar("id")
     )
     if not existing_runs.difference(request.ids):
         raise CannotRemoveAllRuns(project=request.project)
@@ -106,9 +111,15 @@ def start_pipeline(call: APICall, company_id: str, request: StartPipelineRequest
             }
         }
 
+    # clone_task's own fetch of the source task is company-scoped only, with no project check;
+    # tasks.clone's own endpoint already requires write on the source before cloning it, so this
+    # entry point needs the same bar, not a weaker one, for the same operation
+    _assert_tasks_access(company_id, call.identity, [request.task], "write")
+
     task, _ = task_bll.clone_task(
         company_id=company_id,
         user_id=call.identity.user,
+        identity=call.identity,
         task_id=request.task,
         hyperparams_overrides=hyperparams,
     )

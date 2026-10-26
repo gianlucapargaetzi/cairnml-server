@@ -32,6 +32,7 @@ from apiserver.config_repo import config
 from apiserver.database.model.queue import Queue
 from apiserver.database.model.task.task import Task, TaskStatus
 from apiserver.service_repo import APICall, endpoint
+from apiserver.services.tasks import _assert_tasks_access, _scope_query as _scope_tasks_query
 from apiserver.services.utils import (
     conform_tag_fields,
     conform_output_tags,
@@ -91,6 +92,7 @@ def get_all_ex(call: APICall, company: str, request: GetAllRequest):
     queues = queue_bll.get_queue_infos(
         company_id=company,
         query_dict=call_data,
+        identity=call.identity,
         query=_hidden_query(call_data),
         max_task_entries=request.max_task_entries,
         count_task_entries=request.count_task_entries,
@@ -168,6 +170,9 @@ def update_added_task_properties(queue: str, task: str, update_execution_queue: 
 
 @endpoint("queues.move_task_to_queue")
 def move_task_to_queue(call: APICall, company_id, request: MoveTaskToQueueRequest):
+    # queues aren't project-scoped, so this and the other by-task-id endpoints below need their
+    # own check, the same "write" bar tasks.enqueue/dequeue already use for the same operations
+    _assert_tasks_access(company_id, call.identity, [request.task], "write")
     removed = queue_bll.remove_task(
         company_id=company_id,
         user_id=call.identity.user,
@@ -203,6 +208,7 @@ def move_task_to_queue(call: APICall, company_id, request: MoveTaskToQueueReques
 
 @endpoint("queues.add_task", min_version="2.4")
 def add_task(call: APICall, company_id, request: AddTaskRequest):
+    _assert_tasks_access(company_id, call.identity, [request.task], "write")
     queue_bll.add_task(
         company_id=company_id, queue_id=request.queue, task_id=request.task
     )
@@ -237,6 +243,7 @@ def get_next_task(call: APICall, company_id, request: GetNextTaskRequest):
 
 @endpoint("queues.remove_task", min_version="2.4")
 def remove_task(call: APICall, company_id, request: RemoveTaskRequest):
+    _assert_tasks_access(company_id, call.identity, [request.task], "write")
     call.result.data = {
         "removed": queue_bll.remove_task(
             company_id=company_id,
@@ -265,6 +272,7 @@ def clear_queue(call: APICall, company_id, request: QueueRequest):
     response_data_model=MoveTaskResponse,
 )
 def move_task_forward(call: APICall, company_id, request: MoveTaskRequest):
+    _assert_tasks_access(company_id, call.identity, [request.task], "write")
     call.result.data_model = MoveTaskResponse(
         position=queue_bll.reposition_task(
             company_id=company_id,
@@ -281,6 +289,7 @@ def move_task_forward(call: APICall, company_id, request: MoveTaskRequest):
     response_data_model=MoveTaskResponse,
 )
 def move_task_backward(call: APICall, company_id, request: MoveTaskRequest):
+    _assert_tasks_access(company_id, call.identity, [request.task], "write")
     call.result.data_model = MoveTaskResponse(
         position=queue_bll.reposition_task(
             company_id=company_id,
@@ -297,6 +306,7 @@ def move_task_backward(call: APICall, company_id, request: MoveTaskRequest):
     response_data_model=MoveTaskResponse,
 )
 def move_task_to_front(call: APICall, company_id, request: TaskRequest):
+    _assert_tasks_access(company_id, call.identity, [request.task], "write")
     call.result.data_model = MoveTaskResponse(
         position=queue_bll.reposition_task(
             company_id=company_id,
@@ -313,6 +323,7 @@ def move_task_to_front(call: APICall, company_id, request: TaskRequest):
     response_data_model=MoveTaskResponse,
 )
 def move_task_to_back(call: APICall, company_id, request: TaskRequest):
+    _assert_tasks_access(company_id, call.identity, [request.task], "write")
     call.result.data_model = MoveTaskResponse(
         position=queue_bll.reposition_task(
             company_id=company_id,
@@ -405,7 +416,13 @@ def peek_task(call: APICall, company_id: str, request: QueueRequest):
     queue = queue_bll.get_by_id(
         company_id=company_id, queue_id=queue_id, max_task_entries=1
     )
-    return {"task": queue.entries[0].task if queue.entries else None}
+    task_id = queue.entries[0].task if queue.entries else None
+    # A head task the caller cannot see is reported exactly as a missing one, so it does not reveal itself
+    if task_id and not Task.objects(
+        _scope_tasks_query(Q(id=task_id) & Q(company=company_id), call.identity)
+    ).only("id").first():
+        task_id = None
+    return {"task": task_id}
 
 
 @endpoint("queues.get_num_entries", min_version="2.15")

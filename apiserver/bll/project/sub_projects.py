@@ -7,7 +7,9 @@ from boltons.iterutils import first
 from apiserver import database
 from apiserver.apierrors import errors
 from apiserver.database.model import EntityVisibility
+from apiserver.bll.project.access import ProjectAccessBLL
 from apiserver.database.model.project import Project
+from apiserver.service_repo.auth import Identity
 
 name_separator = "/"
 
@@ -41,7 +43,11 @@ def _get_basename_from_name(name: str, raise_on_blank: bool = True) -> str:
 
 
 def _ensure_project(
-        company: str, user: str, name: str, creation_params: dict = None
+        company: str,
+        user: str,
+        name: str,
+        identity: Identity,
+        creation_params: dict = None,
 ) -> Optional[Project]:
     """
     Makes sure that the project with the given name exists
@@ -52,7 +58,7 @@ def _ensure_project(
     if not name:
         return None
 
-    project = _get_writable_project_from_name(company, name)
+    project = _get_writable_project_from_name(company, name, identity)
     if project:
         return project
 
@@ -67,7 +73,9 @@ def _ensure_project(
         basename=_get_basename_from_name(name),
         **(creation_params or dict(description="")),
     )
-    parent = _ensure_project(company, user, location, creation_params=creation_params)
+    parent = _ensure_project(
+        company, user, location, identity, creation_params=creation_params
+    )
     _save_under_parent(project=project, parent=parent)
     if parent:
         parent.update(last_update=now)
@@ -103,17 +111,24 @@ def _save_under_parent(project: Project, parent: Optional[Project]):
 def _get_writable_project_from_name(
         company,
         name,
+        identity: Identity,
         _only: Optional[Sequence[str]] = ("id", "name", "path", "company", "parent"),
 ) -> Optional[Project]:
     """
     Return a project from name. If the project not found then return None
+    Projects of this company that the caller has no role on are treated as not found
     """
     qs = Project.objects(company__in=[company, ""], name=name)
     if _only:
         if "company" not in _only:
             _only = ["company", *_only]
         qs = qs.only(*_only)
-    projects = list(qs)
+    projects = [
+        p
+        for p in qs
+        if p.company != company
+        or ProjectAccessBLL.get_role(identity, p.id) is not None
+    ]
 
     if not projects:
         return

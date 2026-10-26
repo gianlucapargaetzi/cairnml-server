@@ -21,6 +21,7 @@ from mongoengine import Q, Document
 from apiserver import database
 from apiserver.apierrors import errors
 from apiserver.apimodels.projects import ProjectChildrenType
+from apiserver.bll.project.access import ProjectAccessBLL
 from apiserver.config_repo import config
 from apiserver.database.model import EntityVisibility, AttributedDocument, User
 from apiserver.database.model.base import GetMixin
@@ -28,6 +29,7 @@ from apiserver.database.model.model import Model
 from apiserver.database.model.project import Project
 from apiserver.database.model.task.task import Task, TaskStatus, external_task_types
 from apiserver.database.utils import get_options, get_company_or_none_constraint
+from apiserver.service_repo.auth import Identity
 from .sub_projects import (
     _reposition_project_with_children,
     _ensure_project,
@@ -126,7 +128,12 @@ class ProjectBLL:
 
     @classmethod
     def move_project(
-        cls, company: str, user: str, project_id: str, new_location: str
+        cls,
+        company: str,
+        user: str,
+        identity: Identity,
+        project_id: str,
+        new_location: str,
     ) -> Tuple[int, Set[str]]:
         """
         Move project with its sub projects from its current location to the target one.
@@ -151,7 +158,9 @@ class ProjectBLL:
             new_parent_depth=_get_project_depth(new_location),
         )
 
-        new_parent = _ensure_project(company=company, user=user, name=new_location)
+        new_parent = _ensure_project(
+            company=company, user=user, name=new_location, identity=identity
+        )
         new_parent_id = new_parent.id if new_parent else None
         if old_parent_id == new_parent_id:
             raise errors.bad_request.ProjectSourceAndDestinationAreTheSame(
@@ -213,6 +222,7 @@ class ProjectBLL:
         user: str,
         company: str,
         name: str,
+        identity: Identity,
         description: str = "",
         tags: Sequence[str] = None,
         system_tags: Sequence[str] = None,
@@ -231,6 +241,7 @@ class ProjectBLL:
         existing = _get_writable_project_from_name(
             company=company,
             name=name,
+            identity=identity,
         )
         if existing:
             raise errors.bad_request.ExpectedUniqueData(
@@ -257,6 +268,7 @@ class ProjectBLL:
             company=company,
             user=user,
             name=location,
+            identity=identity,
             creation_params=parent_creation_params,
         )
         _save_under_parent(project=project, parent=parent)
@@ -270,6 +282,7 @@ class ProjectBLL:
         cls,
         user: str,
         company: str,
+        identity: Identity,
         project_name: str,
         description: str,
         project_id: str = None,
@@ -280,7 +293,9 @@ class ProjectBLL:
     ) -> str:
         """
         Find a project named `project_name` or create a new one.
-        Returns project ID
+        Returns project ID.
+        The caller must have write access to the project that is returned or to the project the new
+        one is created in, so that no content is placed in a project it cannot write to
         """
         if not project_id and not project_name:
             raise errors.bad_request.ValidationError("project id or name required")
@@ -289,16 +304,24 @@ class ProjectBLL:
             project = Project.objects(company=company, id=project_id).only("id").first()
             if not project:
                 raise errors.bad_request.InvalidProjectId(id=project_id)
+            ProjectAccessBLL.assert_can(
+                identity, project_id, "write", object_owner=identity.user
+            )
             return project_id
 
         project_name, _ = _validate_project_name(project_name)
-        project = Project.objects(company=company, name=project_name).only("id").first()
+        # Checks the project found by this name, or the deepest visible parent a new one is created in
+        ProjectAccessBLL.assert_can_write_destination(identity, company, project_name)
+        project = _get_writable_project_from_name(
+            company=company, name=project_name, identity=identity
+        )
         if project:
             return project.id
 
         return cls.create(
             user=user,
             company=company,
+            identity=identity,
             name=project_name,
             description=description,
             tags=tags,
@@ -313,6 +336,7 @@ class ProjectBLL:
         entity_cls: Type[Document],
         user: str,
         company: str,
+        identity: Identity,
         ids: Sequence[str],
         project: str = None,
         project_name: str = None,
@@ -324,6 +348,7 @@ class ProjectBLL:
             project = cls.find_or_create(
                 user=user,
                 company=company,
+                identity=identity,
                 project_id=project,
                 project_name=project_name,
                 description="",

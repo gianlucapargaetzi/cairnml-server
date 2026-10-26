@@ -2,7 +2,7 @@ import itertools
 from copy import deepcopy
 from datetime import datetime, timezone
 from functools import partial
-from typing import Sequence, Union, Tuple, Mapping
+from typing import Sequence, Union, Tuple, Mapping, Optional
 
 from mongoengine import EmbeddedDocument, Q
 from mongoengine.queryset.transform import COMPARISON_OPERATORS
@@ -76,6 +76,7 @@ from apiserver.bll.event import EventBLL
 from apiserver.bll.model import ModelBLL
 from apiserver.bll.organization import OrgBLL, Tags
 from apiserver.bll.project import ProjectBLL
+from apiserver.bll.project.access import ProjectAccessBLL
 from apiserver.bll.queue import QueueBLL
 from apiserver.bll.task import (
     TaskBLL,
@@ -170,6 +171,76 @@ def _assert_writable_tasks(
     return tasks
 
 
+_TASK_ACCESS_FIELDS = ("id", "company", "project", "user")
+
+
+def _assert_task_access(identity: Identity, task: Task, capability: str) -> None:
+    """
+    Check `capability` on the project of the task, with the task owner deciding own-object rights.
+    A task without a project has no project to check against and keeps its company-level behaviour
+    """
+    if not task.project:
+        return
+    if ProjectAccessBLL.get_role(identity, task.project) is None:
+        # Same answer a missing task gets, so a hidden task does not reveal its project
+        raise errors.bad_request.InvalidTaskId(id=task.id, company=identity.company)
+    ProjectAccessBLL.assert_can(
+        identity, task.project, capability, object_owner=task.user
+    )
+
+
+def _assert_tasks_access(
+    company_id: str, identity: Identity, ids: Sequence[str], capability: str
+) -> None:
+    """
+    Check `capability` on every existing task of `ids` before any of them is changed, so that a batch
+    is all-or-nothing. Missing ids are not an error here: the endpoint reports them as it did before
+    """
+    tasks = Task.get_many(
+        company=company_id,
+        query=Q(id__in=list(ids)),
+        override_projection=_TASK_ACCESS_FIELDS,
+        allow_public=True,
+        return_dicts=False,
+    )
+    for task in tasks:
+        _assert_task_access(identity, task, capability)
+
+
+def _visible_tasks_query(identity: Identity) -> Optional[Q]:
+    """
+    Restricts a task search to the projects the caller can see. Tasks without a project keep the
+    company-level visibility they had before. None means no restriction (admin)
+    """
+    visible = ProjectAccessBLL.visible_project_ids(identity)
+    if visible is None:
+        return None
+    return Q(project__in=list(visible)) | Q(project=None) | Q(project="")
+
+
+def _scope_query(query: Q, identity: Identity) -> Q:
+    scope = _visible_tasks_query(identity)
+    return query if scope is None else query & scope
+
+
+def _assert_destination_project(identity: Identity, task: Task, fields: dict) -> None:
+    """
+    A task moved to another project by update or edit needs admin on that project, the same rule
+    the `move` endpoint applies. Otherwise a collaborator could move tasks through the generic
+    edit path that `move` gates behind admin. Clearing the project needs admin on the current one:
+    a projectless task is open to the whole company, so clearing is a move out of the project
+    """
+    if "project" not in fields:
+        return
+    new_project = fields["project"]
+    if new_project == task.project:
+        return
+    if new_project:
+        ProjectAccessBLL.assert_can(identity, new_project, "admin")
+    elif task.project:
+        ProjectAccessBLL.assert_can(identity, task.project, "admin")
+
+
 def set_task_status_from_call(
     request: UpdateRequest,
     company_id: str,
@@ -177,6 +248,7 @@ def set_task_status_from_call(
     new_status=None,
     **set_fields,
 ) -> dict:
+    _assert_tasks_access(company_id, identity, [request.task], "write")
     task = get_task_with_write_access(
         request.task,
         company_id=company_id,
@@ -199,11 +271,17 @@ def set_task_status_from_call(
 
 @endpoint("tasks.get_by_id", request_data_model=TaskRequest)
 def get_by_id(call: APICall, company_id, request: TaskRequest):
-    task = TaskBLL.assert_exists(
-        company_id,
-        task_ids=request.task,
+    # A task in a hidden project must look exactly as missing as a genuinely unknown id, the same
+    # way projects.get_by_id does for a project id: scope the lookup itself, rather than fetching
+    # the task and then checking access on it, which would raise a project-revealing error instead
+    task = Task.get_many(
+        company=company_id,
+        query=_scope_query(Q(id=request.task), call.identity),
         allow_public=True,
-    )[0]
+        return_dicts=False,
+    ).first()
+    if not task:
+        raise errors.bad_request.InvalidTaskId(id=request.task)
     task_dict = task.to_proper_dict()
     conform_task_data(call, task_dict)
     call.result.data = {"task": task_dict}
@@ -248,7 +326,7 @@ def get_all_ex(call: APICall, company_id, request: GetAllReq):
     tasks = Task.get_many_with_join(
         company=company_id,
         query_dict=call_data,
-        query=_hidden_query(call_data),
+        query=_scope_query(_hidden_query(call_data), call.identity),
         allow_public=request.allow_public,
         ret_params=ret_params,
     )
@@ -263,6 +341,7 @@ def get_by_id_ex(call: APICall, company_id, _):
     tasks = Task.get_many_with_join(
         company=company_id,
         query_dict=call_data,
+        query=_visible_tasks_query(call.identity),
         allow_public=True,
     )
 
@@ -281,7 +360,7 @@ def get_all(call: APICall, company_id, _):
         company=company_id,
         parameters=call_data,
         query_dict=call_data,
-        query=_hidden_query(call_data),
+        query=_scope_query(_hidden_query(call_data), call.identity),
         allow_public=True,
         ret_params=ret_params,
     )
@@ -291,9 +370,22 @@ def get_all(call: APICall, company_id, _):
 
 @endpoint("tasks.get_types", request_data_model=GetTypesRequest)
 def get_types(call: APICall, company_id, request: GetTypesRequest):
+    project_ids = request.projects
+    if project_ids:
+        for project_id in project_ids:
+            ProjectAccessBLL.assert_can(call.identity, project_id, "read")
+    else:
+        # Without a project filter the types of every project would leak to anyone but admin
+        project_ids = ProjectAccessBLL.visible_project_ids(call.identity)
+        if project_ids is not None:
+            if not project_ids:
+                call.result.data = {"types": []}
+                return
+            project_ids = list(project_ids)
+
     call.result.data = {
         "types": list(
-            project_bll.get_task_types(company_id, project_ids=request.projects)
+            project_bll.get_task_types(company_id, project_ids=project_ids)
         )
     }
 
@@ -308,6 +400,7 @@ def stop(call: APICall, company_id, request: StopRequest):
               only its status message is set to 'stopping'
 
     """
+    _assert_tasks_access(company_id, call.identity, [request.task], "write")
     call.result.data_model = UpdateResponse(
         **stop_task(
             task_id=request.task,
@@ -327,6 +420,7 @@ def stop(call: APICall, company_id, request: StopRequest):
     response_data_model=UpdateBatchResponse,
 )
 def stop_many(call: APICall, company_id, request: StopManyRequest):
+    _assert_tasks_access(company_id, call.identity, request.ids, "write")
     results, failures = run_batch_operation(
         func=partial(
             stop_task,
@@ -500,6 +594,7 @@ def prepare_create_fields(
     t_fields = task_fields
     t_fields.add("output_dest")
 
+    ProjectAccessBLL.assert_project_field_writable(call.identity, call.data)
     fields = parse_from_call(call.data, valid_fields, t_fields)
 
     # Move output_dest to output.destination
@@ -535,6 +630,7 @@ def _validate_and_get_task_from_call(call: APICall, **kwargs) -> Tuple[Task, dic
             company=call.identity.company, user=call.identity.user, fields=fields
         )
 
+    _assert_task_access(call.identity, task, "write")
     task_bll.validate(task)
 
     return task, fields
@@ -578,9 +674,18 @@ def create(call: APICall, company_id, _: CreateRequest):
 
 @endpoint("tasks.clone", request_data_model=CloneRequest)
 def clone_task(call: APICall, company_id, request: CloneRequest):
+    _assert_tasks_access(company_id, call.identity, [request.task], "write")
+    if request.new_task_project:
+        ProjectAccessBLL.assert_can(
+            call.identity,
+            request.new_task_project,
+            "write",
+            object_owner=call.identity.user,
+        )
     task, new_project = task_bll.clone_task(
         company_id=company_id,
         user_id=call.identity.user,
+        identity=call.identity,
         task_id=request.task,
         name=request.new_task_name,
         comment=request.new_task_comment,
@@ -611,6 +716,7 @@ def prepare_update_fields(call: APICall, call_data):
     )
     t_fields = task_fields
     t_fields.add("output__error")
+    ProjectAccessBLL.assert_project_field_writable(call.identity, call_data)
     fields = parse_from_call(call_data, update_fields, t_fields)
     return prepare_for_save(call, fields), valid_fields
 
@@ -620,19 +726,22 @@ def prepare_update_fields(call: APICall, call_data):
 )
 def update(call: APICall, company_id, req_model: UpdateRequest):
     task_id = req_model.task
+    _assert_tasks_access(company_id, call.identity, [task_id], "write")
 
     with translate_errors_context():
         task = get_task_with_write_access(
             task_id=task_id,
             company_id=company_id,
             identity=call.identity,
-            only=("id", "project"),
+            only=("id", "project", "user"),
         )
 
         partial_update_dict, valid_fields = prepare_update_fields(call, call.data)
 
         if not partial_update_dict:
             return UpdateResponse(updated=0)
+
+        _assert_destination_project(call.identity, task, partial_update_dict)
 
         updated_count, updated_fields = Task.safe_update(
             company_id=company_id,
@@ -663,6 +772,7 @@ def update(call: APICall, company_id, req_model: UpdateRequest):
 )
 def set_requirements(call: APICall, company_id, req_model: SetRequirementsRequest):
     requirements = req_model.requirements
+    _assert_tasks_access(company_id, call.identity, [req_model.task], "write")
     with translate_errors_context():
         task = get_task_with_write_access(
             req_model.task,
@@ -692,13 +802,14 @@ def update_batch(call: APICall, company_id, _):
 
     with translate_errors_context():
         items = {i["task"]: i for i in items}
+        _assert_tasks_access(company_id, call.identity, list(items), "write")
         tasks = {
             t.id: t
             for t in _assert_writable_tasks(
                 identity=call.identity,
                 company_id=company_id,
                 ids=list(items),
-                only=("id", "project"),
+                only=("id", "project", "user"),
             )
         }
 
@@ -713,6 +824,8 @@ def update_batch(call: APICall, company_id, _):
         for id, data in items.items():
             task = tasks[id]
             fields, valid_fields = prepare_update_fields(call, data)
+            # Checked for every item before the bulk write below, so that a failure changes nothing
+            _assert_destination_project(call.identity, task, fields)
             partial_update_dict = Task.get_safe_update_dict(fields)
             if not partial_update_dict:
                 continue
@@ -750,6 +863,7 @@ def update_batch(call: APICall, company_id, _):
 def edit(call: APICall, company_id, req_model: UpdateRequest):
     task_id = req_model.task
     force = req_model.force
+    _assert_tasks_access(company_id, call.identity, [task_id], "write")
 
     with translate_errors_context():
         task = get_task_with_write_access(
@@ -772,6 +886,8 @@ def edit(call: APICall, company_id, req_model: UpdateRequest):
             fields = prepare_create_fields(
                 call, valid_fields=edit_fields, output=task.output, previous_task=task
             )
+
+        _assert_destination_project(call.identity, task, fields)
 
         for key in fields:
             field = getattr(task, key, None)
@@ -824,6 +940,7 @@ def edit(call: APICall, company_id, req_model: UpdateRequest):
     request_data_model=GetHyperParamsRequest,
 )
 def get_hyper_params(call: APICall, company_id, request: GetHyperParamsRequest):
+    _assert_tasks_access(company_id, call.identity, request.tasks, "read")
     tasks_params = HyperParams.get_params(company_id, task_ids=request.tasks)
 
     call.result.data = {
@@ -833,6 +950,7 @@ def get_hyper_params(call: APICall, company_id, request: GetHyperParamsRequest):
 
 @endpoint("tasks.edit_hyper_params", request_data_model=EditHyperParamsRequest)
 def edit_hyper_params(call: APICall, company_id, request: EditHyperParamsRequest):
+    _assert_tasks_access(company_id, call.identity, [request.task], "write")
     call.result.data = {
         "updated": HyperParams.edit_params(
             company_id,
@@ -847,6 +965,7 @@ def edit_hyper_params(call: APICall, company_id, request: EditHyperParamsRequest
 
 @endpoint("tasks.delete_hyper_params", request_data_model=DeleteHyperParamsRequest)
 def delete_hyper_params(call: APICall, company_id, request: DeleteHyperParamsRequest):
+    _assert_tasks_access(company_id, call.identity, [request.task], "write")
     call.result.data = {
         "deleted": HyperParams.delete_params(
             company_id,
@@ -863,6 +982,7 @@ def delete_hyper_params(call: APICall, company_id, request: DeleteHyperParamsReq
     request_data_model=GetConfigurationsRequest,
 )
 def get_configurations(call: APICall, company_id, request: GetConfigurationsRequest):
+    _assert_tasks_access(company_id, call.identity, request.tasks, "read")
     tasks_params = HyperParams.get_configurations(
         company_id, task_ids=request.tasks, names=request.names
     )
@@ -881,6 +1001,7 @@ def get_configurations(call: APICall, company_id, request: GetConfigurationsRequ
 def get_configuration_names(
     call: APICall, company_id, request: GetConfigurationNamesRequest
 ):
+    _assert_tasks_access(company_id, call.identity, request.tasks, "read")
     tasks_params = HyperParams.get_configuration_names(
         company_id, task_ids=request.tasks, skip_empty=request.skip_empty
     )
@@ -894,6 +1015,7 @@ def get_configuration_names(
 
 @endpoint("tasks.edit_configuration", request_data_model=EditConfigurationRequest)
 def edit_configuration(call: APICall, company_id, request: EditConfigurationRequest):
+    _assert_tasks_access(company_id, call.identity, [request.task], "write")
     call.result.data = {
         "updated": HyperParams.edit_configuration(
             company_id,
@@ -910,6 +1032,7 @@ def edit_configuration(call: APICall, company_id, request: EditConfigurationRequ
 def delete_configuration(
     call: APICall, company_id, request: DeleteConfigurationRequest
 ):
+    _assert_tasks_access(company_id, call.identity, [request.task], "write")
     call.result.data = {
         "deleted": HyperParams.delete_configuration(
             company_id,
@@ -932,6 +1055,7 @@ def enqueue(call: APICall, company_id, request: EnqueueRequest):
             "verify_watched_queue cannot be used with update_execution_queue=False"
         )
 
+    _assert_tasks_access(company_id, call.identity, [request.task], "write")
     queued, res = enqueue_task(
         task_id=request.task,
         company_id=company_id,
@@ -957,6 +1081,7 @@ def enqueue(call: APICall, company_id, request: EnqueueRequest):
     response_data_model=EnqueueManyResponse,
 )
 def enqueue_many(call: APICall, company_id, request: EnqueueManyRequest):
+    _assert_tasks_access(company_id, call.identity, request.ids, "write")
     results, failures = run_batch_operation(
         func=partial(
             enqueue_task,
@@ -992,6 +1117,7 @@ def enqueue_many(call: APICall, company_id, request: EnqueueManyRequest):
     response_data_model=DequeueResponse,
 )
 def dequeue(call: APICall, company_id, request: DequeueRequest):
+    _assert_tasks_access(company_id, call.identity, [request.task], "write")
     dequeued, res = dequeue_task(
         task_id=request.task,
         company_id=company_id,
@@ -1009,6 +1135,7 @@ def dequeue(call: APICall, company_id, request: DequeueRequest):
     response_data_model=DequeueManyResponse,
 )
 def dequeue_many(call: APICall, company_id, request: DequeueManyRequest):
+    _assert_tasks_access(company_id, call.identity, request.ids, "write")
     results, failures = run_batch_operation(
         func=partial(
             dequeue_task,
@@ -1100,6 +1227,7 @@ def _delete_task_events(
 )
 def reset(call: APICall, company_id, request: ResetRequest):
     task_id = request.task
+    _assert_tasks_access(company_id, call.identity, [task_id], "write")
     dequeued, cleanup_res, updates = reset_task(
         task_id=task_id,
         company_id=company_id,
@@ -1129,6 +1257,7 @@ def reset(call: APICall, company_id, request: ResetRequest):
     response_data_model=ResetManyResponse,
 )
 def reset_many(call: APICall, company_id, request: ResetManyRequest):
+    _assert_tasks_access(company_id, call.identity, request.ids, "write")
     results, failures = run_batch_operation(
         func=partial(
             reset_task,
@@ -1185,11 +1314,14 @@ def archive(call: APICall, company_id, request: ArchiveRequest):
             "execution",
             "status",
             "project",
+            "user",
             "system_tags",
             "enqueue_status",
             "type",
         ),
     )
+    for task in tasks:
+        _assert_task_access(call.identity, task, "write")
     for task in tasks:
         archived += archive_task(
             company_id=company_id,
@@ -1208,6 +1340,7 @@ def archive(call: APICall, company_id, request: ArchiveRequest):
     response_data_model=BatchResponse,
 )
 def archive_many(call: APICall, company_id, request: ArchiveManyRequest):
+    _assert_tasks_access(company_id, call.identity, request.ids, "write")
     results, failures = run_batch_operation(
         func=partial(
             archive_task,
@@ -1230,6 +1363,7 @@ def archive_many(call: APICall, company_id, request: ArchiveManyRequest):
     response_data_model=BatchResponse,
 )
 def unarchive_many(call: APICall, company_id, request: UnarchiveManyRequest):
+    _assert_tasks_access(company_id, call.identity, request.ids, "write")
     results, failures = run_batch_operation(
         func=partial(
             unarchive_task,
@@ -1251,6 +1385,7 @@ def unarchive_many(call: APICall, company_id, request: UnarchiveManyRequest):
 
 @endpoint("tasks.delete", request_data_model=DeleteRequest)
 def delete(call: APICall, company_id, request: DeleteRequest):
+    _assert_tasks_access(company_id, call.identity, [request.task], "delete")
     deleted, task, cleanup_res = delete_task(
         task_id=request.task,
         company_id=company_id,
@@ -1278,6 +1413,7 @@ def delete(call: APICall, company_id, request: DeleteRequest):
 
 @endpoint("tasks.delete_many", request_data_model=DeleteManyRequest)
 def delete_many(call: APICall, company_id, request: DeleteManyRequest):
+    _assert_tasks_access(company_id, call.identity, request.ids, "delete")
     results, failures = run_batch_operation(
         func=partial(
             delete_task,
@@ -1331,6 +1467,7 @@ def delete_many(call: APICall, company_id, request: DeleteManyRequest):
     response_data_model=UpdateResponse,
 )
 def publish(call: APICall, company_id, request: PublishRequest):
+    _assert_tasks_access(company_id, call.identity, [request.task], "write")
     updates = publish_task(
         task_id=request.task,
         company_id=company_id,
@@ -1349,6 +1486,7 @@ def publish(call: APICall, company_id, request: PublishRequest):
     response_data_model=UpdateBatchResponse,
 )
 def publish_many(call: APICall, company_id, request: PublishManyRequest):
+    _assert_tasks_access(company_id, call.identity, request.ids, "write")
     results, failures = run_batch_operation(
         func=partial(
             publish_task,
@@ -1407,6 +1545,7 @@ def completed(call: APICall, company_id, request: CompletedRequest):
 
 @endpoint("tasks.ping", request_data_model=PingRequest)
 def ping(call: APICall, company_id, request: PingRequest):
+    _assert_tasks_access(company_id, call.identity, [request.task], "write")
     TaskBLL.set_last_update(
         task_ids=[request.task],
         company_id=company_id,
@@ -1417,6 +1556,7 @@ def ping(call: APICall, company_id, request: PingRequest):
 
 @endpoint("tasks.edit_runtime", request_data_model=EditRuntimeRequest)
 def edit_runtime(call: APICall, company_id, request: EditRuntimeRequest):
+    _assert_tasks_access(company_id, call.identity, [request.task], "write")
     call.result.data = {
         "updated": TaskBLL.edit_runtime(
             company_id=company_id,
@@ -1437,6 +1577,7 @@ def edit_runtime(call: APICall, company_id, request: EditRuntimeRequest):
 def add_or_update_artifacts(
     call: APICall, company_id, request: AddOrUpdateArtifactsRequest
 ):
+    _assert_tasks_access(company_id, call.identity, [request.task], "write")
     call.result.data = {
         "updated": Artifacts.add_or_update_artifacts(
             company_id=company_id,
@@ -1454,6 +1595,7 @@ def add_or_update_artifacts(
     request_data_model=DeleteArtifactsRequest,
 )
 def delete_artifacts(call: APICall, company_id, request: DeleteArtifactsRequest):
+    _assert_tasks_access(company_id, call.identity, [request.task], "write")
     call.result.data = {
         "deleted": Artifacts.delete_artifacts(
             company_id=company_id,
@@ -1467,6 +1609,9 @@ def delete_artifacts(call: APICall, company_id, request: DeleteArtifactsRequest)
 
 @endpoint("tasks.make_public", min_version="2.9", request_data_model=MakePublicRequest)
 def make_public(call: APICall, company_id, request: MakePublicRequest):
+    # changing visibility (here, the older cross-company "public" mechanism) is Owner/Collaborator
+    # only, same bar the role matrix gives projects.set_visibility
+    _assert_tasks_access(company_id, call.identity, request.ids, "admin")
     call.result.data = Task.set_public(
         company_id=company_id,
         user_id=call.identity.user,
@@ -1478,6 +1623,7 @@ def make_public(call: APICall, company_id, request: MakePublicRequest):
 
 @endpoint("tasks.make_private", min_version="2.9", request_data_model=MakePublicRequest)
 def make_private(call: APICall, company_id, request: MakePublicRequest):
+    _assert_tasks_access(company_id, call.identity, request.ids, "admin")
     call.result.data = Task.set_public(
         company_id=company_id,
         user_id=call.identity.user,
@@ -1495,14 +1641,23 @@ def move(call: APICall, company_id: str, request: MoveRequest):
         )
 
     tasks = _assert_writable_tasks(
-        company_id, call.identity, request.ids, only=("id", "project")
+        company_id, call.identity, request.ids, only=("id", "project", "user")
     )
+    for task in tasks:
+        _assert_task_access(call.identity, task, "admin")
+    if request.project:
+        ProjectAccessBLL.assert_can(call.identity, request.project, "admin")
+    elif request.project_name:
+        ProjectAccessBLL.assert_can_admin_destination(
+            call.identity, company_id, request.project_name
+        )
     updated_projects = set(t.project for t in tasks if t.project)
 
     project_id = project_bll.move_under_project(
         entity_cls=Task,
         user=call.identity.user,
         company=company_id,
+        identity=call.identity,
         ids=request.ids,
         project=request.project,
         project_name=request.project_name,
@@ -1518,6 +1673,7 @@ def move(call: APICall, company_id: str, request: MoveRequest):
 @endpoint("tasks.update_tags")
 def update_tags(call: APICall, company_id: str, request: UpdateTagsRequest):
     _assert_writable_tasks(company_id, call.identity, request.ids)
+    _assert_tasks_access(company_id, call.identity, request.ids, "write")
     return {
         "updated": org_bll.edit_entity_tags(
             company_id=company_id,
@@ -1532,6 +1688,7 @@ def update_tags(call: APICall, company_id: str, request: UpdateTagsRequest):
 
 @endpoint("tasks.add_or_update_model", min_version="2.13")
 def add_or_update_model(call: APICall, company_id: str, request: AddUpdateModelRequest):
+    _assert_tasks_access(company_id, call.identity, [request.task], "write")
     get_task_for_update(
         company_id=company_id, task_id=request.task, force=True, identity=call.identity
     )
@@ -1554,6 +1711,7 @@ def add_or_update_model(call: APICall, company_id: str, request: AddUpdateModelR
 
 @endpoint("tasks.delete_models", min_version="2.13")
 def delete_models(call: APICall, company_id: str, request: DeleteModelsRequest):
+    _assert_tasks_access(company_id, call.identity, [request.task], "write")
     task = get_task_for_update(
         company_id=company_id, task_id=request.task, force=True, identity=call.identity
     )

@@ -1,4 +1,5 @@
 import csv
+from uuid import uuid4
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from io import StringIO
@@ -27,10 +28,12 @@ from apiserver.database.model.project import Project
 from apiserver.database.model.task.task import Task, TaskType
 from apiserver.redis_manager import redman
 from apiserver.service_repo import endpoint, APICall
-from apiserver.services.models import conform_model_data
+from apiserver.bll.project.access import ProjectAccessBLL
+from apiserver.services.models import conform_model_data, _scope_query as _scope_models_query
 from apiserver.services.tasks import (
     escape_execution_parameters,
     _hidden_query,
+    _scope_query as _scope_tasks_query,
     conform_task_data,
 )
 from apiserver.services.utils import get_tags_filter_dictionary, sort_tags_response
@@ -47,13 +50,20 @@ conf = config.get("services.organization")
 @endpoint("organization.get_tags", request_data_model=TagsRequest)
 def get_tags(call: APICall, company, request: TagsRequest):
     filter_dict = get_tags_filter_dictionary(request.filter)
+    visible = ProjectAccessBLL.visible_project_ids(call.identity)
+    projects = None if visible is None else list(visible)
     ret = defaultdict(set)
+    # An empty project list means "no filter" to the tag lookup, so a caller who sees no project gets none
+    if projects is not None and not projects:
+        call.result.data = sort_tags_response(ret)
+        return
     for entity in Tags.Model, Tags.Task:
         tags = org_bll.get_tags(
             company,
             entity,
             include_system=request.include_system,
             filter_=filter_dict,
+            projects=projects,
         )
         for field, vals in tags.items():
             ret[field] |= vals
@@ -122,7 +132,16 @@ def get_entities_count(call: APICall, company, request: EntitiesCountRequest):
             elif not data.get("user"):
                 data["user"] = request.active_users
 
-        query = Q()
+        # A count is still a signal: a non-zero count for a hidden project's id would confirm it
+        # exists, so the same visibility scoping the listings use applies here too
+        visible = ProjectAccessBLL.visible_project_ids(call.identity)
+        if visible is None:
+            query = Q()
+        elif entity_cls is Project:
+            query = Q(id__in=list(visible))
+        else:
+            query = Q(project__in=list(visible)) | Q(project=None) | Q(project="")
+
         if (
             entity_cls in (Project, Task)
             and field
@@ -203,7 +222,7 @@ def _get_download_getter_fn(
         tasks = Task.get_many_with_join(
             company=company,
             query_dict=call_data,
-            query=_hidden_query(call_data),
+            query=_scope_tasks_query(_hidden_query(call_data), call.identity),
             allow_public=allow_public,
         )
         conform_task_data(call, tasks)
@@ -213,6 +232,7 @@ def _get_download_getter_fn(
         models = Model.get_many_with_join(
             company=company,
             query_dict=call_data,
+            query=_scope_models_query(Q(), call.identity),
             allow_public=allow_public,
         )
         conform_model_data(call, models)
@@ -398,6 +418,10 @@ def download_for_get_all(call: APICall, company, request: DownloadForGetAllReque
             projects = projects[0]
             if projects is None:
                 return "root"
+        # A hidden project's real name must not leak into the downloaded filename either
+        visible = ProjectAccessBLL.visible_project_ids(call.identity)
+        if visible is not None and projects not in visible:
+            return
         project: Project = Project.objects(id=projects).only("basename").first()
         if not project:
             return
@@ -413,9 +437,17 @@ def download_for_get_all(call: APICall, company, request: DownloadForGetAllReque
 
 @endpoint("organization.get_project_workloads")
 def get_project_workloads(call: APICall, company, request: GetProjectWorkloadsRequest):
+    requested = request.projects
+    visible = ProjectAccessBLL.visible_project_ids(call.identity)
+    if visible is not None:
+        # Substitute a hidden id for one guaranteed not to exist, rather than special-casing the
+        # response: this function has no access awareness of its own, so routing a hidden id
+        # through the exact same "project not found" path it already has gives the same shape a
+        # genuinely missing id gets, instead of risking a response shape that differs from it
+        requested = [p if p in visible else uuid4().hex for p in requested]
     call.result.data = ProjectWorkloads.get_project_workloads(
         company,
-        project_ids=request.projects,
+        project_ids=requested,
         from_date_str=request.from_date,
         to_date_str=request.to_date,
         include_development=request.include_development,

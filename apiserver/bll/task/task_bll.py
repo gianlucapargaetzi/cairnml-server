@@ -197,6 +197,7 @@ class TaskBLL:
         cls,
         company_id: str,
         user_id: str,
+        identity: Identity,
         task_id: str,
         name: Optional[str] = None,
         comment: Optional[str] = None,
@@ -301,6 +302,7 @@ class TaskBLL:
                 project_name=new_project_name,
                 user=user_id,
                 company=company_id,
+                identity=identity,
                 description="",
             )
             new_project_data = {"id": project, "name": new_project_name}

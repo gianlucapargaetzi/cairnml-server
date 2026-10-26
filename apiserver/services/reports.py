@@ -26,6 +26,7 @@ from apiserver.services.models import conform_model_data
 from apiserver.services.utils import process_include_subprojects, sort_tags_response
 from apiserver.bll.organization import OrgBLL
 from apiserver.bll.project import ProjectBLL
+from apiserver.bll.project.access import ProjectAccessBLL
 from apiserver.bll.task import TaskBLL, ChangeStatusRequest
 from apiserver.database.model import EntityVisibility
 from apiserver.database.model.project import Project
@@ -41,9 +42,12 @@ from apiserver.services.events import (
 )
 from apiserver.services.tasks import (
     escape_execution_parameters,
+    _assert_task_access,
     _hidden_query,
+    _scope_query as _scope_tasks_query,
     conform_task_data,
 )
+from apiserver.services.models import _scope_query as _scope_models_query
 
 org_bll = OrgBLL()
 project_bll = ProjectBLL()
@@ -119,7 +123,7 @@ def update_report(call: APICall, company_id: str, request: UpdateReportRequest):
     return UpdateResponse(updated=updated, fields=partial_update_dict)
 
 
-def _ensure_reports_project(company: str, user: str, name: str):
+def _ensure_reports_project(company: str, user: str, identity: Identity, name: str):
     name = name.strip("/")
     _, _, basename = name.rpartition("/")
     if basename != reports_project_name:
@@ -128,6 +132,7 @@ def _ensure_reports_project(company: str, user: str, name: str):
     return project_bll.find_or_create(
         user=user,
         company=company,
+        identity=identity,
         project_name=name,
         description="Reports project",
         system_tags=[reports_tag, EntityVisibility.hidden.value],
@@ -139,6 +144,11 @@ def create_report(call: APICall, company_id: str, request: CreateReportRequest):
     user_id = call.identity.user
     project_id = request.project
     if request.project:
+        # A report lands in the reports project under this one, so it needs write here; checked
+        # before the name is read, so a hidden project's name is never read or revealed
+        ProjectAccessBLL.assert_can(
+            call.identity, request.project, "write", object_owner=user_id
+        )
         project = Project.get_for_writing(
             company=company_id, id=project_id, _only=("name",)
         )
@@ -147,7 +157,7 @@ def create_report(call: APICall, company_id: str, request: CreateReportRequest):
         project_name = ""
 
     project_id = _ensure_reports_project(
-        company=company_id, user=user_id, name=project_name
+        company=company_id, user=user_id, identity=call.identity, name=project_name
     )
     task = task_bll.create(
         company=company_id,
@@ -199,6 +209,7 @@ def get_all_ex(call: APICall, company_id, request: GetAllRequest):
     tasks = Task.get_many_with_join(
         company=company_id,
         query_dict=call_data,
+        query=_scope_tasks_query(Q(), call.identity),
         allow_public=request.allow_public,
         ret_params=ret_params,
     )
@@ -232,11 +243,16 @@ def get_task_data(call: APICall, company_id, request: GetTasksDataRequest):
     call_data = escape_execution_parameters(call.data)
     process_include_subprojects(call_data)
 
+    scope = (
+        _scope_models_query(Q(), call.identity)
+        if request.model_events
+        else _scope_tasks_query(_hidden_query(call_data), call.identity)
+    )
     ret_params = {}
     tasks = entity_cls.get_many_with_join(
         company=company_id,
         query_dict=call_data,
-        query=_hidden_query(call_data),
+        query=scope,
         allow_public=request.allow_public,
         ret_params=ret_params,
     )
@@ -252,7 +268,10 @@ def get_task_data(call: APICall, company_id, request: GetTasksDataRequest):
 
     task_ids = [task["id"] for task in tasks]
     companies = _get_task_or_model_index_companies(
-        company_id, task_ids=task_ids, model_events=request.model_events
+        company_id,
+        task_ids=task_ids,
+        identity=call.identity,
+        model_events=request.model_events,
     )
     if request.debug_images:
         result = event_bll.debug_images_iterator.get_task_events(
@@ -309,10 +328,18 @@ def move(call: APICall, company_id: str, request: MoveReportRequest):
         company_id=company_id,
         task_id=request.task,
         identity=call.identity,
-        only_fields=("project",),
+        only_fields=("project", "user"),
     )
+    # Moving a report mirrors moving a task: admin on where it leaves and where it lands
+    _assert_task_access(call.identity, task, "admin")
     user_id = call.identity.user
     project_name = request.project_name
+    if project_name:
+        ProjectAccessBLL.assert_can_admin_destination(
+            call.identity, company_id, project_name
+        )
+    elif request.project:
+        ProjectAccessBLL.assert_can(call.identity, request.project, "admin")
     if not project_name:
         if request.project:
             project = Project.get_for_writing(
@@ -323,13 +350,14 @@ def move(call: APICall, company_id: str, request: MoveReportRequest):
             project_name = ""
 
     project_id = _ensure_reports_project(
-        company=company_id, user=user_id, name=project_name
+        company=company_id, user=user_id, identity=call.identity, name=project_name
     )
 
     project_bll.move_under_project(
         entity_cls=Task,
         user=call.identity.user,
         company=company_id,
+        identity=call.identity,
         ids=[request.task],
         project=project_id,
     )
@@ -430,5 +458,9 @@ def delete(call: APICall, company_id, request: DeleteReportRequest):
 
 @endpoint("reports.get_tags")
 def get_tags(call: APICall, company_id: str, _):
-    tags = Task.objects(company=company_id, type=TaskType.report).distinct(field="tags")
+    tags = Task.objects(
+        _scope_tasks_query(
+            Q(company=company_id) & Q(type=TaskType.report), call.identity
+        )
+    ).distinct(field="tags")
     call.result.data = sort_tags_response({"tags": tags})

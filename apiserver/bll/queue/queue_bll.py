@@ -9,8 +9,10 @@ from apiserver import database
 from apiserver.database.model.task.task import Task, TaskStatus
 from apiserver.es_factory import es_factory
 from apiserver.apierrors import errors
+from apiserver.bll.project.access import ProjectAccessBLL
 from apiserver.bll.queue.queue_metrics import QueueMetrics
 from apiserver.bll.workers import WorkerBLL
+from apiserver.service_repo.auth import Identity
 from apiserver.config_repo import config
 from apiserver.database.errors import translate_errors_context
 from apiserver.database.model.queue import Queue, Entry
@@ -257,6 +259,7 @@ class QueueBLL(object):
         self,
         company_id: str,
         query_dict: dict,
+        identity: Identity,
         query: Q = None,
         max_task_entries: int = None,
         count_task_entries: bool = None,
@@ -298,11 +301,44 @@ class QueueBLL(object):
         if not res:
             return res
 
+        visible = ProjectAccessBLL.visible_project_ids(identity)
+
+        # Queued task names come from a company-wide join with no visibility awareness; redact a
+        # task's name (not its id -- queues are themselves company-wide, not project-scoped) when
+        # its project is not one the caller can see
+        if visible is not None:
+            all_task_ids = {
+                entry["task"]["id"]
+                for item in res
+                for entry in (item.get("entries") or [])
+                if entry.get("task") and entry["task"].get("id")
+            }
+            if all_task_ids:
+                task_projects = {
+                    task.id: task.project
+                    for task in Task.objects(id__in=all_task_ids).only("project")
+                }
+                for item in res:
+                    for entry in item.get("entries") or []:
+                        task = entry.get("task")
+                        if not task or not task.get("id"):
+                            continue
+                        project = task_projects.get(task["id"])
+                        if project and project not in visible:
+                            task["name"] = None
+
         if workers_requested:
             queue_workers = defaultdict(list)
             for worker in self.worker_bll.get_all(company_id):
                 for queue in worker.queues:
                     queue_workers[queue].append(worker)
+
+            def worker_task_visible(worker) -> bool:
+                return (
+                    visible is None
+                    or not worker.project
+                    or worker.project.id in visible
+                )
 
             for item in res:
                 item["workers"] = [
@@ -310,7 +346,9 @@ class QueueBLL(object):
                         "name": w.id,
                         "ip": w.ip,
                         "key": w.key,
-                        "task": w.task.to_struct() if w.task else None,
+                        "task": w.task.to_struct()
+                        if w.task and worker_task_visible(w)
+                        else None,
                     }
                     for w in queue_workers.get(item["id"], [])
                 ]

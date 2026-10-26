@@ -23,6 +23,7 @@ from apiserver.apimodels.projects import (
     EntityTypeEnum,
 )
 from apiserver.bll.organization import OrgBLL, Tags
+from apiserver.bll.project.access import ProjectAccessBLL
 from apiserver.bll.project import ProjectBLL, ProjectQueries
 from apiserver.bll.project.project_bll import pipeline_tag, reports_tag
 from apiserver.bll.project.project_cleanup import (
@@ -59,12 +60,49 @@ create_fields = {
 }
 
 
+def _visible_ids_filter(identity) -> Q:
+    """
+    Restrict a project query to the projects the caller may see. Admins are not restricted
+    """
+    visible_ids = ProjectAccessBLL.visible_project_ids(identity)
+    if visible_ids is None:
+        return Q()
+    return Q(id__in=list(visible_ids))
+
+
+def _assert_can_read(identity, project_ids: Optional[Sequence[Optional[str]]]):
+    """
+    Check read access on the given projects. Empty values (no project given) are skipped
+    """
+    for project_id in project_ids or []:
+        if project_id:
+            ProjectAccessBLL.assert_can(identity, project_id, "read")
+
+
+def _effective_projects(identity, requested: Optional[Sequence[str]]) -> Optional[Sequence[str]]:
+    """
+    `requested` falsy means "every project" to the downstream aggregate functions, which is a leak
+    for anyone but admin. Returns `requested` unchanged if given. For admin with nothing requested,
+    None (unrestricted, as before). For anyone else with nothing requested, their visible project ids,
+    which may be an empty list. Callers must treat an empty list as "nothing visible" and not pass it on,
+    because the downstream functions treat an empty list the same as None
+    """
+    if requested:
+        return requested
+    visible = ProjectAccessBLL.visible_project_ids(identity)
+    return visible if visible is None else list(visible)
+
+
 @endpoint("projects.get_by_id")
 def get_by_id(call: APICall, company: str, request: ProjectRequest):
     project_id = request.project
 
     with translate_errors_context():
-        query = Q(id=project_id) & get_company_or_none_constraint(company)
+        query = (
+            Q(id=project_id)
+            & get_company_or_none_constraint(company)
+            & _visible_ids_filter(call.identity)
+        )
         project = Project.objects(query).first()
         if not project:
             raise errors.bad_request.InvalidProjectId(id=project_id)
@@ -178,7 +216,8 @@ def get_all_ex(call: APICall, company_id: str, request: ProjectsGetRequest):
     projects: Sequence[dict] = Project.get_many_with_join(
         company=company_id,
         query_dict=data,
-        query=_hidden_query(search_hidden=request.search_hidden, ids=requested_ids),
+        query=_hidden_query(search_hidden=request.search_hidden, ids=requested_ids)
+        & _visible_ids_filter(call.identity),
         allow_public=allow_public,
         ret_params=ret_params,
     )
@@ -269,7 +308,8 @@ def get_all(call: APICall, company: str, _):
         query_dict=data,
         query=_hidden_query(
             search_hidden=data.get("search_hidden"), ids=data.get("id")
-        ),
+        )
+        & _visible_ids_filter(call.identity),
         parameters=data,
         allow_public=True,
         ret_params=ret_params,
@@ -294,6 +334,7 @@ def create(call: APICall, company: str, _):
             id=ProjectBLL.create(
                 user=identity.user,
                 company=company,
+                identity=identity,
                 **fields,
             )
         )
@@ -309,6 +350,7 @@ def update(call: APICall, company: str, request: ProjectRequest):
     :return: updated - `int` - number of projects updated
              fields - `[string]` - updated fields
     """
+    ProjectAccessBLL.assert_can(call.identity, request.project, "admin")
     fields = parse_from_call(
         call.data, create_fields, Project.get_fields(), discard_none_values=False
     )
@@ -325,12 +367,34 @@ def _reset_cached_tags(company: str, projects: Sequence[str]):
 
 @endpoint("projects.move", request_data_model=MoveRequest)
 def move(call: APICall, company: str, request: MoveRequest):
+    identity = call.identity
+    source = Project.objects(id=request.project).only("parent").first()
+    if not source:
+        # Same answer a hidden project gives, from the same place every other endpoint raises it
+        ProjectAccessBLL.assert_can(identity, request.project, "admin")
+    was_root = not source.parent
+    # Moving a root changes who governs it from here on (role resolution always follows the
+    # current root), so demoting someone's independently-owned root under another tree needs the
+    # same owner_only bar delete/merge use, not just admin, which a collaborator also has
+    ProjectAccessBLL.assert_can(
+        identity, request.project, "owner_only" if was_root else "admin"
+    )
+    ProjectAccessBLL.assert_can_admin_destination(
+        identity, company, request.new_location
+    )
+
     moved, affected_projects = ProjectBLL.move_project(
         company=company,
-        user=call.identity.user,
+        user=identity.user,
+        identity=identity,
         project_id=request.project,
         new_location=request.new_location,
     )
+
+    is_root = not Project.objects(id=request.project).only("parent").first().parent
+    if is_root != was_root:
+        # Visibility and members only apply to roots, so a project that changed root-ness starts over
+        ProjectAccessBLL.reset_access(request.project)
     _reset_cached_tags(company, projects=list(affected_projects))
 
     call.result.data = {"moved": moved}
@@ -338,6 +402,12 @@ def move(call: APICall, company: str, request: MoveRequest):
 
 @endpoint("projects.merge", request_data_model=MergeRequest)
 def merge(call: APICall, company: str, request: MergeRequest):
+    # merge removes the source project, the same as delete, so it needs the same owner_only bar
+    # (admin would let a collaborator destroy a project they don't own)
+    ProjectAccessBLL.assert_can(call.identity, request.project, "owner_only")
+    if request.destination_project:
+        ProjectAccessBLL.assert_can(call.identity, request.destination_project, "admin")
+
     moved_entitites, moved_projects, affected_projects = ProjectBLL.merge_project(
         company, source_id=request.project, destination_id=request.destination_project
     )
@@ -352,6 +422,7 @@ def merge(call: APICall, company: str, request: MergeRequest):
 
 @endpoint("projects.validate_delete")
 def validate_delete(call: APICall, company_id: str, request: ProjectRequest):
+    ProjectAccessBLL.assert_can(call.identity, request.project, "owner_only")
     call.result.data = validate_project_delete(
         company=company_id, project_id=request.project
     )
@@ -359,6 +430,7 @@ def validate_delete(call: APICall, company_id: str, request: ProjectRequest):
 
 @endpoint("projects.delete", request_data_model=DeleteRequest)
 def delete(call: APICall, company_id: str, request: DeleteRequest):
+    ProjectAccessBLL.assert_can(call.identity, request.project, "owner_only")
     res, affected_projects = delete_project(
         company=company_id,
         user=call.identity.user,
@@ -378,9 +450,16 @@ def delete(call: APICall, company_id: str, request: DeleteRequest):
 def get_unique_metric_variants(
     call: APICall, company_id: str, request: GetUniqueMetricsRequest
 ):
+    _assert_can_read(call.identity, [request.project])
+    effective = _effective_projects(
+        call.identity, [request.project] if request.project else None
+    )
+    if effective == []:
+        call.result.data = {"metrics": []}
+        return
     metrics = project_queries.get_unique_metric_variants(
         company_id,
-        [request.project] if request.project else None,
+        effective,
         include_subprojects=request.include_subprojects,
         ids=request.ids,
         model_metrics=request.model_metrics,
@@ -391,9 +470,16 @@ def get_unique_metric_variants(
 
 @endpoint("projects.get_model_metadata_keys")
 def get_model_metadata_keys(call: APICall, company_id: str, request: GetParamsRequest):
+    _assert_can_read(call.identity, [request.project])
+    effective = _effective_projects(
+        call.identity, [request.project] if request.project else None
+    )
+    if effective == []:
+        call.result.data = {"total": 0, "remaining": 0, "keys": []}
+        return
     total, remaining, keys = project_queries.get_model_metadata_keys(
         company_id,
-        project_ids=[request.project] if request.project else None,
+        project_ids=effective,
         include_subprojects=request.include_subprojects,
         page=request.page,
         page_size=request.page_size,
@@ -410,9 +496,14 @@ def get_model_metadata_keys(call: APICall, company_id: str, request: GetParamsRe
 def get_model_metadata_values(
     call: APICall, company_id: str, request: ProjectModelMetadataValuesRequest
 ):
+    _assert_can_read(call.identity, request.projects)
+    effective = _effective_projects(call.identity, request.projects)
+    if effective == []:
+        call.result.data = {"total": 0, "values": []}
+        return
     total, values = project_queries.get_model_metadata_distinct_values(
         company_id,
-        project_ids=request.projects,
+        project_ids=effective,
         key=request.key,
         include_subprojects=request.include_subprojects,
         allow_public=request.allow_public,
@@ -431,9 +522,16 @@ def get_model_metadata_values(
     request_data_model=GetParamsRequest,
 )
 def get_hyper_parameters(call: APICall, company_id: str, request: GetParamsRequest):
+    _assert_can_read(call.identity, [request.project])
+    effective = _effective_projects(
+        call.identity, [request.project] if request.project else None
+    )
+    if effective == []:
+        call.result.data = {"total": 0, "remaining": 0, "parameters": []}
+        return
     total, remaining, parameters = project_queries.get_aggregated_project_parameters(
         company_id,
-        project_ids=[request.project] if request.project else None,
+        project_ids=effective,
         include_subprojects=request.include_subprojects,
         page=request.page,
         page_size=request.page_size,
@@ -454,9 +552,14 @@ def get_hyper_parameters(call: APICall, company_id: str, request: GetParamsReque
 def get_hyperparam_values(
     call: APICall, company_id: str, request: ProjectHyperparamValuesRequest
 ):
+    _assert_can_read(call.identity, request.projects)
+    effective = _effective_projects(call.identity, request.projects)
+    if effective == []:
+        call.result.data = {"total": 0, "values": []}
+        return
     total, values = project_queries.get_task_hyperparam_distinct_values(
         company_id,
-        project_ids=request.projects,
+        project_ids=effective,
         section=request.section,
         name=request.name,
         include_subprojects=request.include_subprojects,
@@ -473,11 +576,16 @@ def get_hyperparam_values(
 
 @endpoint("projects.get_project_tags")
 def get_project_tags(call: APICall, company, request: ProjectTagsRequest):
+    _assert_can_read(call.identity, request.projects)
+    effective = _effective_projects(call.identity, request.projects)
+    if effective == []:
+        call.result.data = sort_tags_response({"tags": [], "system_tags": []})
+        return
     tags, system_tags = project_bll.get_project_tags(
         company,
         include_system=request.include_system,
         filter_=get_tags_filter_dictionary(request.filter),
-        projects=request.projects,
+        projects=effective,
     )
     call.result.data = sort_tags_response({"tags": tags, "system_tags": system_tags})
 
@@ -486,12 +594,17 @@ def get_project_tags(call: APICall, company, request: ProjectTagsRequest):
     "projects.get_task_tags", min_version="2.8", request_data_model=ProjectTagsRequest
 )
 def get_task_tags(call: APICall, company, request: ProjectTagsRequest):
+    _assert_can_read(call.identity, request.projects)
+    effective = _effective_projects(call.identity, request.projects)
+    if effective == []:
+        call.result.data = sort_tags_response({"tags": [], "system_tags": []})
+        return
     ret = org_bll.get_tags(
         company,
         Tags.Task,
         include_system=request.include_system,
         filter_=get_tags_filter_dictionary(request.filter),
-        projects=request.projects,
+        projects=effective,
     )
     call.result.data = sort_tags_response(ret)
 
@@ -500,12 +613,17 @@ def get_task_tags(call: APICall, company, request: ProjectTagsRequest):
     "projects.get_model_tags", min_version="2.8", request_data_model=ProjectTagsRequest
 )
 def get_model_tags(call: APICall, company, request: ProjectTagsRequest):
+    _assert_can_read(call.identity, request.projects)
+    effective = _effective_projects(call.identity, request.projects)
+    if effective == []:
+        call.result.data = sort_tags_response({"tags": [], "system_tags": []})
+        return
     ret = org_bll.get_tags(
         company,
         Tags.Model,
         include_system=request.include_system,
         filter_=get_tags_filter_dictionary(request.filter),
-        projects=request.projects,
+        projects=effective,
     )
     call.result.data = sort_tags_response(ret)
 
@@ -514,6 +632,11 @@ def get_model_tags(call: APICall, company, request: ProjectTagsRequest):
     "projects.make_public", min_version="2.9", request_data_model=MakePublicRequest
 )
 def make_public(call: APICall, company_id, request: MakePublicRequest):
+    # changing visibility (here, the older cross-company "public" mechanism) is Owner/Collaborator
+    # only, same bar the role matrix gives projects.set_visibility; check every id before any of
+    # them changes, so the batch is all-or-nothing like every other batch endpoint here
+    for project_id in request.ids:
+        ProjectAccessBLL.assert_can(call.identity, project_id, "admin")
     call.result.data = Project.set_public(
         company_id=company_id,
         user_id=call.identity.user,
@@ -527,6 +650,8 @@ def make_public(call: APICall, company_id, request: MakePublicRequest):
     "projects.make_private", min_version="2.9", request_data_model=MakePublicRequest
 )
 def make_private(call: APICall, company_id, request: MakePublicRequest):
+    for project_id in request.ids:
+        ProjectAccessBLL.assert_can(call.identity, project_id, "admin")
     call.result.data = Project.set_public(
         company_id=company_id,
         user_id=call.identity.user,
@@ -544,10 +669,15 @@ def make_private(call: APICall, company_id, request: MakePublicRequest):
 def get_task_parents(
     call: APICall, company_id: str, request: ProjectTaskParentsRequest
 ):
+    _assert_can_read(call.identity, request.projects)
+    effective = _effective_projects(call.identity, request.projects)
+    if effective == []:
+        call.result.data = {"parents": []}
+        return
     call.result.data = {
         "parents": ProjectBLL.get_task_parents(
             company_id,
-            projects=request.projects,
+            projects=effective,
             include_subprojects=request.include_subprojects,
             state=request.tasks_state,
             name=request.task_name,
@@ -557,11 +687,16 @@ def get_task_parents(
 
 @endpoint("projects.get_user_names")
 def get_user_names(call: APICall, company_id: str, request: ProjectUserNamesRequest):
+    _assert_can_read(call.identity, request.projects)
+    effective = _effective_projects(call.identity, request.projects)
+    if effective == []:
+        call.result.data = {"users": []}
+        return
     call.result.data = {
         "users": ProjectBLL.get_entity_users(
             company_id,
             entity_cls=Model if request.entity == EntityTypeEnum.model else Task,
-            projects=request.projects,
+            projects=effective,
             include_subprojects=request.include_subprojects,
         )
     }
