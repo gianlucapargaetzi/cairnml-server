@@ -5,7 +5,7 @@ import tempfile
 from unittest import TestCase
 from unittest import mock
 
-from apiserver.idp.secrets import DEFAULT_SESSION_SECRET, SecretMissing, session_secret
+from apiserver.idp.secrets import SecretMissing, session_secret
 
 
 class TestSessionSecret(TestCase):
@@ -16,6 +16,11 @@ class TestSessionSecret(TestCase):
         self.env.start()
         self.addCleanup(self.env.stop)
         os.environ.pop("CAIRNML_ALLOW_CONFIG_SECRET", None)
+        # stand in for the repository default, so the test never writes the real one to disk
+        self.default = "placeholder-default-session-key"
+        default_patch = mock.patch("apiserver.idp.secrets.DEFAULT_SESSION_SECRET", self.default)
+        default_patch.start()
+        self.addCleanup(default_patch.stop)
 
     def write(self, value):
         with open(os.path.join(self.dir.name, "session_secret"), "w", encoding="utf-8") as handle:
@@ -30,6 +35,6 @@ class TestSessionSecret(TestCase):
             session_secret()
 
     def test_the_repository_default_is_refused(self):
-        self.write(DEFAULT_SESSION_SECRET + "\n")
+        self.write(self.default + "\n")
         with self.assertRaises(ValueError):
             session_secret()

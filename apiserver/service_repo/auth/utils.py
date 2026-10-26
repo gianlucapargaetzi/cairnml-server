@@ -31,8 +31,3 @@ def get_secret_key(length: int = 50) -> str:
     Create a random secret key
     """
     return get_random_string(length)
-
-
-if __name__ == "__main__":
-    print(get_client_id())
-    print(get_secret_key())
