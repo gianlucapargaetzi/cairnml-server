@@ -2,7 +2,6 @@ import logging
 import logging.config
 import sys
 import os
-import platform
 from functools import reduce
 from os import getenv
 from os.path import expandvars
@@ -22,7 +21,7 @@ from apiserver.utilities import json
 
 EXTRA_CONFIG_PATHS = ("/opt/trains/config", "/opt/cairnml/config")
 DEFAULT_PREFIXES = ("cairnml", "trains")
-EXTRA_CONFIG_PATH_SEP = ":" if platform.system() != "Windows" else ";"
+EXTRA_CONFIG_PATH_SEP = ":"
 
 
 class BasicConfig:

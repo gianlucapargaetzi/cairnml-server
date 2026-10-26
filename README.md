@@ -52,10 +52,6 @@ For example, to see if port `8080` is in use:
 * Linux or macOS: 
    
         sudo lsof -Pn -i4 | grep :8080 | grep LISTEN
-
-* Windows:
-
-        netstat -an |find /i "8080"
    
 ### Launching   
     
@@ -66,7 +62,6 @@ Launch The **CairnML Server** in any of the following formats:
 - Pre-built Docker Image
     - [Linux](https://clear.ml/docs/latest/docs/deploying_clearml/clearml_server_linux_mac)
     - [macOS](https://clear.ml/docs/latest/docs/deploying_clearml/clearml_server_linux_mac)
-    - [Windows 10](https://clear.ml/docs/latest/docs/deploying_clearml/clearml_server_win)
 - Kubernetes    
     - [Kubernetes Helm](https://clear.ml/docs/latest/docs/deploying_clearml/clearml_server_kubernetes_helm)
     - Manual [Kubernetes installation](https://clear.ml/docs/latest/docs/deploying_clearml/clearml_server_kubernetes)
@@ -167,7 +162,7 @@ To upgrade your existing **CairnML Server** deployment:
    curl https://raw.githubusercontent.com/clearml/clearml-server/master/docker/docker-compose.yml -o docker-compose.yml 
    ```
 
-1. Configure the CairnML-Agent Services (not supported on Windows installation). 
+1. Configure the CairnML-Agent Services.
    If `CAIRNML_HOST_IP` is not provided, CairnML-Agent Services will use the external 
    public address of the **CairnML Server**. If `CAIRNML_AGENT_GIT_USER` / `CAIRNML_AGENT_GIT_PASS` are not provided, 
    the CairnML-Agent Services will not be able to access any private repositories for running service tasks.
