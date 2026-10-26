@@ -27,8 +27,8 @@ tests/e2e/docker/run.sh --down                 # remove the environment: contain
   earlier runs left (`system.e2e_reset`, below). Parallel runs need reuse, and the environment turns it on.
 - **Report.** Every run writes `tests/e2e/reports/e2e-report.html` and `e2e-report.md`: one row per test, with its name,
   what it checks, what it expects, its outcome, pass or fail, and how long it took. A test's expectation is the `Expect:`
-  paragraph of its docstring; a test without one is listed as not written. The runner writes the folder as root, so it
-  is root-owned on the host.
+  paragraph of its docstring; a test without one is listed as not written. The runner runs as the user who starts
+  `run.sh`, so the folder is theirs on the host.
 - **Markers** (`tests/e2e/pytest.ini`): `agent`, `docker`, `ui`, `github`, `slow`, `restart`, `xdist_group`.
 - **GitHub tests.** `CAIRNML_E2E_GITHUB_REPO=owner/name` names a repository on github.com that the GitHub App can read;
   `CAIRNML_E2E_GITHUB_PRIVATE_REPO=owner/name` names one it cannot. Without them, the `github` tests are skipped with that
