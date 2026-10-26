@@ -18,4 +18,5 @@ fi
 # The web app is built into the stack's image: put the commit that docker/build/web-ref names in web/.
 ../../../scripts/fetch-sources.sh
 docker compose -f compose.yaml up -d --build --wait dind
-exec docker compose -f compose.yaml exec -T dind sh /workspace/tests/e2e/docker/inside.sh "$@"
+# The suite writes into the repository (reports, caches), so it runs as the user who starts it, not as root.
+exec docker compose -f compose.yaml exec -T -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" dind sh /workspace/tests/e2e/docker/inside.sh "$@"

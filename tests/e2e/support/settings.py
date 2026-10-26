@@ -25,7 +25,10 @@ PREFIX = "e2e"
 
 # The real home of the user running the suite. The suite runs the SDK with a throwaway HOME, so the browsers are
 # found through this path, not through ~.
-REAL_HOME = Path(pwd.getpwuid(os.getuid()).pw_dir)
+try:
+    REAL_HOME = Path(pwd.getpwuid(os.getuid()).pw_dir)
+except KeyError:  # the runner runs as the host's uid, which has no passwd entry in its image; inside.sh sets HOME
+    REAL_HOME = Path(os.environ["HOME"])
 BROWSERS_PATH = os.environ.get("PLAYWRIGHT_BROWSERS_PATH") or str(REAL_HOME / ".cache" / "ms-playwright")
 
 
