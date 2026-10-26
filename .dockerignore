@@ -1,5 +1,13 @@
 .git
 .github
+# The stack's folders and the submodules: the image takes them as named build contexts, not from this one.
+cairnml
+cairnml-agent
+web
+deploy
+tests
+scripts
+.claude
 **/__pycache__
 **/*.pyc
 apiserver/tests

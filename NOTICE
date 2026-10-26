@@ -1,9 +1,10 @@
-cairnml-server
+CairnML
 Modifications Copyright 2026 Gianluca Pargaetzi
 
-This product is based on the ClearML Server (https://github.com/allegroai/clearml-server),
-Copyright 2025 ClearML Inc., licensed under the Server Side Public License v1 (SSPL). See LICENSE.
+CairnML is based on ClearML (https://github.com/allegroai/clearml and the repositories clearml-agent,
+clearml-server and clearml-web), Copyright 2025 ClearML Inc. This repository, the CairnML server with its
+deployment and tests, is licensed under the Server Side Public License v1 (SSPL), see LICENSE. The SDK and the
+agent are licensed under the Apache License 2.0, and so is the web app. See LICENSES.md.
 
-It is an unofficial, modified version. It is not created, sponsored, endorsed or supported by
-ClearML, Inc. "ClearML" is a trademark of ClearML, Inc. The changes made to the original code are
-recorded in this repository's history.
+It is an unofficial, modified version. It is not created, sponsored, endorsed or supported by ClearML, Inc.
+"ClearML" is a trademark of ClearML, Inc.

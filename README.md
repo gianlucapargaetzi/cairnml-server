@@ -1,204 +1,351 @@
-<div align="center">
+# CairnML
 
+Our experiment tracking, remote jobs and dataset setup, on a modified fork of [ClearML](https://clear.ml). CairnML is not ClearML and is not endorsed by ClearML, Inc.; see [DISCLAIMER.md](DISCLAIMER.md), [NOTICE](NOTICE) and [LICENSES.md](LICENSES.md).
 
-**CairnML - Auto-Magical Suite of tools to streamline your ML workflow 
-</br>Experiment Manager, ML-Ops and Data-Management**
+- **Track** a training script with a few lines of Python: metrics, parameters, logs and artifacts are recorded on our server.
+- **Explore** runs in the web app.
+- **Run** jobs on agents that we operate. A job waits in a queue until an agent that listens to that queue takes it.
+- **Version** datasets with git and DVC. A dataset is a git repository, its commit is its version, and every run records the commit it used.
+- **Sign in** with our identity provider (Keycloak). Each machine has its own key; nobody copies access keys.
 
-[![GitHub license](https://img.shields.io/badge/license-SSPL-green.svg)](https://img.shields.io/badge/license-SSPL-green.svg)
-[![Python versions](https://img.shields.io/badge/python-3.11-blue.svg)](https://img.shields.io/badge/python-3.11-blue.svg)
-[![GitHub version](https://img.shields.io/github/release-pre/cairnml/cairnml-server.svg)](https://img.shields.io/github/release-pre/cairnml/cairnml-server.svg)
-[![Artifact Hub](https://img.shields.io/endpoint?url=https://artifacthub.io/badge/repository/cairnml)](https://artifacthub.io/packages/search?repo=cairnml)
+This repository is the CairnML server, with the setup that runs it: the sign-in service, the scripts to start them, and the end-to-end suite. The SDK and the agent are submodules of it, and the web app is fetched at a pinned commit by a script (below).
 
-</div>
+## What is where
 
-## CairnML Server
+| Path | What it is |
+|---|---|
+| `apiserver/`, `docker/` | The CairnML server, and the image it builds |
+| `deploy/compose.yaml` | The whole stack: Keycloak (sign-in), and the CairnML server built from this repository |
+| `deploy/idp/realm-cairnml.json` | The realm, with the CairnML clients |
+| `deploy/scripts/bootstrap.sh` | Sets up the stack on a host |
+| `deploy/scripts/teardown.sh` | Removes the stack and this machine's keys (`--dry-run` first) |
+| `deploy/scripts/check-cairnml-secrets.sh` | Fails if a secret is committed to a CairnML repository |
+| `scripts/fetch-web.sh` | Puts the web app in `web/`, at the commit that `docker/build/web-ref` names |
+| `cairnml`, `cairnml-agent` | The SDK and the agent, as submodules |
+| `web/` (not in git) | The web app, made by `scripts/fetch-web.sh` |
+| `cairnml/docs/datasets.md` | How datasets work: `cairnml-dataset`, `Dataset.get`, outside datasets, the cache |
+| `external-datasets` (its own repository, not a submodule) | One pin file and one adapter per outside dataset (Hugging Face, git, local folders), with the tests that keep its `main` working |
 
-The **CairnML Server** is the backend service infrastructure for [CairnML](https://github.com/gianlucapargaetzi/cairnml).
-It allows multiple users to collaborate and manage their experiments.
-**CairnML** offers a [free hosted service](https://app.clear.ml/), which is maintained by **CairnML** and open to anyone.
-In order to host your own server, you will need to launch the **CairnML Server** and point **CairnML** to it.
+## Requirements
 
-The **CairnML Server** contains the following components:
+On the server host: Linux (`bootstrap.sh` uses `getent`), Docker Engine with Compose v2.20 or newer, `git`, `openssl`, `python3` and `curl`.
 
-* The **CairnML** Web-App, a single-page UI for experiment management and browsing
-* RESTful API for:
-    * Documenting and logging experiment information, statistics and results
-    * Querying experiments history, logs and results
-* Object storage (S3) for artifacts, datasets, models and debug images, served through the API server
+On the machines of users and agents: Python 3 and `git`; the SDK and agent install from PyPI (`pip install cairnml`, `pip install cairnml-agent`). Agents also need Docker for jobs that run in containers.
 
-You can quickly [deploy](#launching-the-cairnml-server)  your **CairnML Server** using Docker, AWS EC2 AMI, or Kubernetes. 
+The SDK and the agent are git submodules of this repository, on their `main` branches. The web app is not a submodule: `scripts/fetch-web.sh` checks out the commit that `docker/build/web-ref` names, into `web/`. Clone with the submodules, then fetch the web app:
 
-## System design
+```bash
+git clone --recurse-submodules git@github.com:gianlucapargaetzi/cairnml-server.git
+cd cairnml-server
+scripts/fetch-web.sh
+```
 
+The repositories are public (`gianlucapargaetzi/cairnml-server`, `cairnml`, `cairnml-agent` and `cairnml-web`), so no special access is needed.
 
+The forks do not share history with ClearML on GitHub. To compare with ClearML, add it as a remote in a fork: `git remote add upstream https://github.com/clearml/<name>.git`.
 
-The **CairnML Server** has two supported configurations:
-- Single IP (domain) with the following open ports
-    - Web application on port 8080
-    - API service on port 8008
+## 1. Server
 
-- Sub-Domain configuration with default http/s ports (80 or 443)
-    - Web application on sub-domain: app.\*.\*
-    - API service on sub-domain: api.\*.\*
-    
-## Launching The CairnML Server
+### Host names
 
-### Prerequisites
+The sign-in service and the server are reached by name, and the name must be the same on every machine. Add this line to `/etc/hosts` on the server host, and on every other machine that uses the server, with the server's address in place of `127.0.0.1` on the other machines:
 
-The ports 8080/8008 must be available for the **CairnML Server** services.
-   
-For example, to see if port `8080` is in use:
+```
+127.0.0.1 cairnml-idp cairnml
+```
 
-* Linux or macOS: 
-   
-        sudo lsof -Pn -i4 | grep :8080 | grep LISTEN
-   
-### Launching   
-    
-Launch The **CairnML Server** in any of the following formats:
+`bootstrap.sh` refuses to run until both names resolve.
 
-- Pre-built [AWS EC2 AMI](https://clear.ml/docs/latest/docs/deploying_clearml/clearml_server_aws_ec2_ami)
-- Pre-built [GCP Custom Image](https://clear.ml/docs/latest/docs/deploying_clearml/clearml_server_gcp)
-- Pre-built Docker Image
-    - [Linux](https://clear.ml/docs/latest/docs/deploying_clearml/clearml_server_linux_mac)
-    - [macOS](https://clear.ml/docs/latest/docs/deploying_clearml/clearml_server_linux_mac)
-- Kubernetes    
-    - [Kubernetes Helm](https://clear.ml/docs/latest/docs/deploying_clearml/clearml_server_kubernetes_helm)
-    - Manual [Kubernetes installation](https://clear.ml/docs/latest/docs/deploying_clearml/clearml_server_kubernetes)
+### Start
 
-## Connecting CairnML to your CairnML Server
+```bash
+cd deploy
+./scripts/bootstrap.sh
+```
 
-In order to set up the **CairnML** client to work with your **CairnML Server**:
-- Run the `cairnml-init` command for an interactive setup.
-- Or manually edit `~/cairnml.conf` file, making sure the server settings (`api_server`, `web_server`) are configured correctly, for example:
+The first run takes a while: it builds the CairnML images from this repository and the web app. It does the following, and prints nothing secret:
 
-        api {
-            # API server on port 8008
-            api_server: "http://localhost:8008"
+1. Starts Keycloak with the `cairnml` realm, and sets the admin login from `deploy/.env` (created on the first run with a generated password).
+2. Writes the CairnML secrets to `$CAIRNML_HOME/secrets/cairnml/` (once; they are kept on later runs): the token and session keys. If `$CAIRNML_HOME/secrets/github-app.pem` exists, it is copied there as the GitHub key.
+3. Creates the three CairnML clients in Keycloak (`cairnml-web`, `cairnml-sdk`, `cairnml-server`) and updates them to `deploy/idp/realm-cairnml.json` on every run. It stores the secret of `cairnml-server` (used to read users from Keycloak) in `deploy/secrets/cairnml/idp_directory_secret`.
+4. Starts the CairnML server (`deploy/compose.yaml`).
 
-            # web_server on port 8080
-            web_server: "http://localhost:8080"
-        }
+Check that the server answers:
 
-**Note**: If you have set up your **CairnML Server** in a sub-domain configuration, then there is no need to specify a port number,
-it will be inferred from the http/s scheme.
+```bash
+curl -X POST http://cairnml:8008/v2.8/login.supported_modes -H 'Content-Type: application/json' -d '{}'
+```
 
-After launching the **CairnML Server** and configuring the **CairnML** client to use the **CairnML Server**,
-you can [use](https://github.com/gianlucapargaetzi/cairnml) **CairnML** in your experiments and view them in your **CairnML Server** web server,
-for example http://localhost:8080.  
-For more information about the CairnML client, see [**CairnML**](https://github.com/gianlucapargaetzi/cairnml).
+### First sign-in
 
-## CairnML-Agent Services  <a name="services"></a> 
+Open `http://cairnml:8080`. You are sent to the sign-in page of Keycloak. Sign in as the admin user named by `KC_ADMIN` in `deploy/.env`, with the password from the same file. Your CairnML account is created at that first sign-in.
 
-As of version 0.15 of **CairnML Server**, dockerized deployment includes a **CairnML-Agent Services** container running as 
-part of the docker container collection.
+Admins are the users with the `cairnml-admin` role in Keycloak. Give other people the role, or leave them as plain users. Keycloak's admin console is at `http://cairnml-idp:8180`.
 
-CairnML-Agent Services is an extension of CairnML-Agent that provides the ability to launch long-lasting jobs 
-that previously had to be executed on local / dedicated machines. It allows a single agent to 
-launch multiple dockers (Tasks) for different use cases. To name a few use cases, auto-scaler service (spinning instances 
-when the need arises and the budget allows), Controllers (Implementing pipelines and more sophisticated DevOps logic),
-Optimizer (such as Hyper-parameter Optimization or sweeping), and Application (such as interactive Bokeh apps for 
-increased data transparency)
+### Optional: GitHub
 
-CairnML-Agent Services container will spin **any** task enqueued into the dedicated `services` queue. 
-Every task launched by CairnML-Agent Services  will be registered as a new node in the system, 
-providing tracking and transparency capabilities.  
-You can also run the CairnML-Agent Services manually, see details in [CairnML-agent services mode](https://github.com/clearml/clearml-agent#clearml-agent-services-mode-)
+Jobs that clone a GitHub repository need a GitHub App. Put its private key in `$CAIRNML_HOME/secrets/github-app.pem`, set `GITHUB_APP_ID` in `deploy/.env`, and run `./scripts/bootstrap.sh` again. Then restart the API server:
 
-**Note**: It is the user's responsibility to make sure the proper tasks are pushed into the `services` queue. 
-Do not enqueue training / inference tasks into the `services` queue, as it will put unnecessary load on the server.
+```bash
+docker compose -f deploy/compose.yaml up -d --force-recreate apiserver
+```
 
-## Advanced Functionality
+Without the App, jobs that clone a repository are refused when they are enqueued.
 
-The **CairnML Server** provides a few additional useful features, which can be manually enabled:
- 
-* [Web login authentication](https://clear.ml/docs/latest/docs/deploying_clearml/clearml_server_config#web-login-authentication)
-* [Non-responsive experiments watchdog](https://clear.ml/docs/latest/docs/deploying_clearml/clearml_server_config#non-responsive-task-watchdog)  
+Jobs that use a dataset clone its repository too. The dataset registry (the `external-datasets` repository) is the only list of dataset repositories: a job gets a read-only token for the registry and for the repositories its entries point to, and for nothing else. Name the registry and the owners whose datasets may be registered in `deploy/.env`, install the App on the registry and on the dataset repositories, and restart the API server as above:
 
-## Restarting CairnML Server
+```bash
+CAIRNML_DATASET_REGISTRY=acme/external-datasets
+CAIRNML_DATASET_OWNERS='["acme"]'
+```
 
-To restart the **CairnML Server**, you must first stop the containers, and then restart them.
+A dataset enters the registry with `cairnml-dataset register`; no server setting changes. The server reads the registry's default branch, so a new entry works about a minute after its pull request merges. A person uses their own git login.
 
-   ```bash
-   docker-compose down
-   docker-compose -f docker-compose.yml up
-   ```
+### Addresses and https
 
-## Upgrading <a name="upgrade"></a>
+The addresses are set in `deploy/compose.yaml` (`CAIRNML__apiserver__idp__*`): the web app at `http://cairnml:8080`, the API at `http://cairnml:8008`. To serve over https, change those addresses to https, and set `CAIRNML_COOKIE_SECURE=true` in `deploy/.env`. The server refuses to start with https addresses and an insecure session cookie.
 
-**CairnML Server** releases are also reflected in the [docker compose configuration file](https://github.com/clearml/clearml-server/blob/master/docker/docker-compose.yml).  
-We strongly encourage you to keep your **CairnML Server** up to date, by keeping up with the current release.
+### Keep the data
 
-**Note**: The following upgrade instructions use the Linux OS as an example.
+The stack's state is in one folder, `CAIRNML_HOME` (default `~/.local/share/cairnml`, outside the repository): `data/` holds the users, databases, logs and object storage, and `secrets/` holds the keys. Set `CAIRNML_HOME` in `deploy/.env` to move it. Back up that folder; losing `secrets/cairnml/token_secret` signs everyone out, and losing the database loses the runs.
 
-To upgrade your existing **CairnML Server** deployment:
+The GitHub App key (`secrets/github-app.pem`) cannot be created again, so no teardown mode removes it. `deploy/scripts/teardown.sh` removes the containers and images, and with `--data` the data. It never removes the secrets, `deploy/.env` or the GitHub App key. Run it with `--dry-run` first.
 
-1. Shut down the docker containers
-   ```bash
-   docker-compose down
-   ```
+### Object storage and the NAS
 
-1. We highly recommend backing up your data directory before upgrading.
+Object storage (RustFS, with the buckets `dataset`, `model`, `artifact` and `debug`) runs in this stack, on the server host, and keeps its data in `$CAIRNML_HOME/data/rustfs`. Artifacts, models and debug data move through presigned URLs. The files of datasets move through DVC, with short-lived keys that the server issues for the `dataset` bucket only (`datachunks.dataset_credentials`), so no access key is stored on a machine. Run `deploy/scripts/bootstrap.sh` again after an update: it gives the server's storage user the policy for issuing those keys. The architecture diagram (`docs/architecture/`) shows it on a separate NAS, which is not set up yet. To move it, change the `rustfs` volume in `deploy/compose.yaml` to the NAS path, and set `CAIRNML_STORAGE_PUBLIC_URL` in `deploy/.env` to an address that clients can reach.
 
-   Assuming your data directory is `/opt/cairnml`, to archive all data into `~/cairnml_backup.tgz` execute:
+## 2. Client (a person's machine)
 
-   ```bash
-   sudo tar czvf ~/cairnml_backup.tgz /opt/cairnml/data
-   ```    
+Install the SDK from PyPI, in a virtual environment:
 
-   <details>
-   <summary>Restore instructions:</summary>
+```bash
+python3 -m venv .venv
+. .venv/bin/activate
+pip install cairnml
+```
 
-   To restore this example backup, execute:
-   ```bash
-   sudo rm -R /opt/cairnml/data
-   sudo tar -xzf ~/cairnml_backup.tgz -C /opt/cairnml/data
-   ```
-   </details>
+To work on the SDK itself, install the fork from this repository instead: `pip install -e ./cairnml`.
 
-1. Download the latest `docker-compose.yml` file.
+Sign in and enrol the machine once, naming the server on the command line. Your browser opens the sign-in page, and the sign-in always asks for your credentials:
 
-   ```bash
-   curl https://raw.githubusercontent.com/clearml/clearml-server/master/docker/docker-compose.yml -o docker-compose.yml 
-   ```
+```bash
+cairnml-init --server http://cairnml:8008
+cairnml-whoami
+```
 
-1. Configure the CairnML-Agent Services.
-   If `CAIRNML_HOST_IP` is not provided, CairnML-Agent Services will use the external 
-   public address of the **CairnML Server**. If `CAIRNML_AGENT_GIT_USER` / `CAIRNML_AGENT_GIT_PASS` are not provided, 
-   the CairnML-Agent Services will not be able to access any private repositories for running service tasks.
-   
-   ```bash
-   export CAIRNML_HOST_IP=server_host_ip_here
-   export CAIRNML_AGENT_GIT_USER=git_username_here
-   export CAIRNML_AGENT_GIT_PASS=git_password_here
-   ```
+`cairnml-whoami` shows the user and the device this machine signs in as. It uses the device key, and needs no browser. The key is in `~/.cairnml/device.key` (readable by you only); the configuration is `~/cairnml.conf`. No access key is copied.
 
-1. Spin up the docker containers, it will automatically pull the latest **CairnML Server** build    
-   ```bash
-   docker-compose -f docker-compose.yml pull
-   docker-compose -f docker-compose.yml up
-   ```
+To enrol again, for example as another person, use `--force`. The previous device is revoked first:
 
-**\* If something went wrong along the way, check our FAQ: [Common Docker Upgrade Errors](https://clear.ml/docs/latest/docs/faq/).**
+```bash
+cairnml-init --server http://cairnml:8008 --force
+```
 
+To sign this machine out, revoke it and remove its key:
 
-## Community & Support
+```bash
+cairnml-logout
+```
 
-If you have any questions, look to the CairnML [FAQ](https://clear.ml/docs/latest/docs/faq), or
-tag your questions on [stackoverflow](https://stackoverflow.com/questions/tagged/cairnml) with '**cairnml**' tag.
+If the device cannot be revoked (for example, the server is unreachable), `cairnml-logout` removes nothing, and you can run it again later.
 
-For feature requests or bug reports, please use [GitHub issues](https://github.com/gianlucapargaetzi/cairnml-server/issues).
+The machine must be able to resolve `cairnml` and `cairnml-idp` to the server, as in "Host names" above.
 
-Additionally, you can always find us at *cairnml@allegro.ai*
+Check it with a short run:
 
-## License
+```python
+from cairnml import Task
 
-[Server Side Public License v1.0](https://github.com/mongodb/mongo/blob/master/LICENSE-Community.txt)
+task = Task.init(project_name="demo", task_name="first run")
+logger = task.get_logger()
+for step in range(10):
+    logger.report_scalar(title="loss", series="train", value=1.0 / (step + 1), iteration=step)
+task.close()
+```
 
-The **CairnML Server** relies on both [MongoDB](https://github.com/mongodb/mongo) and [ElasticSearch](https://github.com/elastic/elasticsearch).
-With the recent changes in both MongoDB's and ElasticSearch's OSS license, we feel it is our responsibility as a
-member of the community to support the projects we love and cherish.
-We believe the cause for the license change in both cases is more than just,
-and chose [SSPL](https://www.mongodb.com/licensing/server-side-public-license) because it is the more general and flexible of the two licenses.
+The run appears in the web app under the project `demo`, with its metrics.
 
-This is our way to say - we support you guys!
+### Datasets
+
+A dataset is a git repository with a `data/` folder. Git holds the history, DVC holds the files in the `dataset` bucket, and the commit is the version. Install the extra (Python 3.9 or newer, and `git`):
+
+```bash
+pip install "cairnml[dataset]"
+```
+
+Create an empty repository on GitHub, clone it, and inside it:
+
+```bash
+cairnml-dataset init                  # git tracking, file storage, dataset.yaml
+cp -r /path/to/measurements data/     # your files
+cairnml-dataset status                # branch, and what is new, changed or deleted
+cairnml-dataset add                   # records data/ as it is now, deleted files included
+cairnml-dataset commit -m "March measurements"   # checks the data and commits it with its footprint
+cairnml-dataset push                  # the files first, then the commit (through a pull request)
+cairnml-dataset register              # once: adds the dataset to the registry
+```
+
+A dataset must be readable in the standard format: `dataset.yaml` says `format: native` (the standard sample table is in `data/`) or names an adapter (`cairnml-dataset init --adapter <name>`). `commit` refuses data that is neither, and writes `dataset.lock.json`, a checksum record that a GitHub Action in the dataset repository verifies from git alone. See `cairnml/docs/datasets.md`.
+
+A script uses a version by its commit. The run records the repository, the commit and a hash of the files, and the files are kept in a per-user cache, so a second run does not download them again:
+
+```python
+from cairnml.datasets import Dataset
+
+data = Dataset.get("https://github.com/acme/cars-data.git", "3f2a9c1")   # a commit, not a branch, to rerun it later
+print(data.path)
+```
+
+Outside datasets (Hugging Face, git, a local folder) are read through adapters in the `external-datasets` repository, into one standard shape of samples with named modalities and typed labels:
+
+```python
+data = Dataset.get_external("coco-det")            # the latest main of external-datasets
+data = Dataset.get_external("coco-det", "a1b2c3d") # a fixed commit, to rerun an earlier run exactly
+```
+
+The cache is `~/.cairnml/cache/datasets`, limited to 50 GB by default (`cairnml-dataset cache info`, `cache limit 20GB`, `cache clean`). See `cairnml/docs/datasets.md` for the details, including how to write an adapter.
+
+To enrol a second laptop, run `cairnml-init --server ...` on it. Each machine has its own key. A lost machine is revoked by its owner or an admin with the `devices.revoke` call of the API, and its key stops working at once. There is no page for this in the web app yet.
+
+## 3. Agent (a machine that runs jobs)
+
+An agent is enrolled by an admin, because it runs other people's code.
+
+Install the agent from PyPI, in its own virtual environment:
+
+```bash
+python3 -m venv .venv
+. .venv/bin/activate
+pip install cairnml-agent
+```
+
+To work on the agent itself, install the fork from this repository instead: `pip install -e ./cairnml-agent`.
+
+Enrol it. An admin signs in when the browser opens; a non-admin is refused, and no configuration is written:
+
+```bash
+cairnml-agent init
+```
+
+Then start the agent on a queue. It takes one job at a time from the queue and runs it:
+
+```bash
+cairnml-agent daemon --queue default
+```
+
+Add `--docker` to run each job in a container, and `--gpus 0` to give the agent chosen GPUs. A machine with several GPUs can run one agent per GPU, each on its own queue. Run `cairnml-agent daemon --help` for the rest, including services mode.
+
+Each job runs with its own token, issued to this agent when the job starts. The agent renews it while the job runs, and the job never gets the agent's own token. The repository is cloned with a short-lived GitHub token for that one repository.
+
+### In a container
+
+The agent can also run as a container, in `deploy/agent/`. The agent container runs on the host's Docker daemon; it starts each job's container on a second daemon, in a privileged `dind` container. The host's daemon never runs a job and is not reachable from the jobs. Start it from `deploy/agent/`:
+
+```bash
+docker compose build agent
+docker compose up -d dind
+docker compose run --rm agent cairnml-agent init
+docker compose up -d agent
+```
+
+The server address in the agent's configuration must be reachable from inside `dind`: a LAN name or IP, not `localhost`. Only one agent may run per daemon. See `deploy/agent/README.md` for the layout, the volumes and the limits.
+
+### Queues
+
+A job waits in a queue until an agent that listens to it takes the job. The `default` queue exists from the start; create more in the web app (Workers & Queues), for example one per kind of machine.
+
+Put a task in a queue from a script, or from the web app (enqueue on the task's page):
+
+```python
+from cairnml import Task
+
+task = Task.init(project_name="demo", task_name="training")
+Task.enqueue(task, queue_name="default")       # run the recorded task on an agent
+# or: task.execute_remotely(queue_name="default")   # stop this process and run the script on an agent
+```
+
+An agent takes one job at a time, so a job waits while its agent is busy. A machine that should run several jobs at once runs several agents, each on its own queue or GPU. The Workers page shows each machine, the task it runs and its live usage, and the Queues page shows what waits. A job that is waiting but never starts has no agent listening to its queue.
+
+## 4. Web app
+
+Open `http://cairnml:8080`. To run the web app from its source for development, see `web/docs/dev-proxy.md`.
+
+The dashboard lists the projects at the top and the recent experiments at the bottom. Double-click a project to open its dashboard: the project's tasks as folders at the top, and its recent experiments at the bottom. Double-click a task folder to list its experiments, numbered in the order they were created. "All experiments" lists every experiment in the project.
+
+### Terms
+
+- **Task**: a procedure, such as "train model X". Its runs are experiments, and they are grouped under it by name.
+- **Experiment**: one execution of a task. Each run is an experiment, whether it was started from the web app, with `execute_remotely()` or `enqueue()`, or run locally with `Task.init`. Each experiment has its own id, metrics and artifacts.
+- **Job**: one experiment taken from a queue by an agent, from the moment the agent starts it until it ends.
+
+In the SDK and the API, the record of an experiment is still called a `Task`.
+
+## 5. Checks
+
+- `deploy/scripts/check-cairnml-secrets.sh` fails if a secret, a private key or an `.env` file is committed to one of the CairnML repositories.
+
+## 6. Troubleshooting
+
+| Symptom | What to do |
+|---|---|
+| `bootstrap.sh` asks you to add a host line | Add the line from "Host names", then run it again |
+| The server does not answer after bootstrap | Elasticsearch takes a minute to start. Check `docker compose -f deploy/compose.yaml logs apiserver` |
+| Sign-in loops, or the web app shows a sign-in error | The addresses in `deploy/compose.yaml` must match the address you use in the browser |
+| `cairnml-init` says the machine is enrolled | The key file `~/.cairnml/device.key` exists. Remove it only to enrol again, and revoke the old device in the web app |
+| `cairnml-agent init` is refused | Only an admin may enrol an agent. Ask an admin to run it |
+| A job is refused when it is enqueued | The repository's commit is not on GitHub, or the GitHub App is not installed on it. The message says which |
+| A job stays queued | No agent listens to its queue. Start `cairnml-agent daemon --queue <name>`, and look for the worker on the Workers page |
+| `Dataset.get` says a commit is not on the repository, or its files are not in storage | Push it: `cairnml-dataset push`. A commit that exists only on one machine cannot be used by another |
+| `cairnml-dataset commit` says the data is not native and names no adapter | `dataset.yaml` must say `format: native` (with `samples.parquet` and `manifest.json` in `data/`) or `adapter: <name>`. Run `cairnml-dataset check` to see what is wrong |
+| `push` says the footprint does not hold | The data or `dataset.yaml` changed after the check. Run `cairnml-dataset commit` again |
+| An adapter stops a run with a message that names it | The source changed its layout. Add an adapter for the new revisions and list them under `overrides` in the dataset's pin file in `external-datasets` |
+
+## 7. Status
+
+The setup is complete. Not yet verified end to end on a live stack: the browser sign-in for each kind of machine, and a job from enqueue through to its artifacts.
+
+## 8. Tests
+
+Two kinds: unit tests in each fork, and the end-to-end suite in `tests/e2e/`, which starts its own stack and checks the
+whole workflow against it (see [docs/e2e_testing/E2E.md](docs/e2e_testing/E2E.md) and [docs/e2e_testing/E2E_TESTS.md](docs/e2e_testing/E2E_TESTS.md)).
+
+### Unit tests
+
+| Fork | Command | Notes |
+|---|---|---|
+| `cairnml` (SDK) | `cd cairnml && python -m pytest tests` | Runs without services. The dataset tests start git and need `pyarrow` (the dataset extra); the run takes a minute or two. |
+| `cairnml-agent` | `cd cairnml-agent && python -m pytest tests --ignore=tests/requirements` | Needs the fork installed (`pip install -e .`). `tests/package` needs a running server and is left out. |
+| `cairnml-server` (this repository) | `python -m pytest -m "not integration" apiserver/tests` | Needs Redis (`CAIRNML_REDIS_SERVICE_HOST`, `CAIRNML_REDIS_SERVICE_PORT`) and the packages in `apiserver/requirements.lock`. Tests marked `integration` need MongoDB and Elasticsearch or a running API server, and run in the end-to-end suite. |
+| `cairnml-web` (`web/`) | `cd web && npm ci && npm test` | Karma, which needs Chrome. Not run in the last check. |
+
+The server's `integration` tests (MongoDB, Elasticsearch or a running API server) run in the end-to-end stack's compose project, whose services are on a private network. CI runs the unit tests of each repository on each pull request.
+
+### Working on the SDK and the agent, not the release
+
+`scripts/dev-env.sh` creates `.venv` with the SDK and the agent installed editable from their submodules, and the server's other requirements. Every test and script then runs the working tree, from the root or from any folder. The SDK's dataset extra is `dvc` and `pyarrow`; `dev-env.sh` installs `pyarrow` only, because `dvc` needs `dpath` 2 and the server pins `dpath` below 2.
+
+`scripts/build-dev-wheels.sh` builds the SDK and the agent from the working trees into `dist/dev`, versioned `<version>+dev.<commit>` (with `.dirty` when a tree has uncommitted changes). Another machine or agent installs them with `pip install --find-links dist/dev cairnml cairnml-agent`. They are local builds and are never uploaded.
+
+The stack builds its server image from these source trees: `CAIRNML_FROM=source` in `deploy/compose.yaml` and in the end-to-end stack. The Docker Hub image is built from `requirements.lock` (`CAIRNML_FROM=pypi`).
+
+### Release order
+
+A change to the SDK or the agent reaches the server image in this order: release the SDK and the agent (bump `version.py`, tag `vX.Y.Z`; the publish workflow puts the package on PyPI), regenerate `apiserver/requirements.lock` for the new versions, then tag the server (the Docker Hub image is built from the lock).
+
+### End-to-end tests
+
+Prerequisites, and the full list of what the suite checks, are in [docs/e2e_testing/E2E.md](docs/e2e_testing/E2E.md). In short:
+
+```bash
+uv venv .venv --python 3.12
+uv pip install -r tests/e2e/requirements.txt
+uv pip install -e ./cairnml -e ./cairnml-agent
+playwright install chromium
+
+.venv/bin/pytest tests/e2e                 # everything: starts its own stack, an hour or more
+.venv/bin/pytest tests/e2e -m "not slow"   # without the long checks
+.venv/bin/pytest tests/e2e -k artifacts    # one area
+```
+
+The suite does not use `deploy/`. It needs Docker, nine free ports in 18000 to 18999 on the loopback interface, the SDK and the agent checked out as submodules, and the web app in `web/` (`scripts/fetch-web.sh`). Known failures are listed in [docs/e2e_testing/E2E_TESTS.md](docs/e2e_testing/E2E_TESTS.md) and as issues in each fork.
