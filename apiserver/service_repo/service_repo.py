@@ -44,11 +44,11 @@ class ServiceRepo(object):
 
     _endpoint_exp = (
         re.compile(
-            r"^/?v(?P<endpoint_version>\d+\.?\d+)/(?P<endpoint_name>[a-zA-Z_]\w+\.[a-zA-Z_]\w+)/?$"
+            r"^/?v(?P<endpoint_version>(?:\d+\.\d+|\d{2,}))/(?P<endpoint_name>[a-zA-Z_]\w+\.[a-zA-Z_]\w+)/?$"
         )
         if config.get("apiserver.version.required")
         else re.compile(
-            r"^/?(v(?P<endpoint_version>\d+\.?\d+)/)?(?P<endpoint_name>[a-zA-Z_]\w+\.[a-zA-Z_]\w+)/?$"
+            r"^/?(v(?P<endpoint_version>(?:\d+\.\d+|\d{2,}))/)?(?P<endpoint_name>[a-zA-Z_]\w+\.[a-zA-Z_]\w+)/?$"
         )
     )
     """ 
