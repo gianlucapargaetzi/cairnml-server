@@ -32,7 +32,7 @@ services:
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_ADMIN:-kcadmin}
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_ADMIN_PASSWORD:?set KC_ADMIN_PASSWORD in deploy/.env}
-      KC_HOSTNAME: http://${CAIRNML_HOST:?set CAIRNML_HOST in deploy/.env}:8180
+      KC_HOSTNAME: http://${CAIRNML_HOST:-localhost}:8180
       KC_HTTP_PORT: "8180"
       KC_HOSTNAME_STRICT: "false"
       KC_HTTP_ENABLED: "true"
@@ -183,7 +183,7 @@ services:
       CAIRNML_REDIS_SERVICE_HOST: redis
       CAIRNML_REDIS_SERVICE_PORT: 6379
       CAIRNML_SERVER_DEPLOYMENT_TYPE: linux
-      CAIRNML__apiserver__idp__issuer: http://${CAIRNML_HOST:?set CAIRNML_HOST in deploy/.env}:8180/realms/cairnml
+      CAIRNML__apiserver__idp__issuer: http://${CAIRNML_HOST:-localhost}:8180/realms/cairnml
       CAIRNML__apiserver__idp__public_url: http://${CAIRNML_HOST}:8008
       CAIRNML__apiserver__idp__web_url: http://${CAIRNML_HOST}:8080
       CAIRNML__apiserver__idp__web_client_id: cairnml-web
