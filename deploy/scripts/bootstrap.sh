@@ -46,6 +46,10 @@ if [ ! -f "$STATE/secrets/github-app.pem" ] && [ -f secrets/github-app.pem ]; th
 fi
 mkdir -p "$STATE/secrets/cairnml"
 
+# Remove this stack's containers and networks first, so a rerun starts clean and no stale or duplicate containers are
+# left behind. The data stays: it lives in $STATE (bind mounts), and -v is not used, so volumes are kept too.
+docker compose down --remove-orphans
+
 # The realm names this server by CAIRNML_HOST (the redirect addresses of the web app and the API). Keycloak imports
 # the rendered copy, and the clients below are updated from it.
 mkdir -p "$STATE/idp"
