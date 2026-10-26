@@ -13,23 +13,26 @@ command -v openssl >/dev/null || { echo "openssl is required" >&2; exit 1; }
 command -v python3 >/dev/null || { echo "python3 is required" >&2; exit 1; }
 command -v curl >/dev/null || { echo "curl is required" >&2; exit 1; }
 
-# The host names must resolve to this machine, so the host sees the same URLs as the containers.
-missing=()
-for host in cairnml-idp cairnml; do
-  getent hosts "$host" | grep -q '^127\.0\.0\.1\|^::1' || missing+=("$host")
-done
-if [ "${#missing[@]}" -gt 0 ]; then
-  echo "Add this line to /etc/hosts, then re-run:" >&2
-  echo "  127.0.0.1 ${missing[*]}" >&2
-  exit 1
-fi
-
 if [ ! -f .env ]; then
   cp .env.example .env
   sed -i "s|^KC_ADMIN_PASSWORD=.*|KC_ADMIN_PASSWORD=$(openssl rand -hex 16)|" .env
   echo "wrote deploy/.env with a generated Keycloak admin password"
 fi
 set -a; . ./.env; set +a
+
+# The address that browsers, the SDK and agents use to reach this server. Empty in deploy/.env: this machine's IPv4
+# address, written back to deploy/.env so that later runs keep it.
+if [ -z "${CAIRNML_HOST:-}" ]; then
+  CAIRNML_HOST=$(ip -4 route get 1.1.1.1 | sed -n 's/.* src \([0-9.]*\).*/\1/p' | head -n1)
+  [ -n "$CAIRNML_HOST" ] || { echo "could not find this machine's IP address: set CAIRNML_HOST in deploy/.env" >&2; exit 1; }
+  if grep -q '^CAIRNML_HOST=' .env; then
+    sed -i "s|^CAIRNML_HOST=.*|CAIRNML_HOST=$CAIRNML_HOST|" .env
+  else
+    echo "CAIRNML_HOST=$CAIRNML_HOST" >> .env
+  fi
+  echo "CAIRNML_HOST=$CAIRNML_HOST (written to deploy/.env)"
+fi
+export CAIRNML_HOST
 
 # The stack's state (data and secrets) lives outside the repository: CAIRNML_HOME, default ~/.local/share/cairnml.
 # Set it in deploy/.env to put it somewhere else. The GitHub App key used to be deploy/secrets/github-app.pem: it is
@@ -42,6 +45,11 @@ if [ ! -f "$STATE/secrets/github-app.pem" ] && [ -f secrets/github-app.pem ]; th
   echo "copied the GitHub App key to $STATE/secrets/ (the old copy in deploy/secrets is kept)"
 fi
 mkdir -p "$STATE/secrets/cairnml"
+
+# The realm names this server by CAIRNML_HOST (the redirect addresses of the web app and the API). Keycloak imports
+# the rendered copy, and the clients below are updated from it.
+mkdir -p "$STATE/idp"
+sed "s|http://cairnml:|http://$CAIRNML_HOST:|g" idp/realm-cairnml.json > "$STATE/idp/realm-cairnml.json"
 
 # The identity provider keeps its data in a host folder; its container runs as uid 1000.
 mkdir -p "$STATE/data/idp"
@@ -103,9 +111,9 @@ docker run --rm -v "$STATE/data/rustfs:/data" alpine:3.20 sh -c 'chown -R 10001:
 # The realm is imported only on Keycloak's first start, so the CairnML clients are created here, and
 # updated to the realm file on every run. The directory client's secret is written once, to $CAIRNML_HOME/secrets/cairnml.
 clients_dir=$(mktemp -d)
-python3 - "$clients_dir" <<'PY'
+python3 - "$clients_dir" "$STATE/idp/realm-cairnml.json" <<'PY'
 import json, pathlib, sys
-realm = json.load(open("idp/realm-cairnml.json"))
+realm = json.load(open(sys.argv[2]))
 out = pathlib.Path(sys.argv[1])
 for client in realm["clients"]:
     if client["clientId"].startswith("cairnml-"):
@@ -162,9 +170,9 @@ docker compose up -d --build
 
 echo "waiting for the CairnML server..."
 for _ in $(seq 1 90); do
-  curl -fsS -X POST "http://cairnml:8008/v2.8/login.supported_modes" \
+  curl -fsS -X POST "http://$CAIRNML_HOST:8008/v2.8/login.supported_modes" \
     -H 'Content-Type: application/json' -d '{}' >/dev/null 2>&1 && { echo "CairnML server is up"; break; }
   sleep 2
 done
-echo "CairnML: web http://cairnml:8080, API http://cairnml:8008"
+echo "CairnML: web http://$CAIRNML_HOST:8080, API http://$CAIRNML_HOST:8008"
 echo "next: sign in as $KC_ADMIN, then follow the client and agent steps in README.md"
