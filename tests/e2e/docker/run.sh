@@ -16,6 +16,6 @@ if [ "$1" = "--down" ]; then
 fi
 
 # The web app is built into the stack's image: put the commit that docker/build/web-ref names in web/.
-../../../scripts/fetch-web.sh
+../../../scripts/fetch-sources.sh
 docker compose -f compose.yaml up -d --build --wait dind
 exec docker compose -f compose.yaml exec -T dind sh /workspace/tests/e2e/docker/inside.sh "$@"

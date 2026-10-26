@@ -41,7 +41,7 @@ REALM_TEMPLATE = REPO / "deploy" / "idp" / "realm-cairnml.json"
 STORAGE_SCRIPT = REPO / "deploy" / "storage" / "init.py"
 NGINX_TEMPLATE = REPO / "docker" / "build" / "internal_files" / "cairnml.conf.template"
 WEB_DIR = Path(os.environ.get("CAIRNML_WEB_DIR") or REPO / "web")
-SOURCE_REPOS = (REPO, WEB_DIR)
+SOURCE_REPOS = (REPO, REPO / "cairnml", REPO / "cairnml-agent", WEB_DIR)
 ADMIN_NAME = "e2e-admin"
 
 # A reused stack lives here: its state folder, its ports and accounts (stack.json), and the lock for starting it.

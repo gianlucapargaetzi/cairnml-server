@@ -8,7 +8,7 @@ Our experiment tracking, remote jobs and dataset setup, on a modified fork of [C
 - **Version** datasets with git and DVC. A dataset is a git repository, its commit is its version, and every run records the commit it used.
 - **Sign in** with our identity provider (Keycloak). Each machine has its own key; nobody copies access keys.
 
-This repository is the CairnML server, with the setup that runs it: the sign-in service, the scripts to start them, and the end-to-end suite. The SDK and the agent are submodules of it, and the web app is fetched at a pinned commit by a script (below).
+This repository is the CairnML server, with the setup that runs it: the sign-in service, the scripts to start them, and the end-to-end suite. The SDK, the agent and the web app are fetched by a script, each at the commit that its pin file names (below).
 
 ## What is where
 
@@ -20,11 +20,11 @@ This repository is the CairnML server, with the setup that runs it: the sign-in 
 | `deploy/scripts/bootstrap.sh` | Sets up the stack on a host |
 | `deploy/scripts/teardown.sh` | Removes the stack and this machine's keys (`--dry-run` first) |
 | `deploy/scripts/check-cairnml-secrets.sh` | Fails if a secret is committed to a CairnML repository |
-| `scripts/fetch-web.sh` | Puts the web app in `web/`, at the commit that `docker/build/web-ref` names |
-| `cairnml`, `cairnml-agent` | The SDK and the agent, as submodules |
-| `web/` (not in git) | The web app, made by `scripts/fetch-web.sh` |
+| `scripts/fetch-sources.sh` | Puts the SDK, the agent and the web app in their folders, each at the commit its file in `docker/build/` names |
+| `docker/build/sdk-ref`, `agent-ref`, `web-ref` | The pins: the commit of each repository that this one builds from |
+| `cairnml/`, `cairnml-agent/`, `web/` (not in git) | The SDK, the agent and the web app, made by `scripts/fetch-sources.sh` |
 | `cairnml/docs/datasets.md` | How datasets work: `cairnml-dataset`, `Dataset.get`, outside datasets, the cache |
-| `external-datasets` (its own repository, not a submodule) | One pin file and one adapter per outside dataset (Hugging Face, git, local folders), with the tests that keep its `main` working |
+| `external-datasets` (its own repository, not a clone here) | One pin file and one adapter per outside dataset (Hugging Face, git, local folders), with the tests that keep its `main` working |
 
 ## Requirements
 
@@ -32,12 +32,12 @@ On the server host: Linux (`bootstrap.sh` uses `getent`), Docker Engine with Com
 
 On the machines of users and agents: Python 3 and `git`; the SDK and agent install from PyPI (`pip install cairnml`, `pip install cairnml-agent`). Agents also need Docker for jobs that run in containers.
 
-The SDK and the agent are git submodules of this repository, on their `main` branches. The web app is not a submodule: `scripts/fetch-web.sh` checks out the commit that `docker/build/web-ref` names, into `web/`. Clone with the submodules, then fetch the web app:
+`docker/build/sdk-ref`, `agent-ref` and `web-ref` each name a commit of one repository, and `scripts/fetch-sources.sh` clones those commits into `cairnml/`, `cairnml-agent/` and `web/`. Clone this repository, then run the script:
 
 ```bash
-git clone --recurse-submodules git@github.com:gianlucapargaetzi/cairnml-server.git
+git clone git@github.com:gianlucapargaetzi/cairnml-server.git
 cd cairnml-server
-scripts/fetch-web.sh
+scripts/fetch-sources.sh
 ```
 
 The repositories are public (`gianlucapargaetzi/cairnml-server`, `cairnml`, `cairnml-agent` and `cairnml-web`), so no special access is needed.
@@ -323,7 +323,7 @@ The server's `integration` tests (MongoDB, Elasticsearch or a running API server
 
 ### Working on the SDK and the agent, not the release
 
-`scripts/dev-env.sh` creates `.venv` with the SDK and the agent installed editable from their submodules, and the server's other requirements. Every test and script then runs the working tree, from the root or from any folder. The SDK's dataset extra is `dvc` and `pyarrow`; `dev-env.sh` installs `pyarrow` only, because `dvc` needs `dpath` 2 and the server pins `dpath` below 2.
+`scripts/dev-env.sh` creates `.venv` with the SDK and the agent installed editable from their folders, and the server's other requirements. Every test and script then runs the working tree, from the root or from any folder. The SDK's dataset extra is `dvc` and `pyarrow`; `dev-env.sh` installs `pyarrow` only, because `dvc` needs `dpath` 2 and the server pins `dpath` below 2.
 
 `scripts/build-dev-wheels.sh` builds the SDK and the agent from the working trees into `dist/dev`, versioned `<version>+dev.<commit>` (with `.dirty` when a tree has uncommitted changes). Another machine or agent installs them with `pip install --find-links dist/dev cairnml cairnml-agent`. They are local builds and are never uploaded.
 
@@ -348,4 +348,4 @@ playwright install chromium
 .venv/bin/pytest tests/e2e -k artifacts    # one area
 ```
 
-The suite does not use `deploy/`. It needs Docker, nine free ports in 18000 to 18999 on the loopback interface, the SDK and the agent checked out as submodules, and the web app in `web/` (`scripts/fetch-web.sh`). Known failures are listed in [docs/e2e_testing/E2E_TESTS.md](docs/e2e_testing/E2E_TESTS.md) and as issues in each fork.
+The suite does not use `deploy/`. It needs Docker, nine free ports in 18000 to 18999 on the loopback interface, the SDK, the agent and the web app in their folders (`scripts/fetch-sources.sh`). Known failures are listed in [docs/e2e_testing/E2E_TESTS.md](docs/e2e_testing/E2E_TESTS.md) and as issues in each repository.

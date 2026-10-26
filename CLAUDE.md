@@ -12,7 +12,7 @@ Name the new versions in the pull request description.
 
 # UI styling guide
 
-The UI is the CairnML web app in our fork `cairnml-web`, which `scripts/fetch-web.sh` puts in `web/` (not a submodule). Its guide is `web/CLAUDE.md`: page layout, which component to use for what, buttons, colour, type, spacing, and a checklist.
+The UI is the CairnML web app in our fork `cairnml-web`, which `scripts/fetch-sources.sh` puts in `web/`. Its guide is `web/CLAUDE.md`: page layout, which component to use for what, buttons, colour, type, spacing, and a checklist.
 
 Before you change or add a page, read `web/CLAUDE.md` and look at the running app: a page that already exists is the reference for spacing, components and theme. Check light and dark mode.
 
@@ -20,4 +20,4 @@ Before you change or add a page, read `web/CLAUDE.md` and look at the running ap
 
 Every feature starts from `main`. Create its branch from an up-to-date `main`, never from another feature branch.
 
-Name the branch `feature/<short-name>` (lowercase, hyphens, e.g. `feature/job-retries`). Use the same name in this repository and in each submodule the feature touches (`cairnml`, `cairnml-server`, `cairnml-web`, `cairnml-agent`), so one feature is one branch name everywhere. Repositories the feature does not touch get no branch.
+Name the branch `feature/<short-name>` (lowercase, hyphens, e.g. `feature/job-retries`). Use the same name in each repository the feature touches (`cairnml`, `cairnml-server`, `cairnml-web`, `cairnml-agent`), so one feature is one branch name everywhere. Repositories the feature does not touch get no branch.

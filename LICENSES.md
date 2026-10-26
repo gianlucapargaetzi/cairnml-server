@@ -4,9 +4,9 @@ This repository is the CairnML server and the setup that runs it. All of it is l
 
 | Component | Path | License |
 |---|---|---|
-| Server, deployment, tests, docs (this repository) | everything here except the submodules | Server Side Public License v1 (`LICENSE`) |
-| SDK | `cairnml/` (submodule) | Apache License 2.0 (its own `LICENSE`) |
-| Agent | `cairnml-agent/` (submodule) | Apache License 2.0 (its own `LICENSE`) |
+| Server, deployment, tests, docs (this repository) | everything here except the fetched folders below | Server Side Public License v1 (`LICENSE`) |
+| SDK | `cairnml/` (fetched, not part of this repository) | Apache License 2.0 (its own `LICENSE`) |
+| Agent | `cairnml-agent/` (fetched, not part of this repository) | Apache License 2.0 (its own `LICENSE`) |
 | Web app | `web/` (fetched, not part of this repository) | Apache License 2.0 (its own `LICENSE`) |
 
 The code is based on ClearML, Copyright 2025 ClearML Inc.; see [NOTICE](NOTICE).

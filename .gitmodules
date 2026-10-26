@@ -1,8 +1,0 @@
-[submodule "cairnml"]
-	path = cairnml
-	url = git@github.com:gianlucapargaetzi/cairnml.git
-	branch = main
-[submodule "cairnml-agent"]
-	path = cairnml-agent
-	url = git@github.com:gianlucapargaetzi/cairnml-agent.git
-	branch = main

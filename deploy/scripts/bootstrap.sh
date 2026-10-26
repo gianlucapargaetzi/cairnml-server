@@ -5,7 +5,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 # The web app is built into the server image: put the commit that docker/build/web-ref names in web/.
-../scripts/fetch-web.sh
+../scripts/fetch-sources.sh
 
 command -v docker >/dev/null || { echo "docker is required" >&2; exit 1; }
 docker compose version >/dev/null || { echo "docker compose v2.20+ is required" >&2; exit 1; }

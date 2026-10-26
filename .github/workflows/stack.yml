@@ -27,7 +27,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - name: Every submodule is pinned at a commit on its main branch
+      - name: Every pin is a commit on the main branch of its repository
         env:
           GH_TOKEN: ${{ github.token }}
         run: scripts/check-pins.sh

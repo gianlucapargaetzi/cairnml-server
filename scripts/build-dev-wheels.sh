@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds wheels of the SDK and the agent from the working trees of their submodules, for a machine or an agent that is not
+# Builds wheels of the SDK and the agent from the working trees of their folders, for a machine or an agent that is not
 # this checkout:
 #   pip install --find-links dist/dev cairnml cairnml-agent
 # The version is the one in version.py with a local label: 0.0.1+dev.<commit>, and .dirty when the tree has changes. A

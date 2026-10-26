@@ -4,8 +4,8 @@
 # there apply to every service. By hand, from deploy/:
 #   docker compose up -d --build
 #
-# The server is this repository. The SDK and the agent are its submodules (cairnml, cairnml-agent). The web app is
-# fetched to web/ by scripts/fetch-web.sh, at the commit that docker/build/web-ref names (or CAIRNML_WEB_DIR).
+# The server is this repository. The SDK, the agent and the web app are fetched by scripts/fetch-sources.sh, each at the
+# commit its file in docker/build/ names (the web app can come from CAIRNML_WEB_DIR instead).
 # The stack's data and secrets live in CAIRNML_HOME (default ~/.local/share/cairnml), outside this repository.
 # The service names are the ones the fork's web server expects (it finds the API server by name).
 name: cairnml

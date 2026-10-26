@@ -31,5 +31,7 @@ node_modules/
 .playwright-mcp/
 graphify-out/
 
-# The web app, fetched at the commit named in docker/build/web-ref (scripts/fetch-web.sh)
-web/
+# The repositories fetched at the commits named in docker/build/ (scripts/fetch-sources.sh)
+/cairnml/
+/cairnml-agent/
+/web/

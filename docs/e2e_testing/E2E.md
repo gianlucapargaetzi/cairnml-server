@@ -41,7 +41,7 @@ file does, and it requires an admin.
 ### Running on the host (not the isolated environment)
 
 `.venv/bin/pytest tests/e2e` still runs the suite on the host's Docker daemon, with the stack on the host's loopback
-interface. It needs Docker with Compose v2, the SDK and the agent as submodules, the web app in `web/` (`scripts/fetch-web.sh`), Python 3.12 with the suite's requirements and the
+interface. It needs Docker with Compose v2, the SDK, the agent and the web app fetched by `scripts/fetch-sources.sh`, Python 3.12 with the suite's requirements and the
 SDK and the agent (`uv pip install -r tests/e2e/requirements.txt`, then `uv pip install -e ./cairnml -e ./cairnml-agent`),
 Chromium for Playwright, and nine free ports in 18000 to 18999. It has not been run since the isolated environment was
 built, and the isolated environment is the one to use. Its job containers run on the host's daemon (see Limits).
@@ -56,7 +56,7 @@ nothing else, and nothing inside it is published to the host.
 |---|---|
 | host | `docker compose -f tests/e2e/docker/compose.yaml up dind`, then `inside.sh` runs in it. Nothing else. |
 | `dind` (privileged) | Its daemon runs every container below. Its filesystem holds `/workspace` (the repository, mounted from the host), `/e2e-state` and `/e2e-cache` (volumes), and the images it pulls and builds. |
-| runner (in `dind`) | Built by `inside.sh` from `runner.Dockerfile`: the test venv (the suite, the SDK and the agent from the submodules, editable), Chromium, the Docker CLI and Compose, git. It runs `pytest`, the managed agent and the browser. |
+| runner (in `dind`) | Built by `inside.sh` from `runner.Dockerfile`: the test venv (the suite, the SDK and the agent from their folders, editable), Chromium, the Docker CLI and Compose, git. It runs `pytest`, the managed agent and the browser. |
 | stack (in `dind`) | The CairnML stack from `stack/compose.yaml`, started by the suite with the Compose plugin of the runner, against the daemon of `dind`. |
 | job containers (in `dind`) | Started by the agent, through the same daemon. |
 
