@@ -9,6 +9,8 @@
 <p align="center">
   <a href="https://github.com/gianlucapargaetzi/cairnml-server/actions/workflows/ci.yml"><img src="https://github.com/gianlucapargaetzi/cairnml-server/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://github.com/gianlucapargaetzi/cairnml-server/releases"><img src="https://img.shields.io/github/v/release/gianlucapargaetzi/cairnml-server?style=flat-square&color=blue" alt="Release"></a>
+  <a href="https://hub.docker.com/r/gianlucapargaetzi/cairnml-server"><img src="https://img.shields.io/docker/v/gianlucapargaetzi/cairnml-server?style=flat-square&logo=docker&logoColor=white&sort=semver&label=docker%20image" alt="Docker image"></a>
+  <a href="https://hub.docker.com/r/gianlucapargaetzi/cairnml-server"><img src="https://img.shields.io/docker/pulls/gianlucapargaetzi/cairnml-server?style=flat-square&logo=docker&logoColor=white&label=docker%20pulls" alt="Docker pulls"></a>
   <a href="https://github.com/gianlucapargaetzi/cairnml-server/stargazers"><img src="https://img.shields.io/github/stars/gianlucapargaetzi/cairnml-server?style=flat-square&logo=github" alt="GitHub stars"></a>
   <a href="https://github.com/gianlucapargaetzi/cairnml-server/blob/main/LICENSE"><img src="https://img.shields.io/github/license/gianlucapargaetzi/cairnml-server?style=flat-square&color=green" alt="License"></a>
 </p>
