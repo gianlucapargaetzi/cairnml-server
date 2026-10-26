@@ -40,6 +40,7 @@ def get_all(call: APICall, company_id: str, request: GetAllRequest):
         workers=worker_bll.get_all_with_projection(
             company_id,
             request.last_seen,
+            identity=call.identity,
             tags=request.tags,
             system_tags=request.system_tags,
             worker_pattern=request.worker_pattern,

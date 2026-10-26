@@ -31,6 +31,7 @@ from apiserver.bll.event.history_plots_iterator import HistoryPlotsIterator
 from apiserver.bll.event.metric_debug_images_iterator import MetricDebugImagesIterator
 from apiserver.bll.event.metric_plots_iterator import MetricPlotsIterator
 from apiserver.bll.model import ModelBLL
+from apiserver.bll.project.access import ProjectAccessBLL
 from apiserver.bll.task.utils import get_many_tasks_for_writing
 from apiserver.bll.util import parallel_chunked_decorator
 from apiserver.database import utils as dbutils
@@ -124,7 +125,25 @@ class EventBLL(object):
 
                 query = Q(id__in=requested_ids) & locked_q
                 if model:
-                    ids = Model.objects(query & Q(company=company_id)).scalar("id")
+                    candidates = Model.objects(query & Q(company=company_id)).only(
+                        "id", "project", "user"
+                    )
+                    ids = set()
+                    for candidate in candidates:
+                        if candidate.project:
+                            try:
+                                ProjectAccessBLL.assert_can(
+                                    identity,
+                                    candidate.project,
+                                    "write",
+                                    object_owner=candidate.user,
+                                )
+                            except (
+                                errors.bad_request.InvalidProjectId,
+                                errors.forbidden.NoWritePermission,
+                            ):
+                                continue
+                        ids.add(candidate.id)
                 else:
                     ids = {
                         t.id

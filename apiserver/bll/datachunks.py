@@ -265,17 +265,6 @@ def _stored_sha256(client, chunk: Datachunk) -> str:
     return digest.hexdigest()
 
 
-def check_read_access(*, company: str, task_id: str, job_task) -> None:
-    """Reading data needs the same kind of access as writing it: a job token reads only its own task's data,
-    and any other caller must belong to the company that owns the task."""
-    from apiserver.database.model.task.task import Task
-
-    if job_task is not None and job_task != task_id:
-        raise errors.unauthorized.InvalidToken("a job token only reads its own task's data")
-    if not Task.objects(id=task_id, company=company).only("id").first():
-        raise errors.bad_request.InvalidTaskId(id=task_id)
-
-
 def find_stored(*, company: str, task_id: str, kind: str, name: str) -> Datachunk:
     """The newest stored object for a task, kind and name. Re-uploads replace it once committed."""
     chunk = (

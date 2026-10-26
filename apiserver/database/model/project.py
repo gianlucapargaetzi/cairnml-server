@@ -1,9 +1,29 @@
-from mongoengine import StringField, DateTimeField, IntField, ListField
+from mongoengine import StringField, DateTimeField, IntField, ListField, EmbeddedDocument, EmbeddedDocumentListField
 
 from apiserver.database import Database, strict
 from apiserver.database.fields import StrippedStringField, SafeSortedListField
 from apiserver.database.model import AttributedDocument
 from apiserver.database.model.base import GetMixin
+from apiserver.database.utils import get_options
+
+
+class ProjectRole(object):
+    collaborator = "collaborator"
+    read_write = "read_write"
+    read = "read"
+
+
+class ProjectVisibility(object):
+    public = "public"
+    private = "private"
+
+
+class ProjectMember(EmbeddedDocument):
+    meta = {"strict": False}
+    user = StringField(required=True)
+    role = StringField(required=True, choices=get_options(ProjectRole))
+    added = DateTimeField(required=True)
+    added_by = StringField(required=True)
 
 
 class Project(AttributedDocument):
@@ -36,7 +56,6 @@ class Project(AttributedDocument):
     id = StringField(primary_key=True)
     name = StrippedStringField(
         required=True,
-        unique_with=AttributedDocument.company.name,
         min_length=min_name_length,
         sparse=True,
     )
@@ -53,3 +72,5 @@ class Project(AttributedDocument):
     company_origin = StringField(exclude_by_default=True)
     parent = StringField(reference_field="Project")
     path = ListField(StringField(required=True), exclude_by_default=True)
+    visibility = StringField(choices=get_options(ProjectVisibility), default=ProjectVisibility.private)
+    members = EmbeddedDocumentListField(ProjectMember, default=list)
