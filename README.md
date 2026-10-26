@@ -59,9 +59,38 @@ The first run builds the images and takes a while. The script generates the pass
 ## First sign-in
 
 1. Open `http://<server-ip>:8080`.
-2. Sign in as the user named in `KC_ADMIN` (`kcadmin` by default), with the password in `deploy/.env`.
+2. Sign in as the user named in `KC_ADMIN` (`cairnadmin` by default), with the password in `deploy/.env`.
 
 Your account is created at the first sign-in.
+
+## Users and admins
+
+Accounts are kept in Keycloak, in the `cairnml` realm. Self-registration is off, so an administrator creates every account. A user is a CairnML admin while they hold the `cairnml-admin` realm role. The server picks up changes to accounts and roles within about a minute.
+
+The server runs over plain HTTP, so use it on a network you trust.
+
+### The admin account
+
+Setup creates the admin named `KC_ADMIN` in `deploy/.env` (`cairnadmin` by default). It is the Keycloak administrator in the `master` realm, and the CairnML admin in the `cairnml` realm. Keycloak also creates a temporary admin, `kcadmin`, on its first start. Setup deletes it from both realms once `KC_ADMIN` has signed in, so no temporary account is left behind.
+
+To change the admin's password, set `KC_ADMIN_PASSWORD` in `deploy/.env` and run `deploy/scripts/bootstrap.sh` again.
+
+### Add users
+
+1. Open the Keycloak admin console at `http://<server-ip>:8180/admin` and sign in as `KC_ADMIN`.
+2. Choose the `cairnml` realm in the realm selector at the top left.
+3. Go to **Users**, then **Add user**. Enter a username, email and name, and turn on **Email verified**.
+4. On the new user's **Credentials** tab, set a password and leave **Temporary** off.
+
+A plain user can sign in and use the server, but cannot do admin tasks. Their CairnML account is created the first time they sign in.
+
+### Make someone admin, or remove the role
+
+On the user's **Role mapping** tab, click **Assign role**, choose **Filter by realm roles** and assign `cairnml-admin`. To remove the role, unassign it on the same tab.
+
+### Disable or remove a user
+
+Switch the user's **Enabled** off in the `cairnml` realm. Their sessions, devices and job tokens stop working. Disabling can be undone; deleting removes the account from Keycloak.
 
 ## Connect the clients
 

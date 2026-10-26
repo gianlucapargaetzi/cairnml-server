@@ -20,6 +20,11 @@ if [ ! -f .env ]; then
 fi
 set -a; . ./.env; set +a
 
+# Keycloak creates a temporary admin with this name on its first start. Setup deletes it once KC_ADMIN can sign in, so
+# KC_ADMIN must be another name.
+TEMP_ADMIN=kcadmin
+[ -n "${KC_ADMIN:-}" ] && [ "$KC_ADMIN" != "$TEMP_ADMIN" ] || { echo "set KC_ADMIN in deploy/.env to a name other than $TEMP_ADMIN" >&2; exit 1; }
+
 # The address that browsers, the SDK and agents use to reach this server. Empty in deploy/.env: this machine's IPv4
 # address, written back to deploy/.env so that later runs keep it.
 if [ -z "${CAIRNML_HOST:-}" ]; then
@@ -61,19 +66,34 @@ docker run --rm -v "$STATE/data:/data" alpine:3.20 sh -c 'chown 1000:1000 /data/
 
 docker compose up -d cairnml-idp
 
-# One admin login for both Keycloak's master realm and the cairnml realm: KC_ADMIN and KC_ADMIN_PASSWORD
-# from deploy/.env, applied on every run so the password in .env is the one that works. Nothing is printed.
+# The permanent admin is KC_ADMIN. Keycloak's temporary admin (TEMP_ADMIN, created on its first start) is deleted only
+# after KC_ADMIN has signed in. The admin signs in with the password setup last applied, kept in the state folder, so a
+# new KC_ADMIN_PASSWORD in deploy/.env is applied on the next run. Nothing is printed.
+ADMIN_PASSWORD_FILE="$STATE/secrets/keycloak-admin-password"
+if [ -s "$ADMIN_PASSWORD_FILE" ]; then PREV_ADMIN_PASSWORD=$(cat "$ADMIN_PASSWORD_FILE"); else PREV_ADMIN_PASSWORD="$KC_ADMIN_PASSWORD"; fi
+
+# The same account administers the master realm (Keycloak itself) and the cairnml realm (CairnML's sign-in).
 KC_USER_SETUP='
 set -e
 K=/opt/keycloak/bin/kcadm.sh
+signed_in() { $K config credentials --server http://localhost:8180 --realm master --user "$1" --password "$2" >/dev/null 2>&1; }
 ok=0
 for _ in $(seq 1 90); do
-  if $K config credentials --server http://localhost:8180 --realm master \
-       --user "$KC_MASTER_USER" --password "$KC_MASTER_PW" >/dev/null 2>&1; then ok=1; break; fi
+  if signed_in "$ADMIN_USER" "$PREV_PW" || signed_in "$ADMIN_USER" "$ADMIN_PW" || signed_in "$TEMP_USER" "$PREV_PW"; then ok=1; break; fi
   sleep 2
 done
-[ "$ok" = 1 ] || { echo "keycloak did not become ready" >&2; exit 1; }
+[ "$ok" = 1 ] || { echo "could not sign in to Keycloak: check KC_ADMIN and KC_ADMIN_PASSWORD" >&2; exit 1; }
+if ! signed_in "$ADMIN_USER" "$PREV_PW" && ! signed_in "$ADMIN_USER" "$ADMIN_PW"; then
+  signed_in "$TEMP_USER" "$PREV_PW"
+  if ! $K get users -r master -q username="$ADMIN_USER" --fields username | grep -q "\"username\""; then
+    $K create users -r master -s username="$ADMIN_USER" -s enabled=true >/dev/null
+  fi
+fi
+$K add-roles -r master --uusername "$ADMIN_USER" --rolename admin
 $K set-password -r master --username "$ADMIN_USER" --new-password "$ADMIN_PW" >/dev/null
+signed_in "$ADMIN_USER" "$ADMIN_PW" || { echo "the new admin cannot sign in: the temporary admin is kept" >&2; exit 1; }
+temp_id=$($K get users -r master -q username="$TEMP_USER" --fields id | sed -n "s/.*\"id\" *: *\"\([^\"]*\)\".*/\1/p" | head -n1)
+[ -z "$temp_id" ] || $K delete "users/$temp_id" -r master
 # The stack runs on a LAN reached by its address over plain HTTP. The default SSL policy of the master realm
 # would refuse that, and the admin console signs in there.
 $K update realms/master -s sslRequired=NONE
@@ -85,11 +105,15 @@ else
   $K add-roles -r cairnml --uusername "$ADMIN_USER" --rolename cairnml-admin
   $K set-password -r cairnml --username "$ADMIN_USER" --new-password "$ADMIN_PW"
 fi
+cairnml_temp_id=$($K get users -r cairnml -q username="$TEMP_USER" --fields id | sed -n "s/.*\"id\" *: *\"\([^\"]*\)\".*/\1/p" | head -n1)
+[ -z "$cairnml_temp_id" ] || $K delete "users/$cairnml_temp_id" -r cairnml
 '
 docker compose exec -T \
-  -e KC_MASTER_USER="$KC_ADMIN" -e KC_MASTER_PW="$KC_ADMIN_PASSWORD" \
   -e ADMIN_USER="$KC_ADMIN" -e ADMIN_PW="$KC_ADMIN_PASSWORD" \
+  -e TEMP_USER="$TEMP_ADMIN" -e PREV_PW="$PREV_ADMIN_PASSWORD" \
   cairnml-idp sh -c "$KC_USER_SETUP" >/dev/null
+printf '%s' "$KC_ADMIN_PASSWORD" > "$ADMIN_PASSWORD_FILE"
+chmod 600 "$ADMIN_PASSWORD_FILE"
 echo "admin login set from deploy/.env: user $KC_ADMIN, same password for Keycloak and CairnML"
 
 # CairnML secrets, written once and kept. Nothing is printed.
