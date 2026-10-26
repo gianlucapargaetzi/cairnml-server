@@ -1,0 +1,80 @@
+{
+  "realm": "cairnml",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "roles": {
+    "realm": [
+      {
+        "name": "cairnml-admin",
+        "description": "May create agent enrollment tokens, projects and revoke machines"
+      }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "cairnml-web",
+      "name": "CairnML web app",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "fullScopeAllowed": true,
+      "redirectUris": [
+        "http://cairnml:8008/v2.8/login.idp_callback"
+      ],
+      "webOrigins": [
+        "http://cairnml:8080"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://cairnml:8080/*"
+      }
+    },
+    {
+      "clientId": "cairnml-sdk",
+      "name": "CairnML SDK and agent (browser sign-in)",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "fullScopeAllowed": true,
+      "redirectUris": [
+        "http://127.0.0.1:8765/callback"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "oauth2.device.authorization.grant.enabled": "false"
+      }
+    },
+    {
+      "clientId": "cairnml-server",
+      "name": "CairnML server (user directory sync, read-only)",
+      "enabled": true,
+      "publicClient": false,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true
+    }
+  ],
+  "users": [],
+  "components": {
+    "org.keycloak.userprofile.UserProfileProvider": [
+      {
+        "name": "declarative-user-profile",
+        "providerId": "declarative-user-profile",
+        "config": {
+          "kc.user.profile.config": [
+            "{\n  \"attributes\": [\n    {\n      \"name\": \"username\",\n      \"displayName\": \"${username}\",\n      \"validations\": {\n        \"length\": {\n          \"min\": 3,\n          \"max\": 255\n        },\n        \"username-prohibited-characters\": {},\n        \"up-username-not-idn-homograph\": {}\n      },\n      \"permissions\": {\n        \"view\": [\n          \"admin\",\n          \"user\"\n        ],\n        \"edit\": [\n          \"admin\"\n        ]\n      },\n      \"multivalued\": false\n    },\n    {\n      \"name\": \"email\",\n      \"displayName\": \"${email}\",\n      \"validations\": {\n        \"email\": {},\n        \"length\": {\n          \"max\": 255\n        }\n      },\n      \"required\": {\n        \"roles\": [\n          \"user\"\n        ]\n      },\n      \"permissions\": {\n        \"view\": [\n          \"admin\",\n          \"user\"\n        ],\n        \"edit\": [\n          \"admin\"\n        ]\n      },\n      \"multivalued\": false\n    },\n    {\n      \"name\": \"firstName\",\n      \"displayName\": \"${firstName}\",\n      \"validations\": {\n        \"length\": {\n          \"max\": 255\n        },\n        \"person-name-prohibited-characters\": {}\n      },\n      \"required\": {\n        \"roles\": [\n          \"user\"\n        ]\n      },\n      \"permissions\": {\n        \"view\": [\n          \"admin\",\n          \"user\"\n        ],\n        \"edit\": [\n          \"admin\"\n        ]\n      },\n      \"multivalued\": false\n    },\n    {\n      \"name\": \"lastName\",\n      \"displayName\": \"${lastName}\",\n      \"validations\": {\n        \"length\": {\n          \"max\": 255\n        },\n        \"person-name-prohibited-characters\": {}\n      },\n      \"required\": {\n        \"roles\": [\n          \"user\"\n        ]\n      },\n      \"permissions\": {\n        \"view\": [\n          \"admin\",\n          \"user\"\n        ],\n        \"edit\": [\n          \"admin\"\n        ]\n      },\n      \"multivalued\": false\n    }\n  ],\n  \"groups\": [\n    {\n      \"name\": \"user-metadata\",\n      \"displayHeader\": \"User metadata\",\n      \"displayDescription\": \"Attributes, which refer to user metadata\"\n    }\n  ]\n}"
+          ]
+        }
+      }
+    ]
+  },
+  "editUsernameAllowed": false
+}

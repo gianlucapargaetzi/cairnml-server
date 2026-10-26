@@ -20,3 +20,18 @@ code.tar.gz
 server/schema/services/_cache.json
 server/apierrors/errors/*
 apiserver/schema/services/_cache.json
+
+# Local secrets and the data of the stack (never committed)
+deploy/.env
+deploy/secrets/
+deploy/data/
+tests/e2e/reports/
+.venv/
+node_modules/
+.playwright-mcp/
+graphify-out/
+
+# The repositories fetched at the commits named in docker/build/ (scripts/fetch-sources.sh)
+/cairnml/
+/cairnml-agent/
+/web/
