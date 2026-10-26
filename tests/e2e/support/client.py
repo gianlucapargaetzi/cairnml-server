@@ -10,9 +10,22 @@ def key_path(home: Path) -> Path:
     return home / ".cairnml" / "device.key"
 
 
+def agent_key_path(home: Path) -> Path:
+    """The agent's own device key (cairnml-agent init), apart from the SDK's."""
+    return home / ".cairnml" / "agent" / "device.key"
+
+
 def device_id_of(home: Path) -> str:
     """The device id this home is enrolled as, read from its configuration file."""
-    conf = home / "cairnml.conf"
+    return _device_id_in(home / "cairnml.conf")
+
+
+def agent_device_id_of(home: Path) -> str:
+    """The device id the agent in this home is enrolled as, read from the agent's configuration file."""
+    return _device_id_in(home / "cairnml-agent.conf")
+
+
+def _device_id_in(conf: Path) -> str:
     if not conf.is_file():
         return ""
     match = re.search(r'device_id\s*[:=]\s*"?(dev_[0-9a-f]{32})', conf.read_text())

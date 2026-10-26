@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 
 from . import cli, settings
-from .client import device_id_of, key_path
+from .client import agent_device_id_of, agent_key_path
 
 # How often the agent polls its queue on the test stack, in seconds: a job is picked up within seconds, not minutes.
 POLLING_INTERVAL_SEC = 2
@@ -37,16 +37,12 @@ def shared_cache_settings() -> dict:
 LOST_WITHIN_SEC = 30
 
 
-def init(home: Path, account):
-    """cairnml-agent init, signed in as account (user, password). Only an admin may enrol an agent.
-
-    The command asks its questions on stdin: the web address, the web-app address, the API address, then the defaults
-    (no output storage, no git login, no extra package index).
-    """
+def init(home: Path, account, *, server: str = None, name: str = "e2e-agent"):
+    """cairnml-agent init --server, signed in as account (user, password) through the sign-in page. Only an admin may
+    enrol an agent."""
     user, password = account
-    answers = f"{settings.WEB_URL}\n{settings.WEB_URL}\n{settings.API_URL}\n" + "\n" * 8
-    return cli.run("cairnml-agent", home, login_user=user, login_password=password, args=["init"],
-                   stdin_text=answers, timeout=300)
+    args = ["init", "--server", server or settings.API_URL, "--name", name]
+    return cli.run("cairnml-agent", home, login_user=user, login_password=password, args=args, timeout=300)
 
 
 class AgentMachine:
@@ -58,11 +54,11 @@ class AgentMachine:
 
     @property
     def device_id(self) -> str:
-        return device_id_of(self.home)
+        return agent_device_id_of(self.home)
 
     @property
     def key_path(self) -> Path:
-        return key_path(self.home)
+        return agent_key_path(self.home)
 
     def start(self) -> None:
         env = cli.environment(self.home)

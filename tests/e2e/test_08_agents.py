@@ -66,8 +66,8 @@ def test_member_cannot_enrol_an_agent(member_account, tmp_path):
     result = agent.init(machine.home, member_account)
     assert "only an admin" in result.output or "not enrolled" in result.output, result.output
     assert not machine.key_path.exists()
-    assert not (machine.home / "cairnml.conf").exists() or "device_id" not in (
-        machine.home / "cairnml.conf").read_text()
+    assert not (machine.home / "cairnml-agent.conf").exists() or "device_id" not in (
+        machine.home / "cairnml-agent.conf").read_text()
 
 
 def test_agent_registers_as_a_worker_listening_to_its_queue(client_home, machine):
