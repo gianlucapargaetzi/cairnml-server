@@ -25,19 +25,6 @@ set -a; . ./.env; set +a
 TEMP_ADMIN=kcadmin
 [ -n "${KC_ADMIN:-}" ] && [ "$KC_ADMIN" != "$TEMP_ADMIN" ] || { echo "set KC_ADMIN in deploy/.env to a name other than $TEMP_ADMIN" >&2; exit 1; }
 
-# The address that browsers, the SDK and agents use to reach this server. Empty in deploy/.env: this machine's IPv4
-# address, written back to deploy/.env so that later runs keep it.
-if [ -z "${CAIRNML_HOST:-}" ]; then
-  CAIRNML_HOST=$(ip -4 route get 1.1.1.1 | sed -n 's/.* src \([0-9.]*\).*/\1/p' | head -n1)
-  [ -n "$CAIRNML_HOST" ] || { echo "could not find this machine's IP address: set CAIRNML_HOST in deploy/.env" >&2; exit 1; }
-  if grep -q '^CAIRNML_HOST=' .env; then
-    sed -i "s|^CAIRNML_HOST=.*|CAIRNML_HOST=$CAIRNML_HOST|" .env
-  else
-    echo "CAIRNML_HOST=$CAIRNML_HOST" >> .env
-  fi
-  echo "CAIRNML_HOST=$CAIRNML_HOST (written to deploy/.env)"
-fi
-export CAIRNML_HOST
 
 # The stack's state (data and secrets) lives outside the repository: CAIRNML_HOME, default ~/.local/share/cairnml.
 # Set it in deploy/.env to put it somewhere else. The GitHub App key used to be deploy/secrets/github-app.pem: it is
@@ -55,10 +42,9 @@ mkdir -p "$STATE/secrets/cairnml"
 # left behind. The data stays: it lives in $STATE (bind mounts), and -v is not used, so volumes are kept too.
 docker compose down --remove-orphans
 
-# The realm names this server by CAIRNML_HOST (the redirect addresses of the web app and the API). Keycloak imports
-# the rendered copy, and the clients below are updated from it.
+# The realm names no address: its redirect URIs accept the address each client uses (through the proxy).
 mkdir -p "$STATE/idp"
-sed "s|http://cairnml:|http://$CAIRNML_HOST:|g" idp/realm-cairnml.json > "$STATE/idp/realm-cairnml.json"
+cp idp/realm-cairnml.json "$STATE/idp/realm-cairnml.json"
 
 # The identity provider keeps its data in a host folder; its container runs as uid 1000.
 mkdir -p "$STATE/data/idp"
@@ -76,7 +62,7 @@ if [ -s "$ADMIN_PASSWORD_FILE" ]; then PREV_ADMIN_PASSWORD=$(cat "$ADMIN_PASSWOR
 KC_USER_SETUP='
 set -e
 K=/opt/keycloak/bin/kcadm.sh
-signed_in() { $K config credentials --server http://localhost:8180 --realm master --user "$1" --password "$2" >/dev/null 2>&1; }
+signed_in() { $K config credentials --server http://localhost:8180/idp --realm master --user "$1" --password "$2" >/dev/null 2>&1; }
 ok=0
 for _ in $(seq 1 90); do
   if signed_in "$ADMIN_USER" "$PREV_PW" || signed_in "$ADMIN_USER" "$ADMIN_PW" || signed_in "$TEMP_USER" "$PREV_PW"; then ok=1; break; fi
@@ -159,7 +145,7 @@ set -e
 K=/opt/keycloak/bin/kcadm.sh
 ok=0
 for _ in $(seq 1 90); do
-  if $K config credentials --server http://localhost:8180 --realm master \
+  if $K config credentials --server http://localhost:8180/idp --realm master \
        --user "$KC_MASTER_USER" --password "$KC_MASTER_PW" >/dev/null 2>&1; then ok=1; break; fi
   sleep 2
 done
@@ -201,9 +187,9 @@ docker compose up -d --build
 
 echo "waiting for the CairnML server..."
 for _ in $(seq 1 90); do
-  curl -fsS -X POST "http://$CAIRNML_HOST:8008/v2.8/login.supported_modes" \
+  curl -fsS -X POST "http://localhost/api/v2.8/login.supported_modes" \
     -H 'Content-Type: application/json' -d '{}' >/dev/null 2>&1 && { echo "CairnML server is up"; break; }
   sleep 2
 done
-echo "CairnML: web http://$CAIRNML_HOST:8080, API http://$CAIRNML_HOST:8008"
+echo "CairnML: web http://<this-machine>/, API http://<this-machine>/api, identity provider http://<this-machine>/idp"
 echo "next: sign in as $KC_ADMIN, then follow the client and agent steps in README.md"

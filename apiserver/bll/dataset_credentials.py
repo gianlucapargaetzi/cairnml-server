@@ -14,6 +14,7 @@ import boto3
 from botocore.config import Config
 
 from apiserver.config_repo import config
+from apiserver.idp import public_origin
 from apiserver.idp.secrets import read_secret
 
 BUCKET = "dataset"
@@ -70,7 +71,7 @@ def dataset_credentials() -> dict:
     if isinstance(expires, datetime):
         expires = expires.astimezone(timezone.utc).isoformat()
     return {
-        "endpoint": config.get("apiserver.storage.public_endpoint"),
+        "endpoint": public_origin.storage_endpoint(),
         "region": config.get("apiserver.storage.region"),
         "bucket": BUCKET,
         "access_key": issued["AccessKeyId"],

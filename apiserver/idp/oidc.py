@@ -7,12 +7,22 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from urllib.parse import urlsplit
 
 import jwt
 
 
 class OidcError(Exception):
     pass
+
+
+def _same_realm(token_issuer, issuer: str) -> bool:
+    """A token names the identity provider's address as the client reached it (through the proxy, so it can differ from
+    the configured address). Only the realm path must match: the signature is checked against the realm's keys."""
+    if not isinstance(token_issuer, str):
+        return False
+    given, expected = urlsplit(token_issuer), urlsplit(issuer)
+    return given.scheme in ("http", "https") and given.path.rstrip("/") == expected.path.rstrip("/")
 
 
 @dataclass(frozen=True)
@@ -55,13 +65,14 @@ class OidcVerifier:
                 token,
                 self._key(token),
                 algorithms=["RS256"],
-                issuer=self._issuer,
-                options={"verify_aud": False, "require": ["exp", "iss", "sub"]},
+                options={"verify_aud": False, "verify_iss": False, "require": ["exp", "iss", "sub"]},
             )
         except OidcError:
             raise
         except jwt.PyJWTError as exc:  # a bad token, or a key set that could not be fetched (PyJWKClientError)
             raise OidcError("invalid token") from exc
+        if not _same_realm(claims.get("iss"), self._issuer):
+            raise OidcError("token was not issued by this identity provider")
         accepted = list(clients) if clients is not None else self._client_ids
         if claims.get("azp") not in accepted:
             raise OidcError("token was not issued for an accepted client")

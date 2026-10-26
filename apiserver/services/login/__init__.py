@@ -37,6 +37,7 @@ import requests as _requests  # noqa: E402
 from apiserver.apimodels.devices import IdpCallbackRequest  # noqa: E402
 from apiserver.apierrors import errors as _errors  # noqa: E402
 from apiserver.config_repo import config as _config  # noqa: E402
+from apiserver.idp import public_origin as _public_origin  # noqa: E402
 from apiserver.idp.audit import record as _audit  # noqa: E402
 from apiserver.idp.tokens import issue_access_token as _issue  # noqa: E402
 from apiserver.idp.verifier import get_verifier as _verifier  # noqa: E402
@@ -48,13 +49,14 @@ _idp_http = _requests.Session()
 
 
 def _redirect_uri() -> str:
-    return f"{_config.get('apiserver.idp.public_url').rstrip('/')}/v2.8/login.idp_callback"
+    return f"{_public_origin.api_url().rstrip('/')}/v2.8/login.idp_callback"
 
 
 @endpoint("login.idp_start", min_version="2.8")
 def idp_start(call: APICall, _company, _):
-    issuer = _config.get("apiserver.idp.issuer")
-    call.result.redirect = _start(_login_store, issuer, _config.get("apiserver.idp.web_client_id"), _redirect_uri())
+    # The browser signs in at the identity provider's address as the browser reaches it (through the proxy).
+    call.result.redirect = _start(_login_store, _public_origin.idp_issuer(),
+                                  _config.get("apiserver.idp.web_client_id"), _redirect_uri())
 
 
 @endpoint("login.idp_callback", min_version="2.8", request_data_model=IdpCallbackRequest)
@@ -72,4 +74,4 @@ def idp_callback(call: APICall, _company, request: IdpCallbackRequest):
     token = _issue(user.id, user.company, "", kind="web", role=user.role, user_name=user.name)
     call.result.set_auth_cookie(token)
     _audit(user.id, "web.login")
-    call.result.redirect = _config.get("apiserver.idp.web_url")
+    call.result.redirect = _public_origin.web_url()

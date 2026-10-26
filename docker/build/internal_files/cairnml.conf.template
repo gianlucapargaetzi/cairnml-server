@@ -41,9 +41,13 @@ server {
         add_header Cache-Control 'no-cache';
     }
 
+    # The address the client used. The API server names itself in the URLs it hands out (sign-in redirects, the
+    # identity provider's issuer, presigned storage URLs) from these headers, so no address is configured.
     location /api {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Host $http_host;
+        proxy_set_header X-Forwarded-Proto $scheme;
         proxy_pass ${NGINX_APISERVER_ADDR};
         rewrite /api/(.*) /$1  break;
         proxy_set_header Connection "";
@@ -53,7 +57,28 @@ server {
     location /datachunks {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Host $http_host;
+        proxy_set_header X-Forwarded-Proto $scheme;
         proxy_pass ${NGINX_APISERVER_ADDR};
+    }
+
+    # The identity provider (Keycloak), served under /idp: its sign-in pages and its admin console.
+    location = /idp {
+        return 301 /idp/;
+    }
+
+    location /idp/ {
+        # The host exactly as the client typed it, with its port if it has one. The container's own port (8080) is
+        # not the client's: Docker publishes it on 80.
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Forwarded-Host $http_host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        # Keycloak sends large cookies and headers.
+        proxy_buffer_size 16k;
+        proxy_buffers 8 16k;
+        proxy_busy_buffers_size 32k;
+        proxy_pass ${NGINX_IDP_ADDR};
     }
 
     location /widgets {
