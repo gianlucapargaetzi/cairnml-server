@@ -16,8 +16,6 @@ from cryptography.hazmat.primitives import serialization
 from . import settings
 
 API_VERSION = "2.8"
-# The monitor's usage endpoint (scheduler.get_usage_history) exists from this version.
-SCHEDULER_VERSION = "2.36"
 
 
 class ApiError(Exception):
@@ -58,8 +56,7 @@ class Api:
         return f"{settings.API_URL}/v{API_VERSION}/"
 
     def call(self, endpoint: str, body=None, *, token=None, raw_token=None) -> dict:
-        base = self.base if not endpoint.startswith("scheduler.") else self.base.replace(f"/v{API_VERSION}/",
-                                                                                       f"/v{SCHEDULER_VERSION}/")
+        base = self.base
         headers = {}
         if raw_token is not None:
             headers["Authorization"] = raw_token
