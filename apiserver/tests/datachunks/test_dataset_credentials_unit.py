@@ -9,6 +9,7 @@ from unittest import TestCase
 from unittest.mock import MagicMock, patch
 
 from apiserver.bll import dataset_credentials as bll
+from apiserver.idp import public_origin
 
 
 def _allowed(policy):
@@ -45,7 +46,9 @@ class TestCredentials(TestCase):
                 "Expiration": datetime(2026, 10, 23, 10, 36, 24, tzinfo=timezone.utc),
             }
         }
-        with patch.object(bll, "_sts", return_value=sts), patch.object(bll, "_ttl", return_value=1800):
+        with patch.object(bll, "_sts", return_value=sts), patch.object(bll, "_ttl", return_value=1800), patch.object(
+            public_origin, "origin", return_value="http://localhost"
+        ):
             return bll.dataset_credentials(), sts
 
     def test_the_session_is_limited_by_the_policy_and_the_ttl(self):
@@ -57,6 +60,7 @@ class TestCredentials(TestCase):
     def test_the_response_names_the_bucket_and_the_expiry(self):
         result, _ = self._issue()
         self.assertEqual(result["bucket"], "dataset")
+        self.assertEqual(result["endpoint"], "http://localhost:9000")  # the address the client used, on the storage port
         self.assertEqual(result["access_key"], "AK")
         self.assertEqual(result["secret_key"], "SK")
         self.assertEqual(result["session_token"], "ST")

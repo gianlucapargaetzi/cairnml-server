@@ -6,11 +6,12 @@ Run inside the server image: python -m unittest apiserver.tests.datachunks.test_
 import base64
 import hashlib
 from unittest import TestCase
+from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
 from apiserver.apierrors import errors
 from apiserver.bll import datachunks as bll
-from apiserver.config_repo import config
+from apiserver.idp import public_origin
 
 SHA = hashlib.sha256(b"payload").hexdigest()
 
@@ -63,6 +64,12 @@ class TestDatasetTag(TestCase):
 class TestPresignedPut(TestCase):
     """Signing is local, so this runs without a store. It shows what the URL is bound to."""
 
+    def setUp(self):
+        # The URL names the address the client used: a request's address, here as if it came to localhost.
+        patcher = patch.object(public_origin, "origin", return_value="http://localhost")
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def _url(self, content_type=""):
         checksum = bll._b64_digest(SHA)
         params = {"Bucket": "artifact", "Key": "p/t/x.bin", "ContentLength": 7, "ChecksumSHA256": checksum}
@@ -72,8 +79,13 @@ class TestPresignedPut(TestCase):
 
     def test_the_url_names_the_public_host_and_expires_in_the_configured_time(self):
         url = urlparse(self._url())
-        self.assertEqual(f"{url.scheme}://{url.netloc}", config.get("apiserver.storage.public_endpoint"))
+        self.assertEqual(f"{url.scheme}://{url.netloc}", public_origin.storage_endpoint())
         self.assertEqual(parse_qs(url.query)["X-Amz-Expires"], [str(bll._ttl())])
+
+    def test_the_url_names_the_address_the_client_used(self):
+        with patch.object(public_origin, "origin", return_value="http://192.168.1.20"):
+            url = urlparse(self._url())
+        self.assertEqual(url.hostname, "192.168.1.20")
 
     def test_the_signature_covers_size_and_checksum(self):
         signed = parse_qs(urlparse(self._url()).query)["X-Amz-SignedHeaders"][0].split(";")
