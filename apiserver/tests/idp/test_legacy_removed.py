@@ -15,7 +15,7 @@ from apiserver.service_repo.auth.auth import get_auth_func
 
 pytestmark = pytest.mark.integration  # needs MongoDB, Elasticsearch or a running API server
 
-API = f"{os.environ.get('SM_API_URL', 'http://localhost:8008')}/v2.8"
+API = f"{os.environ.get('SM_API_URL', 'http://localhost/cairnml/api')}/v2.8"
 
 
 class TestLegacyRemoved(TestCase):

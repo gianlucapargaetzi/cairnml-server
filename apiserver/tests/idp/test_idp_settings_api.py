@@ -8,8 +8,8 @@ from apiserver.config_repo import config
 
 pytestmark = pytest.mark.integration  # needs MongoDB, Elasticsearch or a running API server
 
-# The API is reached through the proxy on port 80, under /api. SM_API_URL is the address the test client types.
-API_ADDRESS = os.environ.get("SM_API_URL", "http://localhost/api").rstrip("/")
+# The API is reached through the proxy on port 80, under /cairnml/api. SM_API_URL is the address the test client types.
+API_ADDRESS = os.environ.get("SM_API_URL", "http://localhost/cairnml/api").rstrip("/")
 API = f"{API_ADDRESS}/v2.8"
 ROOT = API_ADDRESS[: -len("/api")]
 

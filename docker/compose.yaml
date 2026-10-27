@@ -84,7 +84,7 @@ services:
     - webserver
     container_name: cairnml-webserver
     # environment:
-    #  CAIRNML_SERVER_SUB_PATH : cairnml-web # Allow Cairnml to be served with a URL path prefix.
+    #  CAIRNML_SERVER_SUB_PATH: cairnml # The URL path prefix the web app, API and identity provider are served under (default: cairnml).
     image: gianlucapargaetzi/cairnml-server:latest
     restart: unless-stopped
     depends_on:

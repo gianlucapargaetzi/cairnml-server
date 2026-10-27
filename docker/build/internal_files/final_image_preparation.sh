@@ -31,7 +31,6 @@ mkdir -p /opt/cairnml/config
 ln -svf /dev/stdout /var/log/nginx/access.log
 ln -svf /dev/stderr /var/log/nginx/error.log
 mv /tmp/internal_files/cairnml.conf.template /etc/nginx/cairnml.conf.template
-mv /tmp/internal_files/cairnml_subpath.conf.template /etc/nginx/cairnml_subpath.conf.template
 
 # A user of its own, with no login. The code stays owned by root; only the folders below are the server's.
 groupadd --gid 1000 cairnml
@@ -44,11 +43,12 @@ useradd --uid 1000 --gid cairnml --no-create-home --shell /usr/sbin/nologin cair
 mkdir -p /var/log/cairnml
 chown -R cairnml:cairnml /opt/cairnml/log /opt/cairnml/config /var/log/cairnml /opt/cairnml/apiserver/apierrors/errors /opt/cairnml/apiserver/schema/services
 # nginx keeps its pid file out of /run, which the server user cannot write; the entrypoint writes the site
-# configuration into sites-enabled and default.d, and the web root (see the COPY in the Dockerfile).
+# configuration into sites-enabled and default.d, the web root (see the COPY in the Dockerfile), and the link that
+# serves the web root under its path (cairnml-root).
 sed -i -e 's|^pid .*|pid /tmp/nginx.pid;|' -e '/^user /d' /etc/nginx/nginx.conf
 rm -f /etc/nginx/sites-enabled/default
-mkdir -p /etc/nginx/sites-enabled /etc/nginx/default.d /var/cache/nginx /var/lib/nginx /usr/share/nginx/html
-chown -R cairnml:cairnml /etc/nginx/sites-enabled /etc/nginx/default.d /var/cache/nginx /var/lib/nginx /usr/share/nginx/html
+mkdir -p /etc/nginx/sites-enabled /etc/nginx/default.d /var/cache/nginx /var/lib/nginx /usr/share/nginx/html /usr/share/nginx/cairnml-root
+chown -R cairnml:cairnml /etc/nginx/sites-enabled /etc/nginx/default.d /var/cache/nginx /var/lib/nginx /usr/share/nginx/html /usr/share/nginx/cairnml-root
 
 rm -d -r "$(pip cache dir)"
 apt-get clean

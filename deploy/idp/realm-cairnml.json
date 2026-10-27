@@ -23,7 +23,7 @@
       "serviceAccountsEnabled": false,
       "fullScopeAllowed": true,
       "redirectUris": [
-        "/api/v2.8/login.idp_callback"
+        "/cairnml/api/v2.8/login.idp_callback"
       ],
       "webOrigins": [
         "+"

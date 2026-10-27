@@ -74,7 +74,7 @@ class TestService(TestCase, TestServiceInterface):
     def setUp(self, version="999.0"):
         from apiserver.tests.idp.bearer import suite_bearer
 
-        self._api = APIClient(base_url=f"http://localhost:8008/v{version}", session_token=suite_bearer())
+        self._api = APIClient(base_url=f"http://localhost/cairnml/api/v{version}", session_token=suite_bearer())
         self._deferred = []
         self._version = parse(version)
         header(self.id())

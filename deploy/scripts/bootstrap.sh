@@ -62,7 +62,7 @@ if [ -s "$ADMIN_PASSWORD_FILE" ]; then PREV_ADMIN_PASSWORD=$(cat "$ADMIN_PASSWOR
 KC_USER_SETUP='
 set -e
 K=/opt/keycloak/bin/kcadm.sh
-signed_in() { $K config credentials --server http://localhost:8180/idp --realm master --user "$1" --password "$2" >/dev/null 2>&1; }
+signed_in() { $K config credentials --server http://localhost:$KC_HTTP_PORT/cairnml/idp --realm master --user "$1" --password "$2" >/dev/null 2>&1; }
 ok=0
 for _ in $(seq 1 90); do
   if signed_in "$ADMIN_USER" "$PREV_PW" || signed_in "$ADMIN_USER" "$ADMIN_PW" || signed_in "$TEMP_USER" "$PREV_PW"; then ok=1; break; fi
@@ -145,7 +145,7 @@ set -e
 K=/opt/keycloak/bin/kcadm.sh
 ok=0
 for _ in $(seq 1 90); do
-  if $K config credentials --server http://localhost:8180/idp --realm master \
+  if $K config credentials --server http://localhost:$KC_HTTP_PORT/cairnml/idp --realm master \
        --user "$KC_MASTER_USER" --password "$KC_MASTER_PW" >/dev/null 2>&1; then ok=1; break; fi
   sleep 2
 done
@@ -187,9 +187,10 @@ docker compose up -d --build
 
 echo "waiting for the CairnML server..."
 for _ in $(seq 1 90); do
-  curl -fsS -X POST "http://localhost/api/v2.8/login.supported_modes" \
+  curl -fsS -X POST "http://localhost:${CAIRNML_HTTP_PORT:-80}/cairnml/api/v2.8/login.supported_modes" \
     -H 'Content-Type: application/json' -d '{}' >/dev/null 2>&1 && { echo "CairnML server is up"; break; }
   sleep 2
 done
-echo "CairnML: web http://<this-machine>/, API http://<this-machine>/api, identity provider http://<this-machine>/idp"
+PORT_SUFFIX=""; [ "${CAIRNML_HTTP_PORT:-80}" = 80 ] || PORT_SUFFIX=":${CAIRNML_HTTP_PORT}"
+echo "CairnML: web http://<this-machine>$PORT_SUFFIX/cairnml/, API http://<this-machine>$PORT_SUFFIX/cairnml/api, identity provider http://<this-machine>$PORT_SUFFIX/cairnml/idp"
 echo "next: sign in as $KC_ADMIN, then follow the client and agent steps in README.md"

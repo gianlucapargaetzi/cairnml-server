@@ -44,11 +44,7 @@ git clone https://github.com/gianlucapargaetzi/cairnml-server.git
 cd cairnml-server
 ```
 
-**2. Choose the address (optional)**
-
-The setup script uses this machine's IPv4 address. If the server has several addresses, set `CAIRNML_HOST` in `deploy/.env` to the one that clients use before the first run.
-
-**3. Start the server**
+**2. Start the server**
 
 ```bash
 deploy/scripts/bootstrap.sh
@@ -58,7 +54,7 @@ The first run builds the images and takes a while. The script generates the pass
 
 ## First sign-in
 
-1. Open `http://<server-ip>:8080`.
+1. Open `http://<server-ip>/cairnml/`.
 2. Sign in as the user named in `KC_ADMIN` (`cairnadmin` by default), with the password in `deploy/.env`.
 
 Your account is created at the first sign-in.
@@ -77,7 +73,7 @@ To change the admin's password, set `KC_ADMIN_PASSWORD` in `deploy/.env` and run
 
 ### Add users
 
-1. Open the Keycloak admin console at `http://<server-ip>:8180/admin` and sign in as `KC_ADMIN`.
+1. Open the Keycloak admin console at `http://<server-ip>/cairnml/idp/admin` and sign in as `KC_ADMIN`.
 2. Choose the `cairnml` realm in the realm selector at the top left.
 3. Go to **Users**, then **Add user**. Enter a username, email and name, and turn on **Email verified**.
 4. On the new user's **Credentials** tab, set a password and leave **Temporary** off.
@@ -94,10 +90,39 @@ Switch the user's **Enabled** off in the `cairnml` realm. Their sessions, device
 
 ## Connect the clients
 
-The clients use the address of this server:
+The server needs no address of its own: it answers to any address of this machine (`localhost`, its IP address or its host name), and names itself after the address the client used. Everything is under `/cairnml` of that address, so the root of the machine stays free for other sites:
 
-- **SDK:** `cairnml-init --server http://<server-ip>:8008`, see the [SDK](https://github.com/gianlucapargaetzi/cairnml).
-- **Agents:** an admin enrols each agent with `cairnml-agent init`, see the [agent](https://github.com/gianlucapargaetzi/cairnml-agent).
+| What | Address |
+|---|---|
+| Web app | `http://<server-ip>/cairnml/` |
+| API | `http://<server-ip>/cairnml/api` |
+| Sign-in service (Keycloak) | `http://<server-ip>/cairnml/idp/` |
+
+The clients take the address of the server and work out the rest:
+
+- **SDK:** `cairnml init http://<server-ip>`, see the [SDK](https://github.com/gianlucapargaetzi/cairnml).
+- **Agents:** an admin enrols each agent with `cairnml-agent init http://<server-ip>`, see the [agent](https://github.com/gianlucapargaetzi/cairnml-agent).
+
+Opening `http://<server-ip>/` leads to the web app. Nothing else is served at the root.
+
+### Ports
+
+The stack publishes three ports on the machine. They are the defaults, and each can be changed in `deploy/.env` when something else already uses it. The server follows: the proxy listens on the new port, and the addresses the server gives to clients name it.
+
+| Setting in `deploy/.env` | What | Default |
+|---|---|---|
+| `CAIRNML_HTTP_PORT` | The address clients use: the web app, the API and the sign-in service. The address then needs the port, for example `http://<server-ip>:8081/cairnml/`, and so does the argument of `cairnml init`. | `80` |
+| `CAIRNML_STORAGE_PORT` | Object storage, which clients reach through presigned URLs | `9000` |
+| `CAIRNML_STORAGE_CONSOLE_PORT` | The storage console, on this machine only | `9001` |
+
+Two more ports are not published: the API and the sign-in service listen only inside the stack's own network and are reached through the proxy, so nothing on the machine can clash with them. You can still change them, and the proxy, the health checks and the setup script follow.
+
+| Setting in `deploy/.env` | What | Default |
+|---|---|---|
+| `CAIRNML_API_PORT` | The API, inside the stack | `8008` |
+| `CAIRNML_IDP_PORT` | The sign-in service (Keycloak), inside the stack | `8180` |
+
+Run `deploy/scripts/bootstrap.sh` again after changing a port.
 
 ## Next steps
 

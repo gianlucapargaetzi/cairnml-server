@@ -31,7 +31,6 @@ COPY apiserver /opt/cairnml/apiserver/
 
 COPY --chmod=744 docker/build/internal_files/final_image_preparation.sh /tmp/internal_files/
 COPY docker/build/internal_files/cairnml.conf.template /tmp/internal_files/
-COPY docker/build/internal_files/cairnml_subpath.conf.template /tmp/internal_files/
 # The source trees are mounted, not copied, so they never become a layer of the image.
 RUN --mount=type=bind,from=sdk,source=/,target=/tmp/cairnml-sdk,rw \
     --mount=type=bind,from=agent,source=/,target=/tmp/cairnml-agent,rw \

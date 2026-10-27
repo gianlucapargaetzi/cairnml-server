@@ -1,8 +1,9 @@
 """The address a client used to reach the server, as the reverse proxy passes it on.
 
-Everything is reached through the proxy on port 80: the web app at /, the API under /api and the identity provider under
-/idp. The URLs the server hands out (the sign-in redirects, the issuer, the storage endpoint) name the host the client
-typed, so nothing has to be configured per machine. A value set in the configuration wins.
+Everything is reached through the proxy on port 80, under one path (/cairnml): the web app at /cairnml/, the API under
+/cairnml/api and the identity provider under /cairnml/idp. The URLs the server hands out (the sign-in redirects, the
+issuer, the storage endpoint) name the host the client typed, so nothing has to be configured per machine. A value set
+in the configuration wins.
 """
 
 import contextvars
@@ -10,8 +11,6 @@ from urllib.parse import urlsplit
 
 from apiserver.config_repo import config
 
-# Object storage is published on its own port: its presigned URLs name the port the client reaches it on.
-STORAGE_PORT = 9000
 
 _origin = contextvars.ContextVar("public_origin", default=None)
 
@@ -31,12 +30,17 @@ def origin() -> str:
     return current
 
 
+def base_path() -> str:
+    """The path everything is served under, e.g. /cairnml."""
+    return "/" + config.get("apiserver.idp.public_path").strip("/")
+
+
 def api_url() -> str:
-    return config.get("apiserver.idp.public_url") or origin() + "/api"
+    return config.get("apiserver.idp.public_url") or origin() + base_path() + "/api"
 
 
 def web_url() -> str:
-    return config.get("apiserver.idp.web_url") or origin() + "/"
+    return config.get("apiserver.idp.web_url") or origin() + base_path() + "/"
 
 
 def idp_issuer() -> str:
@@ -49,5 +53,6 @@ def storage_endpoint() -> str:
     configured = config.get("apiserver.storage.public_endpoint")
     if configured:
         return configured
+    # Object storage is published on its own port: its presigned URLs name the port the client reaches it on.
     address = urlsplit(origin())
-    return f"{address.scheme}://{address.hostname}:{STORAGE_PORT}"
+    return f"{address.scheme}://{address.hostname}:{config.get('apiserver.storage.public_port')}"
