@@ -30,6 +30,9 @@ class IdpIdentity:
     subject: str
     username: str
     roles: tuple[str, ...]
+    # The identity provider's ID token of this sign-in, when the identity comes from the sign-in flow. It names the
+    # session to end at logout.
+    id_token: str = ""
 
 
 class OidcVerifier:
