@@ -30,21 +30,23 @@ services:
     restart: unless-stopped
     command: ["start-dev", "--import-realm"]
     environment:
-      KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_ADMIN:-kcadmin}
+      # The temporary admin. Setup deletes it once KC_ADMIN (the permanent admin) can sign in.
+      KC_BOOTSTRAP_ADMIN_USERNAME: kcadmin
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_ADMIN_PASSWORD:?set KC_ADMIN_PASSWORD in deploy/.env}
-      KC_HOSTNAME: http://${CAIRNML_HOST:-localhost}:8180
-      KC_HTTP_PORT: "8180"
-      KC_HOSTNAME_STRICT: "false"
+      KC_HTTP_PORT: "${CAIRNML_IDP_PORT:-8180}"
       KC_HTTP_ENABLED: "true"
+      # Served under /cairnml/idp by the web container's proxy, which passes the address the client used in X-Forwarded-*.
+      # Keycloak names itself after those headers: no hostname is configured.
+      KC_HTTP_RELATIVE_PATH: /cairnml/idp
+      KC_PROXY_HEADERS: xforwarded
+      KC_HOSTNAME_STRICT: "false"
     volumes:
       - ${CAIRNML_HOME:-${HOME}/.local/share/cairnml}/idp/realm-cairnml.json:/opt/keycloak/data/import/realm-cairnml.json:ro
       - ${CAIRNML_HOME:-${HOME}/.local/share/cairnml}/data/idp:/opt/keycloak/data/h2
-    ports:
-      - "8180:8180"
     healthcheck:
       # Ready when the realm has been imported: its discovery document answers. The image has no curl, and Keycloak
       # fails on a request without a Host header, so the request has one.
-      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/8180 && printf 'GET /realms/cairnml/.well-known/openid-configuration HTTP/1.1\\r\\nHost: localhost:8180\\r\\nConnection: close\\r\\n\\r\\n' >&3 && head -n1 <&3 | grep -q ' 200 '"]
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/${CAIRNML_IDP_PORT:-8180} && printf 'GET /cairnml/idp/realms/cairnml/.well-known/openid-configuration HTTP/1.1\\r\\nHost: localhost:${CAIRNML_IDP_PORT:-8180}\\r\\nConnection: close\\r\\n\\r\\n' >&3 && head -n1 <&3 | grep -q ' 200 '"]
       interval: 10s
       timeout: 5s
       retries: 30
@@ -65,10 +67,10 @@ services:
     volumes:
       - ${CAIRNML_HOME:-${HOME}/.local/share/cairnml}/data/rustfs:/data
     ports:
-      # The S3 API is published so clients can PUT and GET through the presigned URLs.
-      # The console stays on loopback.
+      # The S3 API is published so clients can PUT and GET through the presigned URLs; the server names this port in
+      # them (CAIRNML__apiserver__storage__public_port). The console stays on loopback.
       - "${CAIRNML_STORAGE_PORT:-9000}:9000"
-      - "127.0.0.1:9001:9001"
+      - "127.0.0.1:${CAIRNML_STORAGE_CONSOLE_PORT:-9001}:9001"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:9000/health"]
       interval: 5s
@@ -183,9 +185,9 @@ services:
       CAIRNML_REDIS_SERVICE_HOST: redis
       CAIRNML_REDIS_SERVICE_PORT: 6379
       CAIRNML_SERVER_DEPLOYMENT_TYPE: linux
-      CAIRNML__apiserver__idp__issuer: http://${CAIRNML_HOST:-localhost}:8180/realms/cairnml
-      CAIRNML__apiserver__idp__public_url: http://${CAIRNML_HOST}:8008
-      CAIRNML__apiserver__idp__web_url: http://${CAIRNML_HOST}:8080
+      CAIRNML__apiserver__idp__issuer: http://cairnml-idp:${CAIRNML_IDP_PORT:-8180}/cairnml/idp/realms/cairnml
+      # The port the API listens on inside the stack's network; the web server's proxy follows it.
+      CAIRNML__apiserver__listen__port: ${CAIRNML_API_PORT:-8008}
       CAIRNML__apiserver__idp__web_client_id: cairnml-web
       CAIRNML__apiserver__idp__sdk_client_id: cairnml-sdk
       CAIRNML__apiserver__idp__directory_client_id: cairnml-server
@@ -202,19 +204,18 @@ services:
       CAIRNML__apiserver__dataset_registry__repository: ${CAIRNML_DATASET_REGISTRY:-}
       CAIRNML__apiserver__dataset_registry__allowed_owners: ${CAIRNML_DATASET_OWNERS:-[]}
       CAIRNML__services__async_urls_delete__enabled: "true"
-      # Object storage: internal address for the server's own calls, public address that presigned
-      # URLs name. Clients must be able to reach the public one.
+      # Object storage: internal address for the server's own calls. The public address that presigned URLs name is the
+      # address the client used (port 9000); CAIRNML_STORAGE_PUBLIC_URL overrides it.
       CAIRNML__apiserver__storage__endpoint: http://rustfs:9000
-      CAIRNML__apiserver__storage__public_endpoint: ${CAIRNML_STORAGE_PUBLIC_URL:-http://${CAIRNML_HOST}:9000}
+      CAIRNML__apiserver__storage__public_endpoint: ${CAIRNML_STORAGE_PUBLIC_URL:-}
+      CAIRNML__apiserver__storage__public_port: ${CAIRNML_STORAGE_PORT:-9000}
       CAIRNML__apiserver__storage__access_key: ${CAIRNML_S3_ACCESS_KEY:-cairnml-server}
     volumes:
       - ${CAIRNML_HOME:-${HOME}/.local/share/cairnml}/data/cairnml/logs:/var/log/cairnml
       # Read-only: token_secret, session_secret, idp_directory_secret, github_app_key.
       - ${CAIRNML_HOME:-${HOME}/.local/share/cairnml}/secrets/cairnml:/run/secrets-dir:ro
-    ports:
-      - "8008:8008"
     healthcheck:
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8008/debug.ping', timeout=4)"]
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:${CAIRNML_API_PORT:-8008}/debug.ping', timeout=4)"]
       interval: 10s
       timeout: 6s
       retries: 20
@@ -245,7 +246,7 @@ services:
       CAIRNML_REDIS_SERVICE_PORT: 6379
       CAIRNML_SERVER_DEPLOYMENT_TYPE: linux
       CAIRNML__apiserver__storage__endpoint: http://rustfs:9000
-      CAIRNML__apiserver__storage__public_endpoint: ${CAIRNML_STORAGE_PUBLIC_URL:-http://${CAIRNML_HOST}:9000}
+      CAIRNML__apiserver__storage__public_endpoint: ${CAIRNML_STORAGE_PUBLIC_URL:-}
       CAIRNML__apiserver__storage__access_key: ${CAIRNML_S3_ACCESS_KEY:-cairnml-server}
       CAIRNML__services__async_urls_delete__enabled: "true"
     volumes:
@@ -265,8 +266,16 @@ services:
       - webserver
     depends_on:
       apiserver: {condition: service_healthy}
+    # The one address clients use, on port 80 of every interface, with everything under /cairnml: the web app at
+    # /cairnml/, the API at /cairnml/api, the identity provider at /cairnml/idp. The proxy in this container routes
+    # them, and the machine's root address is left to other sites. CAIRNML_HTTP_PORT (deploy/.env) moves it off
+    # port 80 when another site uses that.
+    environment:
+      CAIRNML_SERVER_SUB_PATH: cairnml
+      NGINX_APISERVER_ADDRESS: http://apiserver:${CAIRNML_API_PORT:-8008}
+      NGINX_IDP_ADDRESS: http://cairnml-idp:${CAIRNML_IDP_PORT:-8180}
     ports:
-      - "8080:8080"
+      - "${CAIRNML_HTTP_PORT:-80}:8080"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/"]
       interval: 10s
@@ -276,6 +285,7 @@ services:
     networks:
       - backend
       - frontend
+      - cairnml
 
 networks:
   backend:

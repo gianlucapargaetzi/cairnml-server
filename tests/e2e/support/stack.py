@@ -171,17 +171,23 @@ class IsolatedStack:
 
     # --- URLs as the suite (and the containers) see them -----------------------------------------------------------
 
+    # The web server is the stack's one entrance, as on a real machine: the web app at /cairnml, the API at
+    # /cairnml/api and the identity provider at /cairnml/idp, all on the web port. The API and the identity provider
+    # also listen on their own ports; the suite uses those two only to reach the identity provider before the web
+    # server is up (idp_url) and to check what the API container listens on.
+
     @property
     def api_url(self) -> str:
-        return f"http://{self.host}:{self.ports['api']}"
+        return f"{self.web_url}/api"
 
     @property
     def web_url(self) -> str:
-        return f"http://{self.host}:{self.ports['web']}"
+        return f"http://{self.host}:{self.ports['web']}/cairnml"
 
     @property
     def idp_url(self) -> str:
-        return f"http://{self.host}:{self.ports['idp']}"
+        """Keycloak on its own port, for the suite's admin calls. Clients sign in through the web port instead."""
+        return f"http://{self.host}:{self.ports['idp']}/cairnml/idp"
 
     @property
     def storage_url(self) -> str:
@@ -220,11 +226,9 @@ class IsolatedStack:
         (folder / "cairnml.conf.template").write_text(text)
 
     def _write_realm(self) -> None:
-        """The committed realm, with this stack's addresses in place of the deploy/ names."""
+        """The committed realm. Its redirect URI is relative, so it names no address of this stack."""
         text = REALM_TEMPLATE.read_text()
-        text = text.replace("http://cairnml:8008", self.api_url)
-        text = text.replace("http://cairnml:8080", self.web_url)
-        json.loads(text)  # the result must still be a realm
+        json.loads(text)  # it must still be a realm
         (self.state / "realm-cairnml.json").write_text(text)
 
     def _env(self) -> dict:

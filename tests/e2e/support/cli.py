@@ -29,7 +29,7 @@ def environment(home: Path, login_user: str = "", login_password: str = "") -> d
     env["HOME"] = str(home)
     env["PATH"] = f"{VENV_BIN}{os.pathsep}{env.get('PATH', '')}"
     # The sign-in page opens through webbrowser: a BROWSER command ending in '&' runs in the background,
-    # so cairnml-init keeps listening for the sign-in reply while the driver signs in.
+    # so cairnml init keeps listening for the sign-in reply while the driver signs in.
     env["BROWSER"] = f"{shlex.quote(sys.executable)} {shlex.quote(str(BROWSER_DRIVER))} %s &"
     env["E2E_LOGIN_USER"] = login_user
     env["E2E_LOGIN_PASSWORD"] = login_password

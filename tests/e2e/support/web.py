@@ -9,7 +9,7 @@ DASHBOARD = re.compile(r"/dashboard")
 
 def sign_in(context, user=None, password=None):
     """Signs in through the identity provider's form, in a browser context of its own. Returns the page on the
-    dashboard. The same form is the one cairnml-init opens."""
+    dashboard. The same form is the one cairnml init opens."""
     page = context.new_page()
     page.goto(settings.WEB_URL + "/")
     page.wait_for_selector("#username", timeout=60_000)

@@ -1,7 +1,7 @@
 """A training script that records a run: two scalar series, parameters, a single value, a text line, a debug
 image and a console line. It is the "first run" of README section 2, with more of the logger in it.
 
-Run it on a machine that has been enrolled with cairnml-init. The last line it prints is JSON with the task id.
+Run it on a machine that has been enrolled with cairnml init. The last line it prints is JSON with the task id.
 """
 
 import argparse

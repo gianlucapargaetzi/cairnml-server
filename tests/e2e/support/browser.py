@@ -1,6 +1,6 @@
 """Signs in at the identity provider's form in a headless browser.
 
-The sign-in page is the one a person sees in their browser. cairnml-init opens it through the BROWSER
+The sign-in page is the one a person sees in their browser. cairnml init opens it through the BROWSER
 variable, which the tests set to this file (see cli.py). Run directly, it takes the sign-in address as
 its argument and the account from E2E_LOGIN_USER and E2E_LOGIN_PASSWORD. It exits 0 once the sign-in
 reply has reached the loopback listener ("Signed in" is shown), and non-zero otherwise.

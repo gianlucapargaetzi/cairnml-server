@@ -17,9 +17,9 @@ from apiserver.idp.web_login import LoginRefused, finish_login, start_login
 
 pytestmark = pytest.mark.integration  # needs MongoDB, Elasticsearch or a running API server
 
-ISSUER = "http://cairnml-idp:8180/realms/cairnml"
+ISSUER = "http://cairnml-idp:8180/cairnml/idp/realms/cairnml"
 WEB = "cairnml-web"
-REDIRECT = "http://localhost:8008/api/login.idp_callback"
+REDIRECT = "http://localhost/cairnml/api/v2.8/login.idp_callback"
 
 
 class Store:

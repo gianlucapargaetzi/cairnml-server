@@ -211,7 +211,7 @@ class TestSubProjects(TestService):
         user2_client = APIClient(
             api_key=config.get("apiclient.user_auth_only"),
             secret_key=config.get("apiclient.user_auth_only_secret"),
-            base_url=f"http://localhost:8008/v2.13",
+            base_url=f"http://localhost/cairnml/api/v2.13",
         )
 
         basename = "Pr1"

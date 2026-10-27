@@ -16,7 +16,7 @@ from apiserver.idp.users import upsert_idp_user
 
 pytestmark = pytest.mark.integration  # needs MongoDB, Elasticsearch or a running API server
 
-API = f"{os.environ.get('SM_API_URL', 'http://localhost:8008')}/v2.8"
+API = f"{os.environ.get('SM_API_URL', 'http://localhost/cairnml/api')}/v2.8"
 WEB = config.get("apiserver.idp.web_url")
 COOKIE = "cairnml_token_basic"
 

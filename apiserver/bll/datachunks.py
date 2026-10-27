@@ -19,6 +19,7 @@ from botocore.exceptions import ClientError
 from apiserver.apierrors import errors
 from apiserver.config_repo import config
 from apiserver.database.model.datachunk import Datachunk, DatachunkKind, DatachunkState
+from apiserver.idp import public_origin
 from apiserver.idp.secrets import read_secret
 
 # S3 accepts at most this many parts in one multipart upload, and at least 5 MiB for every part but the last.
@@ -87,7 +88,7 @@ def _internal():
 
 def _signer():
     """Used only to sign URLs. Signing needs no network, so this client may use the public address."""
-    return _s3(config.get("apiserver.storage.public_endpoint"))
+    return _s3(public_origin.storage_endpoint())
 
 
 def _ttl() -> int:

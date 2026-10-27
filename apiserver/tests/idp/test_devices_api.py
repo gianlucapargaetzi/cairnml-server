@@ -22,10 +22,10 @@ from apiserver.idp.keys import private_key_to_pem
 
 pytestmark = pytest.mark.integration  # needs MongoDB, Elasticsearch or a running API server
 
-IDP_ISSUER = "http://cairnml-idp:8180/realms/cairnml"
+IDP_ISSUER = "http://cairnml-idp:8180/cairnml/idp/realms/cairnml"
 SDK_CLIENT = "cairnml-sdk"
-SERVER = os.environ.get("SM_API_URL", "http://localhost:8008")
-PUBLIC_URL = os.environ.get("TEST_PUBLIC_URL", "http://localhost:8008")
+SERVER = os.environ.get("SM_API_URL", "http://localhost/cairnml/api")
+PUBLIC_URL = os.environ.get("TEST_PUBLIC_URL", "http://localhost/cairnml/api")
 API = f"{SERVER}/v2.8"
 
 

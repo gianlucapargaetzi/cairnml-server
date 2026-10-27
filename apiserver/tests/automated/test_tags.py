@@ -37,7 +37,7 @@ class TestTags(TestService):
 
     def testBackwardsCompatibility(self):
         new_api = self.api
-        self.api = APIClient(base_url="http://localhost:8008/v2.2", session_token=suite_bearer())
+        self.api = APIClient(base_url="http://localhost/cairnml/api/v2.2", session_token=suite_bearer())
         entity_tags = {
             "model": "archived",
             "project": "public",

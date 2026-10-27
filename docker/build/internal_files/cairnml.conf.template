@@ -2,7 +2,8 @@ server {
     listen       8080 default_server;
     ${COMMENT_IPV6_LISTEN}listen       [::]:8080 default_server;
     server_name  _;
-    root         /usr/share/nginx/html;
+    # Redirects keep the address the client used: the container's own port (8080) is not the client's.
+    absolute_redirect off;
     proxy_http_version 1.1;
     client_max_body_size 0;
 
@@ -25,48 +26,92 @@ server {
                 image/svg+xml
                 image/x-icon;
 
-    # Load configuration files for the default server block.
-    include /etc/nginx/default.d/*.conf;
+    # Everything of CairnML is under /${CAIRNML_SERVER_SUB_PATH}/, so the machine's root address is free for other sites:
+    #   /${CAIRNML_SERVER_SUB_PATH}/        the web app
+    #   /${CAIRNML_SERVER_SUB_PATH}/api     the API
+    #   /${CAIRNML_SERVER_SUB_PATH}/idp     the identity provider (Keycloak)
+    # The root address only leads here.
+    location = / {
+        return 302 /${CAIRNML_SERVER_SUB_PATH}/;
+    }
 
-    location / {
+    location = /${CAIRNML_SERVER_SUB_PATH} {
+        return 301 /${CAIRNML_SERVER_SUB_PATH}/;
+    }
+
+    # The web app. The entrypoint links the app's folder as /usr/share/nginx/cairnml-root/${CAIRNML_SERVER_SUB_PATH}.
+    location /${CAIRNML_SERVER_SUB_PATH}/ {
+        root /usr/share/nginx/cairnml-root;
         add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
         add_header Content-Security-Policy "frame-ancestors 'self'";
         add_header X-XSS-Protection "1; mode=block";
         add_header X-Content-Type-Options "nosniff" always;
         add_header Referrer-Policy "no-referrer-when-downgrade";
-        try_files $uri $uri/ /index.html;
+        try_files $uri $uri/ /${CAIRNML_SERVER_SUB_PATH}/index.html;
     }
 
-    location /version.json {
+    location /${CAIRNML_SERVER_SUB_PATH}/version.json {
+        root /usr/share/nginx/cairnml-root;
         add_header Cache-Control 'no-cache';
     }
 
-    location /api {
+    # The address the client used. The API server names itself in the URLs it hands out (sign-in redirects, the
+    # identity provider's issuer, presigned storage URLs) from these headers, so no address is configured.
+    location /${CAIRNML_SERVER_SUB_PATH}/api {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Host $http_host;
+        proxy_set_header X-Forwarded-Proto $scheme;
         proxy_pass ${NGINX_APISERVER_ADDR};
-        rewrite /api/(.*) /$1  break;
+        rewrite ^/${CAIRNML_SERVER_SUB_PATH}/api/(.*)$ /$1 break;
         proxy_set_header Connection "";
     }
 
     # Stored data: the API server answers with a redirect to a presigned URL in the object store.
-    location /datachunks {
+    location /${CAIRNML_SERVER_SUB_PATH}/datachunks {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Host $http_host;
+        proxy_set_header X-Forwarded-Proto $scheme;
         proxy_pass ${NGINX_APISERVER_ADDR};
+        rewrite ^/${CAIRNML_SERVER_SUB_PATH}/(datachunks.*)$ /$1 break;
     }
 
-    location /widgets {
+    # The identity provider (Keycloak): its sign-in pages and its admin console. It runs under the same path
+    # (KC_HTTP_RELATIVE_PATH), so the request goes through as it is.
+    location = /${CAIRNML_SERVER_SUB_PATH}/idp {
+        return 301 /${CAIRNML_SERVER_SUB_PATH}/idp/;
+    }
+
+    location /${CAIRNML_SERVER_SUB_PATH}/idp/ {
+        # The host exactly as the client typed it, with its port if it has one. The container's own port (8080) is
+        # not the client's: Docker publishes it on 80.
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Forwarded-Host $http_host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        # Keycloak sends large cookies and headers.
+        proxy_buffer_size 16k;
+        proxy_buffers 8 16k;
+        proxy_busy_buffers_size 32k;
+        proxy_pass ${NGINX_IDP_ADDR};
+    }
+
+    location /${CAIRNML_SERVER_SUB_PATH}/widgets {
         alias /usr/share/nginx/widgets;
-        try_files $uri $uri/ /widgets/index.html;
+        try_files $uri $uri/ /${CAIRNML_SERVER_SUB_PATH}/widgets/index.html;
         add_header Content-Security-Policy "frame-ancestors *";
     }
 
     error_page 404 /404.html;
-        location = /40x.html {
+    location = /404.html {
+        root /usr/share/nginx/html;
+        internal;
     }
 
     error_page 500 502 503 504 /50x.html;
-        location = /50x.html {
+    location = /50x.html {
+        root /usr/share/nginx/html;
+        internal;
     }
 }

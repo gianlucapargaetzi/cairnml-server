@@ -62,18 +62,20 @@ EOF
         /usr/share/nginx/html/configuration.json
 
     export NGINX_APISERVER_ADDR=${NGINX_APISERVER_ADDRESS:-http://apiserver:8008}
+    export NGINX_IDP_ADDR=${NGINX_IDP_ADDRESS:-http://cairnml-idp:8180}
+    # Everything is served under /<sub path>/: the machine's root address is left to other sites.
+    export CAIRNML_SERVER_SUB_PATH=${CAIRNML_SERVER_SUB_PATH:-cairnml}
     COMMENT_IPV6_LISTEN=$([ "$DISABLE_NGINX_IPV6" = "true" ] && echo "#" || echo "")
     export COMMENT_IPV6_LISTEN
-    envsubst '${COMMENT_IPV6_LISTEN} ${NGINX_APISERVER_ADDR}' < /etc/nginx/cairnml.conf.template > /etc/nginx/sites-enabled/default
+    envsubst '${COMMENT_IPV6_LISTEN} ${NGINX_APISERVER_ADDR} ${NGINX_IDP_ADDR} ${CAIRNML_SERVER_SUB_PATH}' < /etc/nginx/cairnml.conf.template > /etc/nginx/sites-enabled/default
 
-    if [[ -n "${CAIRNML_SERVER_SUB_PATH}" ]]; then
-      mkdir -p /etc/nginx/default.d/
-      envsubst '${CAIRNML_SERVER_SUB_PATH}' < /etc/nginx/cairnml_subpath.conf.template > /etc/nginx/default.d/cairnml_subpath.conf
-      cp /usr/share/nginx/html/env.js /usr/share/nginx/html/env.js.origin
-      envsubst '${CAIRNML_SERVER_SUB_PATH}' < /usr/share/nginx/html/env.js.origin > /usr/share/nginx/html/env.js
-      cp /usr/share/nginx/html/index.html /usr/share/nginx/html/index.html.origin
-      sed 's/href="\/"/href="\/'${CAIRNML_SERVER_SUB_PATH}'\/"/' /usr/share/nginx/html/index.html.origin > /usr/share/nginx/html/index.html
-    fi
+    # The web app lives at /<sub path>/: its folder is linked under that name, and the app is told its path.
+    mkdir -p /usr/share/nginx/cairnml-root
+    ln -sfn /usr/share/nginx/html "/usr/share/nginx/cairnml-root/${CAIRNML_SERVER_SUB_PATH}"
+    cp /usr/share/nginx/html/env.js /usr/share/nginx/html/env.js.origin
+    envsubst '${CAIRNML_SERVER_SUB_PATH}' < /usr/share/nginx/html/env.js.origin > /usr/share/nginx/html/env.js
+    cp /usr/share/nginx/html/index.html /usr/share/nginx/html/index.html.origin
+    sed 's/href="\/"/href="\/'${CAIRNML_SERVER_SUB_PATH}'\/"/' /usr/share/nginx/html/index.html.origin > /usr/share/nginx/html/index.html
 
     #start the server
     /usr/sbin/nginx -g "daemon off;"

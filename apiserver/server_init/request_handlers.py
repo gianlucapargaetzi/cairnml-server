@@ -11,6 +11,7 @@ from werkzeug.http import quote_header_value
 from apiserver.apierrors import APIError
 from apiserver.apierrors.base import BaseError
 from apiserver.config_repo import config
+from apiserver.idp import public_origin
 from apiserver.service_repo import ServiceRepo, APICall
 from apiserver.service_repo.auth import AuthType, Token
 from apiserver.service_repo.errors import PathParsingError
@@ -56,6 +57,7 @@ class RequestHandlers:
             pass
 
     def before_request(self):
+        public_origin.remember(request.headers, request.host)
         if request.method == "OPTIONS":
             return "", 200
         if "/static/" in request.path:
@@ -203,7 +205,7 @@ class RequestHandlers:
         cookie_name = config.get("apiserver.auth.session_auth_cookie_name")
         if not request.cookies.get(cookie_name) or request.headers.get("Authorization"):
             return None
-        allowed = _origin_of(config.get("apiserver.idp.web_url"))
+        allowed = _origin_of(public_origin.web_url())
         sent = request.headers.get("Origin") or _origin_of(request.headers.get("Referer", ""))
         if not sent or sent != allowed:
             from apiserver.idp.audit import record as _audit

@@ -7,7 +7,7 @@ import subprocess
 from support import settings
 from support.stack import BIND, HOST
 
-REAL_STACK_PORTS = {8008, 8080, 8180, 9000, 9001}
+REAL_STACK_PORTS = {80, 9000, 9001}
 REAL_STACK_NAMES = ("cairnml", "cairnml-idp", "cairnml-nas")
 
 
@@ -25,8 +25,9 @@ def test_the_addresses_are_not_the_ones_of_the_deploy_stack():
         assert not any(name in url for name in REAL_STACK_NAMES), url
 
 
-def test_the_api_is_served_by_this_suites_compose_project():
-    """The API container is this session's, and it listens on the loopback port the suite uses.
+def test_the_api_is_served_by_this_suites_compose_project(isolated_stack):
+    """The API container is this session's, and it listens on the loopback port the suite chose. Clients reach it
+    through the web server's port.
 
     Expect: Exactly one API container runs in this suite's project, listening on the suite's loopback port.
     """
@@ -37,6 +38,6 @@ def test_the_api_is_served_by_this_suites_compose_project():
     assert len(apiservers) == 1, names
     env = subprocess.run(["docker", "inspect", apiservers[0], "--format", "{{range .Config.Env}}{{println .}}{{end}}"],
                          capture_output=True, text=True, timeout=60).stdout.splitlines()
-    assert f"CAIRNML__apiserver__listen__port={_port(settings.API_URL)}" in env
+    assert f"CAIRNML__apiserver__listen__port={isolated_stack.ports['api']}" in env
     assert f"CAIRNML__apiserver__listen__ip={BIND}" in env
     assert settings.API_URL.startswith(f"http://{HOST}:")

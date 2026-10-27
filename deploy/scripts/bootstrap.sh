@@ -20,19 +20,11 @@ if [ ! -f .env ]; then
 fi
 set -a; . ./.env; set +a
 
-# The address that browsers, the SDK and agents use to reach this server. Empty in deploy/.env: this machine's IPv4
-# address, written back to deploy/.env so that later runs keep it.
-if [ -z "${CAIRNML_HOST:-}" ]; then
-  CAIRNML_HOST=$(ip -4 route get 1.1.1.1 | sed -n 's/.* src \([0-9.]*\).*/\1/p' | head -n1)
-  [ -n "$CAIRNML_HOST" ] || { echo "could not find this machine's IP address: set CAIRNML_HOST in deploy/.env" >&2; exit 1; }
-  if grep -q '^CAIRNML_HOST=' .env; then
-    sed -i "s|^CAIRNML_HOST=.*|CAIRNML_HOST=$CAIRNML_HOST|" .env
-  else
-    echo "CAIRNML_HOST=$CAIRNML_HOST" >> .env
-  fi
-  echo "CAIRNML_HOST=$CAIRNML_HOST (written to deploy/.env)"
-fi
-export CAIRNML_HOST
+# Keycloak creates a temporary admin with this name on its first start. Setup deletes it once KC_ADMIN can sign in, so
+# KC_ADMIN must be another name.
+TEMP_ADMIN=kcadmin
+[ -n "${KC_ADMIN:-}" ] && [ "$KC_ADMIN" != "$TEMP_ADMIN" ] || { echo "set KC_ADMIN in deploy/.env to a name other than $TEMP_ADMIN" >&2; exit 1; }
+
 
 # The stack's state (data and secrets) lives outside the repository: CAIRNML_HOME, default ~/.local/share/cairnml.
 # Set it in deploy/.env to put it somewhere else. The GitHub App key used to be deploy/secrets/github-app.pem: it is
@@ -46,10 +38,13 @@ if [ ! -f "$STATE/secrets/github-app.pem" ] && [ -f secrets/github-app.pem ]; th
 fi
 mkdir -p "$STATE/secrets/cairnml"
 
-# The realm names this server by CAIRNML_HOST (the redirect addresses of the web app and the API). Keycloak imports
-# the rendered copy, and the clients below are updated from it.
+# Remove this stack's containers and networks first, so a rerun starts clean and no stale or duplicate containers are
+# left behind. The data stays: it lives in $STATE (bind mounts), and -v is not used, so volumes are kept too.
+docker compose down --remove-orphans
+
+# The realm names no address: its redirect URIs accept the address each client uses (through the proxy).
 mkdir -p "$STATE/idp"
-sed "s|http://cairnml:|http://$CAIRNML_HOST:|g" idp/realm-cairnml.json > "$STATE/idp/realm-cairnml.json"
+cp idp/realm-cairnml.json "$STATE/idp/realm-cairnml.json"
 
 # The identity provider keeps its data in a host folder; its container runs as uid 1000.
 mkdir -p "$STATE/data/idp"
@@ -57,19 +52,37 @@ docker run --rm -v "$STATE/data:/data" alpine:3.20 sh -c 'chown 1000:1000 /data/
 
 docker compose up -d cairnml-idp
 
-# One admin login for both Keycloak's master realm and the cairnml realm: KC_ADMIN and KC_ADMIN_PASSWORD
-# from deploy/.env, applied on every run so the password in .env is the one that works. Nothing is printed.
+# The permanent admin is KC_ADMIN. Keycloak's temporary admin (TEMP_ADMIN, created on its first start) is deleted only
+# after KC_ADMIN has signed in. The admin signs in with the password setup last applied, kept in the state folder, so a
+# new KC_ADMIN_PASSWORD in deploy/.env is applied on the next run. Nothing is printed.
+ADMIN_PASSWORD_FILE="$STATE/secrets/keycloak-admin-password"
+if [ -s "$ADMIN_PASSWORD_FILE" ]; then PREV_ADMIN_PASSWORD=$(cat "$ADMIN_PASSWORD_FILE"); else PREV_ADMIN_PASSWORD="$KC_ADMIN_PASSWORD"; fi
+
+# The same account administers the master realm (Keycloak itself) and the cairnml realm (CairnML's sign-in).
 KC_USER_SETUP='
 set -e
 K=/opt/keycloak/bin/kcadm.sh
+signed_in() { $K config credentials --server http://localhost:$KC_HTTP_PORT/cairnml/idp --realm master --user "$1" --password "$2" >/dev/null 2>&1; }
 ok=0
 for _ in $(seq 1 90); do
-  if $K config credentials --server http://localhost:8180 --realm master \
-       --user "$KC_MASTER_USER" --password "$KC_MASTER_PW" >/dev/null 2>&1; then ok=1; break; fi
+  if signed_in "$ADMIN_USER" "$PREV_PW" || signed_in "$ADMIN_USER" "$ADMIN_PW" || signed_in "$TEMP_USER" "$PREV_PW"; then ok=1; break; fi
   sleep 2
 done
-[ "$ok" = 1 ] || { echo "keycloak did not become ready" >&2; exit 1; }
+[ "$ok" = 1 ] || { echo "could not sign in to Keycloak: check KC_ADMIN and KC_ADMIN_PASSWORD" >&2; exit 1; }
+if ! signed_in "$ADMIN_USER" "$PREV_PW" && ! signed_in "$ADMIN_USER" "$ADMIN_PW"; then
+  signed_in "$TEMP_USER" "$PREV_PW"
+  if ! $K get users -r master -q username="$ADMIN_USER" --fields username | grep -q "\"username\""; then
+    $K create users -r master -s username="$ADMIN_USER" -s enabled=true >/dev/null
+  fi
+fi
+$K add-roles -r master --uusername "$ADMIN_USER" --rolename admin
 $K set-password -r master --username "$ADMIN_USER" --new-password "$ADMIN_PW" >/dev/null
+signed_in "$ADMIN_USER" "$ADMIN_PW" || { echo "the new admin cannot sign in: the temporary admin is kept" >&2; exit 1; }
+temp_id=$($K get users -r master -q username="$TEMP_USER" --fields id | sed -n "s/.*\"id\" *: *\"\([^\"]*\)\".*/\1/p" | head -n1)
+[ -z "$temp_id" ] || $K delete "users/$temp_id" -r master
+# The stack runs on a LAN reached by its address over plain HTTP. The default SSL policy of the master realm
+# would refuse that, and the admin console signs in there.
+$K update realms/master -s sslRequired=NONE
 if $K get users -r cairnml -q username="$ADMIN_USER" --fields username | grep -q "\"username\""; then
   $K set-password -r cairnml --username "$ADMIN_USER" --new-password "$ADMIN_PW" >/dev/null
 else
@@ -78,11 +91,15 @@ else
   $K add-roles -r cairnml --uusername "$ADMIN_USER" --rolename cairnml-admin
   $K set-password -r cairnml --username "$ADMIN_USER" --new-password "$ADMIN_PW"
 fi
+cairnml_temp_id=$($K get users -r cairnml -q username="$TEMP_USER" --fields id | sed -n "s/.*\"id\" *: *\"\([^\"]*\)\".*/\1/p" | head -n1)
+[ -z "$cairnml_temp_id" ] || $K delete "users/$cairnml_temp_id" -r cairnml
 '
 docker compose exec -T \
-  -e KC_MASTER_USER="$KC_ADMIN" -e KC_MASTER_PW="$KC_ADMIN_PASSWORD" \
   -e ADMIN_USER="$KC_ADMIN" -e ADMIN_PW="$KC_ADMIN_PASSWORD" \
+  -e TEMP_USER="$TEMP_ADMIN" -e PREV_PW="$PREV_ADMIN_PASSWORD" \
   cairnml-idp sh -c "$KC_USER_SETUP" >/dev/null
+printf '%s' "$KC_ADMIN_PASSWORD" > "$ADMIN_PASSWORD_FILE"
+chmod 600 "$ADMIN_PASSWORD_FILE"
 echo "admin login set from deploy/.env: user $KC_ADMIN, same password for Keycloak and CairnML"
 
 # CairnML secrets, written once and kept. Nothing is printed.
@@ -128,7 +145,7 @@ set -e
 K=/opt/keycloak/bin/kcadm.sh
 ok=0
 for _ in $(seq 1 90); do
-  if $K config credentials --server http://localhost:8180 --realm master \
+  if $K config credentials --server http://localhost:$KC_HTTP_PORT/cairnml/idp --realm master \
        --user "$KC_MASTER_USER" --password "$KC_MASTER_PW" >/dev/null 2>&1; then ok=1; break; fi
   sleep 2
 done
@@ -170,9 +187,10 @@ docker compose up -d --build
 
 echo "waiting for the CairnML server..."
 for _ in $(seq 1 90); do
-  curl -fsS -X POST "http://$CAIRNML_HOST:8008/v2.8/login.supported_modes" \
+  curl -fsS -X POST "http://localhost:${CAIRNML_HTTP_PORT:-80}/cairnml/api/v2.8/login.supported_modes" \
     -H 'Content-Type: application/json' -d '{}' >/dev/null 2>&1 && { echo "CairnML server is up"; break; }
   sleep 2
 done
-echo "CairnML: web http://$CAIRNML_HOST:8080, API http://$CAIRNML_HOST:8008"
+PORT_SUFFIX=""; [ "${CAIRNML_HTTP_PORT:-80}" = 80 ] || PORT_SUFFIX=":${CAIRNML_HTTP_PORT}"
+echo "CairnML: web http://<this-machine>$PORT_SUFFIX/cairnml/, API http://<this-machine>$PORT_SUFFIX/cairnml/api, identity provider http://<this-machine>$PORT_SUFFIX/cairnml/idp"
 echo "next: sign in as $KC_ADMIN, then follow the client and agent steps in README.md"

@@ -14,6 +14,7 @@ from apiserver.idp.assertion import AssertionInvalid, unverified_issuer, verify_
 from apiserver.idp.audit import record as audit
 from apiserver.idp.checks import AccessDenied, check_device
 from apiserver.idp.keys import load_public_key
+from apiserver.idp import public_origin
 from apiserver.idp.oidc import OidcError
 from apiserver.idp.replay import claim_jti
 from apiserver.idp.tokens import issue_access_token
@@ -84,11 +85,11 @@ def enroll(call: APICall, _company, request: EnrollRequest):
 def idp_settings(call: APICall, _company, _):
     """What a device needs to start the identity-provider sign-in. No secret is returned."""
     return {
-        "issuer": config.get("apiserver.idp.issuer"),
+        "issuer": public_origin.idp_issuer(),
         "sdk_client_id": config.get("apiserver.idp.sdk_client_id"),
         # The address devices must use: a device's assertion is addressed to it, so it must match exactly.
-        "public_url": config.get("apiserver.idp.public_url").rstrip("/"),
-        "web_url": config.get("apiserver.idp.web_url"),
+        "public_url": public_origin.api_url().rstrip("/"),
+        "web_url": public_origin.web_url(),
     }
 
 
@@ -106,7 +107,7 @@ def exchange(call: APICall, _company, request: ExchangeRequest):
         audit(device_id, "token.refused", device=device_id, reason=str(exc))
         raise errors.unauthorized.InvalidToken(str(exc)) from None
 
-    audience = config.get("apiserver.idp.public_url")
+    audience = public_origin.api_url().rstrip("/")
     try:
         claims = verify_assertion(request.assertion, load_public_key(device.public_key), audience=audience)
     except (AssertionInvalid, ValueError):
