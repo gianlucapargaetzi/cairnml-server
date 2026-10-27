@@ -29,12 +29,15 @@ services:
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: ${E2E_KC_ADMIN}
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${E2E_KC_ADMIN_PASSWORD}
-      KC_HOSTNAME: http://${E2E_HOST}:${E2E_IDP_PORT}
       KC_HTTP_HOST: ${E2E_BIND}
       KC_HTTP_PORT: ${E2E_IDP_PORT}
       KC_HTTP_MANAGEMENT_PORT: ${E2E_IDP_MANAGEMENT_PORT}
-      KC_HOSTNAME_STRICT: "false"
       KC_HTTP_ENABLED: "true"
+      # As on a real machine: served under /cairnml/idp behind the web server's proxy, and named after the
+      # X-Forwarded-* headers it passes, so no hostname is configured.
+      KC_HTTP_RELATIVE_PATH: /cairnml/idp
+      KC_PROXY_HEADERS: xforwarded
+      KC_HOSTNAME_STRICT: "false"
     volumes:
       - ${E2E_STATE}/realm-cairnml.json:/opt/keycloak/data/import/realm-cairnml.json:ro
       - ${E2E_STATE}/data/idp:/opt/keycloak/data/h2
@@ -141,9 +144,9 @@ services:
       CAIRNML_REDIS_SERVICE_HOST: 127.0.0.1
       CAIRNML_REDIS_SERVICE_PORT: ${E2E_REDIS_PORT}
       CAIRNML_SERVER_DEPLOYMENT_TYPE: linux
-      CAIRNML__apiserver__idp__issuer: http://${E2E_HOST}:${E2E_IDP_PORT}/realms/cairnml
-      CAIRNML__apiserver__idp__public_url: http://${E2E_HOST}:${E2E_API_PORT}
-      CAIRNML__apiserver__idp__web_url: http://${E2E_HOST}:${E2E_WEB_PORT}
+      # The server's own address for the identity provider. The addresses it hands out (the API, the web app, the
+      # issuer clients sign in at) are the one the client used, passed on by the web server.
+      CAIRNML__apiserver__idp__issuer: http://${E2E_HOST}:${E2E_IDP_PORT}/cairnml/idp/realms/cairnml
       CAIRNML__apiserver__idp__web_client_id: cairnml-web
       CAIRNML__apiserver__idp__sdk_client_id: cairnml-sdk
       CAIRNML__apiserver__idp__directory_client_id: cairnml-server
@@ -205,9 +208,11 @@ services:
       - apiserver
     environment:
       NGINX_APISERVER_ADDRESS: http://127.0.0.1:${E2E_API_PORT}
+      NGINX_IDP_ADDRESS: http://127.0.0.1:${E2E_IDP_PORT}
+      CAIRNML_SERVER_SUB_PATH: cairnml
     volumes:
-      # The web app finds its API on port 8008 of the same host unless this file says otherwise; here it says
-      # to use the web server's own /api route (see docs/e2e_testing/E2E.md, "Addresses").
+      # The web app finds its API under its own path (/cairnml/api); this folder holds no configuration of its own
+      # (see docs/e2e_testing/E2E.md, "Addresses").
       - ${E2E_STATE}/configs:/mnt/external_files/configs:ro
       # The image's nginx template listens on port 80; this copy listens on the port the suite chose.
       - ${E2E_STATE}/nginx/cairnml.conf.template:/etc/nginx/cairnml.conf.template:ro

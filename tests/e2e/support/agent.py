@@ -38,10 +38,10 @@ LOST_WITHIN_SEC = 30
 
 
 def init(home: Path, account, *, server: str = None, name: str = "e2e-agent"):
-    """cairnml-agent init --server, signed in as account (user, password) through the sign-in page. Only an admin may
+    """cairnml-agent init <server>, signed in as account (user, password) through the sign-in page. Only an admin may
     enrol an agent."""
     user, password = account
-    args = ["init", "--server", server or settings.API_URL, "--name", name]
+    args = ["init", server or settings.WEB_URL, "--name", name]
     return cli.run("cairnml-agent", home, login_user=user, login_password=password, args=args, timeout=300)
 
 

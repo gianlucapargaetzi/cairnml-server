@@ -19,20 +19,20 @@ Run one module with `pytest tests/e2e/<file>`, one test with `pytest tests/e2e -
 
 ## test_02_enrolment.py: enrolling a machine
 
-Section 1 of E2E.md. Every enrolment goes through `cairnml-init` and the real sign-in page.
+Section 1 of E2E.md. Every enrolment goes through `cairnml init` and the real sign-in page.
 
 | Test | Checks |
 |---|---|
 | `test_init_enrols_the_machine_and_writes_its_key` | The device key is written with mode 0600; the configuration names the device and the server. |
-| `test_whoami_names_the_admin_and_the_device` | `cairnml-whoami` prints the signed-in user and the device id. |
-| `test_whoami_uses_the_device_key_without_a_browser` | `cairnml-whoami` never opens a sign-in page (the browser command is set to fail). |
-| `test_init_again_without_force_is_refused` | An enrolled machine refuses a second `cairnml-init`; the key is unchanged. |
+| `test_whoami_names_the_admin_and_the_device` | `cairnml whoami` prints the signed-in user and the device id. |
+| `test_whoami_uses_the_device_key_without_a_browser` | `cairnml whoami` never opens a sign-in page (the browser command is set to fail). |
+| `test_init_again_without_force_is_refused` | An enrolled machine refuses a second `cairnml init`; the key is unchanged. |
 | `test_init_with_force_revokes_the_old_device` | `--force` revokes the previous device; its old key gets no token, the new key does. |
-| `test_logout_revokes_the_device_and_removes_its_key` | `cairnml-logout` revokes the device on the server and removes the key. |
-| `test_whoami_after_logout_says_not_enrolled` | After logout, `cairnml-whoami` says the machine is not enrolled. |
+| `test_logout_revokes_the_device_and_removes_its_key` | `cairnml logout` revokes the device on the server and removes the key. |
+| `test_whoami_after_logout_says_not_enrolled` | After logout, `cairnml whoami` says the machine is not enrolled. |
 | `test_logout_on_a_machine_that_is_not_enrolled_does_nothing` | Logout on an unenrolled machine exits cleanly and says so. |
 | `test_init_with_an_unreachable_server_writes_nothing` | An unreachable server is reported as such, and no key is written. |
-| `test_init_accepts_the_web_address_and_finds_the_api` | The web address is accepted and the API address derived from it. **Skip** on ports other than 8080/8008 (the derivation is fixed to them). |
+| `test_init_takes_the_servers_address_and_finds_the_api` | The server is given as one address, without the path; the API address (`/cairnml/api` of it) is worked out. |
 | `test_member_enrols_as_a_plain_user` | A plain user enrols; `whoami` shows the user, not the admin role. |
 
 ## test_03_device_security.py: what the server refuses

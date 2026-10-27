@@ -91,12 +91,12 @@ reachable from anything inside `dind`.
 |---|---|
 | Compose project | Named `cairnml-e2e-<random>` for each session, so two sessions never share containers or networks. |
 | Address | Inside `dind`, the stack uses the loopback address and host networking. Services that talk to each other use `127.0.0.1`; the addresses that clients see (the issuer, the public URLs, the storage's public endpoint) come from `CAIRNML_E2E_HOST`, and the listen address from `CAIRNML_E2E_BIND`. |
-| Ports | Nine random free ports in 18000 to 18999 (the API, the web app, the sign-in service and its management port, object storage, MongoDB, Redis, and Elasticsearch's HTTP and transport ports). The suite chooses them. Nothing uses the ports 8008, 8080, 8180 or 9000 that `deploy/` uses. |
+| Ports | Nine random free ports in 18000 to 18999 (the API, the web app, the sign-in service and its management port, object storage, MongoDB, Redis, and Elasticsearch's HTTP and transport ports). The suite chooses them. Nothing uses the ports 80 or 9000 that `deploy/` uses. |
 | State | `/e2e-state/stack` in the isolated environment (the temporary folder on the host run): the data of Keycloak, RustFS, MongoDB, Redis and Elasticsearch, the secrets, and a copy of the realm with this stack's addresses. Removed at the end of a session, unless the stack is reused. |
 | Secrets | Generated for the stack (token, session, S3 key). The directory-sync secret is read from the stack's own Keycloak. |
 | Accounts | The admin (`e2e-admin`) gets a password generated for the stack. It is a realm user with the `cairnml-admin` role. The plain user of each session is created and removed by the suite. |
 | Realm | The committed realm (`deploy/idp/realm-cairnml.json`) read as a template, with its addresses replaced by this stack's. The suite's directory client gets `view-users`, as `bootstrap.sh` grants it. |
-| Web app | Its API address is the web server's own `/api` route, set with `configuration.json` (see Addresses). |
+| Web app | Its API address is the web server's own `/cairnml/api` route, found from the path it is served under (see Addresses). |
 
 Teardown: `docker compose down --volumes`, then the state folder is removed. The state folder's files were written by
 containers as other users, so they are first given back to this user, in a container.
@@ -106,15 +106,15 @@ answering is a container of this session's compose project.
 
 ## Addresses
 
-The clients (the SDK, the CLI, the agent) take the API address as a command-line argument or from the stack's identity
-settings, so nothing depends on a fixed address. Two things in this build assume the default ports, and the suite works
-around them:
+As on a real machine, the web server is the stack's one entrance: the web app is at `/cairnml`, the API at
+`/cairnml/api` and the sign-in service at `/cairnml/idp`, all on the web server's port. The suite's `settings.API_URL`
+and `settings.WEB_URL` are those addresses. The server names itself after the address the client used (the proxy passes
+it in `X-Forwarded-Host`), so no address is configured on it, and the clients (`cairnml init <server>`, `cairnml-agent
+init <server>`) take the server's address and work out the rest.
 
-- The web app takes its API address from its own page address with port `8008` (`cairnml-web`, `guessAPIServerURL`).
-  The suite writes `{"apiBaseUrl": "/api"}` to the web server's `configuration.json`, which the image reads from
-  `/mnt/external_files/configs/`. Filed as `cairnml-web` issue #3.
-- `cairnml-init --server <web address>` derives the API address from the web address for ports 8080 and 8008 only. The
-  test for that is skipped on other ports (`test_02_enrolment.py::test_init_accepts_the_web_address_and_finds_the_api`).
+Two services also listen on their own loopback ports, which the suite uses and clients do not: the sign-in service
+(`settings.IDP_URL`, for the admin calls made before the web server is up) and the API (which
+`test_00_isolation.py` checks).
 
 ## Limits
 
@@ -141,7 +141,7 @@ around them:
 | `support/browser.py`, `support/web.py` | Fill the sign-in form in headless Chromium, as a person would, and sign in to the web app in a fresh context. |
 | `support/keycloak.py` | Creates, disables and removes the test accounts through Keycloak's admin API. |
 | `support/api.py` | REST calls as a device: signs the assertion with the device key and exchanges it for a token. |
-| `support/client.py` | A person's machine: `client.init()` runs `cairnml-init`, and `whoami`, `logout` and the key helpers. |
+| `support/client.py` | A person's machine: `client.init()` runs `cairnml init`, and `whoami`, `logout` and the key helpers. |
 | `support/agent.py` | A machine that runs jobs: `agent.init()` runs `cairnml-agent init`, and `AgentMachine` runs the managed daemon as a process, with the timers and the shared cache folders of the isolated environment. |
 | `support/git.py` | Local git repositories: a bare remote and a checkout of it. |
 | `support/workspace.py`, `support/jobs.py` | Running the example scripts and reading their JSON result (the last JSON line); enqueueing and following jobs. |
@@ -174,7 +174,6 @@ example script writes the group first, and `test_set_parameters_replaces_the_who
 
 ### Not caught by a test
 
-- **Fixed-port derivation in `cairnml-init`.** Skipped on other ports, so it is not run here.
 
 ## Status of the last full run
 

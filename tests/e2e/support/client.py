@@ -1,4 +1,4 @@
-"""A person's machine as the CairnML SDK enrols it: cairnml-init, cairnml-whoami and cairnml-logout."""
+"""A person's machine as the CairnML SDK enrols it: cairnml init, cairnml whoami and cairnml logout."""
 
 import re
 from pathlib import Path
@@ -33,17 +33,18 @@ def _device_id_in(conf: Path) -> str:
 
 
 def init(home: Path, account, *, server: str = None, name: str = "e2e-machine", force: bool = False):
-    """cairnml-init, signed in as account (user, password) through the sign-in page."""
+    """cairnml init <server>, signed in as account (user, password) through the sign-in page. The server is the
+    stack's address; the API is under /api of it."""
     user, password = account
-    args = ["--server", server or settings.API_URL, "--name", name]
+    args = ["init", server or settings.WEB_URL, "--name", name]
     if force:
         args.append("--force")
-    return cli.run("cairnml-init", home, login_user=user, login_password=password, args=args)
+    return cli.run("cairnml", home, login_user=user, login_password=password, args=args)
 
 
 def whoami(home: Path):
-    return cli.run("cairnml-whoami", home)
+    return cli.run("cairnml", home, args=["whoami"])
 
 
 def logout(home: Path):
-    return cli.run("cairnml-logout", home)
+    return cli.run("cairnml", home, args=["logout"])

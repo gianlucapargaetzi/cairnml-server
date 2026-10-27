@@ -1,6 +1,6 @@
 """Section 1 of docs/e2e_testing/E2E.md: enrolling a machine, checking it, re-enrolling and signing out.
 
-Every enrolment here goes through cairnml-init and the real sign-in page (headless browser).
+Every enrolment here goes through cairnml init and the real sign-in page (headless browser).
 """
 
 import os
@@ -48,7 +48,7 @@ def test_whoami_uses_the_device_key_without_a_browser(client_home):
 
     Expect: The command exits 0 and prints no sign-in prompt, with no browser available to it.
     """
-    result = cli.run("cairnml-whoami", client_home, extra_env={"BROWSER": "/bin/false"})
+    result = cli.run("cairnml", client_home, args=["whoami"], extra_env={"BROWSER": "/bin/false"})
     assert result.returncode == 0, result.output
     assert "sign" not in result.stdout.lower()
 
@@ -140,17 +140,13 @@ def test_init_with_an_unreachable_server_writes_nothing(fresh_home, admin_accoun
     assert not client.key_path(fresh_home).exists()
 
 
-def test_init_accepts_the_web_address_and_finds_the_api(fresh_home, admin_account):
-    """The sign-in address (port 8080) is accepted; the API address (port 8008) is derived from it.
+def test_init_takes_the_servers_address_and_finds_the_api(fresh_home, admin_account):
+    """The server is one address; the API is under /cairnml/api of it. The address may be given without the path.
 
-    The derivation is for the default ports. The suite's stack runs on other ports (it cannot hold 8008 and 8080 while
-    a stack under deploy/ does), so the test is run only where the ports are the defaults.
-
-    Expect: The configuration names the API address. The suite skips this test on ports other than the defaults.
+    Expect: The configuration names the API address.
     """
-    if not settings.WEB_URL.endswith(":8080"):
-        pytest.skip("the API address is derived from the web address for ports 8080/8008 only; this stack uses others")
-    result = client.init(fresh_home, admin_account, server=settings.WEB_URL, name="e2e-web-address")
+    server = settings.WEB_URL[: -len("/cairnml")]
+    result = client.init(fresh_home, admin_account, server=server, name="e2e-web-address")
     assert result.returncode == 0, result.output
     assert settings.API_URL in (fresh_home / "cairnml.conf").read_text()
     assert client.logout(fresh_home).returncode == 0

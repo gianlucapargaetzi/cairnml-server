@@ -1,6 +1,6 @@
 """docs/e2e_testing/E2E.md, UI checks: the web app as a person sees it, in a headless browser.
 
-Every test signs in through the real sign-in page (the same form cairnml-init uses), in a fresh browser context,
+Every test signs in through the real sign-in page (the same form cairnml init uses), in a fresh browser context,
 so no test depends on another test's cookies. Pages are checked for their text and their layout; screenshots are
 not compared pixel by pixel.
 """
