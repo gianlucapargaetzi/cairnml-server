@@ -32,11 +32,6 @@ def shared_cache_settings() -> dict:
     }
 
 
-# The worker lookup and the agent helpers below rely on the server's worker list:
-# about 6 s, with a generous margin.
-LOST_WITHIN_SEC = 30
-
-
 def init(home: Path, account, *, server: str = None, name: str = "e2e-agent"):
     """cairnml-agent init <server>, signed in as account (user, password) through the sign-in page. Only an admin may
     enrol an agent."""
