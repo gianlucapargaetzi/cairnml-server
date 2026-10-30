@@ -1,9 +1,9 @@
 from types import SimpleNamespace
-from unittest import TestCase
+from unittest import TestCase, mock
 
 from apiserver.apierrors import errors
 from apiserver.idp.github import GitHubError, RepoNotAccessible
-from apiserver.idp.github_check import check_submission
+from apiserver.idp.github_check import GITHUB_APP_DOCS, check_submission
 
 
 class FakeApp:
@@ -24,7 +24,7 @@ class FakeApp:
 
 
 def task(repository="https://github.com/acme/proj.git", commit="abc123"):
-    return SimpleNamespace(id="t1", script=SimpleNamespace(repository=repository, version_num=commit))
+    return SimpleNamespace(id="t1", company="c1", script=SimpleNamespace(repository=repository, version_num=commit))
 
 
 class TestSubmissionCheck(TestCase):
@@ -40,6 +40,7 @@ class TestSubmissionCheck(TestCase):
         with self.assertRaises(errors.bad_request.ValidationError) as ctx:
             check_submission(task(), FakeApp(installed=False))
         self.assertIn("not installed", str(ctx.exception))
+        self.assertIn(GITHUB_APP_DOCS, str(ctx.exception))
 
     def test_a_github_repository_without_a_recorded_commit_is_refused(self):
         with self.assertRaises(errors.bad_request.ValidationError):
@@ -49,8 +50,16 @@ class TestSubmissionCheck(TestCase):
         with self.assertRaises(errors.bad_request.ValidationError):
             check_submission(task(), FakeApp(failing=True))
 
-    def test_a_repository_that_is_not_on_github_is_not_checked(self):
-        check_submission(task(repository="https://gitlab.example.org/a/b.git"), None)
+    def test_a_public_repository_that_is_not_on_github_is_accepted(self):
+        with mock.patch("apiserver.idp.repo_visibility.is_private", return_value=False):
+            check_submission(task(repository="https://gitlab.example.org/a/b.git"), None)
+
+    def test_a_private_repository_that_is_not_on_github_needs_stored_credentials(self):
+        with mock.patch("apiserver.idp.repo_visibility.is_private", return_value=True), \
+                mock.patch("apiserver.idp.repo_visibility.store.find_credential", return_value=None):
+            with self.assertRaises(errors.bad_request.ValidationError) as ctx:
+                check_submission(task(repository="https://gitlab.example.org/a/b.git"), None)
+        self.assertIn("gitlab.example.org", str(ctx.exception))
 
     def test_no_repository_is_not_checked(self):
         check_submission(task(repository=""), None)
@@ -59,4 +68,6 @@ class TestSubmissionCheck(TestCase):
         with self.assertRaises(errors.bad_request.ValidationError) as ctx:
             check_submission(task(), None)
         self.assertIn("GitHub", str(ctx.exception))
+        self.assertIn("GITHUB_APP_ID", str(ctx.exception))
+        self.assertIn(GITHUB_APP_DOCS, str(ctx.exception))
 

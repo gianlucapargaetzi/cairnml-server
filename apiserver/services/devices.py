@@ -45,16 +45,26 @@ def _bearer(call: APICall) -> str:
     return header[7:].strip()
 
 
-def _device_view(device: Device) -> dict:
+def _device_view(device: Device, owner: User = None) -> dict:
+    """The device as the API shows it. owner_disabled is true when the owner is disabled or no longer exists: the
+    device's tokens are refused then, until an admin reassigns it."""
     return {
         "id": device.id,
         "user": device.user,
+        "owner_name": owner.name if owner else None,
+        "owner_disabled": owner is None or bool(owner.idp_disabled),
         "kind": device.kind,
         "name": device.name,
         "created": device.created.isoformat() if device.created else None,
         "last_used": device.last_used.isoformat() if device.last_used else None,
         "revoked": device.revoked,
     }
+
+
+def _device_views(devices) -> list:
+    devices = list(devices)
+    owners = {u.id: u for u in User.objects(id__in=list({d.user for d in devices})).only("id", "name", "idp_disabled")}
+    return [_device_view(d, owners.get(d.user)) for d in devices]
 
 
 @endpoint("devices.enroll", min_version="2.8", request_data_model=EnrollRequest)
@@ -144,7 +154,7 @@ def exchange(call: APICall, _company, request: ExchangeRequest):
 def get_all(call: APICall, _company, _):
     identity = call.identity
     query = {} if identity.role in ADMIN_ROLES else {"user": identity.user}
-    return {"devices": [_device_view(d) for d in Device.objects(**query)]}
+    return {"devices": _device_views(Device.objects(**query))}
 
 
 @endpoint("devices.revoke", min_version="2.8", request_data_model=RevokeRequest)
@@ -158,7 +168,7 @@ def revoke(call: APICall, _company, request: RevokeRequest):
     device.revoked = True
     device.save()
     audit(identity.user, "device.revoked", ip=client_address(call), company=device.company, device=device.id)
-    return _device_view(device)
+    return _device_view(device, User.objects(id=device.user).first())
 
 
 @endpoint("devices.reassign", min_version="2.8", request_data_model=ReassignRequest)
@@ -180,7 +190,7 @@ def reassign(call: APICall, _company, request: ReassignRequest):
     device.user = new_owner.id
     device.save()
     audit(identity.user, "device.reassigned", ip=client_address(call), company=device.company, device=device.id, previous_owner=previous_owner, new_owner=new_owner.id)
-    return _device_view(device)
+    return _device_view(device, new_owner)
 
 
 def _caller_device_id(call: APICall) -> str:

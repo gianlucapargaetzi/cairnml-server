@@ -20,7 +20,7 @@ repository holds no state, so a `git clean` or a new clone does not touch it.
 
 | Folder in `CAIRNML_HOME` | Holds |
 |---|---|
-| `data/idp` | The sign-in service's database: users, the realm's state |
+| `data/idp` | The sign-in service's database (Keycloak's embedded H2 database): users, the realm's state |
 | `data/rustfs` | Object storage: artifacts, models, datasets |
 | `data/cairnml/mongo` | The server's database: projects, tasks, users, models |
 | `data/cairnml/redis` | Short-lived state, such as the workers and queues |
@@ -44,8 +44,9 @@ are reachable only inside Docker. The server calls GitHub over HTTPS (`GITHUB_AP
 a GitHub repository is submitted and when a dataset is registered, so the machine needs outbound HTTPS to GitHub for
 those.
 
-The server is served over plain HTTP unless the addresses are https (see `CAIRNML_COOKIE_SECURE` in the
-[settings reference](../../README.md#settings-reference)).
+The first release serves plain HTTP only, for a LAN; TLS is not supported yet. The sign-in service's admin console is
+reachable on the same port, so limit that port to the machines that need it. See
+[Network and security](../../README.md#network-and-security).
 
 ## Upgrade
 
@@ -63,6 +64,15 @@ start-up. The script waits up to three minutes for the server to answer; if it d
 so check `docker compose ps` and the logs.
 
 **Data.** The server applies its database migrations when it starts. The folders in `CAIRNML_HOME` are kept.
+
+**Earlier installs.** Three things changed in earlier versions, and the setup handles them on the first run:
+
+- The GitHub App key used to be kept in `deploy/secrets/github-app.pem`. The setup copies it to `CAIRNML_HOME/secrets/` once, and leaves the old copy in place. Delete the old copy once you have checked the new one.
+- The Keycloak admin password used to be kept in `CAIRNML_HOME/secrets/keycloak-admin-password`. The setup reads it once, as the previous password, and deletes it after a successful run.
+- The device sign-in is turned on for the `cairnml-sdk` client by the setup, not by hand (see the README, section "Machines without a browser").
+
+If you upgrade from a version older than the current one and a step fails, the setup stops with a message on its own
+line; see [Troubleshooting](troubleshooting.md#the-server-does-not-start-or-the-setup-fails).
 
 **Components.** The setup places the SDK, the agent and the web app next to this repository, at the commits named in
 `docker/build/`. It removes and clones these folders again when their pin changes (`scripts/fetch-sources.sh`), so do not

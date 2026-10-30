@@ -20,6 +20,7 @@ docker compose logs --tail 100 <service>      # apiserver, webserver, cairnml-id
 - [Object storage is unreachable](#object-storage-is-unreachable)
 - [A job from GitHub is refused](#a-job-from-github-is-refused)
 - [Dataset registration is refused](#dataset-registration-is-refused)
+- [An SDK or agent is older than the server expects](#an-sdk-or-agent-is-older-than-the-server-expects)
 
 ## The server does not start, or the setup fails
 
@@ -111,11 +112,22 @@ The server checks a job from a GitHub repository when it is queued, and refuses 
 
 | Message | Cause and fix |
 |---|---|
-| `GitHub is not set up: ...` | The GitHub App is not configured. Set it up as described in the README, section "GitHub App". |
+| `GitHub is not set up: ...` | The GitHub App is not configured. Set `GITHUB_APP_ID` in `deploy/.env`, copy the App's key, and run the setup again. The steps are in the README, section "GitHub App". |
 | `the GitHub App is not installed on <owner>/<repo>` | Install the App on that repository, with **Only select repositories**. |
 | `no commit is recorded for <owner>/<repo>: commit and push first` | Commit and push the code before you run the job. |
 | `commit not found on GitHub: push it first` | The commit is not on GitHub. Push it. |
 | `GitHub could not be reached to check the job` | The server cannot reach GitHub. Check the machine's outbound HTTPS, and `GITHUB_API_URL` in `deploy/.env`. |
+
+## An SDK or agent is older than the server expects
+
+The server does not refuse a client for its version. When the SDK or an agent is older than the minimum in the server's
+configuration (`apiserver.client_versions`), its calls still work, but the server:
+
+- adds an `X-CairnML-Upgrade` header to each response, which names the client and the version it needs, and
+- logs one warning, in `docker compose logs apiserver`: `the SDK (cairnml) 0.0.1 is older than this server's minimum 0.0.2: upgrade cairnml`.
+
+Upgrade the named client to the commit the server's pin names (see the README, section "Compatibility"). The warning
+is the only sign of an old client, so look for it when a client behaves oddly after an upgrade of the server.
 
 ## Dataset registration is refused
 

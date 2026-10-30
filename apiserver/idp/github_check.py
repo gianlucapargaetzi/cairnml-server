@@ -1,11 +1,15 @@
-"""The check made when a job is submitted: its commit must exist on GitHub, and the GitHub App must
-be installed on its repository. Otherwise the job is refused at once with a clear message, instead of
-failing later in the agent when it tries to clone."""
+"""The check made when a job is submitted. On GitHub, its commit must exist and the GitHub App must be installed
+on its repository. On another host, a private repository needs stored Git credentials (repo_visibility). Otherwise
+the job is refused at once with a clear message, instead of failing later in the agent when it tries to clone."""
 
 from urllib.parse import urlsplit
 
 from apiserver.apierrors import errors
 from apiserver.idp.github import GitHubError, RepoNotAccessible
+from apiserver.idp.repo_visibility import check_readable
+
+# The section of the server README that sets the App up: every refusal below points to it.
+GITHUB_APP_DOCS = "https://github.com/gianlucapargaetzi/cairnml-server/blob/main/README.md#github-app"
 
 
 def repo_of(repository: str):
@@ -25,11 +29,14 @@ def check_submission(task, app) -> None:
     """Raise a validation error when the task's GitHub repository or commit cannot be used."""
     repo = repo_of(task.script.repository)
     if repo is None:
+        if task.script.repository:
+            check_readable(task.company, task.script.repository)
         return
     if app is None:
         raise errors.bad_request.ValidationError(
             f"GitHub is not set up: the job's repository {repo} cannot be checked without the GitHub App. "
-            "Set it up as described in the README, section 'GitHub App'")
+            f"Set GITHUB_APP_ID in deploy/.env, copy the App's key, and run deploy/scripts/bootstrap.sh. "
+            f"Steps: {GITHUB_APP_DOCS}")
     commit = task.script.version_num
     if not commit:
         raise errors.bad_request.ValidationError(f"no commit is recorded for {repo}: commit and push first")
@@ -37,8 +44,8 @@ def check_submission(task, app) -> None:
         app.installation_token(repo)
     except RepoNotAccessible:
         raise errors.bad_request.ValidationError(
-            f"the GitHub App is not installed on {repo}: install it on this repository, "
-            "see the README, section 'GitHub App'") from None
+            f"the GitHub App is not installed on {repo}: install it on this repository, with 'Only select "
+            f"repositories' (steps: {GITHUB_APP_DOCS})") from None
     except GitHubError:
         raise errors.bad_request.ValidationError("GitHub could not be reached to check the job") from None
     try:
