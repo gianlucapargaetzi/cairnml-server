@@ -51,6 +51,7 @@ def identity(company, user, role=Role.user):
     return Identity(user=user, company=company, role=role)
 
 
+@pytest.mark.needs_redis
 def test_get_queue_infos_redacts_a_hidden_tasks_name_from_a_stranger(company):
     make_root(company)
     make_task(company, "root1", "owner1")
@@ -62,6 +63,7 @@ def test_get_queue_infos_redacts_a_hidden_tasks_name_from_a_stranger(company):
     assert queue["entries"][0]["task"]["name"] is None
 
 
+@pytest.mark.needs_redis
 def test_get_queue_infos_shows_the_name_to_a_member(company):
     make_root(company, members=[("u2", ProjectRole.read)])
     make_task(company, "root1", "owner1")

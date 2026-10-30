@@ -103,6 +103,7 @@ def test_report_tags_are_listed_to_a_member(company):
     assert "private-tag" in call.result.data["tags"]
 
 
+@pytest.mark.needs_redis
 def test_org_tags_are_not_listed_to_a_stranger_and_are_to_a_member(company):
     make_root(company, members=[("u2", ProjectRole.read)])
     make_task(company, "root1", "owner1", tags=["secret-tag"])

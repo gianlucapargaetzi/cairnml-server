@@ -77,7 +77,9 @@ class RedisManager(object):
         if not obj:
             raise GeneralError(f"Invalid Redis alias {alias}")
 
-        obj.get("health")
+        # No round trip here: many modules call this at import time, and importing them must not need Redis. The client
+        # connects on its first command; the server start-up (AppSequence) uses Redis at once, so an unreachable Redis
+        # still stops the start.
         return obj
 
     def host(self, alias):

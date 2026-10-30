@@ -93,6 +93,7 @@ def test_read_write_owner_cannot_delete_someone_elses_task(company):
     assert Task.objects(id="task1").first() is not None
 
 
+@pytest.mark.needs_redis
 def test_read_write_owner_can_delete_their_own_task(company, monkeypatch):
     monkeypatch.setattr(svc, "_delete_task_events", lambda **kwargs: None)
     make_root(company, members=[("u2", ProjectRole.read_write)])
@@ -105,6 +106,7 @@ def test_read_write_owner_can_delete_their_own_task(company, monkeypatch):
     assert Task.objects(id="task1").first() is None
 
 
+@pytest.mark.needs_redis
 def test_collaborator_can_update_tags_on_someone_elses_task(company):
     make_root(company, members=[("u2", ProjectRole.collaborator)])
     make_task(company, "root1", "owner1")
@@ -167,6 +169,7 @@ def test_stop_many_is_all_or_nothing(company):
     assert Task.objects(id="own-task").first().status == TaskStatus.in_progress
 
 
+@pytest.mark.needs_redis
 def test_admin_can_delete_anyones_task(company, monkeypatch):
     # The event cleanup needs Elasticsearch, which is not part of this test. The access check is what is under test
     monkeypatch.setattr(svc, "_delete_task_events", lambda **kwargs: None)
@@ -457,6 +460,7 @@ def test_update_batch_is_all_or_nothing_when_one_destination_is_refused(company)
     assert Task.objects(id="move-task").first().project == "src"
 
 
+@pytest.mark.needs_redis
 def test_an_owner_can_move_a_task_between_two_projects_they_administer(company):
     make_root(company, id_="src", owner="u2")
     make_root(company, id_="dst", owner="u2")
@@ -471,6 +475,7 @@ def test_an_owner_can_move_a_task_between_two_projects_they_administer(company):
     assert Task.objects(id="task1").first().project == "dst"
 
 
+@pytest.mark.needs_redis
 def test_a_collaborator_can_move_a_task_between_two_projects_they_administer(company):
     make_root(company, id_="src", members=[("u2", ProjectRole.collaborator)])
     make_root(company, id_="dst", members=[("u2", ProjectRole.collaborator)])

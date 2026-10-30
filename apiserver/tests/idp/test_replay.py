@@ -1,9 +1,12 @@
 import uuid
 from unittest import TestCase
 
+import pytest
+
 from apiserver.idp.replay import claim_jti
 
 
+@pytest.mark.needs_redis
 class TestReplayStore(TestCase):
     def test_a_jti_can_be_claimed_once(self):
         jti = uuid.uuid4().hex

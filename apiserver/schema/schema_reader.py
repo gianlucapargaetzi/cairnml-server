@@ -1,8 +1,10 @@
 """
 Objects representing schema entities
 """
+import fcntl
 import json
 import re
+from contextlib import contextmanager
 from operator import attrgetter
 from pathlib import Path
 from typing import Mapping, Sequence
@@ -12,7 +14,6 @@ from boltons.dictutils import subdict
 from pyhocon import ConfigFactory
 
 from apiserver.config_repo import config
-from apiserver.sync import distributed_lock
 from apiserver.utilities.partial_version import PartialVersion
 
 
@@ -216,6 +217,25 @@ class SchemaReader:
     def read_file(path):
         return ConfigFactory.parse_file(path).as_plain_ordered_dict()
 
+    @contextmanager
+    def _cache_lock(self):
+        """
+        Serialises the cache writes of the workers of one server. A file lock, not Redis: the schema is read when the
+        services are imported, so the import must not need Redis (the unit tests import it). Without a writable
+        folder there is no lock, as there is no cache to write either.
+        """
+        try:
+            lock_file = open(self.cache_path.with_suffix(".lock"), "w")
+        except OSError:
+            yield
+            return
+        with lock_file:
+            fcntl.flock(lock_file, fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(lock_file, fcntl.LOCK_UN)
+
     def get_schema(self):
         """
         Parse the API schema to schema object.
@@ -231,7 +251,7 @@ class SchemaReader:
 
         # Use lock on schema cache folder to prevent race condition when multiple workers
         # try to generate files simultaneously during gunicorn startup
-        with distributed_lock(name=self.cache_path, timeout=60):
+        with self._cache_lock():
             try:
                 if self.mod_time(self.cache_path) >= max(map(self.mod_time, services)):
                     log.info("loading schema from cache")

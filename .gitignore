@@ -20,6 +20,7 @@ code.tar.gz
 server/schema/services/_cache.json
 server/apierrors/errors/*
 apiserver/schema/services/_cache.json
+apiserver/schema/services/_cache.lock
 
 # Local secrets and the data of the stack (never committed)
 deploy/.env
