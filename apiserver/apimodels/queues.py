@@ -21,6 +21,7 @@ class CreateRequest(Base):
     tags = ListField(items_types=[str])
     system_tags = ListField(items_types=[str])
     metadata = DictField(value_types=[MetadataItem])
+    public = BoolField()
 
 
 class QueueRequest(Base):

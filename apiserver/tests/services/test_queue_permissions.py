@@ -80,6 +80,13 @@ def test_a_non_admin_cannot_delete_a_queue(company):
         svc.delete(FakeCall(identity(company, "u1")), company, DeleteRequest(queue=queue.id))
 
 
+def test_an_admin_can_create_a_public_queue(company):
+    call = FakeCall(identity(company, "a1", Role.admin))
+    svc.create(call, company, CreateRequest(name="public-queue", public=True))
+    queue = Queue.objects(company=company, name="public-queue").first()
+    assert queue.public is True
+
+
 def test_an_admin_is_allowed_to_manage_queues(company):
     assert QueueAccessBLL.is_admin(identity(company, "a1", Role.admin))
     assert QueueAccessBLL.is_admin(identity(company, "r1", Role.root))

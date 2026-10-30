@@ -138,6 +138,7 @@ def create(call: APICall, company_id, request: CreateRequest):
         tags=tags,
         system_tags=system_tags,
         metadata=Metadata.metadata_from_api(request.metadata),
+        public=bool(request.public),
     )
     call.result.data = {"id": queue.id}
 
