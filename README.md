@@ -63,7 +63,7 @@ Your account is created at the first sign-in.
 
 Accounts are kept in Keycloak, in the `cairnml` realm. Self-registration is off, so an administrator creates every account. A user is a CairnML admin while they hold the `cairnml-admin` realm role. The server picks up changes to accounts and roles within about a minute.
 
-The server runs over plain HTTP, so use it on a network you trust.
+The server runs over plain HTTP, so use it on a network you trust. See [Network and security](#network-and-security).
 
 ### The admin account
 
@@ -86,7 +86,7 @@ On the user's **Role mapping** tab, click **Assign role**, choose **Filter by re
 
 ### Disable or remove a user
 
-Switch the user's **Enabled** off in the `cairnml` realm. Their sessions, devices and job tokens stop working. Disabling can be undone; deleting removes the account from Keycloak.
+Switch the user's **Enabled** off in the `cairnml` realm. Their new sign-ins are refused, and the devices they own stop working. Disabling can be undone; deleting removes the account from Keycloak.
 
 ## GitHub App
 
@@ -99,7 +99,7 @@ Set up the App once for each GitHub account or organisation whose repositories y
 - **GitHub App name:** any name, for example `cairnml-<your-name>`.
 - **Homepage URL:** the server's web address, for example `http://<server-ip>/cairnml/`.
 - **Webhook:** untick **Active**. CairnML does not use webhooks.
-- **Repository permissions:** set **Contents** to **Read-only**. Leave every other permission at **No access**.
+- **Repository permissions:** set **Contents** and **Pull requests** to **Read and write**. Leave every other permission at **No access**. A job only reads its repository. Dataset registration writes to the registry through a pull request, and the server asks GitHub for write access only at that moment. See [Datasets](#datasets).
 - **Where can this GitHub App be installed?** choose **Only on this account**, unless other accounts must use it.
 
 Click **Create GitHub App**. Note the **App ID** shown at the top of the App's page.
@@ -123,7 +123,17 @@ chmod 600 ~/.local/share/cairnml/secrets/github-app.pem
 
 Then run `deploy/scripts/bootstrap.sh` again. It is safe to run again, and it passes the App ID and key to the server.
 
-To check the setup, enqueue a job whose repository is on GitHub. A refused job names the step that is missing. Without the App, the message is `GitHub is not set up`. When the App is not installed on the repository, it is `the GitHub App is not installed on <owner>/<repo>`.
+To check the setup, enqueue a job whose repository is on GitHub. A refused job names the step that is missing. Without the App, the message starts with `GitHub is not set up` and names `GITHUB_APP_ID`. When the App is not installed on the repository, it is `the GitHub App is not installed on <owner>/<repo>`. Both messages link to this section.
+
+## Network and security
+
+The first release is for a local network (LAN). It has these limits, and they are the intended behaviour, not bugs:
+
+- **Plain HTTP only.** The stack does not offer TLS: there is no certificate setup and no supported way to put HTTPS in front of it. Sign-in cookies, access tokens and object-storage links travel unencrypted. Use the server only on a network you trust, and do not publish its ports to the internet.
+- **Sign-in service in development mode, with an embedded database.** Keycloak runs with `start-dev` and stores its users and realm in an embedded H2 database, in `data/idp` under `CAIRNML_HOME`. This is the setup for LAN installs. Back up the folder with the stack stopped (see [Operate the server](docs/operations/operate.md#backup)).
+- **The Keycloak admin console is on the same address.** It is served at `/cairnml/idp/admin`, so every machine that can reach the web app's port can open it, and sign-in there needs the admin's password. Use the machine's firewall to keep the port to the machines that need it.
+
+Keep `CAIRNML_COOKIE_SECURE` at `false` and `CAIRNML_PUBLIC_ORIGIN` empty unless you know what they do. The first release does not require them.
 
 ## Connect the clients
 
@@ -173,7 +183,7 @@ Clients and agents reach the stack on the first two ports, so the machine's fire
 
 The dataset registry lets `cairnml dataset register` add a dataset repository to a registry repository, through a pull request that the server opens. It needs the GitHub App above, and three things more:
 
-1. **Permissions.** Registration writes to the registry, so the App needs **Contents** and **Pull requests** set to **Read and write**, instead of the read-only contents of the step above. GitHub applies this to every repository the App is installed on, and asks the owner of each installation to accept the change.
+1. **Permissions.** Step 1 above already sets **Contents** and **Pull requests** to **Read and write**, which registration needs. Jobs alone need only read access. If you change the permissions of an App that is already installed, GitHub asks the owner of each installation to accept the change.
 2. **Installation.** Install the App on the registry repository and on every dataset repository.
 3. **Settings.** In `deploy/.env`, name the registry and the owners whose dataset repositories may be registered in it:
 
@@ -204,7 +214,8 @@ The settings a user may set are in `deploy/.env`, copied from [`deploy/.env.exam
 | `CAIRNML_HOME` | `~/.local/share/cairnml` | Where the data and secrets are kept. See [Operate the server](docs/operations/operate.md). |
 | `CAIRNML_API_PORT` | `8008` | The API, inside the stack. |
 | `CAIRNML_IDP_PORT` | `8180` | The sign-in service, inside the stack. |
-| `CAIRNML_COOKIE_SECURE` | `false` | `true` when the addresses are https, so that the session cookies are sent only over https. |
+| `CAIRNML_COOKIE_SECURE` | `false` | Keep `false`: the first release serves plain HTTP only. See [Network and security](#network-and-security). |
+| `CAIRNML_PUBLIC_ORIGIN` | empty | A fixed address for the stack, with scheme and port, when clients should not use the address they typed. Empty for a LAN. See [Connect the clients](#connect-the-clients). |
 | `GITHUB_APP_ID` | empty | The GitHub App. See [GitHub App](#github-app). |
 | `GITHUB_API_URL` | `https://api.github.com` | The GitHub API the App uses. Change it only for GitHub Enterprise Server. |
 | `CAIRNML_DATASET_REGISTRY` | empty | The dataset registry repository. See [Datasets](#datasets). |
@@ -213,20 +224,20 @@ The settings a user may set are in `deploy/.env`, copied from [`deploy/.env.exam
 
 ## Compatibility
 
-The server image is built from one version of each component, each at the commit its pin file in `docker/build/` names:
+Each component has its own version number, and the numbers are not related: server 2.4.0 does not mean SDK 2.4.0. The server image is built from one commit of each component, named by the pin file in `docker/build/`. The versions at the commits this repository pins are:
 
-| Component | Repository | Pin file |
-|---|---|---|
-| Server | this repository | the commit you run |
-| SDK (`cairnml`) | `cairnml` | `docker/build/sdk-ref` |
-| Agent (`cairnml-agent`) | `cairnml-agent` | `docker/build/agent-ref` |
-| Web app | `cairnml-web` | `docker/build/web-ref` |
+| Component | Repository | Pin file | Version at the pinned commit |
+|---|---|---|---|
+| Server | this repository | the commit you run | `apiserver/version.py` (2.4.0 here) |
+| SDK (`cairnml`) | `cairnml` | `docker/build/sdk-ref` | 0.0.2 |
+| Agent (`cairnml-agent`) | `cairnml-agent` | `docker/build/agent-ref` | 0.0.1 |
+| Web app | `cairnml-web` | `docker/build/web-ref` | 2.5.0 |
 
-Each component has its own version number, and the numbers are not related: a server 2.4.0 does not mean SDK 2.4.0. The pins are the only record of which versions go together. This repository's tests do not check other combinations.
+The pins are the only record of which versions go together. This repository's tests do not check other combinations.
 
-- Use the SDK and the agent at the commits that the server's pins name. A client installed from another source is not checked against the pins.
-- The server does not check the version of an SDK or an agent. An old or new client usually fails with an error from the API rather than with a message that names the version.
-- Clients name the API version in the address (`/cairnml/api/v2.8/...`). The device sign-in (enrolment, token exchange, job tokens) needs API version 2.8 or later.
+- **Use the SDK and the agent at the commits the pins name.** A client installed from another source may work, but it is not tested with this server.
+- **Old clients get a warning, not a refusal.** The SDK and the agent send their name and version in the `X-CairnML-Client` header. When a client is older than the minimum set in `apiserver.client_versions` (`min_sdk_version` 0.0.2, `min_agent_version` 0.0.1 in the shipped configuration), the server still serves it, adds an `X-CairnML-Upgrade` header to each response that says what to upgrade, and logs the warning once in `docker compose logs apiserver`.
+- **API version.** Clients name the API version in the address (`/cairnml/api/v2.8/...`). The device sign-in (enrolment, token exchange, job tokens) needs API version 2.8 or later, so a client that uses only older API versions cannot enrol.
 
 ## Running the server's tests
 
