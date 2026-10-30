@@ -13,6 +13,20 @@ from apiserver.apierrors import errors
 # Services a job may call. Everything else (models, queues, users, devices, admin) is refused.
 JOB_SERVICES = ("tasks", "events", "datachunks")
 
+# Model actions a job may take, only on models linked to its own task (the model's task is the job's task).
+# Listing all models, and any action not here, is refused.
+JOB_MODEL_ACTIONS = {
+    "models.create",
+    "models.get_by_id",
+    "models.edit",
+    "models.update",
+    "models.set_ready",
+    "models.get_by_task_id",
+    "models.update_for_task",
+    "models.add_or_update_metadata",
+    "models.delete_metadata",
+}
+
 # The one read of the projects service a job needs: the project of its own task, which the SDK reads when it starts.
 JOB_PROJECT_READ = "projects.get_by_id"
 
@@ -62,6 +76,10 @@ def validate_job_scope(endpoint, call) -> None:
             raise errors.bad_request.InvalidTaskId(id="", company="")
         return
 
+    if endpoint.name in JOB_MODEL_ACTIONS:
+        _check_model_scope(endpoint.name, call, job_task)
+        return
+
     service = endpoint.name.partition(".")[0]
     if service not in JOB_SERVICES:
         raise errors.forbidden.NoWritePermission(
@@ -74,3 +92,30 @@ def validate_job_scope(endpoint, call) -> None:
     if not named or any(task_id != job_task for task_id in named):
         # the same answer a missing task gets, so the job cannot tell that another task exists
         raise errors.bad_request.InvalidTaskId(id="", company="")
+
+
+def _check_model_scope(name: str, call, job_task: str) -> None:
+    """A model action of a job: the model must be linked to the job's own task.
+
+    A new model (models.create) names its task in the body, which must be the job's task. For every other action the
+    model is looked up and its task must be the job's task. A model that does not exist, or belongs to another task,
+    gets the same answer.
+    """
+    if name == "models.create" or name == "models.update_for_task":
+        if (call.data or {}).get("task") == job_task:
+            return
+        raise errors.bad_request.InvalidTaskId(id="", company="")
+
+    model_id = (call.data or {}).get("model")
+    if not model_id:
+        raise errors.bad_request.InvalidTaskId(id="", company="")
+    if _model_task_id(model_id) != job_task:
+        raise errors.bad_request.InvalidTaskId(id="", company="")
+
+
+def _model_task_id(model_id: str):
+    """The task that created the model, for model requests that name it."""
+    from apiserver.database.model.model import Model  # imported here: the module is used without a database
+
+    model = Model.objects(id=model_id).only("task").first()
+    return model.task if model else None

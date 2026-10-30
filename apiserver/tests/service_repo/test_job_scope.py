@@ -46,7 +46,7 @@ def test_a_list_naming_another_task_is_refused():
         validate_job_scope(_endpoint("tasks.get_all_ex"), _call({"tasks": [JOB_TASK, "other"]}))
 
 
-@pytest.mark.parametrize("name", ["projects.get_all", "models.create", "users.get_current_user", "devices.revoke",
+@pytest.mark.parametrize("name", ["projects.get_all", "users.get_current_user", "devices.revoke",
                                   "queues.get_default", "auth.login", "workers.status_report"])
 def test_other_services_are_refused(name):
     with pytest.raises(errors.forbidden.NoWritePermission):
@@ -93,3 +93,40 @@ def test_a_plain_body_is_checked_through_its_chunk_not_as_an_event(monkeypatch):
     # a commit body names the chunk by id and has no task of its own; it is not a batch of events
     monkeypatch.setattr(job_scope, "_chunk_task_id", lambda chunk_id: JOB_TASK)
     validate_job_scope(_endpoint("datachunks.commit"), _call({"id": "chunk", "parts": []}))
+
+
+def test_a_job_may_create_a_model_for_its_own_task():
+    validate_job_scope(_endpoint("models.create"), _call({"task": JOB_TASK, "model": "m", "name": "n", "uri": "u"}))
+
+
+def test_a_job_may_not_create_a_model_for_another_task():
+    with pytest.raises(errors.bad_request.InvalidTaskId):
+        validate_job_scope(_endpoint("models.create"), _call({"task": "other", "model": "m", "name": "n"}))
+
+
+def test_a_job_may_read_and_edit_a_model_of_its_own_task(monkeypatch):
+    monkeypatch.setattr(job_scope, "_model_task_id", lambda model_id: JOB_TASK if model_id == "mine" else "other")
+    validate_job_scope(_endpoint("models.get_by_id"), _call({"model": "mine"}))
+    validate_job_scope(_endpoint("models.edit"), _call({"model": "mine", "comment": "x"}))
+
+
+def test_a_job_may_not_read_or_edit_another_tasks_model(monkeypatch):
+    monkeypatch.setattr(job_scope, "_model_task_id", lambda model_id: JOB_TASK if model_id == "mine" else "other")
+    with pytest.raises(errors.bad_request.InvalidTaskId):
+        validate_job_scope(_endpoint("models.get_by_id"), _call({"model": "theirs"}))
+    with pytest.raises(errors.bad_request.InvalidTaskId):
+        validate_job_scope(_endpoint("models.edit"), _call({"model": "theirs"}))
+
+
+def test_a_model_that_does_not_exist_is_refused_like_another_task(monkeypatch):
+    monkeypatch.setattr(job_scope, "_model_task_id", lambda model_id: None)
+    with pytest.raises(errors.bad_request.InvalidTaskId):
+        validate_job_scope(_endpoint("models.get_by_id"), _call({"model": "missing"}))
+
+
+def test_a_job_may_not_list_all_models_or_use_other_model_actions(monkeypatch):
+    monkeypatch.setattr(job_scope, "_model_task_id", lambda model_id: JOB_TASK)
+    with pytest.raises(errors.forbidden.NoWritePermission):
+        validate_job_scope(_endpoint("models.get_all"), _call({"task": JOB_TASK}))
+    with pytest.raises(errors.forbidden.NoWritePermission):
+        validate_job_scope(_endpoint("models.delete"), _call({"model": "mine"}))
