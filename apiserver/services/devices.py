@@ -7,20 +7,25 @@ from datetime import datetime
 
 from apiserver.apierrors import errors
 from apiserver.apimodels.devices import EnrollRequest, ExchangeRequest, GitTokenRequest, JobTokenRequest, RevokeRequest
+from apiserver.bll.dataset_registry import allowed_repositories
 from apiserver.config_repo import config
 from apiserver.database.model.auth import Role, User
 from apiserver.database.model.device import Device, DeviceKind
+from apiserver.database.model.task.task import Task
 from apiserver.idp.assertion import AssertionInvalid, unverified_issuer, verify_assertion
 from apiserver.idp.audit import record as audit
-from apiserver.idp.checks import AccessDenied, check_device
+from apiserver.idp.checks import AccessDenied, check_device, check_job_issue
+from apiserver.idp.github import GitHubError, RepoNotAccessible
+from apiserver.idp.github_check import build_from_config, repo_of
 from apiserver.idp.keys import load_public_key
 from apiserver.idp import public_origin
 from apiserver.idp.oidc import OidcError
 from apiserver.idp.replay import claim_jti
-from apiserver.idp.tokens import issue_access_token
+from apiserver.idp.tokens import issue_access_token, issue_job_token
 from apiserver.idp.users import role_for, upsert_idp_user
 from apiserver.idp.verifier import get_verifier
 from apiserver.service_repo import APICall, endpoint
+from apiserver.service_repo.auth import Token
 
 ADMIN_ROLES = (Role.admin, Role.root, Role.system)
 
@@ -150,8 +155,6 @@ def revoke(call: APICall, _company, request: RevokeRequest):
 
 def _caller_device_id(call: APICall) -> str:
     """The device behind the caller's token: the agent's own device id, from its verified token."""
-    from apiserver.service_repo.auth import Token
-
     try:
         claims = Token.decode(_bearer(call))
     except jwt.PyJWTError:  # forged, expired or not a token at all
@@ -163,10 +166,6 @@ def _caller_device_id(call: APICall) -> str:
 
 @endpoint("devices.job_token", min_version="2.8", request_data_model=JobTokenRequest)
 def job_token(call: APICall, _company, request: JobTokenRequest):
-    from apiserver.database.model.task.task import Task
-    from apiserver.idp.checks import AccessDenied, check_job_issue
-    from apiserver.idp.tokens import issue_job_token
-
     device = Device.objects(id=_caller_device_id(call)).first()
     task = Task.objects(id=request.task).only("status", "last_device", "user").first()
     owner = User.objects(id=task.user).first() if task else None
@@ -185,14 +184,6 @@ def job_token(call: APICall, _company, request: JobTokenRequest):
 @endpoint("devices.git_token", min_version="2.8", request_data_model=GitTokenRequest)
 def git_token(call: APICall, _company, request: GitTokenRequest):
     """A read-only token for the task's repository, for the job or the agent running it."""
-    from apiserver.database.model.task.task import Task
-    from apiserver.idp.checks import AccessDenied, check_job_issue
-    from apiserver.idp.github import GitHubError, RepoNotAccessible
-    from apiserver.bll.dataset_registry import allowed_repositories
-    from apiserver.idp.github import GitHubError
-    from apiserver.idp.github_check import build_from_config, repo_of
-    from apiserver.service_repo.auth import Token
-
     claims = Token.decode(_bearer(call))
     task = Task.objects(id=request.task).first()
     try:
@@ -223,6 +214,8 @@ def git_token(call: APICall, _company, request: GitTokenRequest):
             audit(claims.get("device") or "unknown", "git_token.refused", device=claims.get("device"), task=request.task, reason=f"{repo} is not in the dataset registry")
             raise errors.bad_request.ValidationError(f"{repo} is not a registered dataset repository")
     else:
+        if task is None:
+            raise errors.bad_request.InvalidId("task not found")
         repo = repo_of(task.script.repository)
         if repo is None:
             raise errors.bad_request.ValidationError("the task's repository is not on GitHub")
