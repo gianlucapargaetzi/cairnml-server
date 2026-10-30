@@ -7,7 +7,7 @@ import pytest
 
 from apiserver.apierrors import errors
 from apiserver.apimodels.project_access import AddQueuesRequest, GetAssignableQueuesRequest, GetQueuesRequest, RemoveQueueRequest, TransferOwnershipRequest
-from apiserver.apimodels.queues import CreateRequest, DeleteRequest, GetByIdRequest, UserRequest
+from apiserver.apimodels.queues import CreateRequest, DeleteRequest, GetByIdRequest, QueueRequest, UserRequest
 from apiserver.bll.queue.queue_access import QueueAccessBLL
 from apiserver.database.model.auth import Role, User
 from apiserver.database.model.project import Project, ProjectMember, ProjectRole, ProjectVisibility
@@ -237,3 +237,60 @@ def test_the_default_queue_is_public_on_a_new_install(company):
     _ensure_default_queue(company)
     default = Queue.objects(company=company, system_tags="default").first()
     assert default.public is True
+
+
+# --- grants endpoints -------------------------------------------------------
+
+def test_an_admin_grants_and_removes_a_user_through_the_endpoints(company):
+    make_user(company, "u1")
+    queue = make_queue(company)
+    admin = FakeCall(identity(company, "a1", Role.admin))
+    svc.add_user(admin, company, UserRequest(queue=queue.id, user="u1"))
+    assert Queue.objects(id=queue.id).first().users[0].user == "u1"
+
+    listing = FakeCall(identity(company, "a1", Role.admin))
+    svc.get_users(listing, company, QueueRequest(queue=queue.id))
+    assert [u["user"] for u in listing.result.data["users"]] == ["u1"]
+
+    svc.remove_user(admin, company, UserRequest(queue=queue.id, user="u1"))
+    assert Queue.objects(id=queue.id).first().users == []
+
+
+def test_a_non_admin_cannot_grant_access(company):
+    make_user(company, "u1")
+    queue = make_queue(company)
+    with pytest.raises(errors.forbidden.NoWritePermission):
+        svc.add_user(FakeCall(identity(company, "u2")), company, UserRequest(queue=queue.id, user="u1"))
+
+
+# --- agent tokens ------------------------------------------------------------
+
+class AgentCall:
+    def __init__(self, name, token_kind):
+        self.identity = identity("c-agent", "device-user", Role.admin)
+        self.auth = SimpleNamespace(token_kind=token_kind)
+
+
+def _endpoint(name):
+    return SimpleNamespace(name=name, authorize=False, allows=lambda role: True)
+
+
+def test_an_agent_token_cannot_administer_people_devices_or_projects():
+    from apiserver.service_repo.validators import validate_role
+
+    for name in ["users.get_all", "devices.revoke", "projects.add_member", "projects.transfer_ownership", "queues.create", "queues.add_user"]:
+        with pytest.raises(errors.forbidden.NoWritePermission):
+            validate_role(_endpoint(name), AgentCall(name, "agent"))
+
+
+def test_an_agent_token_keeps_what_the_agent_does():
+    from apiserver.service_repo.validators import validate_role
+
+    for name in ["queues.get_next_task", "tasks.started", "workers.get_all", "devices.exchange"]:
+        validate_role(_endpoint(name), AgentCall(name, "agent"))
+
+
+def test_a_user_token_is_not_limited_by_the_agent_rule():
+    from apiserver.service_repo.validators import validate_role
+
+    validate_role(_endpoint("projects.add_member"), AgentCall("projects.add_member", "web"))

@@ -42,10 +42,42 @@ def validate_data(call: APICall, endpoint: Endpoint):
         raise errors.bad_request.ValidationError(ex.args[0])
 
 
+# Agents hold the admin role of the person who enrolled them, so a leaked agent token would carry it too. An agent
+# never administers people, devices, projects or queue grants, so these calls are refused for agent tokens.
+AGENT_DENIED_ENDPOINTS = {
+    "devices.enroll",
+    "devices.revoke",
+    "devices.get_all",
+    "projects.create",
+    "projects.update",
+    "projects.delete",
+    "projects.move",
+    "projects.add_member",
+    "projects.remove_member",
+    "projects.update_member_role",
+    "projects.set_visibility",
+    "projects.transfer_ownership",
+    "projects.add_queues",
+    "projects.remove_queue",
+    "queues.create",
+    "queues.update",
+    "queues.delete",
+    "queues.get_users",
+    "queues.add_user",
+    "queues.remove_user",
+}
+
+
+def _agent_denied(endpoint) -> bool:
+    return endpoint.name in AGENT_DENIED_ENDPOINTS or endpoint.name.startswith("users.")
+
+
 def validate_role(endpoint, call):
     try:
         if endpoint.authorize and not endpoint.allows(call.identity.role):
             raise errors.forbidden.RoleNotAllowed(role=call.identity.role, allowed=endpoint.allow_roles)
+        if getattr(call.auth, "token_kind", None) == "agent" and _agent_denied(endpoint):
+            raise errors.forbidden.NoWritePermission(f"agents cannot call {endpoint.name}")
     except MissingIdentity:
         pass
 
