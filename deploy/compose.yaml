@@ -145,7 +145,6 @@ services:
       discovery.type: "single-node"
       http.compression_level: "7"
       node.name: cairnml
-      reindex.remote.whitelist: "'*.*'"
       xpack.security.enabled: "false"
     ulimits:
       memlock:
@@ -270,7 +269,8 @@ services:
     # The one address clients use, on port 80 of every interface, with everything under /cairnml: the web app at
     # /cairnml/, the API at /cairnml/api, the identity provider at /cairnml/idp. The proxy in this container routes
     # them, and the machine's root address is left to other sites. CAIRNML_HTTP_PORT (deploy/.env) moves it off
-    # port 80 when another site uses that.
+    # port 80 when another site uses that. It reaches only the API server and the identity provider, both on the
+    # cairnml network, so it is not on backend with the datastores.
     environment:
       CAIRNML_SERVER_SUB_PATH: cairnml
       NGINX_APISERVER_ADDRESS: http://apiserver:${CAIRNML_API_PORT:-8008}
@@ -284,7 +284,6 @@ services:
       retries: 10
       start_period: 10s
     networks:
-      - backend
       - frontend
       - cairnml
 
