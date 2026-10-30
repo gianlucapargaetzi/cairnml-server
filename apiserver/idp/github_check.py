@@ -1,11 +1,12 @@
-"""The check made when a job is submitted: its commit must exist on GitHub, and the GitHub App must
-be installed on its repository. Otherwise the job is refused at once with a clear message, instead of
-failing later in the agent when it tries to clone."""
+"""The check made when a job is submitted. On GitHub, its commit must exist and the GitHub App must be installed
+on its repository. On another host, a private repository needs stored Git credentials (repo_visibility). Otherwise
+the job is refused at once with a clear message, instead of failing later in the agent when it tries to clone."""
 
 from urllib.parse import urlsplit
 
 from apiserver.apierrors import errors
 from apiserver.idp.github import GitHubError, RepoNotAccessible
+from apiserver.idp.repo_visibility import check_readable
 
 
 def repo_of(repository: str):
@@ -25,6 +26,8 @@ def check_submission(task, app) -> None:
     """Raise a validation error when the task's GitHub repository or commit cannot be used."""
     repo = repo_of(task.script.repository)
     if repo is None:
+        if task.script.repository:
+            check_readable(task.company, task.script.repository)
         return
     if app is None:
         raise errors.bad_request.ValidationError(
