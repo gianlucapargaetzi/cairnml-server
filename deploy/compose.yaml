@@ -214,7 +214,7 @@ services:
       CAIRNML__apiserver__storage__access_key: ${CAIRNML_S3_ACCESS_KEY:-cairnml-server}
     volumes:
       - ${CAIRNML_HOME:-${HOME}/.local/share/cairnml}/data/cairnml/logs:/var/log/cairnml
-      # Read-only: token_secret, session_secret, idp_directory_secret, github_app_key.
+      # Read-only: token_secret, session_secret, idp_directory_secret, github_app_key, git_credentials_key.
       - ${CAIRNML_HOME:-${HOME}/.local/share/cairnml}/secrets/cairnml:/run/secrets-dir:ro
     healthcheck:
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:${CAIRNML_API_PORT:-8008}/debug.ping', timeout=4)"]

@@ -138,7 +138,7 @@ rm -f "$LEGACY_PASSWORD_FILE"
 echo "admin login set from deploy/.env: user $KC_ADMIN, same password for Keycloak and CairnML"
 
 # CairnML secrets, written once and kept. Nothing is printed.
-for name in token_secret session_secret s3_secret_key; do
+for name in token_secret session_secret s3_secret_key git_credentials_key; do
   if [ ! -s "$STATE/secrets/cairnml/$name" ]; then
     openssl rand -base64 48 | tr -d '\n' > "$STATE/secrets/cairnml/$name"
     chmod 600 "$STATE/secrets/cairnml/$name"
