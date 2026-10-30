@@ -8,6 +8,7 @@ import os
 from typing import Callable, List, Mapping
 
 from apiserver.config_repo import config
+from apiserver.idp.public_origin import public_origin_problems
 
 
 def legacy_settings_in_use(get: Callable = config.get) -> List[str]:
@@ -43,6 +44,11 @@ def cookie_settings_problems(get: Callable = config.get) -> List[str]:
 
 
 def check_no_legacy_settings(get: Callable = config.get) -> None:
-    problems = legacy_settings_in_use(get) + test_only_settings_in_use(get) + cookie_settings_problems(get)
+    problems = (
+        legacy_settings_in_use(get)
+        + test_only_settings_in_use(get)
+        + cookie_settings_problems(get)
+        + public_origin_problems(get)
+    )
     if problems:
         raise RuntimeError("; ".join(problems))

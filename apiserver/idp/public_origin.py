@@ -2,32 +2,65 @@
 
 Everything is reached through the proxy on port 80, under one path (/cairnml): the web app at /cairnml/, the API under
 /cairnml/api and the identity provider under /cairnml/idp. The URLs the server hands out (the sign-in redirects, the
-issuer, the storage endpoint) name the host the client typed, so nothing has to be configured per machine. A value set
-in the configuration wins.
+issuer, the storage endpoint) name the host the client typed, so nothing has to be configured per machine.
+
+A deployment can pin its address with apiserver.public_origin (scheme, host and port). Then the server uses that
+address for everything security-relevant and ignores the Host and X-Forwarded-* headers of the request; a request that
+names another host is logged.
 """
 
 import contextvars
+from typing import Callable, List
 from urllib.parse import urlencode, urlsplit
 
 from apiserver.config_repo import config
 
+log = config.logger(__file__)
 
 _origin = contextvars.ContextVar("public_origin", default=None)
+
+
+def pinned_origin() -> str:
+    """The address the deployment pinned, e.g. https://cairnml.example, or empty when the address is not pinned."""
+    return (config.get("apiserver.idp.public_origin") or "").rstrip("/")
 
 
 def remember(headers, host: str) -> None:
     """Called for every request: the proxy's X-Forwarded-* headers name the address the client used."""
     scheme = headers.get("X-Forwarded-Proto") or "http"
     netloc = headers.get("X-Forwarded-Host") or host
+    pinned = pinned_origin()
+    if pinned and headers.get("X-Forwarded-Host") and netloc.lower() != urlsplit(pinned).netloc.lower():
+        log.warning("request for host %s ignored: the server is pinned to %s", netloc, pinned)
     _origin.set(f"{scheme}://{netloc}")
 
 
 def origin() -> str:
-    """The address of this request, e.g. http://localhost or http://192.168.1.20. Only valid while a request runs."""
+    """The address of this request, e.g. http://localhost or http://192.168.1.20, or the pinned address. Only valid
+    while a request runs."""
+    pinned = pinned_origin()
+    if pinned:
+        return pinned
     current = _origin.get()
     if current is None:
         raise RuntimeError("no client address: this is only known while a request is being served")
     return current
+
+
+def public_origin_problems(get: Callable = config.get) -> List[str]:
+    """Refuses a pinned address that cannot be used: it must be scheme://host[:port], with no path."""
+    pinned = (get("apiserver.idp.public_origin") or "").rstrip("/")
+    if not pinned:
+        return []
+    problem = [f"apiserver.public_origin must be scheme://host[:port], e.g. https://cairnml.example (got {pinned!r})"]
+    try:
+        address = urlsplit(pinned)
+        address.port  # raises ValueError for a port that is not a number
+    except ValueError:
+        return problem
+    if address.scheme not in ("http", "https") or not address.hostname or address.path or address.query:
+        return problem
+    return []
 
 
 def base_path() -> str:
