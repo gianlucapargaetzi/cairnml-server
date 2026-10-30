@@ -27,9 +27,9 @@ class Resources(Base):
 
 class RegisterRequest(WorkerRequest):
     timeout = IntField(
-        default=int(config.get("services.workers.default_worker_timeout_sec", 10 * 60))
+        default=int(config.get("services.workers.default_worker_timeout_sec", 60 * 60))
     )
-    """ registration timeout in seconds (default is 10min) """
+    """ registration timeout in seconds (default is 60min) """
     queues = ListField(six.string_types)  # list of queues this worker listens to
     resources = EmbeddedField(Resources)
 

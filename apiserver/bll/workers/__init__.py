@@ -76,7 +76,7 @@ class WorkerBLL:
         """
         key = WorkerBLL._get_worker_key(company_id, user_id, worker)
 
-        timeout = timeout or int(self.config.get("default_worker_timeout_sec", 10 * 60))
+        timeout = timeout or int(self.config.get("default_worker_timeout_sec", 60 * 60))
         queues = queues or []
 
         with translate_errors_context():
