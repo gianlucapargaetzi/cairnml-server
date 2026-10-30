@@ -20,6 +20,8 @@ if [ ! -f .env ]; then
   sed -i "s|^RUSTFS_ROOT_PASSWORD=.*|RUSTFS_ROOT_PASSWORD=$(openssl rand -hex 16)|" .env
   echo "wrote deploy/.env with generated Keycloak and object storage admin passwords"
 fi
+# The file holds the admin passwords: only its owner may read it, on every run (also one copied by hand).
+chmod 600 .env
 set -a; . ./.env; set +a
 
 # Keycloak creates a temporary admin with this name on its first start. Setup deletes it once KC_ADMIN can sign in, so
