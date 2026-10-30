@@ -70,7 +70,7 @@ def register(call: APICall, company_id, request: RegisterRequest):
     queues = request.queues
 
     if not timeout:
-        timeout = config.get("apiserver.workers.default_timeout", 10 * 60)
+        timeout = config.get("apiserver.workers.default_timeout", 60 * 60)
 
     if not timeout or timeout <= 0:
         raise bad_request.WorkerRegistrationFailed(
