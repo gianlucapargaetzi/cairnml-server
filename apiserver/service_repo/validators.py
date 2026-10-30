@@ -48,6 +48,7 @@ AGENT_DENIED_ENDPOINTS = {
     "devices.enroll",
     "devices.revoke",
     "devices.get_all",
+    "audit.get_all",
     "projects.create",
     "projects.update",
     "projects.delete",
