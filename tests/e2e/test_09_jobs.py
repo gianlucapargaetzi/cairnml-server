@@ -176,5 +176,6 @@ def test_job_registers_a_model_under_its_own_task(client_home, project, machine,
     jobs.enqueue(client_home, task_id)
     record = jobs.wait_for(api, task_id, jobs.FINAL, timeout=300)
     assert record["status"] == "completed", jobs.explain(api, task_id, record) + "\n" + "\n".join(jobs.console(api, task_id, size=300))
-    models = api.authed("models.get_by_task_id", {"task": task_id})
-    assert models.get("model") or models.get("models"), models
+    task = api.authed("tasks.get_by_id", {"task": task_id})["task"]
+    output = (task.get("models") or {}).get("output") or []
+    assert output and output[0].get("model"), "\n".join(jobs.console(api, task_id, size=300))

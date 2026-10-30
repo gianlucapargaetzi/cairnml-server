@@ -37,7 +37,8 @@ def _named_task_ids(call) -> list:
     data = call.data or {}
     if "task" in data:
         ids.append(data["task"])
-    for key in ("tasks", "ids"):
+    # "id" is a list in the status read (tasks.get_all) that the SDK makes for its own task
+    for key in ("tasks", "ids", "id"):
         if isinstance(data.get(key), list):
             ids.extend(data[key])
     # APICall returns a plain body as a one-item batch, so batched events count only when there is no body

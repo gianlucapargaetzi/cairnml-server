@@ -150,3 +150,13 @@ def test_a_job_may_not_use_an_unlinked_model_made_by_someone_else():
         assert job_scope._model_belongs_to_job("m", JOB_TASK, "the-owner") is False
         model.user = "the-owner"
         assert job_scope._model_belongs_to_job("m", JOB_TASK, "the-owner") is True
+
+
+def test_a_job_may_read_the_status_of_its_own_task():
+    # the SDK reads its own task's status with tasks.get_all and an id list
+    validate_job_scope(_endpoint("tasks.get_all"), _call({"id": [JOB_TASK], "only_fields": ["status"]}))
+
+
+def test_a_job_may_not_read_the_status_of_another_task():
+    with pytest.raises(errors.bad_request.InvalidTaskId):
+        validate_job_scope(_endpoint("tasks.get_all"), _call({"id": [JOB_TASK, "other"]}))
