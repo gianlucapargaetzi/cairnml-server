@@ -101,7 +101,14 @@ def _check_model_scope(name: str, call, job_task: str) -> None:
     model is looked up and its task must be the job's task. A model that does not exist, or belongs to another task,
     gets the same answer.
     """
-    if name == "models.create" or name == "models.update_for_task":
+    if name == "models.create":
+        # a model created with no task (the SDK's anonymous model, before its weights are attached) is not yet linked to
+        # any task, and the job may create it. A model that names a task must name the job's own task.
+        task = (call.data or {}).get("task")
+        if task in (None, "") or task == job_task:
+            return
+        raise errors.bad_request.InvalidTaskId(id="", company="")
+    if name == "models.update_for_task":
         if (call.data or {}).get("task") == job_task:
             return
         raise errors.bad_request.InvalidTaskId(id="", company="")
@@ -109,13 +116,19 @@ def _check_model_scope(name: str, call, job_task: str) -> None:
     model_id = (call.data or {}).get("model")
     if not model_id:
         raise errors.bad_request.InvalidTaskId(id="", company="")
-    if _model_task_id(model_id) != job_task:
+    owner = call.auth.identity.user if call.auth is not None and call.auth.identity else None
+    if not _model_belongs_to_job(model_id, job_task, owner):
         raise errors.bad_request.InvalidTaskId(id="", company="")
 
 
-def _model_task_id(model_id: str):
-    """The task that created the model, for model requests that name it."""
+def _model_belongs_to_job(model_id: str, job_task: str, owner) -> bool:
+    """A model is the job's when it is linked to the job's task. A model not yet linked to a task is the job's when
+    the job's owner created it: the job creates its model first and attaches the task afterwards."""
     from apiserver.database.model.model import Model  # imported here: the module is used without a database
 
-    model = Model.objects(id=model_id).only("task").first()
-    return model.task if model else None
+    model = Model.objects(id=model_id).only("task", "user").first()
+    if model is None:
+        return False
+    if model.task:
+        return model.task == job_task
+    return bool(owner) and model.user == owner

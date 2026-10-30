@@ -40,6 +40,7 @@ JOB_SPECS = {
     "fails": ["--scalars", "5", "--fail-after", "2"],
     "aborted": ["--scalars", "1", "--sleep", "600"],
     "release": ["--scalars", "1"],
+    "with-model": ["--scalars", "1", "--model"],
 }
 DEFAULT_ARGS = ["--scalars", "2"]
 
@@ -163,3 +164,17 @@ def test_agent_reports_no_running_job_once_a_job_completes(client_home, project,
     assert record["status"] == "completed", jobs.explain(api, task_id, record)
     assert machine.wait_until(lambda: not worker_record(api, machine.worker_name).get("task"), timeout=30), \
         "the agent must report no running job once the job has completed"
+
+
+def test_job_registers_a_model_under_its_own_task(client_home, project, machine, recorded):
+    """A job may register a model under its own task. Models of other tasks are not its to use.
+
+    Expect: the job completes, and its output model is linked to the job's task.
+    """
+    task_id = recorded["with-model"]
+    api = workspace.device_api(client_home)
+    jobs.enqueue(client_home, task_id)
+    record = jobs.wait_for(api, task_id, jobs.FINAL, timeout=300)
+    assert record["status"] == "completed", jobs.explain(api, task_id, record) + "\n" + "\n".join(jobs.console(api, task_id, size=300))
+    models = api.authed("models.get_by_task_id", {"task": task_id})
+    assert models.get("model") or models.get("models"), models

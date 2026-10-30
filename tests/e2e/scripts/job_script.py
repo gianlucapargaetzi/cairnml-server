@@ -19,7 +19,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from cairnml import Task
+from cairnml import OutputModel, Task
 
 # A small image that is on the host already, so a job does not depend on a registry pull.
 BASE_IMAGE = "python:3.12-slim"
@@ -50,6 +50,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--project", default="e2e-jobs")
     parser.add_argument("--name", default="job")
     parser.add_argument("--batch", default="", help="record the jobs listed in this file, one task each")
+    parser.add_argument("--model", action="store_true", help="register a small output model under the job's task")
     return parser
 
 
@@ -90,7 +91,15 @@ def run_body(args: argparse.Namespace) -> None:
     marker = Path(tempfile.mkstemp(prefix="job-result-", suffix=".txt")[1])
     marker.write_text("result of the job\n")
     task.upload_artifact("result", artifact_object=str(marker), wait_on_upload=True)
-    report({"task_id": task.id, "commit": commit})
+    model_id = None
+    if args.model:
+        # a model linked to this job's task: the job may create and read only such models
+        weights = Path(tempfile.mkdtemp(prefix="job-model-")) / "weights.pt"
+        weights.write_bytes(b"job weights\n" * 1000)
+        model = OutputModel(task=task, framework="PyTorch", name="job-model")
+        model.update_weights(weights_filename=str(weights), auto_delete_file=False, iteration=1)
+        model_id = model.id
+    report({"task_id": task.id, "commit": commit, "model_id": model_id})
     task.close()
 
 

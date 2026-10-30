@@ -13,7 +13,7 @@ JOB_TASK = "task-of-this-job"
 
 def _call(data=None, batched=None, job_task=JOB_TASK):
     """Mimics APICall: a plain body is also reported as a one-item batch, as APICall.batched_data does."""
-    auth = None if job_task is None else SimpleNamespace(job_task=job_task)
+    auth = None if job_task is None else SimpleNamespace(job_task=job_task, identity=SimpleNamespace(user="the-owner"))
     if batched is None:
         batched = [data] if data else []
     return SimpleNamespace(data=data or {}, batched_data=batched, auth=auth)
@@ -105,13 +105,15 @@ def test_a_job_may_not_create_a_model_for_another_task():
 
 
 def test_a_job_may_read_and_edit_a_model_of_its_own_task(monkeypatch):
-    monkeypatch.setattr(job_scope, "_model_task_id", lambda model_id: JOB_TASK if model_id == "mine" else "other")
+    monkeypatch.setattr(job_scope, "_model_belongs_to_job",
+                        lambda model_id, job_task, owner: model_id == "mine")
     validate_job_scope(_endpoint("models.get_by_id"), _call({"model": "mine"}))
     validate_job_scope(_endpoint("models.edit"), _call({"model": "mine", "comment": "x"}))
 
 
 def test_a_job_may_not_read_or_edit_another_tasks_model(monkeypatch):
-    monkeypatch.setattr(job_scope, "_model_task_id", lambda model_id: JOB_TASK if model_id == "mine" else "other")
+    monkeypatch.setattr(job_scope, "_model_belongs_to_job",
+                        lambda model_id, job_task, owner: model_id == "mine")
     with pytest.raises(errors.bad_request.InvalidTaskId):
         validate_job_scope(_endpoint("models.get_by_id"), _call({"model": "theirs"}))
     with pytest.raises(errors.bad_request.InvalidTaskId):
@@ -119,14 +121,32 @@ def test_a_job_may_not_read_or_edit_another_tasks_model(monkeypatch):
 
 
 def test_a_model_that_does_not_exist_is_refused_like_another_task(monkeypatch):
-    monkeypatch.setattr(job_scope, "_model_task_id", lambda model_id: None)
+    monkeypatch.setattr(job_scope, "_model_belongs_to_job", lambda model_id, job_task, owner: False)
     with pytest.raises(errors.bad_request.InvalidTaskId):
         validate_job_scope(_endpoint("models.get_by_id"), _call({"model": "missing"}))
 
 
 def test_a_job_may_not_list_all_models_or_use_other_model_actions(monkeypatch):
-    monkeypatch.setattr(job_scope, "_model_task_id", lambda model_id: JOB_TASK)
+    monkeypatch.setattr(job_scope, "_model_belongs_to_job", lambda model_id, job_task, owner: True)
     with pytest.raises(errors.forbidden.NoWritePermission):
         validate_job_scope(_endpoint("models.get_all"), _call({"task": JOB_TASK}))
     with pytest.raises(errors.forbidden.NoWritePermission):
         validate_job_scope(_endpoint("models.delete"), _call({"model": "mine"}))
+
+
+def test_a_job_may_create_an_anonymous_model_with_no_task_yet():
+    # the SDK creates the model first and names its task only when the weights are attached
+    validate_job_scope(_endpoint("models.create"), _call({"model": "m", "name": "Anonymous model", "labels": {}}))
+
+
+def test_a_job_may_not_use_an_unlinked_model_made_by_someone_else():
+    # a model with no task is the job's only when the job's owner made it
+    from types import SimpleNamespace as NS
+    from unittest import mock
+
+    model = NS(task="", user="someone-else")
+    with mock.patch("apiserver.database.model.model.Model.objects") as objects:
+        objects.return_value.only.return_value.first.return_value = model
+        assert job_scope._model_belongs_to_job("m", JOB_TASK, "the-owner") is False
+        model.user = "the-owner"
+        assert job_scope._model_belongs_to_job("m", JOB_TASK, "the-owner") is True
