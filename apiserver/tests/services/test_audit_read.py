@@ -14,8 +14,12 @@ ensure_db()
 
 
 class FakeCall:
-    def __init__(self):
+    def __init__(self, role="admin"):
         self.result = SimpleNamespace(data=None)
+        self.identity = SimpleNamespace(role=role)
+
+
+COMPANY = "company-a"
 
 
 @pytest.fixture
@@ -29,7 +33,7 @@ def events(actor):
     start = datetime.utcnow().replace(microsecond=0) - timedelta(hours=3)
     saved = []
     for i, action in enumerate(["web.login", "token.issued", "token.refused"]):
-        event = AuditEvent(actor=actor, action=action, ip=f"10.0.0.{i}", ts=start + timedelta(hours=i))
+        event = AuditEvent(actor=actor, action=action, ip=f"10.0.0.{i}", company=COMPANY, ts=start + timedelta(hours=i))
         event.save()
         saved.append(event)
     yield saved
@@ -37,8 +41,8 @@ def events(actor):
         event.delete()
 
 
-def get_all(**fields):
-    return audit_svc.get_all(FakeCall(), None, AuditListRequest(**fields))
+def get_all(role="admin", company=COMPANY, **fields):
+    return audit_svc.get_all(FakeCall(role), company, AuditListRequest(**fields))
 
 
 def test_events_come_newest_first_with_the_client_address(actor, events):
@@ -86,3 +90,28 @@ def test_paging_keeps_the_total(actor, events):
 def test_a_bad_time_is_refused(actor):
     with pytest.raises(errors.bad_request.ValidationError):
         get_all(actor=actor, since="yesterday")
+
+
+def test_each_event_names_its_company(actor, events):
+    result = get_all(actor=actor)
+
+    assert {event["company"] for event in result["events"]} == {COMPANY}
+
+
+def test_an_admin_reads_only_the_events_of_their_company(actor, events):
+    other = AuditEvent(actor=actor, action="web.login", company="company-b", ip="10.9.9.9")
+    other.save()
+    try:
+        assert get_all(actor=actor)["total"] == 3
+        assert get_all(actor=actor, company="company-b")["total"] == 1
+    finally:
+        other.delete()
+
+
+def test_root_reads_the_events_of_every_company(actor, events):
+    other = AuditEvent(actor=actor, action="web.login", company="company-b", ip="10.9.9.9")
+    other.save()
+    try:
+        assert get_all(role="root", actor=actor)["total"] == 4
+    finally:
+        other.delete()

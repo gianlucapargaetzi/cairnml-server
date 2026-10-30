@@ -1,7 +1,7 @@
 from types import SimpleNamespace
 from unittest import TestCase
 
-from apiserver.database.model.audit import AuditEvent
+from apiserver.database.model.audit import RETENTION_DAYS, AuditEvent
 from apiserver.idp.audit import build_event, client_address
 
 
@@ -51,3 +51,12 @@ class TestAudit(TestCase):
 
     def test_action_is_indexed(self):
         self.assertIn("action", AuditEvent._meta["indexes"])
+
+    def test_event_keeps_its_company(self):
+        event = build_event("u1", "web.login", ip="10.0.0.5", company="company-a")
+        self.assertEqual(event.company, "company-a")
+
+    def test_events_expire_after_the_retention_period(self):
+        ttl = [spec for spec in AuditEvent._meta["index_specs"] if "expireAfterSeconds" in spec]
+        self.assertEqual(ttl, [{"fields": [("ts", 1)], "expireAfterSeconds": RETENTION_DAYS * 24 * 60 * 60}])
+        self.assertEqual(RETENTION_DAYS, 365)
