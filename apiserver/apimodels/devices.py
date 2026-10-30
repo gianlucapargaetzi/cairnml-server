@@ -23,6 +23,13 @@ class RevokeRequest(Base):
     id = StringField(required=True)
 
 
+class ReassignRequest(Base):
+    id = StringField(required=True)
+    """ The device to move """
+    user = StringField(required=True)
+    """ The id of the admin who becomes the device's owner """
+
+
 class IdpCallbackRequest(Base):
     state = StringField(required=True)
     code = StringField(required=True)

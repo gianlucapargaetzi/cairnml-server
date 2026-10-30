@@ -6,7 +6,14 @@ import uuid
 from datetime import datetime
 
 from apiserver.apierrors import errors
-from apiserver.apimodels.devices import EnrollRequest, ExchangeRequest, GitTokenRequest, JobTokenRequest, RevokeRequest
+from apiserver.apimodels.devices import (
+    EnrollRequest,
+    ExchangeRequest,
+    GitTokenRequest,
+    JobTokenRequest,
+    ReassignRequest,
+    RevokeRequest,
+)
 from apiserver.bll.dataset_registry import allowed_repositories
 from apiserver.config_repo import config
 from apiserver.database.model.auth import Role, User
@@ -151,6 +158,28 @@ def revoke(call: APICall, _company, request: RevokeRequest):
     device.revoked = True
     device.save()
     audit(identity.user, "device.revoked", device=device.id)
+    return _device_view(device)
+
+
+@endpoint("devices.reassign", min_version="2.8", request_data_model=ReassignRequest)
+def reassign(call: APICall, _company, request: ReassignRequest):
+    identity = call.identity
+    if identity.role not in ADMIN_ROLES:
+        raise errors.forbidden.RoleNotAllowed("only an admin may reassign a device")
+    device = Device.objects(id=request.id).first()
+    if device is None:
+        raise errors.bad_request.InvalidId("no such device")
+    if device.revoked:
+        raise errors.bad_request.InvalidId("device is revoked")
+    new_owner = User.objects(id=request.user, company=device.company).first()
+    if new_owner is None:
+        raise errors.bad_request.InvalidId("no such user")
+    if new_owner.idp_disabled or new_owner.role not in ADMIN_ROLES:
+        raise errors.bad_request.InvalidId("the new owner must be an enabled admin")
+    previous_owner = device.user
+    device.user = new_owner.id
+    device.save()
+    audit(identity.user, "device.reassigned", device=device.id, previous_owner=previous_owner, new_owner=new_owner.id)
     return _device_view(device)
 
 
