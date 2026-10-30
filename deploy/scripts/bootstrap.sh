@@ -41,9 +41,22 @@ mkdir -p "$STATE/secrets/cairnml"
 # Nothing is stopped here: the containers are started or recreated below, and only where their image or configuration
 # changed, so a rerun does not restart the running services.
 
-# The realm names no address: its redirect URIs accept the address each client uses (through the proxy).
+# The realm names no address: its redirect URIs accept the address each client uses (through the proxy). With
+# CAIRNML_PUBLIC_ORIGIN set, the web client's redirect URIs and web origins name that address instead.
 mkdir -p "$STATE/idp"
 cp idp/realm-cairnml.json "$STATE/idp/realm-cairnml.json"
+if [ -n "${CAIRNML_PUBLIC_ORIGIN:-}" ]; then
+  python3 - "$STATE/idp/realm-cairnml.json" "${CAIRNML_PUBLIC_ORIGIN%/}" <<'PY'
+import json, sys
+path, origin = sys.argv[1], sys.argv[2]
+realm = json.load(open(path))
+for client in realm["clients"]:
+    if client["clientId"] == "cairnml-web":
+        client["redirectUris"] = [origin + "/cairnml/api/v2.8/login.idp_callback"]
+        client["webOrigins"] = [origin]
+json.dump(realm, open(path, "w"), indent=2)
+PY
+fi
 
 # The identity provider keeps its data in a host folder; its container runs as uid 1000.
 mkdir -p "$STATE/data/idp"

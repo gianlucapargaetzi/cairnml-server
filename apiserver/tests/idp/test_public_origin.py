@@ -135,3 +135,51 @@ def test_a_token_is_accepted_from_any_address_of_the_realm(token_issuer):
 ])
 def test_a_token_of_another_realm_or_without_an_issuer_is_refused(token_issuer):
     assert not _same_realm(token_issuer, "http://cairnml-idp:8180/cairnml/idp/realms/cairnml")
+
+
+PINNED = {"apiserver.idp.public_origin": "https://cairnml.example"}
+
+
+@pytest.mark.parametrize("host", ["evil.example", "cairnml.example.evil", "192.168.1.20"])
+def test_a_pinned_address_is_named_whatever_host_the_request_carried(host):
+    urls = request({"X-Forwarded-Host": host, "X-Forwarded-Proto": "http"}, **PINNED)
+
+    assert urls["api"] == "https://cairnml.example/cairnml/api"
+    assert urls["web"] == "https://cairnml.example/cairnml/"
+    assert urls["issuer"] == "https://cairnml.example/cairnml/idp/realms/cairnml"
+    assert urls["storage"] == "https://cairnml.example:9000"
+
+
+def test_a_pinned_address_is_named_without_forwarded_headers():
+    urls = request({}, host="evil.example", **PINNED)
+
+    assert urls["api"] == "https://cairnml.example/cairnml/api"
+
+
+def test_a_request_for_another_host_is_logged_under_a_pinned_address():
+    with mock.patch.object(public_origin, "log") as log:
+        request({"X-Forwarded-Host": "evil.example", "X-Forwarded-Proto": "https"}, **PINNED)
+
+    log.warning.assert_called_once()
+
+
+def test_a_request_for_the_pinned_host_is_not_logged():
+    with mock.patch.object(public_origin, "log") as log:
+        request({"X-Forwarded-Host": "CairnML.example", "X-Forwarded-Proto": "https"}, **PINNED)
+
+    log.warning.assert_not_called()
+
+
+@pytest.mark.parametrize("value, refused", [
+    ("", False),
+    ("https://cairnml.example", False),
+    ("http://192.168.1.20:8081", False),
+    ("cairnml.example", True),
+    ("ftp://cairnml.example", True),
+    ("https://cairnml.example/cairnml", True),
+    ("https://cairnml.example:port", True),
+])
+def test_a_pinned_address_must_be_an_origin(value, refused):
+    problems = public_origin.public_origin_problems(FakeConfig(**{"apiserver.idp.public_origin": value}).get)
+
+    assert bool(problems) is refused
