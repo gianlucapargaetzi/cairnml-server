@@ -16,7 +16,9 @@ command -v curl >/dev/null || { echo "curl is required" >&2; exit 1; }
 if [ ! -f .env ]; then
   cp .env.example .env
   sed -i "s|^KC_ADMIN_PASSWORD=.*|KC_ADMIN_PASSWORD=$(openssl rand -hex 16)|" .env
-  echo "wrote deploy/.env with a generated Keycloak admin password"
+  # The object store's root user is reachable on CAIRNML_STORAGE_PORT, so it gets a generated password too.
+  sed -i "s|^RUSTFS_ROOT_PASSWORD=.*|RUSTFS_ROOT_PASSWORD=$(openssl rand -hex 16)|" .env
+  echo "wrote deploy/.env with generated Keycloak and object storage admin passwords"
 fi
 set -a; . ./.env; set +a
 

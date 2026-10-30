@@ -95,6 +95,7 @@ def test_read_write_cannot_delete_someone_elses_model(company):
     assert Model.objects(id="model1").first() is not None
 
 
+@pytest.mark.needs_redis
 def test_read_write_owner_can_delete_their_own_model(company, monkeypatch):
     monkeypatch.setattr(svc, "_delete_model_events", lambda **kwargs: None)
     make_root(company, members=[("u2", ProjectRole.read_write)])
@@ -375,6 +376,7 @@ def test_make_public_refuses_a_read_write_member(company):
     assert Model.objects(id="model1").first().company == company
 
 
+@pytest.mark.needs_redis
 def test_admin_can_clear_the_project_of_a_model(company):
     # update passes the project through unparsed, so this is the path that can clear it
     make_root(company, id_="root1")

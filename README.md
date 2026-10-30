@@ -50,7 +50,7 @@ cd cairnml-server
 deploy/scripts/bootstrap.sh
 ```
 
-The first run builds the images and takes a while. The script generates the passwords and keys the stack needs and keeps them outside the repository, in `~/.local/share/cairnml`. It is safe to run again, for example after an update.
+The first run builds the images and takes a while. The script generates the passwords and keys the stack needs and keeps them outside the repository, in `~/.local/share/cairnml`. It is safe to run again, for example after an update, but it stops the stack first and starts it again, so the server is down for that time. See [Operate the server](docs/operations/operate.md).
 
 ## First sign-in
 
@@ -167,6 +167,79 @@ Two more ports are not published: the API and the sign-in service listen only in
 
 Run `deploy/scripts/bootstrap.sh` again after changing a port.
 
+Clients and agents reach the stack on the first two ports, so the machine's firewall must let them in on `CAIRNML_HTTP_PORT` and `CAIRNML_STORAGE_PORT`. The storage console on `CAIRNML_STORAGE_CONSOLE_PORT` answers on loopback only.
+
+## Datasets
+
+The dataset registry lets `cairnml dataset register` add a dataset repository to a registry repository, through a pull request that the server opens. It needs the GitHub App above, and three things more:
+
+1. **Permissions.** Registration writes to the registry, so the App needs **Contents** and **Pull requests** set to **Read and write**, instead of the read-only contents of the step above. GitHub applies this to every repository the App is installed on, and asks the owner of each installation to accept the change.
+2. **Installation.** Install the App on the registry repository and on every dataset repository.
+3. **Settings.** In `deploy/.env`, name the registry and the owners whose dataset repositories may be registered in it:
+
+   ```
+   CAIRNML_DATASET_REGISTRY=<owner>/<registry-repository>
+   CAIRNML_DATASET_OWNERS='["<owner>"]'
+   ```
+
+Then run `deploy/scripts/bootstrap.sh` again. The registry also lists the dataset repositories that a job may clone, so only add repositories you trust to it.
+
+Without the App, `cairnml dataset register` fails with `GitHub is not configured on this server`. With the App but without `CAIRNML_DATASET_REGISTRY`, it fails with `the dataset registry is not configured on this server`. An owner that is not listed fails with `datasets of <owner> may not be registered here`.
+
+## Settings reference
+
+The settings a user may set are in `deploy/.env`, copied from [`deploy/.env.example`](deploy/.env.example) by the setup script. Anything not listed here is internal to the stack.
+
+| Setting | Default | What it is for |
+|---|---|---|
+| `KC_ADMIN` | `cairnadmin` | The admin's name, in Keycloak and in CairnML. Must not be `kcadmin`. See [First sign-in](#first-sign-in). |
+| `KC_ADMIN_PASSWORD` | generated | The admin's password. Change it, then run `deploy/scripts/bootstrap.sh` again. |
+| `CAIRNML_HTTP_PORT` | `80` | The port of the one address clients use. See [Ports](#ports). |
+| `CAIRNML_STORAGE_PORT` | `9000` | The port of object storage, which clients reach. See [Ports](#ports). |
+| `CAIRNML_STORAGE_CONSOLE_PORT` | `9001` | The port of the storage console, on loopback only. |
+| `CAIRNML_STORAGE_PUBLIC_URL` | empty | The address clients use for object storage, when it differs from the address they used for the server. Empty: the same address, on `CAIRNML_STORAGE_PORT`. |
+| `CAIRNML_S3_ACCESS_KEY` | `cairnml-server` | The object storage user of the server. Its secret is in `secrets/cairnml/s3_secret_key`. |
+| `RUSTFS_ROOT_USER` | `rustfsadmin` | The root user of object storage, used by its setup job. |
+| `RUSTFS_ROOT_PASSWORD` | generated | The password of that root user. Keep it secret: the storage port is open to the network. |
+| `CAIRNML_HOME` | `~/.local/share/cairnml` | Where the data and secrets are kept. See [Operate the server](docs/operations/operate.md). |
+| `CAIRNML_API_PORT` | `8008` | The API, inside the stack. |
+| `CAIRNML_IDP_PORT` | `8180` | The sign-in service, inside the stack. |
+| `CAIRNML_COOKIE_SECURE` | `false` | `true` when the addresses are https, so that the session cookies are sent only over https. |
+| `GITHUB_APP_ID` | empty | The GitHub App. See [GitHub App](#github-app). |
+| `GITHUB_API_URL` | `https://api.github.com` | The GitHub API the App uses. Change it only for GitHub Enterprise Server. |
+| `CAIRNML_DATASET_REGISTRY` | empty | The dataset registry repository. See [Datasets](#datasets). |
+| `CAIRNML_DATASET_OWNERS` | `[]` | The owners whose dataset repositories may be registered. See [Datasets](#datasets). |
+| `CAIRNML_WEB_DIR` | empty | A checkout of the web app to build instead of the pinned one. See `scripts/fetch-sources.sh`. |
+
+## Compatibility
+
+The server image is built from one version of each component, each at the commit its pin file in `docker/build/` names:
+
+| Component | Repository | Pin file |
+|---|---|---|
+| Server | this repository | the commit you run |
+| SDK (`cairnml`) | `cairnml` | `docker/build/sdk-ref` |
+| Agent (`cairnml-agent`) | `cairnml-agent` | `docker/build/agent-ref` |
+| Web app | `cairnml-web` | `docker/build/web-ref` |
+
+Each component has its own version number, and the numbers are not related: a server 2.4.0 does not mean SDK 2.4.0. The pins are the only record of which versions go together. This repository's tests do not check other combinations.
+
+- Use the SDK and the agent at the commits that the server's pins name. A client installed from another source is not checked against the pins.
+- The server does not check the version of an SDK or an agent. An old or new client usually fails with an error from the API rather than with a message that names the version.
+- Clients name the API version in the address (`/cairnml/api/v2.8/...`). The device sign-in (enrolment, token exchange, job tokens) needs API version 2.8 or later.
+
+## Running the server's tests
+
+The unit tests are the ones CI runs (`.github/workflows/ci.yml`), on Python 3.11, as in the image:
+
+```bash
+python3 -m pip install --require-hashes -r apiserver/requirements.lock
+python3 -m pip install pytest
+python3 -m pytest -q -m "not integration" apiserver/tests
+```
+
+Most of the unit tests use MongoDB, which must run on `127.0.0.1:27017` (the default). Without it they wait for the connection to time out, so start MongoDB first. The tests marked `needs_redis` are skipped when no Redis answers on the configured address (`localhost:6379` by default), so Redis is optional for a local run. The tests marked `integration` need Elasticsearch and a running server; they run in the end-to-end suite, see [E2E.md](docs/e2e_testing/E2E.md).
+
 ## Architecture
 
 The flows of the common operations are in [`docs/architecture/flows/`](docs/architecture/flows/README.md): sign-in, device enrolment, token exchange, job tokens, job execution, task logging, database management and the trust model. Each page has a sequence diagram.
@@ -175,10 +248,15 @@ The flows of the common operations are in [`docs/architecture/flows/`](docs/arch
 
 Once the clients are connected, continue with the [CairnML examples](https://github.com/gianlucapargaetzi/cairnml-examples).
 
+## Operate the server
+
+Upgrading, backing up and restoring the server, its ports and firewall, and removing it are in [Operate the server](docs/operations/operate.md).
+
 ## Having problems
 
-1. Check the [open issues](https://github.com/gianlucapargaetzi/cairnml-server/issues).
-2. If your problem is not listed, [open a new issue](https://github.com/gianlucapargaetzi/cairnml-server/issues/new) with the command you ran, the output of `docker compose logs`, and the full error message.
+1. Look up the symptom in [Troubleshooting](docs/operations/troubleshooting.md).
+2. Check the [open issues](https://github.com/gianlucapargaetzi/cairnml-server/issues).
+3. If your problem is not listed, [open a new issue](https://github.com/gianlucapargaetzi/cairnml-server/issues/new) with the command you ran, the output of `docker compose logs`, and the full error message.
 
 ## License
 

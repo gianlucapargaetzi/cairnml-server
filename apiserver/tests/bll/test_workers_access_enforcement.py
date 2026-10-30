@@ -58,6 +58,7 @@ def register_worker(company, task_id, worker_id):
     return entry
 
 
+@pytest.mark.needs_redis
 def test_get_all_redacts_a_private_tasks_name_from_a_stranger(company):
     make_root(company)
     make_task(company, "root1", "owner1")
@@ -71,6 +72,7 @@ def test_get_all_redacts_a_private_tasks_name_from_a_stranger(company):
     assert workers[0].project is None
 
 
+@pytest.mark.needs_redis
 def test_get_all_shows_the_task_to_a_member(company):
     make_root(company, members=[("u2", ProjectRole.read)])
     make_task(company, "root1", "owner1")

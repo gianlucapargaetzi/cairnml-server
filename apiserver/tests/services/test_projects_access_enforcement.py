@@ -327,6 +327,7 @@ def test_merge_refuses_a_destination_the_caller_cannot_administer(company):
     assert Project.objects(id="msrc").first() is not None
 
 
+@pytest.mark.needs_redis
 def test_move_into_a_project_resets_visibility_and_members_of_the_moved_root(company):
     make_project(company, "mvsrc", visibility=ProjectVisibility.public, members=[("u2", ProjectRole.read)])
     make_project(company, "mvdst")
@@ -341,6 +342,7 @@ def test_move_into_a_project_resets_visibility_and_members_of_the_moved_root(com
     assert moved.members == []
 
 
+@pytest.mark.needs_redis
 def test_move_out_of_a_project_resets_the_promoted_sub_project(company):
     root = make_project(company, "mvroot")
     sub = make_project(company, "mvchild", parent=root, visibility=ProjectVisibility.public, members=[("u2", ProjectRole.read)])
@@ -355,6 +357,7 @@ def test_move_out_of_a_project_resets_the_promoted_sub_project(company):
     assert promoted.members == []
 
 
+@pytest.mark.needs_redis
 def test_move_between_sub_locations_keeps_the_moved_project_settings(company):
     root_a = make_project(company, "mvra")
     root_b = make_project(company, "mvrb")
@@ -401,6 +404,7 @@ def test_merge_refuses_a_collaborator_even_with_admin_on_both_sides(company):
     assert Project.objects(id="ownmsrc").first() is not None
 
 
+@pytest.mark.needs_redis
 def test_merge_allows_the_owner(company):
     make_project(company, "realmsrc")
     make_project(company, "realmdst")
@@ -442,6 +446,7 @@ def test_move_refuses_a_missing_project_the_same_way_as_a_hidden_one(company):
         )
 
 
+@pytest.mark.needs_redis
 def test_move_allows_a_collaborator_to_move_a_sub_project_they_administer(company):
     # a sub-project move does not change who governs the root, so admin (not owner_only) is the
     # right bar here, unchanged from before
