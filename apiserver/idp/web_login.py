@@ -5,6 +5,7 @@ callback must present the same state, and each state can be used once.
 """
 
 import base64
+import dataclasses
 import hashlib
 import json
 import secrets
@@ -13,6 +14,10 @@ from urllib.parse import urlencode
 from apiserver.idp.users import upsert_idp_user
 
 LOGIN_TTL_SEC = 600
+
+# The browser keeps the ID token of its sign-in in this cookie, and sends it back only on the logout call (see the
+# cookie's path in the configuration): the identity provider ends exactly that session, without asking to confirm.
+ID_TOKEN_COOKIE = "cairnml_idp_session"
 
 
 def pkce_challenge(verifier: str) -> str:
@@ -86,4 +91,4 @@ def finish_login(store, http, verifier, issuer: str, client_id: str, redirect_ur
     user = upsert_idp_user(issuer, identity.subject, identity.username, identity.roles, admin_role)
     if user.idp_disabled:
         raise LoginRefused("user is disabled")
-    return user, identity
+    return user, dataclasses.replace(identity, id_token=body["id_token"])

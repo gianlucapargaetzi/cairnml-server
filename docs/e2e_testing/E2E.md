@@ -34,7 +34,7 @@ tests/e2e/docker/run.sh --down                 # remove the environment: contain
   `CAIRNML_E2E_GITHUB_PRIVATE_REPO=owner/name` names one it cannot. Without them, the `github` tests are skipped with that
   reason.
 
-`system.e2e_reset` removes the projects, tasks and scheduler workers whose name starts with the suite's prefix (`e2e`),
+`system.e2e_reset` removes the projects, tasks and workers whose name starts with the suite's prefix (`e2e`),
 with their contents. It is off unless the server's `apiserver.e2e.reset_enabled` is set, which only the suite's compose
 file does, and it requires an admin.
 
@@ -134,7 +134,7 @@ Two services also listen on their own loopback ports, which the suite uses and c
 | `docker/compose.yaml`, `docker/runner.Dockerfile`, `docker/requirements.txt` | The `dind` service, the runner image (the test venv, Chromium, the Docker CLI and Compose, git), and the runner's packages. |
 | `conftest.py` | Starts the stack for the session (autouse), checks that its services answer, resets a reused stack, gives each session its own `HOME`, and enrols the test client through the real sign-in page. Creates the session project and deletes it at the end. Writes the report. |
 | `support/stack.py` | Ports, state folder, reuse record and fingerprint, secrets, realm copy, nginx template, compose calls, the identity bootstrap, health waits, teardown. `python -m support.stack --stop` and `--status`. |
-| `stack/compose.yaml` | The stack's services and their settings, including the test-only timers (2 s scheduler sync, 1 s sweep, 5 s directory sync) and the reset switched on. |
+| `stack/compose.yaml` | The stack's services and their settings, including the test-only directory sync timer (5 s) and the reset switched on. |
 | `stack/prune-networks.sh` | Removes Docker networks that no container uses, after showing them. For the host run, after an interrupted run. |
 | `support/settings.py` | Addresses and accounts of the running stack. Set at session start by `configure()`; nothing is read from `deploy/`. |
 | `support/cli.py` | Runs the venv's console scripts and the example scripts with the session's `HOME`. Sets `BROWSER` so the sign-in page is opened by the headless browser. |
@@ -214,6 +214,8 @@ this run; it failed in an earlier one, and it passes alone too, so its failure w
 [E2E_TESTS.md](E2E_TESTS.md) lists every test. Still not written:
 
 - Job monitoring while a job runs (usage, console growing, status changes).
+- Lost-worker detection: a worker that stops reporting is dropped once `default_worker_timeout_sec` (600 s) passes. No test
+  checks this, and the e2e stack keeps the production value.
 - Resource limits inside a job container, and the job's working folder being removed afterwards.
 - Dashboard "Unassigned" bucket and the "All experiments" flat list.
 - Contrast checks in light and dark mode (the suite checks the painted background only).
@@ -227,7 +229,7 @@ ceilings and intervals, not measured; the report now records each test's duratio
 |---|---|---|
 | 1 | The stack is reused between runs (`CAIRNML_E2E_REUSE_STACK`). It is rebuilt only when the server or web sources, or the compose file, changed. Starts take a lock. | 3 to 5 min per run after the first |
 | 2 | The reused stack is reset at the start of each run (`system.e2e_reset`, off by default), so no test needs a restart for repeatable state. | the restarts repeatability needed |
-| 3 | A lost worker is found by the scheduler's own sweep (`sweep_interval_sec`), not by a placement pass. The e2e stack syncs every 2 s and sweeps every 1 s. | about 55 s per lost-worker test |
+| 3 | Removed with the scheduler, which had its own sweep for lost workers. A worker is now dropped once its last status report is `default_worker_timeout_sec` old (600 s by default). The suite does not shorten it, and no test checks it. | none |
 | 4 | The directory sync runs every 5 s on the e2e stack; the disabled-user test polls every 1 s. | up to about 90 s |
 | 5 | The two keyless checks share one daemon. Stopping waits 15 s (was 60 s), registration 60 s (was 240 s). | about 110 s per stopped agent |
 | 6 | Fixed sleeps that waited for nothing are gone: the keyless window is 10 s, the queued check polls, the holder's body is 15 s. | about 65 s per run |
@@ -238,11 +240,11 @@ ceilings and intervals, not measured; the report now records each test's duratio
 | 11 | `pytest -n 4 -m "not restart"` runs modules in parallel, with the agent tests in one group. Needs reuse. | the sum of the parallel modules (not measured) |
 | 12 | Job records and tracked runs are written in one process per module (`job_script.py --batch`, `track_example.py --batch`). Each job's arguments go to its own task. | about 15 process starts |
 | 13 | The artifact upload is 10 MB, still above the SDK's 8 MB multipart threshold. It keeps the `slow` marker. | about half of its transfer |
-| 14 | The job script only records the job on the client; the body runs on the agent, with the arguments the task records. Found while implementing. | up to 600 s per abort test, 300 s for the lost-agent test |
+| 14 | The job script only records the job on the client; the body runs on the agent, with the arguments the task records. Found while implementing. | up to 600 s per abort test |
 | 15 | The suite runs in an isolated environment: one `dind` container, with the runner, the stack and the job containers inside it. | no host daemon in use |
-| 16 | The agent's `_unregister` is a no-op. Its callers had outlived the method, so a finished job raised after its status was reported. | job completion is reported |
+| 16 | Removed: a no-op `_unregister` stub in the agent, which a later definition in the same class overrode. | none |
 | 17 | A script's result is its last JSON line (the SDK can print a GPU notice after it), and the runner has pandas, numpy and pillow. | the tracking and artifact tests run |
-| 18 | `Task.enqueue` checks the server's API level, not the one in use (SDK fix). | enqueue after a service call works |
+| 18 | Removed with the scheduler: the SDK checks the server's 2.4 enqueue level, as upstream does. | none |
 
 ## Open work
 
@@ -256,6 +258,5 @@ ceilings and intervals, not measured; the report now records each test's duratio
 ## Clean-up of a real stack
 
 The suite does not touch the stack under `deploy/`. Earlier runs, made before the isolated stack existed, left records
-there, and they have been removed: the probe project (through the API), 16 workers with their scheduler records (directly
-in the database), four `no-project` tasks (through the API), and seven `e2e-member-*` user records (directly in the
+there, and they have been removed: the probe project (through the API), 16 workers (directly in the database), four `no-project` tasks (through the API), and seven `e2e-member-*` user records (directly in the
 database). The tracking test now deletes its own task.

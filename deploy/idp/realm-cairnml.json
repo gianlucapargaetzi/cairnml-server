@@ -30,7 +30,7 @@
       ],
       "attributes": {
         "pkce.code.challenge.method": "S256",
-        "post.logout.redirect.uris": "+"
+        "post.logout.redirect.uris": "/cairnml/api/v2.8/login.idp_start"
       }
     },
     {
