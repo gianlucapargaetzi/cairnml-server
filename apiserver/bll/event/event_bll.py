@@ -62,6 +62,11 @@ async_delete_threshold = config.get(
 )
 
 
+# Keep-alive of an open task-log scroll. A scroll that is not read to the end (the console tail reads only the first
+# page) stays open until this expires, so it is kept short: a client that pages on still renews it with each page.
+TASK_LOG_SCROLL = "1m"
+
+
 class EventBLL(object):
     event_id_fields = ("task", "iter", "metric", "variant", "key")
     empty_scroll = "FFFF"
@@ -568,7 +573,7 @@ class EventBLL(object):
 
         if scroll_id:
             with translate_errors_context():
-                es_res = self.es.scroll(scroll_id=scroll_id, scroll="1h")
+                es_res = self.es.scroll(scroll_id=scroll_id, scroll=TASK_LOG_SCROLL)
         else:
             size = min(batch_size, 10000)
             if check_empty_data(self.es, company_id=company_id, event_type=event_type):
@@ -586,7 +591,7 @@ class EventBLL(object):
                     company_id=company_id,
                     event_type=event_type,
                     body=es_req,
-                    scroll="1h",
+                    scroll=TASK_LOG_SCROLL,
                 )
 
         events, total_events, next_scroll_id = self._get_events_from_es_res(es_res)
