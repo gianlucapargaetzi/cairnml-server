@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from apiserver.apierrors import errors
 from apiserver.apimodels.audit import AuditListRequest
 from apiserver.database.model.audit import AuditEvent
+from apiserver.database.model.auth import Role
 from apiserver.service_repo import APICall, endpoint
 
 MAX_PAGE_SIZE = 500
@@ -29,14 +30,17 @@ def _event_view(event: AuditEvent) -> dict:
         "actor": event.actor,
         "action": event.action,
         "ip": event.ip,
+        "company": event.company,
         "detail": event.detail,
     }
 
 
 @endpoint("audit.get_all", min_version="2.8", request_data_model=AuditListRequest)
-def get_all(call: APICall, _company, request: AuditListRequest):
-    """Newest first. Admins only (see the schema)."""
+def get_all(call: APICall, company, request: AuditListRequest):
+    """Newest first. Admins only (see the schema). An admin reads the events of their own company; root and system read all."""
     query = {}
+    if call.identity.role not in (Role.root, Role.system):
+        query["company"] = company
     if request.actor:
         query["actor"] = request.actor
     if request.action:

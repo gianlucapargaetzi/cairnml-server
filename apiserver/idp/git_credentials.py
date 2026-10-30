@@ -121,7 +121,7 @@ def set_credential(company: str, host: str, path: str, username: str, secret: st
     entry.secret = encrypted
     entry.updated = now
     entry.save()
-    audit(actor, "git_credential.set", host=host, path=path)
+    audit(actor, "git_credential.set", company=company, host=host, path=path)
     return _view(entry)
 
 
@@ -129,7 +129,7 @@ def delete_credential(company: str, host: str, path: str, actor: str) -> int:
     host, path = normalise_host(host), normalise_path(path)
     deleted = GitCredential.objects(company=company, host=host, path=path).delete()
     if deleted:
-        audit(actor, "git_credential.deleted", host=host, path=path)
+        audit(actor, "git_credential.deleted", company=company, host=host, path=path)
     return deleted
 
 
