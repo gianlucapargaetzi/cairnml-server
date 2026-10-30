@@ -18,6 +18,7 @@ from apiserver.idp.checks import AccessDenied, check_device, check_job_issue
 from apiserver.idp.github import GitHubError, RepoNotAccessible
 from apiserver.idp.github_check import build_from_config, repo_of
 from apiserver.idp.keys import load_public_key
+from apiserver.idp import git_credentials as store
 from apiserver.idp import public_origin
 from apiserver.idp.oidc import OidcError
 from apiserver.idp.replay import claim_jti
@@ -182,8 +183,9 @@ def job_token(call: APICall, _company, request: JobTokenRequest):
 
 
 @endpoint("devices.git_token", min_version="2.8", request_data_model=GitTokenRequest)
-def git_token(call: APICall, _company, request: GitTokenRequest):
-    """A read-only token for the task's repository, for the job or the agent running it."""
+def git_token(call: APICall, company, request: GitTokenRequest):
+    """A read-only token for the task's repository, for the job or the agent running it. On GitHub that is a
+    GitHub App token; on another host it is the Git credential stored for the host (and path prefix)."""
     claims = Token.decode(_bearer(call))
     task = Task.objects(id=request.task).first()
     try:
@@ -199,10 +201,12 @@ def git_token(call: APICall, _company, request: GitTokenRequest):
         audit(claims.get("device") or "unknown", "git_token.refused", device=claims.get("device"), task=request.task, reason=str(exc))
         raise errors.unauthorized.InvalidToken(str(exc)) from None
 
+    actor = claims.get("device") or claims.get("sub") or "unknown"
     app = build_from_config()
-    if app is None:
-        raise errors.bad_request.ValidationError("GitHub is not configured")
     if request.repository:
+        # A dataset repository is registered on GitHub, so it is read with the GitHub App only.
+        if app is None:
+            raise errors.bad_request.ValidationError("GitHub is not configured")
         repo = repo_of(request.repository)
         if repo is None:
             raise errors.bad_request.ValidationError("the repository is not on GitHub")
@@ -211,19 +215,52 @@ def git_token(call: APICall, _company, request: GitTokenRequest):
         except GitHubError:
             raise errors.bad_request.ValidationError("the dataset registry could not be read") from None
         if repo.lower() not in registered:
-            audit(claims.get("device") or "unknown", "git_token.refused", device=claims.get("device"), task=request.task, reason=f"{repo} is not in the dataset registry")
+            audit(actor, "git_token.refused", device=claims.get("device"), task=request.task, reason=f"{repo} is not in the dataset registry")
             raise errors.bad_request.ValidationError(f"{repo} is not a registered dataset repository")
-    else:
-        if task is None:
-            raise errors.bad_request.InvalidId("task not found")
-        repo = repo_of(task.script.repository)
-        if repo is None:
-            raise errors.bad_request.ValidationError("the task's repository is not on GitHub")
+        try:
+            return _github_token(app, repo, actor, request.task)
+        except RepoNotAccessible:
+            raise errors.bad_request.ValidationError(f"the GitHub App is not installed on {repo}") from None
+
+    if task is None:
+        raise errors.bad_request.InvalidId("task not found")
+    repository = task.script.repository
+    if not repository:
+        raise errors.bad_request.ValidationError("the task has no repository")
+    repo = repo_of(repository)
+    if repo is None:
+        return _stored_token(company, actor, request.task, repository)
+    # GitHub: the App when it is set up and installed on the repository, else the Git credentials stored for it.
+    if app is not None:
+        try:
+            return _github_token(app, repo, actor, request.task)
+        except RepoNotAccessible:
+            pass
+    if store.find_credential(company, repository) is not None:
+        return _stored_token(company, actor, request.task, repository)
+    if app is None:
+        raise errors.bad_request.ValidationError("GitHub is not configured")
+    raise errors.bad_request.ValidationError(f"the GitHub App is not installed on {repo}")
+
+
+def _github_token(app, repo: str, actor: str, task_id: str) -> dict:
+    """The GitHub App's read-only token for one repository. RepoNotAccessible is left to the caller."""
     try:
         token = app.installation_token(repo)
-    except RepoNotAccessible:
-        raise errors.bad_request.ValidationError(f"the GitHub App is not installed on {repo}") from None
     except GitHubError:
         raise errors.bad_request.ValidationError("GitHub could not be reached") from None
-    audit(claims.get("device") or claims.get("sub") or "unknown", "git_token.issued", task=request.task, repo=repo)
+    audit(actor, "git_token.issued", task=task_id, repo=repo)
     return {"token": token.token, "expires_at": token.expires_at.isoformat(), "username": "x-access-token"}
+
+
+def _stored_token(company: str, actor: str, task_id: str, repository: str) -> dict:
+    """The Git credential stored for the repository's host (and path prefix). Refused when none is stored."""
+    host, _path = store.host_and_path(repository)
+    entry = store.find_credential(company, repository)
+    if entry is None:
+        audit(actor, "git_token.refused", task=task_id, host=host, reason="no Git credentials stored")
+        raise errors.bad_request.ValidationError(
+            f"no Git credentials are stored for {host}: an admin adds them with the git_credentials.set call")
+    secret = store.secret_of(entry)
+    audit(actor, "git_token.issued", task=task_id, host=entry.host, path=entry.path)
+    return {"token": secret, "expires_at": None, "username": entry.username}
