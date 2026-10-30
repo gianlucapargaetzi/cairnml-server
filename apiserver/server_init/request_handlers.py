@@ -13,6 +13,7 @@ from apiserver.apierrors.base import BaseError
 from apiserver.config_repo import config
 from apiserver.idp import public_origin
 from apiserver.idp.tokens import renewed_web_token
+from apiserver.server_init import client_versions
 from apiserver.service_repo import ServiceRepo, APICall
 from apiserver.service_repo.auth import AuthType, Token
 from apiserver.service_repo.errors import PathParsingError
@@ -144,6 +145,9 @@ class RequestHandlers:
 
     def after_request(self, response):
         response.headers["server"] = self._server_header
+        notice = client_versions.note(request.headers)
+        if notice:
+            response.headers[client_versions.UPGRADE_HEADER] = notice
         return response
 
     @staticmethod
