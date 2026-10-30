@@ -88,6 +88,43 @@ On the user's **Role mapping** tab, click **Assign role**, choose **Filter by re
 
 Switch the user's **Enabled** off in the `cairnml` realm. Their sessions, devices and job tokens stop working. Disabling can be undone; deleting removes the account from Keycloak.
 
+## GitHub App
+
+Remote execution checks the repository of every job before it is queued. For a repository on `github.com` the check needs a GitHub App: the job is refused until the App is set up and installed on that repository. Repositories on other Git hosts are not checked, and the agent gets no credentials for them, so private repositories there need their credentials set by hand in the agent's configuration (see the [agent](https://github.com/gianlucapargaetzi/cairnml-agent)).
+
+Set up the App once for each GitHub account or organisation whose repositories you run jobs from.
+
+**1. Create the App.** On GitHub, open **Settings → Developer settings → GitHub Apps → New GitHub App** (for an organisation, the same page under the organisation's settings). Fill in:
+
+- **GitHub App name:** any name, for example `cairnml-<your-name>`.
+- **Homepage URL:** the server's web address, for example `http://<server-ip>/cairnml/`.
+- **Webhook:** untick **Active**. CairnML does not use webhooks.
+- **Repository permissions:** set **Contents** to **Read-only**. Leave every other permission at **No access**.
+- **Where can this GitHub App be installed?** choose **Only on this account**, unless other accounts must use it.
+
+Click **Create GitHub App**. Note the **App ID** shown at the top of the App's page.
+
+**2. Create a private key.** On the App's page, under **Private keys**, click **Generate a private key**. GitHub downloads a `.pem` file.
+
+**3. Install the App on your repositories.** On the App's page, open **Install App**, choose the account, and select **Only select repositories**. Pick every repository that jobs will run from. A repository that is not selected is refused when a job is queued.
+
+**4. Give the App to the server.** Put the App ID in `deploy/.env`:
+
+```
+GITHUB_APP_ID=<the App ID>
+```
+
+Copy the key to the state directory, which is `~/.local/share/cairnml/secrets/` unless `CAIRNML_HOME` says otherwise:
+
+```bash
+cp ~/Downloads/<app-name>.*.private-key.pem ~/.local/share/cairnml/secrets/github-app.pem
+chmod 600 ~/.local/share/cairnml/secrets/github-app.pem
+```
+
+Then run `deploy/scripts/bootstrap.sh` again. It is safe to run again, and it passes the App ID and key to the server.
+
+To check the setup, enqueue a job whose repository is on GitHub. A refused job names the step that is missing. Without the App, the message is `GitHub is not set up`. When the App is not installed on the repository, it is `the GitHub App is not installed on <owner>/<repo>`.
+
 ## Connect the clients
 
 The server needs no address of its own: it answers to any address of this machine (`localhost`, its IP address or its host name), and names itself after the address the client used. Everything is under `/cairnml` of that address, so the root of the machine stays free for other sites:

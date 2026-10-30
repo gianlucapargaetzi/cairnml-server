@@ -28,14 +28,17 @@ def check_submission(task, app) -> None:
         return
     if app is None:
         raise errors.bad_request.ValidationError(
-            f"GitHub is not set up: the job's repository {repo} cannot be checked without the GitHub App")
+            f"GitHub is not set up: the job's repository {repo} cannot be checked without the GitHub App. "
+            "Set it up as described in the README, section 'GitHub App'")
     commit = task.script.version_num
     if not commit:
         raise errors.bad_request.ValidationError(f"no commit is recorded for {repo}: commit and push first")
     try:
         app.installation_token(repo)
     except RepoNotAccessible:
-        raise errors.bad_request.ValidationError(f"the GitHub App is not installed on {repo}") from None
+        raise errors.bad_request.ValidationError(
+            f"the GitHub App is not installed on {repo}: install it on this repository, "
+            "see the README, section 'GitHub App'") from None
     except GitHubError:
         raise errors.bad_request.ValidationError("GitHub could not be reached to check the job") from None
     try:
