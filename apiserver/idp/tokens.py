@@ -1,5 +1,7 @@
 """Short-lived access tokens issued by the CairnML server after a device proves its key."""
 
+import time
+
 import jwt
 from apiserver.config_repo import config
 from apiserver.service_repo.auth import Identity, Token
@@ -25,6 +27,29 @@ def issue_access_token(user_id: str, company_id: str, device_id: str, kind: str,
                         user_name=user_name, company_name=company_name)
     ttl = config.get("apiserver.idp.access_token_ttl_sec")
     return Token.create_encoded_token(identity, expiration_sec=ttl, kind=kind, device=device_id, **_version_claims())
+
+
+def renewed_web_token(encoded: str, now: float = None):
+    """A fresh web session token once the current one has used more than half of its life, else None.
+
+    An active user keeps the session this way. An idle session still expires, and the user is checked
+    again on every request, so a disabled user loses access as before.
+    """
+    try:
+        claims = Token.decode(encoded)  # verifies the signature and the expiry
+    except jwt.PyJWTError:
+        return None
+    if claims.get("kind") != "web" or "exp" not in claims or "iat" not in claims:
+        return None
+    now = time.time() if now is None else now
+    life = claims["exp"] - claims["iat"]
+    if claims["exp"] - now > life / 2:
+        return None
+    identity = Identity.from_dict(claims.get("identity") or {})
+    return issue_access_token(
+        identity.user, identity.company, "", kind="web", role=identity.role,
+        user_name=identity.user_name or "", company_name=identity.company_name or "",
+    )
 
 
 def device_of_bearer(authorization):

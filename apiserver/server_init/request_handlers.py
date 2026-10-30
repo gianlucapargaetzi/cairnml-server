@@ -12,6 +12,7 @@ from apiserver.apierrors import APIError
 from apiserver.apierrors.base import BaseError
 from apiserver.config_repo import config
 from apiserver.idp import public_origin
+from apiserver.idp.tokens import renewed_web_token
 from apiserver.service_repo import ServiceRepo, APICall
 from apiserver.service_repo.auth import AuthType, Token
 from apiserver.service_repo.errors import PathParsingError
@@ -114,6 +115,7 @@ class RequestHandlers:
                     response.cache_control.no_store = True
                     response.cache_control.max_age = 0
 
+            self._renew_session_cookie(call)
             if call.result.cookies:
                 for key, value in call.result.cookies.items():
                     kwargs = self._get_cookie_settings(key)
@@ -216,6 +218,21 @@ class RequestHandlers:
 
     def _get_session_auth_cookie(self, req):
         return req.cookies.get(config.get("apiserver.auth.session_auth_cookie_name"))
+
+    @staticmethod
+    def _renew_session_cookie(call):
+        """Silent renewal: a web session that has used half its life gets a fresh cookie on a successful call."""
+        cookie_name = config.get("apiserver.auth.session_auth_cookie_name")
+        if request.headers.get("Authorization") or cookie_name in call.result.cookies:
+            return  # the request was not authenticated by the cookie, or the cookie is being set anyway
+        if not (200 <= (call.result.code or 0) < 300) or call.result.redirect:
+            return
+        encoded = request.cookies.get(cookie_name)
+        if not encoded:
+            return
+        renewed = renewed_web_token(encoded)
+        if renewed:
+            call.result.set_auth_cookie(renewed)
 
     def _create_api_call(self, req):
         call = None
