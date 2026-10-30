@@ -30,3 +30,22 @@ class SetVisibilityRequest(models.Base):
 class TransferOwnershipRequest(models.Base):
     project = fields.StringField(required=True)
     new_owner = fields.StringField(required=True)
+
+
+class GetQueuesRequest(models.Base):
+    project = fields.StringField(required=True)
+
+
+class GetAssignableQueuesRequest(GetQueuesRequest):
+    pass
+
+
+class AddQueuesRequest(models.Base):
+    project = fields.StringField(required=True)
+    queues = fields.ListField(items_types=[str], required=True)
+
+
+class RemoveQueueRequest(models.Base):
+    project = fields.StringField(required=True)
+    queue = fields.StringField(required=True)
+

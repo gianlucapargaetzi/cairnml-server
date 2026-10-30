@@ -40,12 +40,14 @@ class QueueBLL(object):
         tags: Optional[Sequence[str]] = None,
         system_tags: Optional[Sequence[str]] = None,
         metadata: Optional[dict] = None,
+        public: bool = False,
     ) -> Queue:
         """Creates a queue"""
         with translate_errors_context():
             now = datetime.utcnow()
             queue = Queue(
                 id=database.utils.id(),
+                public=public,
                 company=company_id,
                 created=now,
                 name=name,

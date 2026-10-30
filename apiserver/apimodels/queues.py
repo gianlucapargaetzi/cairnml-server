@@ -21,6 +21,7 @@ class CreateRequest(Base):
     tags = ListField(items_types=[str])
     system_tags = ListField(items_types=[str])
     metadata = DictField(value_types=[MetadataItem])
+    public = BoolField()
 
 
 class QueueRequest(Base):
@@ -53,6 +54,11 @@ class UpdateRequest(QueueRequest):
     tags = ListField(items_types=[str])
     system_tags = ListField(items_types=[str])
     metadata = DictField(value_types=[MetadataItem])
+    public = BoolField()
+
+
+class UserRequest(QueueRequest):
+    user = StringField(required=True)
 
 
 class TaskRequest(QueueRequest):
