@@ -21,9 +21,15 @@ pytestmark = pytest.mark.integration  # needs MongoDB
 
 
 class FakeCall:
+    HEADER_REAL_IP = "X-Real-IP"
+
     def __init__(self, ident):
         self.identity = ident
         self.result = SimpleNamespace(data=None, data_model=None)
+        self.real_ip = "127.0.0.1"
+
+    def get_header(self, header, default=None):
+        return default
 
 
 class TestReassignDevice(TestCase):
