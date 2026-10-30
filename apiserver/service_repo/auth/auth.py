@@ -38,6 +38,9 @@ def authorize_token(jwt_token, service, action, call):
         if is_token_revoked(token):
             raise errors.unauthorized.InvalidToken("revoked token")
         check_idp_token(jwt_token)
+        # a job token names its task, and validate_job_scope keeps the job to that task
+        claims = Token.decode(jwt_token)
+        token.job_task = claims.get("task") if claims.get("kind") == "job" else None
         return token
     except jwt.exceptions.InvalidKeyError as ex:
         log_error("Failed parsing token.")

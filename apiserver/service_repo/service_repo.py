@@ -9,6 +9,7 @@ import jsonmodels.models
 from apiserver.apierrors import APIError, errors
 from apiserver.config_repo import config
 from apiserver.database.errors import translate_errors_context
+from apiserver.service_repo.job_scope import validate_job_scope
 from apiserver.utilities.partial_version import PartialVersion
 from .apicall import APICall
 from .auth import Identity
@@ -275,6 +276,10 @@ class ServiceRepo(object):
 
             validate_data(call, endpoint)
 
+            if call.failed:
+                raise CallFailedError()
+
+            validate_job_scope(endpoint, call)
             if call.failed:
                 raise CallFailedError()
 
