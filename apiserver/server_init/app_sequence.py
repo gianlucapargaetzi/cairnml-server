@@ -14,6 +14,7 @@ from apiserver.config import info
 from apiserver.config_repo import config
 from apiserver.idp.legacy import check_no_legacy_settings
 from apiserver.idp.secrets import session_secret
+from apiserver.server_init.cors import cors_settings
 from apiserver.elastic.initialize import (
     init_es_data,
     check_elastic_empty,
@@ -55,7 +56,7 @@ class AppSequence:
         datachunk_download.register(self.app)
 
     def _configure(self):
-        CORS(self.app, **config.get("apiserver.cors"))
+        CORS(self.app, **cors_settings())
 
         if get_bool("CAIRNML_SKIP_COMPRESS_STREAM", default=False):
             self.app.config["COMPRESS_STREAMS"] = False
