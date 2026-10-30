@@ -32,7 +32,10 @@ def task_record(api, task_id: str) -> dict:
 
 def console(api, task_id: str, size: int = 50) -> list:
     """The job's last console lines, oldest first."""
-    events = api.authed("events.get_task_log", {"task": task_id, "order": "desc", "size": size})["events"]
+    # API 2.9 pages the log without an Elasticsearch scroll; 2.8 would open one per call and leave it open.
+    events = api.authed(
+        "events.get_task_log", {"task": task_id, "order": "desc", "batch_size": size}, version="2.9"
+    )["events"]
     return [event["msg"] for event in reversed(events)]
 
 
