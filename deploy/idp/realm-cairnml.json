@@ -48,7 +48,7 @@
       ],
       "attributes": {
         "pkce.code.challenge.method": "S256",
-        "oauth2.device.authorization.grant.enabled": "false"
+        "oauth2.device.authorization.grant.enabled": "true"
       }
     },
     {

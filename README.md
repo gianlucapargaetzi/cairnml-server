@@ -142,6 +142,12 @@ The clients take the address of the server and work out the rest:
 
 Opening `http://<server-ip>/` leads to the web app. Nothing else is served at the root.
 
+### Machines without a browser
+
+On a machine with no browser, such as a headless server, a remote shell or a container, `cairnml init` and `cairnml-agent init` show a short code and an address. Open the address on any device, sign in, and enter the code. Add `--device` to use this sign-in on any machine. On Linux without a graphical session it is used automatically.
+
+Existing installs need the device sign-in enabled once for the `cairnml-sdk` client: in the Keycloak admin console, open the `cairnml` realm, then **Clients → cairnml-sdk → Settings → Capability config**, and turn on **OAuth 2.0 Device Authorization Grant**. New installs have it on.
+
 ### Ports
 
 The stack publishes three ports on the machine. They are the defaults, and each can be changed in `deploy/.env` when something else already uses it. The server follows: the proxy listens on the new port, and the addresses the server gives to clients name it.
