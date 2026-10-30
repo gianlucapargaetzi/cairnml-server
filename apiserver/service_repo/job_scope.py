@@ -10,8 +10,11 @@ the other task exists. A request to any other service is refused as not permitte
 
 from apiserver.apierrors import errors
 
-# Services a job may call. Everything else (projects, models, queues, users, devices, admin) is refused.
+# Services a job may call. Everything else (models, queues, users, devices, admin) is refused.
 JOB_SERVICES = ("tasks", "events", "datachunks")
+
+# The one read of the projects service a job needs: the project of its own task, which the SDK reads when it starts.
+JOB_PROJECT_READ = "projects.get_by_id"
 
 
 def _named_task_ids(call) -> list:
@@ -23,9 +26,19 @@ def _named_task_ids(call) -> list:
     for key in ("tasks", "ids"):
         if isinstance(data.get(key), list):
             ids.extend(data[key])
-    for event in call.batched_data or []:
-        ids.append(event.get("task") if isinstance(event, dict) else None)
+    # APICall returns a plain body as a one-item batch, so batched events count only when there is no body
+    if not data:
+        for event in call.batched_data or []:
+            ids.append(event.get("task") if isinstance(event, dict) else None)
     return ids
+
+
+def _task_project_id(task_id: str):
+    """The project of the job's task."""
+    from apiserver.database.model.task.task import Task  # imported here: the module is used without a database
+
+    task = Task.objects(id=task_id).only("project").first()
+    return task.project if task else None
 
 
 def _chunk_task_id(chunk_id: str):
@@ -40,6 +53,13 @@ def validate_job_scope(endpoint, call) -> None:
     """Refuse a request made with a job token unless it is for the job's own task. No effect for other tokens."""
     job_task = getattr(call.auth, "job_task", None) if call.auth is not None else None
     if not job_task:
+        return
+
+    if endpoint.name == JOB_PROJECT_READ:
+        # read only, and only the project the job's own task is in
+        project_id = (call.data or {}).get("project")
+        if not project_id or project_id != _task_project_id(job_task):
+            raise errors.bad_request.InvalidTaskId(id="", company="")
         return
 
     service = endpoint.name.partition(".")[0]

@@ -12,7 +12,10 @@ JOB_TASK = "task-of-this-job"
 
 
 def _call(data=None, batched=None, job_task=JOB_TASK):
+    """Mimics APICall: a plain body is also reported as a one-item batch, as APICall.batched_data does."""
     auth = None if job_task is None else SimpleNamespace(job_task=job_task)
+    if batched is None:
+        batched = [data] if data else []
     return SimpleNamespace(data=data or {}, batched_data=batched, auth=auth)
 
 
@@ -66,3 +69,27 @@ def test_a_datachunk_is_checked_through_its_task(monkeypatch):
     validate_job_scope(_endpoint("datachunks.commit"), _call({"id": "mine"}))
     with pytest.raises(errors.bad_request.InvalidTaskId):
         validate_job_scope(_endpoint("datachunks.commit"), _call({"id": "theirs"}))
+
+
+def test_a_job_may_read_the_project_of_its_own_task(monkeypatch):
+    monkeypatch.setattr(job_scope, "_task_project_id", lambda task_id: "its-project" if task_id == JOB_TASK else None)
+    validate_job_scope(_endpoint("projects.get_by_id"), _call({"project": "its-project"}))
+
+
+def test_a_job_may_not_read_another_project(monkeypatch):
+    monkeypatch.setattr(job_scope, "_task_project_id", lambda task_id: "its-project")
+    with pytest.raises(errors.bad_request.InvalidTaskId):
+        validate_job_scope(_endpoint("projects.get_by_id"), _call({"project": "someone-elses"}))
+
+
+def test_a_job_may_not_change_projects(monkeypatch):
+    monkeypatch.setattr(job_scope, "_task_project_id", lambda task_id: "its-project")
+    with pytest.raises(errors.forbidden.NoWritePermission):
+        validate_job_scope(_endpoint("projects.update"), _call({"project": "its-project"}))
+
+
+
+def test_a_plain_body_is_checked_through_its_chunk_not_as_an_event(monkeypatch):
+    # a commit body names the chunk by id and has no task of its own; it is not a batch of events
+    monkeypatch.setattr(job_scope, "_chunk_task_id", lambda chunk_id: JOB_TASK)
+    validate_job_scope(_endpoint("datachunks.commit"), _call({"id": "chunk", "parts": []}))
