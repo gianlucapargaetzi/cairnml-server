@@ -8,6 +8,9 @@ from apiserver.apierrors import errors
 from apiserver.idp.github import GitHubError, RepoNotAccessible
 from apiserver.idp.repo_visibility import check_readable
 
+# The section of the server README that sets the App up: every refusal below points to it.
+GITHUB_APP_DOCS = "https://github.com/gianlucapargaetzi/cairnml-server/blob/main/README.md#github-app"
+
 
 def repo_of(repository: str):
     """'owner/name' for a github.com repository URL, or None for anything else."""
@@ -32,7 +35,8 @@ def check_submission(task, app) -> None:
     if app is None:
         raise errors.bad_request.ValidationError(
             f"GitHub is not set up: the job's repository {repo} cannot be checked without the GitHub App. "
-            "Set it up as described in the README, section 'GitHub App'")
+            f"Set GITHUB_APP_ID in deploy/.env, copy the App's key, and run deploy/scripts/bootstrap.sh. "
+            f"Steps: {GITHUB_APP_DOCS}")
     commit = task.script.version_num
     if not commit:
         raise errors.bad_request.ValidationError(f"no commit is recorded for {repo}: commit and push first")
@@ -40,8 +44,8 @@ def check_submission(task, app) -> None:
         app.installation_token(repo)
     except RepoNotAccessible:
         raise errors.bad_request.ValidationError(
-            f"the GitHub App is not installed on {repo}: install it on this repository, "
-            "see the README, section 'GitHub App'") from None
+            f"the GitHub App is not installed on {repo}: install it on this repository, with 'Only select "
+            f"repositories' (steps: {GITHUB_APP_DOCS})") from None
     except GitHubError:
         raise errors.bad_request.ValidationError("GitHub could not be reached to check the job") from None
     try:

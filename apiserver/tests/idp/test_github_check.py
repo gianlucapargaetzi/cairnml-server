@@ -3,7 +3,7 @@ from unittest import TestCase, mock
 
 from apiserver.apierrors import errors
 from apiserver.idp.github import GitHubError, RepoNotAccessible
-from apiserver.idp.github_check import check_submission
+from apiserver.idp.github_check import GITHUB_APP_DOCS, check_submission
 
 
 class FakeApp:
@@ -40,6 +40,7 @@ class TestSubmissionCheck(TestCase):
         with self.assertRaises(errors.bad_request.ValidationError) as ctx:
             check_submission(task(), FakeApp(installed=False))
         self.assertIn("not installed", str(ctx.exception))
+        self.assertIn(GITHUB_APP_DOCS, str(ctx.exception))
 
     def test_a_github_repository_without_a_recorded_commit_is_refused(self):
         with self.assertRaises(errors.bad_request.ValidationError):
@@ -67,4 +68,6 @@ class TestSubmissionCheck(TestCase):
         with self.assertRaises(errors.bad_request.ValidationError) as ctx:
             check_submission(task(), None)
         self.assertIn("GitHub", str(ctx.exception))
+        self.assertIn("GITHUB_APP_ID", str(ctx.exception))
+        self.assertIn(GITHUB_APP_DOCS, str(ctx.exception))
 
