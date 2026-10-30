@@ -6,6 +6,9 @@ from apiserver.apierrors import errors
 from apiserver.apimodels.devices import ExchangeRequest, GitTokenRequest
 from apiserver.service_repo.auth import Token
 from apiserver.services import devices
+from apiserver.tests.db import ensure_db
+
+ensure_db()
 
 
 @pytest.fixture
@@ -48,3 +51,13 @@ def test_a_refused_exchange_is_audited_with_the_proxy_address(monkeypatch, audit
     actor, action, detail = audited[0]
     assert action == "token.refused"
     assert detail["ip"] == "10.0.0.6"
+
+
+def test_a_refused_git_token_request_is_audited_with_the_company_of_the_caller(monkeypatch, audited):
+    monkeypatch.setattr(Token, "decode", lambda _token: {"kind": "web", "device": "dev_1"})
+
+    with pytest.raises(errors.unauthorized.InvalidToken):
+        devices.git_token(call_from("10.0.0.5"), "company-a", GitTokenRequest(task="t1"))
+
+    _actor, _action, detail = audited[0]
+    assert detail["company"] == "company-a"

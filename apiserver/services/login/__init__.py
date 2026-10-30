@@ -92,5 +92,5 @@ def idp_callback(call: APICall, _company, request: IdpCallbackRequest):
     token = _issue(user.id, user.company, "", kind="web", role=user.role, user_name=user.name)
     call.result.set_auth_cookie(token)
     call.result.cookies[_ID_TOKEN_COOKIE] = identity.id_token
-    _audit(user.id, "web.login", ip=client_address(call))
+    _audit(user.id, "web.login", ip=client_address(call), company=user.company)
     call.result.redirect = _public_origin.web_url()

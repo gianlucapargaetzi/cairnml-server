@@ -1,5 +1,6 @@
 import base64
 import hashlib
+import json
 import re
 import zlib
 from collections import defaultdict
@@ -62,9 +63,27 @@ async_delete_threshold = config.get(
 )
 
 
-# Keep-alive of an open task-log scroll. A scroll that is not read to the end (the console tail reads only the first
-# page) stays open until this expires, so it is kept short: a client that pages on still renews it with each page.
-TASK_LOG_SCROLL = "1m"
+# The scroll id of a legacy task-log read is a cursor, not an Elasticsearch scroll: the prefix, then the order and the
+# timestamp after which the next page starts, as URL-safe base64 of JSON.
+TASK_LOG_CURSOR_PREFIX = "tlc1."
+
+
+def _encode_task_log_cursor(order: str, after: int) -> str:
+    payload = json.dumps({"order": order, "after": after}).encode()
+    return TASK_LOG_CURSOR_PREFIX + base64.urlsafe_b64encode(payload).decode()
+
+
+def _decode_task_log_cursor(scroll_id: str) -> Tuple[str, int]:
+    if not scroll_id.startswith(TASK_LOG_CURSOR_PREFIX):
+        raise errors.bad_request.InvalidScrollId(scroll_id=scroll_id)
+    try:
+        data = json.loads(base64.urlsafe_b64decode(scroll_id[len(TASK_LOG_CURSOR_PREFIX):]))
+        order, after = data["order"], int(data["after"])
+    except (ValueError, KeyError, TypeError):
+        raise errors.bad_request.InvalidScrollId(scroll_id=scroll_id) from None
+    if order not in ("asc", "desc"):
+        raise errors.bad_request.InvalidScrollId(scroll_id=scroll_id)
+    return order, after
 
 
 class EventBLL(object):
@@ -568,37 +587,60 @@ class EventBLL(object):
         batch_size=10000,
         scroll_id=None,
     ):
+        """
+        A page of a legacy task-log read. The position is kept in the returned scroll id as a search_after cursor (the
+        timestamp of the last event read), so no Elasticsearch scroll stays open between the pages. A page shorter than
+        its size holds the rest of the log, and the empty-scroll marker is returned with it.
+        """
         if scroll_id == self.empty_scroll:
             return [], scroll_id, 0
 
+        size = min(batch_size, 10000)
+        es_req = {
+            "size": size,
+            "query": {"bool": {"must": [{"term": {"task": task_id}}]}},
+        }
         if scroll_id:
-            with translate_errors_context():
-                es_res = self.es.scroll(scroll_id=scroll_id, scroll=TASK_LOG_SCROLL)
+            order, after = _decode_task_log_cursor(scroll_id)
+            es_req["search_after"] = [after]
         else:
-            size = min(batch_size, 10000)
             if check_empty_data(self.es, company_id=company_id, event_type=event_type):
                 return [], None, 0
 
-            es_req = {
-                "size": size,
-                "sort": {"timestamp": {"order": order}},
-                "query": {"bool": {"must": [{"term": {"task": task_id}}]}},
-            }
+        es_req["sort"] = {"timestamp": {"order": order}}
+        with translate_errors_context():
+            es_res = search_company_events(
+                self.es, company_id=company_id, event_type=event_type, body=es_req
+            )
 
+        total_events = nested_get(es_res, ("hits", "total", "value"), default=0)
+        events = [hit["_source"] for hit in nested_get(es_res, ("hits", "hits"), default=[])]
+        if len(events) < size:
+            next_scroll_id = self.empty_scroll
+        else:
+            # The next page starts after the last timestamp, so every event with that timestamp is read here.
+            last_timestamp = events[-1]["timestamp"]
             with translate_errors_context():
-                es_res = search_company_events(
+                same_time = search_company_events(
                     self.es,
                     company_id=company_id,
                     event_type=event_type,
-                    body=es_req,
-                    scroll=TASK_LOG_SCROLL,
+                    body={
+                        "size": 10000,
+                        "query": {
+                            "bool": {
+                                "must": [
+                                    {"term": {"task": task_id}},
+                                    {"term": {"timestamp": last_timestamp}},
+                                ]
+                            }
+                        },
+                    },
                 )
+            same_time_events = [hit["_source"] for hit in nested_get(same_time, ("hits", "hits"), default=[])]
+            events = [ev for ev in events if ev["timestamp"] != last_timestamp] + same_time_events
+            next_scroll_id = _encode_task_log_cursor(order, last_timestamp)
 
-        events, total_events, next_scroll_id = self._get_events_from_es_res(es_res)
-        if not scroll_id and next_scroll_id and len(events) < size:
-            # A first page shorter than the page size holds the whole log, so the scroll has nothing left to read.
-            self.clear_scroll(next_scroll_id)
-            next_scroll_id = self.empty_scroll
         if event_type in (EventType.metrics_plot, EventType.all):
             self.uncompress_plots(events)
 

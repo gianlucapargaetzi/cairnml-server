@@ -55,14 +55,14 @@ def fetch_answers(directory, users) -> dict:
     return answers
 
 
-def audit_disabled_owner(user_id: str) -> list:
+def audit_disabled_owner(user_id: str, company: str = None) -> list:
     """Record which live devices lose their owner when the sync disables a user. Returns their ids."""
     from apiserver.database.model.device import Device
     from apiserver.idp.audit import record
 
     device_ids = [d.id for d in Device.objects(user=user_id, revoked=False).only("id")]
     if device_ids:
-        record(user_id, "owner.disabled", devices=device_ids)
+        record(user_id, "owner.disabled", company=company, devices=device_ids)
         log.warning("owner %s disabled; its live devices are refused: %s", user_id, ", ".join(device_ids))
     return device_ids
 
@@ -74,10 +74,11 @@ def sync_once(directory, admin_role: str) -> int:
     users = list(User.objects(idp_subject__ne=None))
     answers = fetch_answers(directory, users)
     actions = decide(users, answers, admin_role)
+    companies = {user.id: user.company for user in users}
     for user_id, disabled, role in actions:
         User.objects(id=user_id).update_one(set__idp_disabled=disabled, set__role=role)
         if disabled:
-            audit_disabled_owner(user_id)
+            audit_disabled_owner(user_id, company=companies.get(user_id))
     if actions:
         log.info("user sync changed %d user(s)", len(actions))
     return len(actions)
