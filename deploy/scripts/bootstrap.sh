@@ -38,9 +38,8 @@ if [ ! -f "$STATE/secrets/github-app.pem" ] && [ -f secrets/github-app.pem ]; th
 fi
 mkdir -p "$STATE/secrets/cairnml"
 
-# Remove this stack's containers and networks first, so a rerun starts clean and no stale or duplicate containers are
-# left behind. The data stays: it lives in $STATE (bind mounts), and -v is not used, so volumes are kept too.
-docker compose down --remove-orphans
+# Nothing is stopped here: the containers are started or recreated below, and only where their image or configuration
+# changed, so a rerun does not restart the running services.
 
 # The realm names no address: its redirect URIs accept the address each client uses (through the proxy).
 mkdir -p "$STATE/idp"
@@ -53,24 +52,32 @@ docker run --rm -v "$STATE/data:/data" alpine:3.20 sh -c 'chown 1000:1000 /data/
 docker compose up -d cairnml-idp
 
 # The permanent admin is KC_ADMIN. Keycloak's temporary admin (TEMP_ADMIN, created on its first start) is deleted only
-# after KC_ADMIN has signed in. The admin signs in with the password setup last applied, kept in the state folder, so a
-# new KC_ADMIN_PASSWORD in deploy/.env is applied on the next run. Nothing is printed.
-ADMIN_PASSWORD_FILE="$STATE/secrets/keycloak-admin-password"
-if [ -s "$ADMIN_PASSWORD_FILE" ]; then PREV_ADMIN_PASSWORD=$(cat "$ADMIN_PASSWORD_FILE"); else PREV_ADMIN_PASSWORD="$KC_ADMIN_PASSWORD"; fi
+# after KC_ADMIN has signed in. The admin signs in with the password setup last applied, which Keycloak keeps hashed.
+# A new KC_ADMIN_PASSWORD in deploy/.env is applied on the next run, and that run needs the previous password: setup
+# asks for it in a terminal. Nothing is written to disk: no copy of the password is kept outside deploy/.env.
+# Earlier versions kept the password in $STATE/secrets/keycloak-admin-password: it is read once here, as the previous
+# password, and deleted after a successful run.
+LEGACY_PASSWORD_FILE="$STATE/secrets/keycloak-admin-password"
+PREV_ADMIN_PASSWORD=""
+if [ -s "$LEGACY_PASSWORD_FILE" ]; then PREV_ADMIN_PASSWORD=$(cat "$LEGACY_PASSWORD_FILE"); fi
 
 # The same account administers the master realm (Keycloak itself) and the cairnml realm (CairnML's sign-in).
 KC_USER_SETUP='
 set -e
 K=/opt/keycloak/bin/kcadm.sh
 signed_in() { $K config credentials --server http://localhost:$KC_HTTP_PORT/cairnml/idp --realm master --user "$1" --password "$2" >/dev/null 2>&1; }
+# Signs in as the admin, or as the temporary admin, with the current password or the previous one.
+admin_signed_in() { signed_in "$ADMIN_USER" "$ADMIN_PW" || { [ -n "$PREV_PW" ] && signed_in "$ADMIN_USER" "$PREV_PW"; }; }
+temp_signed_in() { signed_in "$TEMP_USER" "$ADMIN_PW" || { [ -n "$PREV_PW" ] && signed_in "$TEMP_USER" "$PREV_PW"; }; }
 ok=0
 for _ in $(seq 1 90); do
-  if signed_in "$ADMIN_USER" "$PREV_PW" || signed_in "$ADMIN_USER" "$ADMIN_PW" || signed_in "$TEMP_USER" "$PREV_PW"; then ok=1; break; fi
+  if admin_signed_in || temp_signed_in; then ok=1; break; fi
   sleep 2
 done
 [ "$ok" = 1 ] || { echo "could not sign in to Keycloak: check KC_ADMIN and KC_ADMIN_PASSWORD" >&2; exit 1; }
-if ! signed_in "$ADMIN_USER" "$PREV_PW" && ! signed_in "$ADMIN_USER" "$ADMIN_PW"; then
-  signed_in "$TEMP_USER" "$PREV_PW"
+if ! admin_signed_in; then
+  # The admin is not created yet, or the password was changed: the temporary admin (first start) takes it from here.
+  temp_signed_in || { echo "could not sign in as $ADMIN_USER with KC_ADMIN_PASSWORD or the previous password" >&2; exit 3; }
   if ! $K get users -r master -q username="$ADMIN_USER" --fields username | grep -q "\"username\""; then
     $K create users -r master -s username="$ADMIN_USER" -s enabled=true >/dev/null
   fi
@@ -94,12 +101,25 @@ fi
 cairnml_temp_id=$($K get users -r cairnml -q username="$TEMP_USER" --fields id | sed -n "s/.*\"id\" *: *\"\([^\"]*\)\".*/\1/p" | head -n1)
 [ -z "$cairnml_temp_id" ] || $K delete "users/$cairnml_temp_id" -r cairnml
 '
-docker compose exec -T \
-  -e ADMIN_USER="$KC_ADMIN" -e ADMIN_PW="$KC_ADMIN_PASSWORD" \
-  -e TEMP_USER="$TEMP_ADMIN" -e PREV_PW="$PREV_ADMIN_PASSWORD" \
-  cairnml-idp sh -c "$KC_USER_SETUP" >/dev/null
-printf '%s' "$KC_ADMIN_PASSWORD" > "$ADMIN_PASSWORD_FILE"
-chmod 600 "$ADMIN_PASSWORD_FILE"
+kc_user_setup() {
+  docker compose exec -T \
+    -e ADMIN_USER="$KC_ADMIN" -e ADMIN_PW="$KC_ADMIN_PASSWORD" \
+    -e TEMP_USER="$TEMP_ADMIN" -e PREV_PW="$PREV_ADMIN_PASSWORD" \
+    cairnml-idp sh -c "$KC_USER_SETUP" >/dev/null
+}
+if ! kc_user_setup; then
+  # KC_ADMIN_PASSWORD is not the admin's password yet: a changed password needs the one set before.
+  if [ -t 0 ]; then
+    printf 'Enter the admin password set before (not shown, empty to stop): ' >&2
+    read -rs PREV_ADMIN_PASSWORD
+    echo >&2
+    [ -n "$PREV_ADMIN_PASSWORD" ] && kc_user_setup || { echo "the admin login was not set: see the message above" >&2; exit 1; }
+  else
+    echo "the admin login was not set: rerun deploy/scripts/bootstrap.sh in a terminal to enter the previous password" >&2
+    exit 1
+  fi
+fi
+rm -f "$LEGACY_PASSWORD_FILE"
 echo "admin login set from deploy/.env: user $KC_ADMIN, same password for Keycloak and CairnML"
 
 # CairnML secrets, written once and kept. Nothing is printed.
@@ -183,7 +203,7 @@ fi
 # The CairnML containers run as uid 1000 (the server image's user): they read these secrets, written above.
 docker run --rm -v "$STATE/secrets/cairnml:/secrets" alpine:3.20 chown -R 1000:1000 /secrets
 
-docker compose up -d --build
+docker compose up -d --build --remove-orphans
 
 echo "waiting for the CairnML server..."
 for _ in $(seq 1 90); do
