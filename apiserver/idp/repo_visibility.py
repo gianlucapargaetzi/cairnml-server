@@ -7,9 +7,10 @@ The host is asked anonymously with the smart HTTP discovery request that every G
 answers with the upload-pack advertisement allows anonymous reads; one that refuses (401, 403, 404, or a sign-in
 page) does not. Redirects are not followed.
 
-The probe is made only to public addresses: the name is resolved first and every resolved address is checked,
-so a name that points at loopback, link-local, private or unique-local space (or at a configured network, such as
-the server's own Docker network) is never contacted."""
+The probe is made only to public addresses: the name is resolved once, every resolved address is checked, and the
+request connects to the first of them. A name that points at loopback, link-local, private or unique-local space (or
+at a configured network, such as the server's own Docker network) is never contacted, and a second resolution
+cannot change where the request goes. The Host header and the TLS name check keep the host's name."""
 
 import ipaddress
 import logging
@@ -18,6 +19,7 @@ from typing import Optional
 from urllib.parse import urlsplit
 
 import requests
+from requests.adapters import HTTPAdapter
 
 from apiserver.apierrors import errors
 from apiserver.config_repo import config
@@ -63,7 +65,7 @@ def _address_blocked(address: str, networks: tuple) -> bool:
 
 
 def _probe_url(repository: str) -> Optional[tuple]:
-    """(host, port, URL of the discovery request) for an HTTP(S) repository URL, or None for anything else."""
+    """(name, port, scheme, path, Host header) of the discovery request for an HTTP(S) repository URL, or None."""
     if "://" not in repository and ":" in repository.split("/", 1)[0]:
         return None  # the scp-like form git@host:path, which is an SSH address
     parts = urlsplit(repository if "://" in repository else f"https://{repository}")
@@ -80,22 +82,53 @@ def _probe_url(repository: str) -> Optional[tuple]:
     except ValueError:
         return None
     name = (parts.hostname or "").lower()
-    return name, port or (443 if parts.scheme == "https" else 80), \
-        f"{parts.scheme}://{host}/{path}/info/refs?service=git-upload-pack"
+    if not name:
+        return None
+    return name, port or (443 if parts.scheme == "https" else 80), parts.scheme, path, host
 
 
-def check_address(name: str, port: int) -> None:
-    """Resolve the host and raise ProbeBlocked when any address it resolves to is not allowed.
-    Raises ProbeFailed when the name does not resolve."""
+def check_address(name: str, port: int) -> str:
+    """Resolve the host once. Raises ProbeBlocked when any address it resolves to is not allowed, and ProbeFailed
+    when the name does not resolve. Returns the first resolved address, which the probe then connects to."""
     try:
         infos = socket.getaddrinfo(name, port, type=socket.SOCK_STREAM)
     except (socket.gaierror, UnicodeError, OSError):
         raise ProbeFailed(name) from None
     networks = blocked_networks()
-    for info in infos:
-        address = info[4][0]
+    addresses = [info[4][0] for info in infos]
+    for address in addresses:
         if _address_blocked(address, networks):
             raise ProbeBlocked(f"{name} resolves to {address}, which the server does not contact")
+    if not addresses:
+        raise ProbeFailed(name)
+    return addresses[0]
+
+
+class _PinnedAdapter(HTTPAdapter):
+    """Connects to the address that was checked, while the TLS name check (SNI and certificate) keeps the host's
+    name. Proxies are not used: a proxy would connect to an address this module never checked."""
+
+    def __init__(self, name: str, tls: bool):
+        self._name, self._tls = name, tls
+        super().__init__()
+
+    def init_poolmanager(self, connections, maxsize, block=False, **pool_kwargs):
+        if self._tls:
+            pool_kwargs["server_hostname"] = self._name
+        return super().init_poolmanager(connections, maxsize, block=block, **pool_kwargs)
+
+
+def _fetch(address: str, scheme: str, port: int, path: str, name: str, host_header: str):
+    """The discovery request, connected to the checked address. Redirects are not followed."""
+    literal = f"[{address}]" if ":" in address else address
+    url = f"{scheme}://{literal}:{port}/{path}/info/refs?service=git-upload-pack"
+    session = requests.Session()
+    session.trust_env = False
+    session.mount(f"{scheme}://", _PinnedAdapter(name, tls=scheme == "https"))
+    try:
+        return session.get(url, headers={"Host": host_header}, timeout=PROBE_TIMEOUT_SEC, allow_redirects=False)
+    finally:
+        session.close()
 
 
 def is_private(repository: str) -> Optional[bool]:
@@ -104,14 +137,14 @@ def is_private(repository: str) -> Optional[bool]:
     probe = _probe_url(repository)
     if probe is None:
         return None
-    name, port, url = probe
+    name, port, scheme, path, host_header = probe
     try:
-        check_address(name, port)
+        address = check_address(name, port)
     except (ProbeBlocked, ProbeFailed) as exc:
         log.info("not probing %s: %s", name, exc.__class__.__name__)
         return None
     try:
-        response = requests.get(url, timeout=PROBE_TIMEOUT_SEC, allow_redirects=False)
+        response = _fetch(address, scheme, port, path, name, host_header)
     except requests.RequestException:
         log.info("could not ask %s whether a repository is public", name)
         return None
