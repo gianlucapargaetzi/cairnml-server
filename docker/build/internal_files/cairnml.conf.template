@@ -1,3 +1,7 @@
+# Per-client rate limit for the unauthenticated sign-in and device calls (see the locations below). A client that
+# keeps calling them gets 429 (Too Many Requests); a normal sign-in or token exchange stays far below the rate.
+limit_req_zone $binary_remote_addr zone=cairnml_unauthenticated:10m rate=5r/s;
+
 server {
     listen       8080 default_server;
     ${COMMENT_IPV6_LISTEN}listen       [::]:8080 default_server;
@@ -5,7 +9,9 @@ server {
     # Redirects keep the address the client used: the container's own port (8080) is not the client's.
     absolute_redirect off;
     proxy_http_version 1.1;
-    client_max_body_size 0;
+    # Request bodies of the API are limited to 10 MB. Event uploads (events.add_batch) are exempt, see below.
+    client_max_body_size 10m;
+    limit_req_status 429;
 
     # compression
     gzip            on;
@@ -53,6 +59,31 @@ server {
     location /${CAIRNML_SERVER_SUB_PATH}/version.json {
         root /usr/share/nginx/cairnml-root;
         add_header Cache-Control 'no-cache';
+    }
+
+    # Sign-in and device calls that need no login (login.*, devices.*): rate limited per client address. The burst
+    # allows a short run of calls, such as the web app's sign-in steps, before the limit applies.
+    location ~ ^/${CAIRNML_SERVER_SUB_PATH}/api/v[0-9.]+/(login|devices)\. {
+        limit_req zone=cairnml_unauthenticated burst=20 nodelay;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Host $http_host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_pass ${NGINX_APISERVER_ADDR};
+        rewrite ^/${CAIRNML_SERVER_SUB_PATH}/api/(.*)$ /$1 break;
+        proxy_set_header Connection "";
+    }
+
+    # Event uploads carry whole batches of metrics and logs, so they have no body limit.
+    location ~ ^/${CAIRNML_SERVER_SUB_PATH}/api/v[0-9.]+/events\.add_batch$ {
+        client_max_body_size 0;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Host $http_host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_pass ${NGINX_APISERVER_ADDR};
+        rewrite ^/${CAIRNML_SERVER_SUB_PATH}/api/(.*)$ /$1 break;
+        proxy_set_header Connection "";
     }
 
     # The address the client used. The API server names itself in the URLs it hands out (sign-in redirects, the
