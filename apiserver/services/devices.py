@@ -13,7 +13,7 @@ from apiserver.database.model.auth import Role, User
 from apiserver.database.model.device import Device, DeviceKind
 from apiserver.database.model.task.task import Task
 from apiserver.idp.assertion import AssertionInvalid, unverified_issuer, verify_assertion
-from apiserver.idp.audit import record as audit
+from apiserver.idp.audit import client_address, record as audit
 from apiserver.idp.checks import AccessDenied, check_device, check_job_issue
 from apiserver.idp.github import GitHubError, RepoNotAccessible
 from apiserver.idp.github_check import build_from_config, repo_of
@@ -69,7 +69,7 @@ def enroll(call: APICall, _company, request: EnrollRequest):
     if user.idp_disabled:
         raise errors.forbidden.RoleNotAllowed("user is disabled")
     if request.kind == DeviceKind.agent and role_for(identity.roles, admin_role) != Role.admin:
-        audit(user.id, "device.enrol_refused", kind=request.kind)
+        audit(user.id, "device.enrol_refused", ip=client_address(call), kind=request.kind)
         raise errors.forbidden.RoleNotAllowed("only an admin may enrol an agent")
 
     device = Device(
@@ -83,7 +83,7 @@ def enroll(call: APICall, _company, request: EnrollRequest):
         revoked=False,
     )
     device.save()
-    audit(user.id, "device.enrolled", device=device.id, kind=device.kind)
+    audit(user.id, "device.enrolled", ip=client_address(call), device=device.id, kind=device.kind)
     return {"id": device.id, "kind": device.kind}
 
 
@@ -110,26 +110,26 @@ def exchange(call: APICall, _company, request: ExchangeRequest):
     try:
         check_device(device, owner)
     except AccessDenied as exc:
-        audit(device_id, "token.refused", device=device_id, reason=str(exc))
+        audit(device_id, "token.refused", ip=client_address(call), device=device_id, reason=str(exc))
         raise errors.unauthorized.InvalidToken(str(exc)) from None
 
     audience = public_origin.api_url().rstrip("/")
     try:
         claims = verify_assertion(request.assertion, load_public_key(device.public_key), audience=audience)
     except (AssertionInvalid, ValueError):
-        audit(device_id, "token.refused", device=device_id, reason="bad assertion")
+        audit(device_id, "token.refused", ip=client_address(call), device=device_id, reason="bad assertion")
         raise errors.unauthorized.InvalidToken("invalid assertion") from None
 
     now = datetime.utcnow().timestamp()
     if not claim_jti(claims["jti"], ttl=max(1, int(claims["exp"] - now)) + 60):
-        audit(device_id, "token.refused", device=device_id, reason="assertion reused")
+        audit(device_id, "token.refused", ip=client_address(call), device=device_id, reason="assertion reused")
         raise errors.unauthorized.InvalidToken("assertion already used")
 
     token = issue_access_token(owner.id, owner.company, device.id, kind=device.kind,
                                role=owner.role, user_name=owner.name)
     device.last_used = datetime.utcnow()
     device.save()
-    audit(owner.id, "token.issued", device=device.id, kind=device.kind)
+    audit(owner.id, "token.issued", ip=client_address(call), device=device.id, kind=device.kind)
     return {"access_token": token, "expires_in": config.get("apiserver.idp.access_token_ttl_sec")}
 
 
@@ -150,7 +150,7 @@ def revoke(call: APICall, _company, request: RevokeRequest):
         raise errors.forbidden.RoleNotAllowed("only the owner or an admin may revoke a device")
     device.revoked = True
     device.save()
-    audit(identity.user, "device.revoked", device=device.id)
+    audit(identity.user, "device.revoked", ip=client_address(call), device=device.id)
     return _device_view(device)
 
 
@@ -175,10 +175,10 @@ def job_token(call: APICall, _company, request: JobTokenRequest):
         if owner is None or owner.idp_disabled:
             raise AccessDenied("task owner is disabled or unknown")
     except AccessDenied as exc:
-        audit(device.id if device else "unknown", "job_token.refused", device=device.id if device else None, task=request.task, reason=str(exc))
+        audit(device.id if device else "unknown", "job_token.refused", ip=client_address(call), device=device.id if device else None, task=request.task, reason=str(exc))
         raise errors.unauthorized.InvalidToken(str(exc)) from None
     token = issue_job_token(owner, task.id, device.id)
-    audit(device.id, "job_token.issued", task=task.id)
+    audit(device.id, "job_token.issued", ip=client_address(call), task=task.id)
     return {"access_token": token, "expires_in": config.get("apiserver.idp.job_token_ttl_sec")}
 
 
@@ -198,7 +198,7 @@ def git_token(call: APICall, company, request: GitTokenRequest):
         else:
             raise AccessDenied("only a job or its agent may get a repository token")
     except AccessDenied as exc:
-        audit(claims.get("device") or "unknown", "git_token.refused", device=claims.get("device"), task=request.task, reason=str(exc))
+        audit(claims.get("device") or "unknown", "git_token.refused", ip=client_address(call), device=claims.get("device"), task=request.task, reason=str(exc))
         raise errors.unauthorized.InvalidToken(str(exc)) from None
 
     actor = claims.get("device") or claims.get("sub") or "unknown"
@@ -215,10 +215,10 @@ def git_token(call: APICall, company, request: GitTokenRequest):
         except GitHubError:
             raise errors.bad_request.ValidationError("the dataset registry could not be read") from None
         if repo.lower() not in registered:
-            audit(actor, "git_token.refused", device=claims.get("device"), task=request.task, reason=f"{repo} is not in the dataset registry")
+            audit(actor, "git_token.refused", ip=client_address(call), device=claims.get("device"), task=request.task, reason=f"{repo} is not in the dataset registry")
             raise errors.bad_request.ValidationError(f"{repo} is not a registered dataset repository")
         try:
-            return _github_token(app, repo, actor, request.task)
+            return _github_token(app, repo, actor, request.task, client_address(call))
         except RepoNotAccessible:
             raise errors.bad_request.ValidationError(f"the GitHub App is not installed on {repo}") from None
 
@@ -229,38 +229,38 @@ def git_token(call: APICall, company, request: GitTokenRequest):
         raise errors.bad_request.ValidationError("the task has no repository")
     repo = repo_of(repository)
     if repo is None:
-        return _stored_token(company, actor, request.task, repository)
+        return _stored_token(company, actor, request.task, repository, client_address(call))
     # GitHub: the App when it is set up and installed on the repository, else the Git credentials stored for it.
     if app is not None:
         try:
-            return _github_token(app, repo, actor, request.task)
+            return _github_token(app, repo, actor, request.task, client_address(call))
         except RepoNotAccessible:
             pass
     if store.find_credential(company, repository) is not None:
-        return _stored_token(company, actor, request.task, repository)
+        return _stored_token(company, actor, request.task, repository, client_address(call))
     if app is None:
         raise errors.bad_request.ValidationError("GitHub is not configured")
     raise errors.bad_request.ValidationError(f"the GitHub App is not installed on {repo}")
 
 
-def _github_token(app, repo: str, actor: str, task_id: str) -> dict:
+def _github_token(app, repo: str, actor: str, task_id: str, ip=None) -> dict:
     """The GitHub App's read-only token for one repository. RepoNotAccessible is left to the caller."""
     try:
         token = app.installation_token(repo)
     except GitHubError:
         raise errors.bad_request.ValidationError("GitHub could not be reached") from None
-    audit(actor, "git_token.issued", task=task_id, repo=repo)
+    audit(actor, "git_token.issued", ip=ip, task=task_id, repo=repo)
     return {"token": token.token, "expires_at": token.expires_at.isoformat(), "username": "x-access-token"}
 
 
-def _stored_token(company: str, actor: str, task_id: str, repository: str) -> dict:
+def _stored_token(company: str, actor: str, task_id: str, repository: str, ip=None) -> dict:
     """The Git credential stored for the repository's host (and path prefix). Refused when none is stored."""
     host, _path = store.host_and_path(repository)
     entry = store.find_credential(company, repository)
     if entry is None:
-        audit(actor, "git_token.refused", task=task_id, host=host, reason="no Git credentials stored")
+        audit(actor, "git_token.refused", ip=ip, task=task_id, host=host, reason="no Git credentials stored")
         raise errors.bad_request.ValidationError(
             f"no Git credentials are stored for {host}: an admin adds them with the git_credentials.set call")
     secret = store.secret_of(entry)
-    audit(actor, "git_token.issued", task=task_id, host=entry.host, path=entry.path)
+    audit(actor, "git_token.issued", ip=ip, task=task_id, host=entry.host, path=entry.path)
     return {"token": secret, "expires_at": None, "username": entry.username}

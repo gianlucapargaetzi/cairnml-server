@@ -28,7 +28,8 @@ def job_token(monkeypatch):
     monkeypatch.setattr(devices.Token, "decode", lambda _token: {"kind": "job", "task": "t1", "device": "dev_1"})
     monkeypatch.setattr(devices, "audit", lambda *args, **kwargs: None)
     monkeypatch.setattr(devices, "build_from_config", lambda: FakeApp())
-    return SimpleNamespace(authorization="Bearer x")
+    return SimpleNamespace(authorization="Bearer x", get_header=lambda header, default=None: default,
+                           HEADER_REAL_IP="X-Real-IP", real_ip="127.0.0.1")
 
 
 def task(repository="https://github.com/acme/proj.git"):

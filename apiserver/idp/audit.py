@@ -4,6 +4,14 @@ from typing import Optional
 
 from apiserver.database.model.audit import AuditEvent
 
+IP_MAX_LENGTH = 64
+
+
+def client_address(call) -> str:
+    """The address the client used. The proxy sets X-Real-IP from the connection, so a client cannot choose it;
+    X-Forwarded-For, which a client can send, is used only when the proxy did not set X-Real-IP."""
+    return (call.get_header(call.HEADER_REAL_IP) or call.real_ip)[:IP_MAX_LENGTH]
+
 
 def build_event(actor: str, action: str, ip: Optional[str] = None, **detail) -> AuditEvent:
     return AuditEvent(actor=actor, action=action, ip=ip, detail=detail)
