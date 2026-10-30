@@ -595,6 +595,10 @@ class EventBLL(object):
                 )
 
         events, total_events, next_scroll_id = self._get_events_from_es_res(es_res)
+        if not scroll_id and next_scroll_id and len(events) < size:
+            # A first page shorter than the page size holds the whole log, so the scroll has nothing left to read.
+            self.clear_scroll(next_scroll_id)
+            next_scroll_id = self.empty_scroll
         if event_type in (EventType.metrics_plot, EventType.all):
             self.uncompress_plots(events)
 
