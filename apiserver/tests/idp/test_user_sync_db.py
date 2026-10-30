@@ -55,3 +55,20 @@ class TestUserSyncAgainstTheDatabase(TestCase):
         self.assertEqual(stayer.role, "admin")
         with self.assertRaises(AccessDenied):
             check_device(Device.objects(id=device.id).get(), User.objects(id=leaver.id).get())
+
+    def test_disabling_an_owner_audits_its_live_devices(self):
+        from apiserver.database.model.audit import AuditEvent
+        from apiserver.database.model.device import Device
+        live = Device(id=f"dev_{uuid.uuid4().hex}", user=self.leaver.id, company=self.leaver.company,
+                      kind="agent", name="live", public_key="pem").save()
+        revoked = Device(id=f"dev_{uuid.uuid4().hex}", user=self.leaver.id, company=self.leaver.company,
+                         kind="agent", name="revoked", public_key="pem", revoked=True).save()
+        self.addCleanup(lambda: [d.delete() for d in (live, revoked)])
+        self.addCleanup(lambda: AuditEvent.objects(actor=self.leaver.id, action="owner.disabled").delete())
+        directory = StubDirectory({
+            "leaver": DirectoryUser(False, ()),
+            "stayer": DirectoryUser(True, (ADMIN,)),
+        })
+        sync_once(directory, ADMIN)
+        event = AuditEvent.objects(actor=self.leaver.id, action="owner.disabled").get()
+        self.assertEqual(event.detail["devices"], [live.id])
