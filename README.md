@@ -124,6 +124,10 @@ Two more ports are not published: the API and the sign-in service listen only in
 
 Run `deploy/scripts/bootstrap.sh` again after changing a port.
 
+## Architecture
+
+The flows of the common operations are in [`docs/architecture/flows/`](docs/architecture/flows/README.md): sign-in, device enrolment, token exchange, job tokens, job execution, task logging, database management and the trust model. Each page has a sequence diagram.
+
 ## Next steps
 
 Once the clients are connected, continue with the [CairnML examples](https://github.com/gianlucapargaetzi/cairnml-examples).
