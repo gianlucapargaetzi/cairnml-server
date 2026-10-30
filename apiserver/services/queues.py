@@ -1,7 +1,9 @@
+from datetime import datetime
 from typing import Union, Sequence
 
 from mongoengine import Q
 
+from apiserver.apierrors import errors
 from apiserver.apimodels.base import UpdateResponse
 from apiserver.apimodels.queues import (
     GetDefaultResp,
@@ -23,13 +25,17 @@ from apiserver.apimodels.queues import (
     AddTaskRequest,
     RemoveTaskRequest,
     MoveTaskToQueueRequest,
+    UserRequest,
 )
 from apiserver.bll.model import Metadata
 from apiserver.bll.queue import QueueBLL
+from apiserver.bll.queue.queue_access import QueueAccessBLL
 from apiserver.bll.queue.queue_bll import MOVE_FIRST, MOVE_LAST
 from apiserver.bll.workers import WorkerBLL
 from apiserver.config_repo import config
 from apiserver.database.model.queue import Queue
+from apiserver.database.model.auth import User
+from apiserver.database.model.project import Project
 from apiserver.database.model.task.task import Task, TaskStatus
 from apiserver.service_repo import APICall, endpoint
 from apiserver.services.tasks import _assert_tasks_access, _scope_query as _scope_tasks_query
@@ -53,6 +59,7 @@ def conform_queue_data(call: APICall, queue_data: Union[Sequence[dict], dict]):
 
 @endpoint("queues.get_by_id", min_version="2.4")
 def get_by_id(call: APICall, company_id, request: GetByIdRequest):
+    QueueAccessBLL.assert_can_use(call.identity, company_id, request.queue)
     queue = queue_bll.get_by_id(
         company_id, request.queue, max_task_entries=request.max_task_entries
     )
@@ -93,7 +100,7 @@ def get_all_ex(call: APICall, company: str, request: GetAllRequest):
         company_id=company,
         query_dict=call_data,
         identity=call.identity,
-        query=_hidden_query(call_data),
+        query=_hidden_query(call_data) & QueueAccessBLL.visible_query(call.identity),
         max_task_entries=request.max_task_entries,
         count_task_entries=request.count_task_entries,
         ret_params=ret_params,
@@ -110,7 +117,7 @@ def get_all(call: APICall, company: str, request: GetAllRequest):
     queues = queue_bll.get_all(
         company_id=company,
         query_dict=call_data,
-        query=_hidden_query(call_data),
+        query=_hidden_query(call_data) & QueueAccessBLL.visible_query(call.identity),
         max_task_entries=request.max_task_entries,
         ret_params=ret_params,
     )
@@ -120,6 +127,7 @@ def get_all(call: APICall, company: str, request: GetAllRequest):
 
 @endpoint("queues.create", min_version="2.4")
 def create(call: APICall, company_id, request: CreateRequest):
+    QueueAccessBLL.assert_admin(call.identity)
     tags, system_tags = conform_tags(
         call, request.tags, request.system_tags, validate=True
     )
@@ -140,6 +148,7 @@ def create(call: APICall, company_id, request: CreateRequest):
     response_data_model=UpdateResponse,
 )
 def update(call: APICall, company_id, request: UpdateRequest):
+    QueueAccessBLL.assert_admin(call.identity)
     data = call.data_model_for_partial_update
     conform_tag_fields(call, data, validate=True)
     escape_metadata(data)
@@ -152,12 +161,14 @@ def update(call: APICall, company_id, request: UpdateRequest):
 
 @endpoint("queues.delete", min_version="2.4")
 def delete(call: APICall, company_id, request: DeleteRequest):
+    QueueAccessBLL.assert_admin(call.identity)
     queue_bll.delete(
         company_id=company_id,
         user_id=call.identity.user,
         queue_id=request.queue,
         force=request.force,
     )
+    QueueAccessBLL.remove_from_allocations([request.queue])
     call.result.data = {"deleted": 1}
 
 
@@ -170,6 +181,7 @@ def update_added_task_properties(queue: str, task: str, update_execution_queue: 
 
 @endpoint("queues.move_task_to_queue")
 def move_task_to_queue(call: APICall, company_id, request: MoveTaskToQueueRequest):
+    QueueAccessBLL.assert_can_use(call.identity, company_id, request.target_queue)
     # queues aren't project-scoped, so this and the other by-task-id endpoints below need their
     # own check, the same "write" bar tasks.enqueue/dequeue already use for the same operations
     _assert_tasks_access(company_id, call.identity, [request.task], "write")
@@ -208,6 +220,7 @@ def move_task_to_queue(call: APICall, company_id, request: MoveTaskToQueueReques
 
 @endpoint("queues.add_task", min_version="2.4")
 def add_task(call: APICall, company_id, request: AddTaskRequest):
+    QueueAccessBLL.assert_can_use(call.identity, company_id, request.queue)
     _assert_tasks_access(company_id, call.identity, [request.task], "write")
     queue_bll.add_task(
         company_id=company_id, queue_id=request.queue, task_id=request.task
@@ -223,6 +236,7 @@ def add_task(call: APICall, company_id, request: AddTaskRequest):
 
 @endpoint("queues.get_next_task")
 def get_next_task(call: APICall, company_id, request: GetNextTaskRequest):
+    QueueAccessBLL.assert_can_use(call.identity, company_id, request.queue)
     entry = queue_bll.get_next_task(
         company_id=company_id, queue_id=request.queue, task_id=request.task
     )
@@ -243,6 +257,7 @@ def get_next_task(call: APICall, company_id, request: GetNextTaskRequest):
 
 @endpoint("queues.remove_task", min_version="2.4")
 def remove_task(call: APICall, company_id, request: RemoveTaskRequest):
+    QueueAccessBLL.assert_can_use(call.identity, company_id, request.queue)
     _assert_tasks_access(company_id, call.identity, [request.task], "write")
     call.result.data = {
         "removed": queue_bll.remove_task(
@@ -257,6 +272,7 @@ def remove_task(call: APICall, company_id, request: RemoveTaskRequest):
 
 @endpoint("queues.clear_queue")
 def clear_queue(call: APICall, company_id, request: QueueRequest):
+    QueueAccessBLL.assert_can_use(call.identity, company_id, request.queue)
     call.result.data = {
         "removed_tasks": queue_bll.clear_queue(
             company_id=company_id,
@@ -272,6 +288,7 @@ def clear_queue(call: APICall, company_id, request: QueueRequest):
     response_data_model=MoveTaskResponse,
 )
 def move_task_forward(call: APICall, company_id, request: MoveTaskRequest):
+    QueueAccessBLL.assert_can_use(call.identity, company_id, request.queue)
     _assert_tasks_access(company_id, call.identity, [request.task], "write")
     call.result.data_model = MoveTaskResponse(
         position=queue_bll.reposition_task(
@@ -289,6 +306,7 @@ def move_task_forward(call: APICall, company_id, request: MoveTaskRequest):
     response_data_model=MoveTaskResponse,
 )
 def move_task_backward(call: APICall, company_id, request: MoveTaskRequest):
+    QueueAccessBLL.assert_can_use(call.identity, company_id, request.queue)
     _assert_tasks_access(company_id, call.identity, [request.task], "write")
     call.result.data_model = MoveTaskResponse(
         position=queue_bll.reposition_task(
@@ -306,6 +324,7 @@ def move_task_backward(call: APICall, company_id, request: MoveTaskRequest):
     response_data_model=MoveTaskResponse,
 )
 def move_task_to_front(call: APICall, company_id, request: TaskRequest):
+    QueueAccessBLL.assert_can_use(call.identity, company_id, request.queue)
     _assert_tasks_access(company_id, call.identity, [request.task], "write")
     call.result.data_model = MoveTaskResponse(
         position=queue_bll.reposition_task(
@@ -323,6 +342,7 @@ def move_task_to_front(call: APICall, company_id, request: TaskRequest):
     response_data_model=MoveTaskResponse,
 )
 def move_task_to_back(call: APICall, company_id, request: TaskRequest):
+    QueueAccessBLL.assert_can_use(call.identity, company_id, request.queue)
     _assert_tasks_access(company_id, call.identity, [request.task], "write")
     call.result.data_model = MoveTaskResponse(
         position=queue_bll.reposition_task(
@@ -346,10 +366,14 @@ def get_queue_metrics(
 
     queue_query = dict(company=company_id)
     if request.queue_ids:
+        for queue_id in request.queue_ids:
+            QueueAccessBLL.assert_can_use(call.identity, company_id, queue_id)
         queue_query["id__in"] = request.queue_ids
         metrics_per_queue = True
     else:
         metrics_per_queue = False
+        if not QueueAccessBLL.is_admin(call.identity):
+            queue_query["id__in"] = QueueAccessBLL.usable_queue_ids(call.identity, company_id)
 
     queue_ids = list(
         Queue.objects(Q(**queue_query) & _hidden_query(call.data)).scalar(
@@ -394,6 +418,7 @@ def get_queue_metrics(
 def add_or_update_metadata(
     call: APICall, company_id: str, request: AddOrUpdateMetadataRequest
 ):
+    QueueAccessBLL.assert_admin(call.identity)
     queue_id = request.queue
     queue = queue_bll.get_by_id(company_id=company_id, queue_id=queue_id, only=("id",))
     return {
@@ -405,6 +430,7 @@ def add_or_update_metadata(
 
 @endpoint("queues.delete_metadata", min_version="2.13")
 def delete_metadata(call: APICall, company_id: str, request: DeleteMetadataRequest):
+    QueueAccessBLL.assert_admin(call.identity)
     queue_id = request.queue
     queue = queue_bll.get_by_id(company_id=company_id, queue_id=queue_id, only=("id",))
     return {"updated": Metadata.delete_metadata(queue, keys=request.keys)}
@@ -412,6 +438,7 @@ def delete_metadata(call: APICall, company_id: str, request: DeleteMetadataReque
 
 @endpoint("queues.peek_task", min_version="2.15")
 def peek_task(call: APICall, company_id: str, request: QueueRequest):
+    QueueAccessBLL.assert_can_use(call.identity, company_id, request.queue)
     queue_id = request.queue
     queue = queue_bll.get_by_id(
         company_id=company_id, queue_id=queue_id, max_task_entries=1
@@ -427,4 +454,59 @@ def peek_task(call: APICall, company_id: str, request: QueueRequest):
 
 @endpoint("queues.get_num_entries", min_version="2.15")
 def get_num_entries(call: APICall, company_id: str, request: QueueRequest):
+    QueueAccessBLL.assert_can_use(call.identity, company_id, request.queue)
     return {"num": queue_bll.count_entries(company=company_id, queue_id=request.queue)}
+
+
+def _get_queue_or_fail(company_id: str, queue_id: str) -> Queue:
+    queue = Queue.objects(company=company_id, id=queue_id).only("id", "users").first()
+    if not queue:
+        raise errors.bad_request.InvalidQueueId(id=queue_id)
+    return queue
+
+
+@endpoint("queues.get_users")
+def get_users(call: APICall, company_id: str, request: QueueRequest):
+    QueueAccessBLL.assert_admin(call.identity)
+    queue = _get_queue_or_fail(company_id, request.queue)
+    call.result.data = {
+        "users": [
+            {"user": u.user, "added": u.added, "added_by": u.added_by}
+            for u in queue.users
+        ]
+    }
+
+
+@endpoint("queues.add_user", response_data_model=UpdateResponse)
+def add_user(call: APICall, company_id: str, request: UserRequest):
+    QueueAccessBLL.assert_admin(call.identity)
+    _get_queue_or_fail(company_id, request.queue)
+    if not User.objects(id=request.user, company=company_id).only("id").first():
+        raise errors.bad_request.InvalidUserId(id=request.user)
+
+    if Queue.objects(company=company_id, id=request.queue, users__user=request.user).only("id").first():
+        return UpdateResponse(updated=0)
+
+    Queue.objects(company=company_id, id=request.queue).update_one(
+        push__users=QueueUser(
+            user=request.user,
+            added=datetime.utcnow(),
+            added_by=call.identity.user,
+        )
+    )
+    return UpdateResponse(updated=1)
+
+
+@endpoint("queues.remove_user", response_data_model=UpdateResponse)
+def remove_user(call: APICall, company_id: str, request: UserRequest):
+    QueueAccessBLL.assert_admin(call.identity)
+    queue = _get_queue_or_fail(company_id, request.queue)
+    if not any(u.user == request.user for u in queue.users):
+        raise errors.bad_request.InvalidUserId(id=request.user)
+
+    Queue.objects(company=company_id, id=request.queue).update_one(
+        pull__users__user=request.user
+    )
+    QueueAccessBLL.remove_user_allocations(company_id, request.user, request.queue)
+    return UpdateResponse(updated=1)
+

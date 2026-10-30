@@ -9,6 +9,7 @@ from apiserver.apierrors import errors
 from apiserver.apimodels.queues import AddTaskRequest, MoveTaskRequest
 from apiserver.database.model.auth import Role
 from apiserver.database.model.project import Project, ProjectVisibility
+from apiserver.database.model.queue import Queue
 from apiserver.database.model.task.task import Task
 from apiserver.service_repo.auth import Identity
 from apiserver.utilities.partial_version import PartialVersion
@@ -30,6 +31,14 @@ def make_root(company, id_="root1", owner="owner1", visibility=ProjectVisibility
     )
     project.save()
     return project
+
+
+def make_public_queue(company, id_=None):
+    # The use rule is checked before the task rule, so the queue must be usable by the stranger for the
+    # task rule to be what refuses the request
+    queue = Queue(id=id_ or str(uuid4()), company=company, name=f"q-{uuid4().hex[:6]}", created=datetime.utcnow(), public=True)
+    queue.save()
+    return queue
 
 
 def make_task(company, project, owner, id_="task1"):
@@ -55,11 +64,12 @@ def test_add_task_refuses_a_task_in_a_private_project_to_a_stranger(company):
     # not bypass the same write check tasks.enqueue already requires for the same operation
     make_root(company)
     make_task(company, "root1", "owner1")
+    queue = make_public_queue(company)
     with pytest.raises(errors.bad_request.InvalidTaskId):
         svc.add_task(
             FakeCall(identity(company, "stranger")),
             company,
-            AddTaskRequest(task="task1", queue=str(uuid4())),
+            AddTaskRequest(task="task1", queue=queue.id),
         )
 
 
@@ -68,9 +78,10 @@ def test_move_task_to_front_refuses_a_task_in_a_private_project_to_a_stranger(co
     # the same check; this one was missed in the first fix round
     make_root(company)
     make_task(company, "root1", "owner1")
+    queue = make_public_queue(company)
     with pytest.raises(errors.bad_request.InvalidTaskId):
         svc.move_task_to_front(
             FakeCall(identity(company, "stranger")),
             company,
-            MoveTaskRequest(task="task1", queue=str(uuid4())),
+            MoveTaskRequest(task="task1", queue=queue.id),
         )

@@ -6,6 +6,7 @@ from mongoengine import (
     EmbeddedDocumentListField,
     EmbeddedDocumentField,
     FloatField,
+    BooleanField,
 )
 
 from apiserver.database import Database, strict
@@ -28,6 +29,14 @@ class Entry(EmbeddedDocument, ProperDictMixin):
     """ Task ID """
     added = DateTimeField(required=True)
     """ Added to the queue """
+
+
+class QueueUser(EmbeddedDocument):
+    """ A user granted access to a queue: they may use it and allocate it to the projects they own """
+
+    user = StringField(required=True)
+    added = DateTimeField(required=True)
+    added_by = StringField(required=True)
 
 
 class Resources(EmbeddedDocument):
@@ -66,3 +75,7 @@ class Queue(DbModelMixin, Document):
         field=EmbeddedDocumentField(MetadataItem), user_set_allowed=True
     )
     resources = EmbeddedDocumentField(Resources)
+    users = EmbeddedDocumentListField(QueueUser, default=list)
+    """ Users granted access to the queue (see QueueAccessBLL) """
+    public = BooleanField(default=False, user_set_allowed=True)
+    """ Every company user may use and allocate a public queue """

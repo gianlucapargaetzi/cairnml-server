@@ -65,7 +65,7 @@ def test_peek_task_reports_a_hidden_head_task_as_empty(company):
     make_root(company)
     make_task(company, "root1", "owner1")
     Queue(
-        id="q1", company=company, name="queue-one", created=datetime.utcnow(),
+        id="q1", company=company, name="queue-one", created=datetime.utcnow(), public=True,
         entries=[Entry(task="task1", added=datetime.utcnow())],
     ).save()
     result = queues_svc.peek_task(
@@ -78,7 +78,7 @@ def test_peek_task_reports_the_head_task_to_a_member(company):
     make_root(company, members=[("u2", ProjectRole.read)])
     make_task(company, "root1", "owner1")
     Queue(
-        id="q1", company=company, name="queue-one", created=datetime.utcnow(),
+        id="q1", company=company, name="queue-one", created=datetime.utcnow(), public=True,
         entries=[Entry(task="task1", added=datetime.utcnow())],
     ).save()
     result = queues_svc.peek_task(

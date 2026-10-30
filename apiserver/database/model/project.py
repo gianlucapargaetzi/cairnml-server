@@ -74,3 +74,5 @@ class Project(AttributedDocument):
     path = ListField(StringField(required=True), exclude_by_default=True)
     visibility = StringField(choices=get_options(ProjectVisibility), default=ProjectVisibility.private)
     members = EmbeddedDocumentListField(ProjectMember, default=list)
+    queues = ListField(StringField(required=True), default=list)
+    """ Ids of the queues allocated to this root project. Sub-projects use the queues of their root. """
