@@ -33,7 +33,7 @@ from apiserver.bll.queue.queue_access import QueueAccessBLL
 from apiserver.bll.queue.queue_bll import MOVE_FIRST, MOVE_LAST
 from apiserver.bll.workers import WorkerBLL
 from apiserver.config_repo import config
-from apiserver.database.model.queue import Queue
+from apiserver.database.model.queue import Queue, QueueUser
 from apiserver.database.model.auth import User
 from apiserver.database.model.project import Project
 from apiserver.database.model.task.task import Task, TaskStatus
