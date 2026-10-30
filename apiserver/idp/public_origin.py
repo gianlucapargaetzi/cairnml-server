@@ -7,7 +7,7 @@ in the configuration wins.
 """
 
 import contextvars
-from urllib.parse import urlsplit
+from urllib.parse import urlencode, urlsplit
 
 from apiserver.config_repo import config
 
@@ -47,6 +47,20 @@ def idp_issuer() -> str:
     """The identity provider's issuer as the client sees it: the realm path of the configured issuer, on the address the
     client used."""
     return origin() + urlsplit(config.get("apiserver.idp.issuer")).path
+
+
+def idp_logout_url(id_token_hint: str = "") -> str:
+    """Where the browser goes to end the identity provider's session, not only CairnML's. Without it the provider still
+    knows the person, and the next sign-in is answered at once, so a logout would change nothing. The provider then
+    sends the browser to the sign-in, which now asks for the credentials. The ID token of the sign-in names the session
+    to end; without it the provider asks the person to confirm the logout first."""
+    params = {
+        "client_id": config.get("apiserver.idp.web_client_id"),
+        "post_logout_redirect_uri": api_url().rstrip("/") + "/v2.8/login.idp_start",
+    }
+    if id_token_hint:
+        params["id_token_hint"] = id_token_hint
+    return f"{idp_issuer()}/protocol/openid-connect/logout?{urlencode(params)}"
 
 
 def storage_endpoint() -> str:

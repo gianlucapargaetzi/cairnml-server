@@ -13,6 +13,7 @@ DEFAULTS = {
     "apiserver.idp.public_url": "",
     "apiserver.idp.web_url": "",
     "apiserver.idp.issuer": "http://cairnml-idp:8180/cairnml/idp/realms/cairnml",
+    "apiserver.idp.web_client_id": "cairnml-web",
     "apiserver.storage.public_endpoint": "",
     "apiserver.storage.public_port": 9000,
 }
@@ -36,6 +37,7 @@ def request(headers, host="apiserver:8008", **config):
                 "web": public_origin.web_url(),
                 "issuer": public_origin.idp_issuer(),
                 "storage": public_origin.storage_endpoint(),
+                "logout": public_origin.idp_logout_url(),
             }
     return contextvars.Context().run(run)
 
@@ -48,6 +50,32 @@ def test_the_server_names_itself_after_the_address_the_client_used(host):
     assert urls["web"] == f"http://{host}/cairnml/"
     assert urls["issuer"] == f"http://{host}/cairnml/idp/realms/cairnml"
     assert urls["storage"] == f"http://{host}:9000"
+
+
+def test_logout_ends_the_identity_providers_session_and_returns_to_the_sign_in():
+    from urllib.parse import parse_qs, urlsplit
+
+    url = urlsplit(request({"X-Forwarded-Host": "192.168.1.20"})["logout"])
+
+    assert f"{url.scheme}://{url.netloc}{url.path}" == "http://192.168.1.20/cairnml/idp/realms/cairnml/protocol/openid-connect/logout"
+    assert parse_qs(url.query) == {
+        "client_id": ["cairnml-web"],
+        "post_logout_redirect_uri": ["http://192.168.1.20/cairnml/api/v2.8/login.idp_start"],
+    }
+
+
+def test_the_id_token_of_the_sign_in_is_the_hint_that_skips_the_confirmation():
+    from urllib.parse import parse_qs, urlsplit
+
+    def logout(hint):
+        def run():
+            with mock.patch.object(public_origin, "config", FakeConfig()):
+                public_origin.remember({"X-Forwarded-Host": "localhost"}, "x")
+                return parse_qs(urlsplit(public_origin.idp_logout_url(hint)).query)
+        return contextvars.Context().run(run)
+
+    assert logout("the.id.token")["id_token_hint"] == ["the.id.token"]
+    assert "id_token_hint" not in logout("")
 
 
 def test_a_port_the_client_typed_is_kept_and_the_storage_port_is_the_configured_one():

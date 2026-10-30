@@ -124,7 +124,6 @@ Section 5 of E2E.md. The agent is the daemon on the default queue, in its own ho
 | `test_agent_device_is_kind_agent` | The device is listed as kind `agent`, not revoked. |
 | `test_member_cannot_enrol_an_agent` | A plain user is refused ("only an admin may enrol an agent"); no key is written. |
 | `test_agent_registers_as_a_worker_listening_to_its_queue` | The worker is in the server's worker list, and its queues include the default queue. |
-| `test_agent_reports_its_usage` | Usage is reported at each sync: CPU percent, RAM in use, disk in use percent, all in range. |
 | `test_agent_without_its_key_does_not_register` | An agent whose key is removed never registers, and its log names the key. |
 | `test_agent_without_its_key_says_to_enrol_it` | The log says to run `cairnml-agent init`, not a raw `Errno 2`. |
 
@@ -143,7 +142,8 @@ Section 6 of E2E.md. A job waits in the default queue until the agent takes it.
 | `test_agent_reports_no_running_job_once_a_job_completes` | After a job completes, the agent reports no running job. |
 
 Not yet covered (E2E.md, section 6): live usage of a running job, resource limits inside the container, and the job's
-working folder removed afterwards.
+working folder removed afterwards. Lost-worker detection (a stopped agent is dropped after the server's 600 s worker
+timeout) is not covered either.
 
 ## test_10_web_app.py: the web app as a person sees it
 

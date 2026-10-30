@@ -27,8 +27,21 @@ def supported_modes(call: APICall, _, __: GetSupportedModesRequest):
 
 @endpoint("login.logout", min_version="2.13")
 def logout(call: APICall, _, __):
+    from http.cookies import CookieError, SimpleCookie
+
+    from apiserver.idp import public_origin
+    from apiserver.idp.web_login import ID_TOKEN_COOKIE
+
     revoke_auth_token(call.auth)
     call.result.set_auth_cookie(None)
+    # The ID token of this browser's sign-in names the identity provider's session to end.
+    try:
+        hint = SimpleCookie(call.headers.get("Cookie", "")).get(ID_TOKEN_COOKIE)
+    except CookieError:
+        hint = None
+    call.result.cookies[ID_TOKEN_COOKIE] = None
+    # The web app sends the browser here: it ends the identity provider's session too, then comes back to the sign-in.
+    return {"redirect_url": public_origin.idp_logout_url(hint.value if hint else "")}
 
 
 # ---- web sign-in with the identity provider ----
@@ -41,7 +54,12 @@ from apiserver.idp import public_origin as _public_origin  # noqa: E402
 from apiserver.idp.audit import record as _audit  # noqa: E402
 from apiserver.idp.tokens import issue_access_token as _issue  # noqa: E402
 from apiserver.idp.verifier import get_verifier as _verifier  # noqa: E402
-from apiserver.idp.web_login import LoginRefused as _LoginRefused, finish_login as _finish, start_login as _start  # noqa: E402
+from apiserver.idp.web_login import (  # noqa: E402
+    ID_TOKEN_COOKIE as _ID_TOKEN_COOKIE,
+    LoginRefused as _LoginRefused,
+    finish_login as _finish,
+    start_login as _start,
+)
 from apiserver.redis_manager import redman as _redman  # noqa: E402
 
 _login_store = _redman.connection("apiserver")
@@ -64,7 +82,7 @@ def idp_callback(call: APICall, _company, request: IdpCallbackRequest):
     issuer = _config.get("apiserver.idp.issuer")
     client = _config.get("apiserver.idp.web_client_id")
     try:
-        user, _identity = _finish(
+        user, identity = _finish(
             _login_store, _idp_http, _verifier(), issuer, client, _redirect_uri(),
             request.state, request.code, _config.get("apiserver.idp.admin_role"),
         )
@@ -73,5 +91,6 @@ def idp_callback(call: APICall, _company, request: IdpCallbackRequest):
         raise _errors.unauthorized.InvalidToken("sign-in refused") from None
     token = _issue(user.id, user.company, "", kind="web", role=user.role, user_name=user.name)
     call.result.set_auth_cookie(token)
+    call.result.cookies[_ID_TOKEN_COOKIE] = identity.id_token
     _audit(user.id, "web.login")
     call.result.redirect = _public_origin.web_url()

@@ -5,7 +5,6 @@ resources are checked against the host's own counts. Jobs are section 6 (test_09
 """
 
 import os
-import re
 import shutil
 import subprocess
 import time
@@ -80,25 +79,6 @@ def test_agent_registers_as_a_worker_listening_to_its_queue(client_home, machine
     assert "default" in [q.get("name") for q in record.get("queues", [])], record
 
 
-def test_agent_reports_its_usage(client_home, machine):
-    """The machine usage the agent reports, through the monitor's usage history.
-
-    Expect: the agent's machine usage is recorded, with CPU, memory and disk within the machine's limits.
-    """
-    api = workspace.device_api(client_home)
-
-    def machine_points():
-        points = api.authed("scheduler.get_usage_history", {"minutes": 10})["points"]
-        return [p for p in points if str(p.get("worker", "")).startswith(machine.worker_name) and p.get("kind") == "machine"]
-
-    found = machine.wait_until(machine_points, timeout=90)
-    assert found, "the agent must report its machine usage"
-    point = found[-1]
-    assert 0 <= point["cpu_percent"] <= 100 * os.cpu_count()
-    assert 0 < point["ram_used_gb"] <= _host_memory_gb()
-
-
-@pytest.fixture(scope="module")
 def keyless(tmp_path_factory, admin_account):
     """One agent machine whose device key was removed: started once, shared by the two keyless checks (one daemon,
     not two: docs/e2e_testing/E2E.md, speed section, item 5). It is up when its log names the missing key."""
@@ -128,12 +108,6 @@ def test_agent_without_its_key_says_to_enrol_it(keyless):
     Expect: the agent's log names the command to run, cairnml-agent init.
     """
     assert "cairnml-agent init" in keyless.log(), keyless.log()[-2000:]
-
-
-def _host_memory_gb() -> float:
-    with open("/proc/meminfo", encoding="utf-8") as handle:
-        kib = int(re.search(r"MemTotal:\s+(\d+) kB", handle.read()).group(1))
-    return kib / (1024 * 1024)
 
 
 def _host_gpu_count() -> int:

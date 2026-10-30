@@ -85,8 +85,10 @@ class TestWebLoginFlow(TestCase):
 
     def test_sign_in_creates_the_user(self):
         state, nonce = self.start()
-        user, identity = self.finish(state, self.login(nonce))
+        token = self.login(nonce)
+        user, identity = self.finish(state, token)
         self.assertEqual(identity.subject, self.sub)
+        self.assertEqual(identity.id_token, token)  # kept for the logout, which ends this sign-in's session
         self.assertTrue(User.objects(id=user.id).first().idp_subject.endswith(self.sub))
 
     def test_a_state_can_be_used_only_once(self):

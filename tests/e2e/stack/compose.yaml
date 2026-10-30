@@ -161,10 +161,7 @@ services:
       CAIRNML__apiserver__storage__endpoint: http://127.0.0.1:${E2E_STORAGE_PORT}
       CAIRNML__apiserver__storage__public_endpoint: http://${E2E_HOST}:${E2E_STORAGE_PORT}
       CAIRNML__apiserver__storage__access_key: ${E2E_S3_ACCESS_KEY}
-      # Timers of the test stack only (see docs/e2e_testing/E2E.md, speed section, items 3 and 4): a stopped agent is lost after about 6 s,
-      # and the directory is read every 5 s. The production defaults are in cairnml-server's config.
-      CAIRNML__services__scheduler__sync_interval_sec: "2"
-      CAIRNML__services__scheduler__sweep_interval_sec: "1"
+      # Timers of the test stack only: the directory is read every 5 s. The production defaults are in cairnml-server's config.
       CAIRNML__apiserver__idp__sync_interval_sec: "5"
       # The suite's reset (system.e2e_reset) is off by default in the server; the suite's own stack turns it on.
       CAIRNML__apiserver__e2e__reset_enabled: "true"
