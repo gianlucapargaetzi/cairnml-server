@@ -21,9 +21,15 @@ pytestmark = pytest.mark.integration  # needs MongoDB
 
 
 class FakeCall:
+    HEADER_REAL_IP = "X-Real-IP"
+
     def __init__(self, ident):
         self.identity = ident
         self.result = SimpleNamespace(data=None, data_model=None)
+        self.real_ip = "127.0.0.1"
+
+    def get_header(self, header, default=None):
+        return default
 
 
 class TestReassignDevice(TestCase):
@@ -74,3 +80,16 @@ class TestReassignDevice(TestCase):
         User.objects(id=self.admin_b.id).update_one(set__idp_disabled=True)
         with self.assertRaises(errors.bad_request.InvalidId):
             self._call(self._identity(self.admin_a), self.admin_b.id)
+
+    def test_the_device_list_names_the_owner_and_flags_a_disabled_owner(self):
+        call = FakeCall(self._identity(self.admin_a))
+        listed = svc.get_all(call, self.admin_a.company, None)["devices"]
+        mine = next(d for d in listed if d["id"] == self.device.id)
+        self.assertEqual(mine["user"], self.admin_a.id)
+        self.assertFalse(mine["owner_disabled"])
+        self.assertEqual(mine["owner_name"], self.admin_a.name)
+
+        User.objects(id=self.admin_a.id).update_one(set__idp_disabled=True)
+        listed = svc.get_all(call, self.admin_a.company, None)["devices"]
+        mine = next(d for d in listed if d["id"] == self.device.id)
+        self.assertTrue(mine["owner_disabled"])
