@@ -51,7 +51,7 @@ from apiserver.apimodels.devices import IdpCallbackRequest  # noqa: E402
 from apiserver.apierrors import errors as _errors  # noqa: E402
 from apiserver.config_repo import config as _config  # noqa: E402
 from apiserver.idp import public_origin as _public_origin  # noqa: E402
-from apiserver.idp.audit import record as _audit  # noqa: E402
+from apiserver.idp.audit import client_address, record as _audit  # noqa: E402
 from apiserver.idp.tokens import issue_access_token as _issue  # noqa: E402
 from apiserver.idp.verifier import get_verifier as _verifier  # noqa: E402
 from apiserver.idp.web_login import (  # noqa: E402
@@ -87,10 +87,10 @@ def idp_callback(call: APICall, _company, request: IdpCallbackRequest):
             request.state, request.code, _config.get("apiserver.idp.admin_role"),
         )
     except _LoginRefused:
-        _audit("anonymous", "web.login_refused")
+        _audit("anonymous", "web.login_refused", ip=client_address(call))
         raise _errors.unauthorized.InvalidToken("sign-in refused") from None
     token = _issue(user.id, user.company, "", kind="web", role=user.role, user_name=user.name)
     call.result.set_auth_cookie(token)
     call.result.cookies[_ID_TOKEN_COOKIE] = identity.id_token
-    _audit(user.id, "web.login")
+    _audit(user.id, "web.login", ip=client_address(call))
     call.result.redirect = _public_origin.web_url()

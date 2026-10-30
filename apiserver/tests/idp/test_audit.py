@@ -1,7 +1,39 @@
+from types import SimpleNamespace
 from unittest import TestCase
 
 from apiserver.database.model.audit import AuditEvent
-from apiserver.idp.audit import build_event
+from apiserver.idp.audit import build_event, client_address
+
+
+class FakeCall:
+    HEADER_REAL_IP = "X-Real-IP"
+    HEADER_FORWARDED_FOR = "X-Forwarded-For"
+
+    def __init__(self, headers=None, remote_addr="192.0.2.7"):
+        self.headers = headers or {}
+        self.remote_addr = remote_addr
+
+    def get_header(self, header, default=None):
+        return self.headers.get(header, default)
+
+    @property
+    def real_ip(self):
+        return self.get_header(self.HEADER_FORWARDED_FOR) or self.get_header(self.HEADER_REAL_IP) or self.remote_addr
+
+
+class TestClientAddress(TestCase):
+    def test_the_proxy_set_address_is_used(self):
+        self.assertEqual(client_address(FakeCall({"X-Real-IP": "10.0.0.5"})), "10.0.0.5")
+
+    def test_a_forwarded_for_header_the_client_sent_does_not_replace_it(self):
+        call = FakeCall({"X-Real-IP": "10.0.0.5", "X-Forwarded-For": "203.0.113.9"})
+        self.assertEqual(client_address(call), "10.0.0.5")
+
+    def test_without_the_proxy_header_the_connection_address_is_used(self):
+        self.assertEqual(client_address(FakeCall()), "192.0.2.7")
+
+    def test_the_address_fits_the_stored_field(self):
+        self.assertLessEqual(len(client_address(FakeCall({"X-Real-IP": "1" * 200}))), 64)
 
 
 class TestAudit(TestCase):
