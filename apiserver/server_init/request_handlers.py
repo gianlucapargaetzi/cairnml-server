@@ -59,7 +59,7 @@ class RequestHandlers:
             pass
 
     def before_request(self):
-        public_origin.remember(request.headers, request.host)
+        public_origin.remember(request.headers, request.host, request.remote_addr)
         if request.method == "OPTIONS":
             return "", 200
         if "/static/" in request.path:

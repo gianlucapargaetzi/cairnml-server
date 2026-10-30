@@ -16,7 +16,10 @@ DEFAULTS = {
     "apiserver.idp.web_client_id": "cairnml-web",
     "apiserver.storage.public_endpoint": "",
     "apiserver.storage.public_port": 9000,
+    "apiserver.idp.trusted_proxies": ["127.0.0.0/8", "::1/128", "172.16.0.0/12"],
 }
+# An address of the Docker network, where the stack's proxy sits.
+PROXY = "172.18.0.5"
 
 
 class FakeConfig:
@@ -27,11 +30,11 @@ class FakeConfig:
         return self.values.get(key, default)
 
 
-def request(headers, host="apiserver:8008", **config):
+def request(headers, host="apiserver:8008", remote_addr=PROXY, **config):
     """Runs in a context of its own, as a request does: what one request remembers the next does not see."""
     def run():
         with mock.patch.object(public_origin, "config", FakeConfig(**config)):
-            public_origin.remember(headers, host)
+            public_origin.remember(headers, host, remote_addr)
             return {
                 "api": public_origin.api_url(),
                 "web": public_origin.web_url(),
@@ -181,5 +184,66 @@ def test_a_request_for_the_pinned_host_is_not_logged():
 ])
 def test_a_pinned_address_must_be_an_origin(value, refused):
     problems = public_origin.public_origin_problems(FakeConfig(**{"apiserver.idp.public_origin": value}).get)
+
+    assert bool(problems) is refused
+
+
+def test_forwarded_headers_from_an_untrusted_address_are_ignored_and_logged():
+    with mock.patch.object(public_origin, "log") as log:
+        urls = request({"X-Forwarded-Host": "evil.example", "X-Forwarded-Proto": "https"}, remote_addr="203.0.113.7")
+
+    assert urls["api"] == "http://apiserver:8008/cairnml/api"
+    assert urls["web"] == "http://apiserver:8008/cairnml/"
+    assert urls["storage"] == "http://apiserver:9000"
+    log.warning.assert_called_once()
+
+
+def test_a_request_without_a_remote_address_does_not_trust_forwarded_headers():
+    urls = request({"X-Forwarded-Host": "evil.example"}, remote_addr=None)
+
+    assert urls["api"] == "http://apiserver:8008/cairnml/api"
+
+
+def test_loopback_and_the_docker_network_are_trusted_by_default():
+    for remote in ("127.0.0.1", "::1", "172.17.0.2", "172.31.255.254"):
+        assert request({"X-Forwarded-Host": "localhost"}, remote_addr=remote)["api"] == "http://localhost/cairnml/api"
+
+
+def test_an_address_outside_the_default_proxies_is_not_trusted():
+    for remote in ("192.168.1.20", "8.8.8.8", "172.32.0.1", "not-an-address"):
+        assert request({"X-Forwarded-Host": "evil.example"}, remote_addr=remote)["api"] == \
+            "http://apiserver:8008/cairnml/api"
+
+
+def test_an_ipv4_mapped_ipv6_address_of_a_trusted_proxy_is_trusted():
+    urls = request({"X-Forwarded-Host": "localhost"}, remote_addr="::ffff:172.18.0.5")
+
+    assert urls["api"] == "http://localhost/cairnml/api"
+
+
+def test_a_configured_proxy_range_replaces_the_default():
+    proxies = {"apiserver.idp.trusted_proxies": ["10.0.0.0/8"]}
+
+    assert request({"X-Forwarded-Host": "lan.example"}, remote_addr="10.1.2.3", **proxies)["api"] == \
+        "http://lan.example/cairnml/api"
+    assert request({"X-Forwarded-Host": "lan.example"}, remote_addr="172.18.0.5", **proxies)["api"] == \
+        "http://apiserver:8008/cairnml/api"
+
+
+def test_a_pinned_address_still_wins_over_forwarded_headers_from_an_untrusted_address():
+    urls = request({"X-Forwarded-Host": "evil.example"}, remote_addr="203.0.113.7", **PINNED)
+
+    assert urls["api"] == "https://cairnml.example/cairnml/api"
+
+
+@pytest.mark.parametrize("entry, refused", [
+    ("10.0.0.0/8", False),
+    ("192.0.2.1", False),
+    ("::1/128", False),
+    ("10.0.0.0/33", True),
+    ("proxy.internal", True),
+])
+def test_a_trusted_proxy_must_be_an_address_or_network(entry, refused):
+    problems = public_origin.trusted_proxies_problems(FakeConfig(**{"apiserver.idp.trusted_proxies": [entry]}).get)
 
     assert bool(problems) is refused
