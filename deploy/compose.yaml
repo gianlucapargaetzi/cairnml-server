@@ -43,6 +43,11 @@ services:
     volumes:
       - ${CAIRNML_HOME:-${HOME}/.local/share/cairnml}/idp/realm-cairnml.json:/opt/keycloak/data/import/realm-cairnml.json:ro
       - ${CAIRNML_HOME:-${HOME}/.local/share/cairnml}/data/idp:/opt/keycloak/data/h2
+    ports:
+      # The admin console (and the master realm) is not served through the proxy. It is reached on this machine only, at
+      # http://127.0.0.1:8180/cairnml/idp/admin/ (from another machine, through an SSH tunnel to that port).
+      # CAIRNML_IDP_ADMIN_PORT (deploy/.env) moves the host port.
+      - "127.0.0.1:${CAIRNML_IDP_ADMIN_PORT:-8180}:${CAIRNML_IDP_PORT:-8180}"
     healthcheck:
       # Ready when the realm has been imported: its discovery document answers. The image has no curl, and Keycloak
       # fails on a request without a Host header, so the request has one.
@@ -115,7 +120,7 @@ services:
       retries: 10
       start_period: 20s
     networks:
-      - backend
+      - datastores
 
   redis:
     image: redis:8.2.3
@@ -129,7 +134,7 @@ services:
       timeout: 3s
       retries: 10
     networks:
-      - backend
+      - datastores
 
   elasticsearch:
     image: elasticsearch:8.19.9
@@ -145,6 +150,8 @@ services:
       discovery.type: "single-node"
       http.compression_level: "7"
       node.name: cairnml
+      # No store authentication: the datastores are reachable from the datastores network only (no host port, no route
+      # out of the stack). Remote reindex is off: reindex.remote.whitelist is not set, so Elasticsearch allows none.
       xpack.security.enabled: "false"
     ulimits:
       memlock:
@@ -162,7 +169,7 @@ services:
       retries: 20
       start_period: 40s
     networks:
-      - backend
+      - datastores
 
   apiserver:
     <<: *cairnml_build
@@ -223,7 +230,7 @@ services:
       retries: 20
       start_period: 60s
     networks:
-      - backend
+      - datastores
       - frontend
       - cairnml
 
@@ -255,7 +262,7 @@ services:
       - ${CAIRNML_HOME:-${HOME}/.local/share/cairnml}/data/cairnml/logs:/var/log/cairnml
       - ${CAIRNML_HOME:-${HOME}/.local/share/cairnml}/secrets/cairnml:/run/secrets-dir:ro
     networks:
-      - backend
+      - datastores
       - cairnml
 
   webserver:
@@ -272,7 +279,7 @@ services:
     # /cairnml/, the API at /cairnml/api, the identity provider at /cairnml/idp. The proxy in this container routes
     # them, and the machine's root address is left to other sites. CAIRNML_HTTP_PORT (deploy/.env) moves it off
     # port 80 when another site uses that. It reaches only the API server and the identity provider, both on the
-    # cairnml network, so it is not on backend with the datastores.
+    # cairnml network, so it is not on datastores with the stores.
     environment:
       CAIRNML_SERVER_SUB_PATH: cairnml
       NGINX_APISERVER_ADDRESS: http://apiserver:${CAIRNML_API_PORT:-8008}
@@ -290,7 +297,9 @@ services:
       - cairnml
 
 networks:
-  backend:
+  # Internal: no route out and no host port. Only the services that use the datastores join it.
+  datastores:
+    internal: true
   frontend:
   cairnml:
     name: cairnml
