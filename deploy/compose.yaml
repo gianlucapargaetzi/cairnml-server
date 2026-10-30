@@ -196,6 +196,8 @@ services:
       # Set CAIRNML_COOKIE_SECURE=true when the addresses above are https; the server refuses to start otherwise.
       CAIRNML__apiserver__auth__cookies__secure: ${CAIRNML_COOKIE_SECURE:-false}
       CAIRNML__apiserver__auth__custom_cookies__idp_session__settings__secure: ${CAIRNML_COOKIE_SECURE:-false}
+      # The canonical address of the stack (deploy/.env). Empty: the address each client used.
+      CAIRNML__apiserver__idp__public_origin: ${CAIRNML_PUBLIC_ORIGIN:-}
       CAIRNML__apiserver__idp__github_app_id: ${GITHUB_APP_ID:-}
       CAIRNML__apiserver__idp__github_api_url: ${GITHUB_API_URL:-https://api.github.com}
       # The dataset registry (owner/name of its repository) and the owners whose dataset repositories may be registered

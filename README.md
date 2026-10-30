@@ -69,7 +69,7 @@ The server runs over plain HTTP, so use it on a network you trust.
 
 Setup creates the admin named `KC_ADMIN` in `deploy/.env` (`cairnadmin` by default). It is the Keycloak administrator in the `master` realm, and the CairnML admin in the `cairnml` realm. Keycloak also creates a temporary admin, `kcadmin`, on its first start. Setup deletes it from both realms once `KC_ADMIN` has signed in, so no temporary account is left behind.
 
-To change the admin's password, set `KC_ADMIN_PASSWORD` in `deploy/.env` and run `deploy/scripts/bootstrap.sh` again.
+To change the admin's password, set `KC_ADMIN_PASSWORD` in `deploy/.env` and run `deploy/scripts/bootstrap.sh` again. When the password has changed, setup asks in the terminal for the previous one. It is not stored.
 
 ### Add users
 
@@ -146,7 +146,7 @@ Opening `http://<server-ip>/` leads to the web app. Nothing else is served at th
 
 On a machine with no browser, such as a headless server, a remote shell or a container, `cairnml init` and `cairnml-agent init` show a short code and an address. Open the address on any device, sign in, and enter the code. Add `--device` to use this sign-in on any machine. On Linux without a graphical session it is used automatically.
 
-Existing installs need the device sign-in enabled once for the `cairnml-sdk` client: in the Keycloak admin console, open the `cairnml` realm, then **Clients → cairnml-sdk → Settings → Capability config**, and turn on **OAuth 2.0 Device Authorization Grant**. New installs have it on.
+The device sign-in is on for the `cairnml-sdk` client. Existing installs get it by running `deploy/scripts/bootstrap.sh` again, which applies the CairnML clients from `deploy/idp/realm-cairnml.json`. No change in the admin console is needed.
 
 ### Ports
 

@@ -5,7 +5,8 @@ from apiserver.config_repo import config
 
 class TestIdpConfig(TestCase):
     def test_idp_defaults_load(self):
-        self.assertTrue(config.get("apiserver.idp.admin_role"))
+        self.assertEqual(config.get("apiserver.idp.admin_role"), "cairnml-admin")
+        self.assertTrue(config.get("apiserver.idp.sync_enabled"))
         self.assertEqual(config.get("apiserver.idp.sync_interval_sec"), 60)
         self.assertEqual(config.get("apiserver.idp.access_token_ttl_sec"), 900)
         self.assertEqual(config.get("apiserver.idp.job_token_ttl_sec"), 3600)
