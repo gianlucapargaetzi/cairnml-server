@@ -41,8 +41,8 @@ part of every backup.
 
 Open the first two in the machine's firewall. No other port is published: the API, the sign-in service and the databases
 are reachable only inside Docker. The server calls GitHub over HTTPS (`GITHUB_API_URL`) when a job from
-a GitHub repository is submitted and when a dataset is registered, so the machine needs outbound HTTPS to GitHub for
-those.
+a GitHub repository is submitted and when a dataset is registered, and it asks other Git hosts over HTTPS when a job from
+one of them is submitted. The machine needs outbound HTTPS for those.
 
 The first release serves plain HTTP only, for a LAN; TLS is not supported yet. The sign-in service's admin console is
 reachable on the same port, so limit that port to the machines that need it. See
@@ -58,10 +58,12 @@ reachable on the same port, so limit that port to the machines that need it. See
    deploy/scripts/bootstrap.sh
    ```
 
-**Downtime.** The setup stops the stack (`docker compose down`), rebuilds the server image, and starts the stack again.
-The server is down from the first step until it is started again, which takes as long as the image build and the
-start-up. The script waits up to three minutes for the server to answer; if it does not, it still ends without an error,
-so check `docker compose ps` and the logs.
+**Downtime.** The setup does not stop the stack. It rebuilds the images (`docker compose up -d --build`) and recreates
+only the containers whose image or configuration changed. After an upgrade of the server, `apiserver`, `async-delete` and
+`webserver` are recreated (they share one image), so the web app and the API are unavailable while they restart. The
+build time is not downtime, the restart is. The sign-in service and the databases keep running unless their own image or
+settings changed. The script waits up to three minutes for the server to answer; if it does not, it still ends without an
+error, so check `docker compose ps` and the logs.
 
 **Data.** The server applies its database migrations when it starts. The folders in `CAIRNML_HOME` are kept.
 
@@ -99,13 +101,20 @@ docker compose start
   only), and `--numeric-owner` keeps those owners for the restore.
 - The backup holds every password and key of the server, and the GitHub App key. Store it like a password manager
   export: encrypted, and only where the people who run the server can reach it.
+- The archive is owned by root, because `sudo` wrote it. To copy it off the machine, first run
+  `sudo chown "$USER" "$HOME/cairnml-state-$(date +%F).tar.gz"`.
 - Keep the backups for as long as you might need to go back to them, and take one before each upgrade.
 
 ## Restore
 
 Restore onto the same server version the backup was taken from. To upgrade, restore first and upgrade afterwards.
 
-The restore below has not yet been rehearsed on a running stack. Rehearse it on a second machine before you rely on it.
+The datastore part of this procedure was rehearsed once on a throwaway MongoDB container with test data: a backup was
+taken with the commands above, the test database was dropped, and the restore gave the data back. The
+setup step at the end (`bootstrap.sh`, which starts the whole stack) was not part of that rehearsal. After a restore,
+check that `docker compose ps` shows every service healthy and that you can sign in.
+
+Run the commands from the root of the checkout of this repository, on the machine to restore onto, with no stack running:
 
 ```bash
 # On the machine to restore onto: a checkout of this repository, and no stack running yet.
