@@ -71,6 +71,7 @@ error, so check `docker compose ps` and the logs.
 
 - The GitHub App key used to be kept in `deploy/secrets/github-app.pem`. The setup copies it to `CAIRNML_HOME/secrets/` once, and leaves the old copy in place. Delete the old copy once you have checked the new one.
 - The Keycloak admin password used to be kept in `CAIRNML_HOME/secrets/keycloak-admin-password`. The setup reads it once, as the previous password, and deletes it after a successful run.
+- Installs made before the Git credentials feature have no `git_credentials_key` secret, so adding a Git credential for a non-GitHub host fails with `the secret git_credentials_key is missing`. Run the setup once after the upgrade. It creates the key in `CAIRNML_HOME/secrets/cairnml/` with mode 600 and prints only its path. It removes no data, and the running server reads the key on each use, so no service is restarted for this. Keep the key with the backups: stored Git credentials cannot be read without it.
 - The device sign-in is turned on for the `cairnml-sdk` client by the setup, not by hand (see the README, section "Machines without a browser").
 
 If you upgrade from a version older than the current one and a step fails, the setup stops with a message on its own

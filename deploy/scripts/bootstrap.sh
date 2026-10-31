@@ -139,10 +139,12 @@ fi
 rm -f "$LEGACY_PASSWORD_FILE"
 echo "admin login set from deploy/.env: user $KC_ADMIN, same password for Keycloak and CairnML"
 
-# CairnML secrets, written once and kept. Nothing is printed.
+# CairnML secrets, written once and kept. Nothing is printed. A secret that is missing is created on every run, so an
+# install from before a secret existed gets it on its next run (git_credentials_key, for example). The umask keeps a
+# new file private from the moment it is created.
 for name in token_secret session_secret s3_secret_key git_credentials_key; do
   if [ ! -s "$STATE/secrets/cairnml/$name" ]; then
-    openssl rand -base64 48 | tr -d '\n' > "$STATE/secrets/cairnml/$name"
+    (umask 077; openssl rand -base64 48 | tr -d '\n' > "$STATE/secrets/cairnml/$name")
     chmod 600 "$STATE/secrets/cairnml/$name"
     echo "wrote $STATE/secrets/cairnml/$name"
   fi
