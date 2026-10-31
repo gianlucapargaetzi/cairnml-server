@@ -136,7 +136,7 @@ An admin stores them with the `git_credentials.set` call of the API, version 2.8
 
 The first release is for a local network (LAN). It has these limits, and they are the intended behaviour, not bugs:
 
-- **Plain HTTP only.** The stack does not offer TLS: there is no certificate setup and no supported way to put HTTPS in front of it. Sign-in cookies, access tokens and object-storage links travel unencrypted. Use the server only on a network you trust, and do not publish its ports to the internet.
+- **Plain HTTP only.** The stack does not offer TLS: there is no certificate setup and no supported way to put HTTPS in front of it. Sign-in cookies, access tokens and object-storage links travel unencrypted. Use the server only on a network you trust, and do not publish its ports to the internet. The proxy sends no `Strict-Transport-Security` header, because browsers ignore it over plain HTTP.
 - **Sign-in service in development mode, with an embedded database.** Keycloak runs with `start-dev` and stores its users and realm in an embedded H2 database, in `data/idp` under `CAIRNML_HOME`. This is the setup for LAN installs. Back up the folder with the stack stopped (see [Operate the server](docs/operations/operate.md#backup)).
 - **The Keycloak admin console is on the same address.** It is served at `/cairnml/idp/admin`, so every machine that can reach the web app's port can open it, and sign-in there needs the admin's password. Use the machine's firewall to keep the port to the machines that need it.
 
