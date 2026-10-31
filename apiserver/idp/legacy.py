@@ -8,7 +8,7 @@ import os
 from typing import Callable, List, Mapping
 
 from apiserver.config_repo import config
-from apiserver.idp.public_origin import public_origin_problems
+from apiserver.idp.public_origin import public_origin_problems, trusted_proxies_problems
 
 
 def legacy_settings_in_use(get: Callable = config.get) -> List[str]:
@@ -36,10 +36,17 @@ def test_only_settings_in_use(get: Callable = config.get, env: Mapping = os.envi
 
 
 def cookie_settings_problems(get: Callable = config.get) -> List[str]:
-    """Over HTTPS the session cookie must be marked Secure, or it can be sent over plain HTTP."""
-    url = get("apiserver.idp.public_url", "") or ""
-    if url.lower().startswith("https://") and not get("apiserver.auth.cookies.secure", False):
-        return ["apiserver.idp.public_url is https but apiserver.auth.cookies.secure is false"]
+    """Over HTTPS the session cookie must be marked Secure, or it can be sent over plain HTTP. The address of the
+    deployment counts whichever setting names it: the pinned origin, the API or the web app address."""
+    addresses = [
+        get("apiserver.idp.public_origin", "") or "",
+        get("apiserver.idp.public_url", "") or "",
+        get("apiserver.idp.web_url", "") or "",
+    ]
+    if any(address.lower().startswith("https://") for address in addresses) and not get(
+        "apiserver.auth.cookies.secure", False
+    ):
+        return ["an https address is configured (apiserver.idp) but apiserver.auth.cookies.secure is false"]
     return []
 
 
@@ -49,6 +56,7 @@ def check_no_legacy_settings(get: Callable = config.get) -> None:
         + test_only_settings_in_use(get)
         + cookie_settings_problems(get)
         + public_origin_problems(get)
+        + trusted_proxies_problems(get)
     )
     if problems:
         raise RuntimeError("; ".join(problems))
