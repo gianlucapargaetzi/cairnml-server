@@ -48,7 +48,6 @@ server {
     # The web app. The entrypoint links the app's folder as /usr/share/nginx/cairnml-root/${CAIRNML_SERVER_SUB_PATH}.
     location /${CAIRNML_SERVER_SUB_PATH}/ {
         root /usr/share/nginx/cairnml-root;
-        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
         add_header Content-Security-Policy "frame-ancestors 'self'";
         add_header X-XSS-Protection "1; mode=block";
         add_header X-Content-Type-Options "nosniff" always;
