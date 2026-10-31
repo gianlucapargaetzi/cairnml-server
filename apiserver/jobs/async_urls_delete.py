@@ -17,7 +17,7 @@ from google.cloud import storage as google_storage
 from mongoengine import Q
 from mypy_boto3_s3.service_resource import Bucket as AWSBucket
 
-from apiserver.bll import datachunks
+from apiserver.bll import datachunks, run_import
 from apiserver.bll.storage import StorageBLL
 from apiserver.config_repo import config
 from apiserver.database import db
@@ -523,6 +523,9 @@ def run_delete_loop():
             removed = datachunks.purge_stale_pending(PENDING_UPLOAD_MAX_AGE)
             if removed:
                 log.info(f"Removed {removed} uploads that were never committed")
+            imported_later = run_import.purge_unimported()
+            if imported_later:
+                log.info(f"Removed {imported_later} staged run uploads that were never imported")
             next_purge = now + PURGE_PENDING_EVERY
         urls_query = (
             Q(status__ne=DeletionStatus.failed)

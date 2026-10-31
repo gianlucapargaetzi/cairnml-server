@@ -29,6 +29,7 @@ MIN_PART_BYTES = 5 * 1024**2
 _CONTROL_RE = re.compile(r"[\x00-\x1f\x7f]")
 _SHA256_RE = re.compile(r"[0-9a-f]{64}")
 DATASET_TAG = "dataset"
+STAGING_PREFIX = "_imports"
 
 
 def sanitise_name(name: str) -> str:
@@ -128,20 +129,27 @@ def prepare_upload(
     size: int,
     sha256: str,
     content_type: str = "",
+    user: str = "",
+    staging: bool = False,
 ) -> dict:
     """Records a pending Datachunk. A small object gets a presigned PUT; a large one gets a multipart upload,
-    and its parts are signed one at a time with prepare_part."""
+    and its parts are signed one at a time with prepare_part.
+
+    A staging upload belongs to no task (task_id is empty): the object is kept under _imports/<id>/ until an import
+    reads it, and the user who asked for it is the only one who may commit or read it."""
     kind_enum = check_kind_allowed(kind, task_tags)
     name = sanitise_name(name)
     sha256 = validate_digest(sha256)
     if not isinstance(size, int) or size < 0:
         raise errors.bad_request.ValidationError("size must be a non-negative integer")
 
-    key = build_key(project, task_id, name)
+    chunk_id = uuid.uuid4().hex
+    key = f"{STAGING_PREFIX}/{chunk_id}/{name}" if staging else build_key(project, task_id, name)
     bucket = kind_enum.value
     chunk = Datachunk(
-        id=uuid.uuid4().hex,
+        id=chunk_id,
         company=company,
+        user=user or None,
         task=task_id,
         project=project or "",
         kind=kind_enum,
