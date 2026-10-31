@@ -171,6 +171,11 @@ class WorkerBLL:
             now = datetime.utcnow()
             entry.last_activity_time = now
             entry.queue = report.queue
+            # older agents do not send these, so keep what was stored before
+            if report.agent_version:
+                entry.agent_version = report.agent_version
+            if report.run_mode:
+                entry.run_mode = report.run_mode
 
             if report.queues:
                 entry.queues = report.queues

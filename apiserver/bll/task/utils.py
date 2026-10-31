@@ -7,6 +7,7 @@ from mongoengine import Q
 from mongoengine.base import UPDATE_OPERATORS
 
 from apiserver.apierrors import errors
+from apiserver.bll import webhooks
 from apiserver.bll.project.access import ProjectAccessBLL
 from apiserver.bll.util import update_project_time
 from apiserver.config_repo import config
@@ -80,6 +81,7 @@ class ChangeStatusRequest(object):
             )
 
         update_project_time(project_id)
+        webhooks.notify_status_change(self.task, self.new_status, now)
 
         def is_mongo_operator(field: str) -> bool:
             head, _, tail = field.partition("__")

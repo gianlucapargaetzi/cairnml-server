@@ -104,7 +104,7 @@ def check_address(name: str, port: int) -> str:
     return addresses[0]
 
 
-class _PinnedAdapter(HTTPAdapter):
+class PinnedAdapter(HTTPAdapter):
     """Connects to the address that was checked, while the TLS name check (SNI and certificate) keeps the host's
     name. Proxies are not used: a proxy would connect to an address this module never checked."""
 
@@ -124,7 +124,7 @@ def _fetch(address: str, scheme: str, port: int, path: str, name: str, host_head
     url = f"{scheme}://{literal}:{port}/{path}/info/refs?service=git-upload-pack"
     session = requests.Session()
     session.trust_env = False
-    session.mount(f"{scheme}://", _PinnedAdapter(name, tls=scheme == "https"))
+    session.mount(f"{scheme}://", PinnedAdapter(name, tls=scheme == "https"))
     try:
         return session.get(url, headers={"Host": host_header}, timeout=PROBE_TIMEOUT_SEC, allow_redirects=False)
     finally:
