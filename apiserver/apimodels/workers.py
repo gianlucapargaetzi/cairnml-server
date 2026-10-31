@@ -59,6 +59,8 @@ class StatusReportRequest(WorkerRequest):
     )  # list of queues this worker listens to. if None, this will not update the worker's queues list.
     timestamp = IntField(required=True)
     machine_stats = EmbeddedField(MachineStats)
+    agent_version = StringField()  # not sent by agents older than 2.39
+    run_mode = StringField()  # "docker", "venv" or "host"; not sent by agents older than 2.39
 
 
 class IdNameEntry(Base):
@@ -82,6 +84,8 @@ class WorkerEntry(Base, JsonSerializableMixin):
     last_report_time = DateTimeField()
     tags = ListField(str)
     system_tags = ListField(str)
+    agent_version = StringField()  # empty for agents that do not report it
+    run_mode = StringField()  # empty for agents that do not report it
 
 
 class CurrentTaskEntry(IdNameEntry):
