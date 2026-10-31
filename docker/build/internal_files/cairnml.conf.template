@@ -113,12 +113,6 @@ server {
         return 301 /${CAIRNML_SERVER_SUB_PATH}/idp/;
     }
 
-    # The admin console and the master realm are not served through the proxy: the identity provider publishes them on
-    # the machine's loopback address only (deploy/compose.yaml, CAIRNML_IDP_ADMIN_PORT).
-    location ~ ^/${CAIRNML_SERVER_SUB_PATH}/idp/(admin|realms/master)(/|$) {
-        return 404;
-    }
-
     location /${CAIRNML_SERVER_SUB_PATH}/idp/ {
         # The host exactly as the client typed it, with its port if it has one. The container's own port (8080) is
         # not the client's: Docker publishes it on 80.

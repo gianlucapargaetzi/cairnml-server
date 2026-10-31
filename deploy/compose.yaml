@@ -44,9 +44,9 @@ services:
       - ${CAIRNML_HOME:-${HOME}/.local/share/cairnml}/idp/realm-cairnml.json:/opt/keycloak/data/import/realm-cairnml.json:ro
       - ${CAIRNML_HOME:-${HOME}/.local/share/cairnml}/data/idp:/opt/keycloak/data/h2
     ports:
-      # The admin console (and the master realm) is not served through the proxy. It is reached on this machine only, at
-      # http://127.0.0.1:8180/cairnml/idp/admin/ (from another machine, through an SSH tunnel to that port).
-      # CAIRNML_IDP_ADMIN_PORT (deploy/.env) moves the host port.
+      # The admin console is also published on this machine's loopback address, at
+      # http://127.0.0.1:8180/cairnml/idp/admin/ (from another machine, through an SSH tunnel to that port), for when the
+      # proxy is not reachable. CAIRNML_IDP_ADMIN_PORT (deploy/.env) moves the host port.
       - "127.0.0.1:${CAIRNML_IDP_ADMIN_PORT:-8180}:${CAIRNML_IDP_PORT:-8180}"
     healthcheck:
       # Ready when the realm has been imported: its discovery document answers. The image has no curl, and Keycloak
