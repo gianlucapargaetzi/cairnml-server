@@ -52,7 +52,7 @@ an audit event. The causes are:
 - The user is disabled in the `cairnml` realm. Enable the user in the Keycloak admin console (see [Disable or remove a user](../../README.md#disable-or-remove-a-user) in the README).
 - The sign-in did not start and end at the same address. The server names itself after the address the client used, so start and finish at one address, and not at a second name for the same machine.
 
-**The admin cannot sign in.** Use the user named in `KC_ADMIN` and the password in `deploy/.env`. If you changed
+**The admin cannot sign in.** Use the user named in `KC_ADMIN`. For the CairnML sign-in the password is `CAIRNML_ADMIN_PASSWORD` in `deploy/.env`; for the Keycloak administration it is `KC_ADMIN_PASSWORD`. If you changed
 `KC_ADMIN_PASSWORD`, run `deploy/scripts/bootstrap.sh`: the setup signs in with the old password and then sets the new one.
 
 **A user signs in but cannot do admin tasks.** Only users with the `cairnml-admin` realm role are admins. Assign the role
