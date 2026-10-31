@@ -203,3 +203,26 @@ class TestAllowedRepositories(TestCase):
         self.assertEqual(bll.allowed_repositories(app, "acme/registry", clock=lambda: now[0]), first)
         now[0] += 61
         self.assertIn("acme/more-data", bll.allowed_repositories(app, "acme/registry", clock=lambda: now[0]))
+
+
+class TestListEntries(TestCase):
+    def test_every_entry_is_listed_with_its_source_and_link_in_name_order(self):
+        entries = {
+            "coco-fashion.yaml": "source: huggingface\nlink: hf://datasets/org/coco\nadapter: coco_det\n",
+            "cars-data.yaml": "# a comment\nsource: repo\nlink: https://github.com/acme/cars-data\n",
+            "README.md": "not an entry",
+        }
+        result = bll.list_entries(app=FakeApp(entries=entries), registry="acme/registry")
+        self.assertEqual(result, [
+            {"name": "cars-data", "source": "repo", "link": "https://github.com/acme/cars-data"},
+            {"name": "coco-fashion", "source": "huggingface", "link": "hf://datasets/org/coco"},
+        ])
+
+    def test_an_unset_registry_lists_nothing(self):
+        self.assertEqual(bll.list_entries(app=FakeApp(entries={"a.yaml": "source: repo\n"}), registry=""), [])
+
+    def test_github_being_down_is_raised_to_the_caller(self):
+        app = FakeApp()
+        app.github_down = True
+        with self.assertRaises(GitHubError):
+            bll.list_entries(app=app, registry="acme/registry")
