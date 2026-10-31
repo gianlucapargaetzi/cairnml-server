@@ -50,7 +50,7 @@ cd cairnml-server
 deploy/scripts/bootstrap.sh
 ```
 
-The first run builds the images and takes a while. The script generates the passwords and keys the stack needs and keeps them outside the repository, in `~/.local/share/cairnml`. It is safe to run again, for example after an update, but it stops the stack first and starts it again, so the server is down for that time. See [Operate the server](docs/operations/operate.md).
+The first run builds the images and takes a while. The script generates the passwords and keys the stack needs and keeps them outside the repository, in `~/.local/share/cairnml`. It is safe to run again, for example after an update. It does not stop the stack: it rebuilds the images and recreates only the containers whose image or configuration changed, so those services are down while they restart. See [Operate the server](docs/operations/operate.md).
 
 ## First sign-in
 
@@ -90,9 +90,9 @@ Switch the user's **Enabled** off in the `cairnml` realm. Their new sign-ins are
 
 ## GitHub App
 
-Remote execution checks the repository of every job before it is queued. For a repository on `github.com` the check needs a GitHub App: the job is refused until the App is set up and installed on that repository. Repositories on other Git hosts are not checked, and the agent gets no credentials for them, so private repositories there need their credentials set by hand in the agent's configuration (see the [agent](https://github.com/gianlucapargaetzi/cairnml-agent)).
+Remote execution checks the repository of every job before it is queued. For a repository on `github.com` the check needs a GitHub App: the job is refused until the App is set up and installed on that repository. For a repository on another Git host, a public repository is accepted, and a private one needs Git credentials stored for its host (see [Git credentials for other hosts](#git-credentials-for-other-hosts)).
 
-Set up the App once for each GitHub account or organisation whose repositories you run jobs from.
+The server uses one App. Create it once, and install it on every repository that jobs will run from; step 1 says which accounts can hold an installation.
 
 **1. Create the App.** On GitHub, open **Settings → Developer settings → GitHub Apps → New GitHub App** (for an organisation, the same page under the organisation's settings). Fill in:
 
@@ -117,13 +117,20 @@ GITHUB_APP_ID=<the App ID>
 Copy the key to the state directory, which is `~/.local/share/cairnml/secrets/` unless `CAIRNML_HOME` says otherwise:
 
 ```bash
+mkdir -p ~/.local/share/cairnml/secrets
 cp ~/Downloads/<app-name>.*.private-key.pem ~/.local/share/cairnml/secrets/github-app.pem
 chmod 600 ~/.local/share/cairnml/secrets/github-app.pem
 ```
 
 Then run `deploy/scripts/bootstrap.sh` again. It is safe to run again, and it passes the App ID and key to the server.
 
-To check the setup, enqueue a job whose repository is on GitHub. A refused job names the step that is missing. Without the App, the message starts with `GitHub is not set up` and names `GITHUB_APP_ID`. When the App is not installed on the repository, it is `the GitHub App is not installed on <owner>/<repo>`. Both messages link to this section.
+To check the setup, commit and push a change to a repository the App is installed on, and enqueue a job from it: a job runs only from a commit that GitHub has. A refused job names the step that is missing. Without the App, the message starts with `GitHub is not set up` and names `GITHUB_APP_ID`. When the App is not installed on the repository, it is `the GitHub App is not installed on <owner>/<repo>`. Both messages link to this section. The other refusals are listed in [Troubleshooting](docs/operations/troubleshooting.md#a-job-from-github-is-refused).
+
+### Git credentials for other hosts
+
+A job from a repository on a Git host other than GitHub (for example GitLab) is checked by asking the host, without credentials, whether it serves the repository. A public repository is accepted. A private one, or one the server cannot ask, is refused unless credentials are stored for its host or for a path prefix on it. The agent then gets those credentials when it fetches the repository.
+
+An admin stores them with the `git_credentials.set` call of the API, version 2.8 or later, with a JSON body such as `{"host": "gitlab.example.com", "path": "team/", "username": "<user>", "secret": "<access token>"}`. `path` may be left out, which applies the credential to every repository on the host. The secret is encrypted at rest and is never returned. The web app and the SDK have no screen or command for this yet. `git_credentials.delete` removes an entry, and `git_credentials.get_all` lists the hosts and paths, without secrets.
 
 ## Network and security
 
