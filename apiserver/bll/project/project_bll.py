@@ -1003,6 +1003,88 @@ class ProjectBLL:
         return [{"id": u.id, "name": u.name} for u in users]
 
     @classmethod
+    def get_contributions(
+        cls,
+        company: str,
+        project_id: str,
+        period_days: int,
+        utc_offset_minutes: int,
+        limit: int,
+        now: Optional[datetime] = None,
+    ) -> dict:
+        """
+        Runs of the project (its tasks and its sub-projects' tasks, hidden tasks left out) created in the period,
+        grouped by day and by the user who owns each run.
+        The period is the last `period_days` local days, today included. Local days follow `utc_offset_minutes`
+        (minutes east of UTC), so that a run is counted on the day the user saw it on.
+        """
+        offset = timedelta(minutes=utc_offset_minutes)
+        local_now = (now or datetime.utcnow()) + offset
+        start_day = local_now.date() - timedelta(days=period_days - 1)
+        period_start = datetime(start_day.year, start_day.month, start_day.day) - offset
+
+        match = {
+            "company": {"$in": list({"", company})},
+            "project": {"$in": _ids_with_children([project_id])},
+            "system_tags": {"$ne": EntityVisibility.hidden.value},
+            "created": {"$gte": period_start},
+        }
+        sign = "+" if utc_offset_minutes >= 0 else "-"
+        hours, minutes = divmod(abs(utc_offset_minutes), 60)
+        tz = f"{sign}{hours:02d}:{minutes:02d}"
+
+        pipeline = [
+            {"$match": match},
+            {
+                "$facet": {
+                    "days": [
+                        {
+                            "$group": {
+                                "_id": {
+                                    "$dateToString": {
+                                        "format": "%Y-%m-%d",
+                                        "date": "$created",
+                                        "timezone": tz,
+                                    }
+                                },
+                                "runs": {"$sum": 1},
+                            }
+                        },
+                        {"$sort": {"_id": 1}},
+                    ],
+                    "statuses": [
+                        {"$group": {"_id": "$status", "runs": {"$sum": 1}}},
+                    ],
+                    "users": [
+                        {"$group": {"_id": "$user", "runs": {"$sum": 1}}},
+                        {"$sort": {"runs": -1, "_id": 1}},
+                    ],
+                }
+            },
+        ]
+        result = next(iter(Task.aggregate(pipeline)), {})
+        statuses = {group["_id"]: group["runs"] for group in result.get("statuses", [])}
+        running = sum(statuses.get(status, 0) for status in (TaskStatus.in_progress, TaskStatus.queued))
+        users = result.get("users", [])
+        names = {
+            u.id: u.name
+            for u in User.objects(id__in=[group["_id"] for group in users[:limit] if group["_id"]]).only("id", "name")
+        }
+        return {
+            "period_days": period_days,
+            "total": sum(statuses.values()),
+            "completed": statuses.get(TaskStatus.completed, 0),
+            "failed": statuses.get(TaskStatus.failed, 0),
+            "running": running,
+            "days": [{"date": day["_id"], "runs": day["runs"]} for day in result.get("days", [])],
+            "contributors": [
+                {"id": group["_id"], "name": names.get(group["_id"], ""), "runs": group["runs"]}
+                for group in users[:limit]
+            ],
+            "contributor_count": len(users),
+        }
+
+    @classmethod
     def get_task_types(cls, company, project_ids: Optional[Sequence]) -> set:
         """
         Return the list of unique task types used by company and public tasks

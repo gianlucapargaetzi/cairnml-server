@@ -64,6 +64,13 @@ class ProjectUserNamesRequest(MultiProjectRequest):
     entity = ActualEnumField(EntityTypeEnum, default=EntityTypeEnum.task)
 
 
+class ProjectContributionsRequest(models.Base):
+    project = fields.StringField(required=True)
+    period_days = fields.IntField(default=30)
+    utc_offset_minutes = fields.IntField(default=0)
+    limit = fields.IntField(default=5)
+
+
 class MultiProjectPagedRequest(MultiProjectRequest):
     allow_public = fields.BoolField(default=True)
     page = fields.IntField(default=0)
