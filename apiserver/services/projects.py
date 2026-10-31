@@ -20,6 +20,7 @@ from apiserver.apimodels.projects import (
     ProjectChildrenType,
     GetUniqueMetricsRequest,
     ProjectUserNamesRequest,
+    ProjectContributionsRequest,
     EntityTypeEnum,
 )
 from apiserver.bll import webhooks
@@ -689,6 +690,20 @@ def get_task_parents(
             name=request.task_name,
         )
     }
+
+
+@endpoint("projects.get_contributions")
+def get_contributions(
+    call: APICall, company_id: str, request: ProjectContributionsRequest
+):
+    ProjectAccessBLL.assert_can(call.identity, request.project, "read")
+    call.result.data = ProjectBLL.get_contributions(
+        company_id,
+        project_id=request.project,
+        period_days=min(max(request.period_days, 1), 365),
+        utc_offset_minutes=min(max(request.utc_offset_minutes, -840), 840),
+        limit=min(max(request.limit, 1), 50),
+    )
 
 
 @endpoint("projects.get_user_names")
