@@ -21,7 +21,7 @@ CairnML Server is the self-hosted part of CairnML. One script starts everything 
 
 ## Features
 
-- Experiment tracking, with runs stored with their parameters, metrics and artifacts.
+- Task tracking, with tasks stored with their parameters, metrics and artifacts.
 - Job queues for agents on other machines.
 - Object storage for artifacts, models and datasets.
 - Sign-in through Keycloak, with one key per machine instead of shared access keys.
