@@ -55,7 +55,7 @@ The first run builds the images and takes a while. The script generates the pass
 ## First sign-in
 
 1. Open `http://<server-ip>/cairnml/`.
-2. Sign in as the user named in `KC_ADMIN` (`cairnadmin` by default), with the password in `deploy/.env`.
+2. Sign in as the user named in `KC_ADMIN` (`cairnadmin` by default), with the password `CAIRNML_ADMIN_PASSWORD` in `deploy/.env`.
 
 Your account is created at the first sign-in.
 
@@ -67,9 +67,9 @@ The server runs over plain HTTP, so use it on a network you trust. See [Network 
 
 ### The admin account
 
-Setup creates the admin named `KC_ADMIN` in `deploy/.env` (`cairnadmin` by default). It is the Keycloak administrator in the `master` realm, and the CairnML admin in the `cairnml` realm. Keycloak also creates a temporary admin, `kcadmin`, on its first start. Setup deletes it from both realms once `KC_ADMIN` has signed in, so no temporary account is left behind.
+Setup creates the admin named `KC_ADMIN` in `deploy/.env` (`cairnadmin` by default). It is the Keycloak administrator in the `master` realm, with the password `KC_ADMIN_PASSWORD`, and the CairnML admin in the `cairnml` realm, with the password `CAIRNML_ADMIN_PASSWORD`. The two passwords are generated separately, so a leak of one does not open the other. Keycloak also creates a temporary admin, `kcadmin`, on its first start. Setup deletes it from both realms once `KC_ADMIN` has signed in, so no temporary account is left behind.
 
-To change the admin's password, set `KC_ADMIN_PASSWORD` in `deploy/.env` and run `deploy/scripts/bootstrap.sh` again. When the password has changed, setup asks in the terminal for the previous one. It is not stored.
+To change the Keycloak administrator's password, set `KC_ADMIN_PASSWORD` in `deploy/.env` and run `deploy/scripts/bootstrap.sh` again. When the password has changed, setup asks in the terminal for the previous one. It is not stored. To change the CairnML sign-in password of the admin, set `CAIRNML_ADMIN_PASSWORD` and run the setup again: it needs no previous password.
 
 ### Add users
 
@@ -212,7 +212,8 @@ The settings a user may set are in `deploy/.env`, copied from [`deploy/.env.exam
 | Setting | Default | What it is for |
 |---|---|---|
 | `KC_ADMIN` | `cairnadmin` | The admin's name, in Keycloak and in CairnML. Must not be `kcadmin`. See [First sign-in](#first-sign-in). |
-| `KC_ADMIN_PASSWORD` | generated | The admin's password. Change it, then run `deploy/scripts/bootstrap.sh` again. |
+| `KC_ADMIN_PASSWORD` | generated | The Keycloak administrator's password (master realm). Change it, then run `deploy/scripts/bootstrap.sh` again. |
+| `CAIRNML_ADMIN_PASSWORD` | generated | The admin's password for the CairnML sign-in. Change it, then run `deploy/scripts/bootstrap.sh` again. |
 | `CAIRNML_HTTP_PORT` | `80` | The port of the one address clients use. See [Ports](#ports). |
 | `CAIRNML_STORAGE_PORT` | `9000` | The port of object storage, which clients reach. See [Ports](#ports). |
 | `CAIRNML_STORAGE_CONSOLE_PORT` | `9001` | The port of the storage console, on loopback only. |

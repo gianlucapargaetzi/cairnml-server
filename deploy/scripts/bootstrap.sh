@@ -22,6 +22,14 @@ if [ ! -f .env ]; then
 fi
 # The file holds the admin passwords: only its owner may read it, on every run (also one copied by hand).
 chmod 600 .env
+# The CairnML admin's password (the sign-in to CairnML) is separate from KC_ADMIN_PASSWORD (Keycloak's master realm).
+# A missing or empty one is generated here, so an install from before it existed gets one on its next run. Its
+# account's password is then changed to it: sign in to CairnML with CAIRNML_ADMIN_PASSWORD from now on.
+if ! grep -Eq '^CAIRNML_ADMIN_PASSWORD=.+' .env; then
+  sed -i '/^CAIRNML_ADMIN_PASSWORD=/d' .env
+  printf 'CAIRNML_ADMIN_PASSWORD=%s\n' "$(openssl rand -hex 16)" >> .env
+  echo "wrote CAIRNML_ADMIN_PASSWORD to deploy/.env: the CairnML sign-in of the admin uses it from this run on"
+fi
 set -a; . ./.env; set +a
 
 # Keycloak creates a temporary admin with this name on its first start. Setup deletes it once KC_ADMIN can sign in, so
@@ -78,7 +86,8 @@ LEGACY_PASSWORD_FILE="$STATE/secrets/keycloak-admin-password"
 PREV_ADMIN_PASSWORD=""
 if [ -s "$LEGACY_PASSWORD_FILE" ]; then PREV_ADMIN_PASSWORD=$(cat "$LEGACY_PASSWORD_FILE"); fi
 
-# The same account administers the master realm (Keycloak itself) and the cairnml realm (CairnML's sign-in).
+# The same account administers the master realm (Keycloak itself) and the cairnml realm (CairnML's sign-in), with
+# different passwords: KC_ADMIN_PASSWORD for the master realm, CAIRNML_ADMIN_PASSWORD for the cairnml realm.
 KC_USER_SETUP='
 set -e
 K=/opt/keycloak/bin/kcadm.sh
@@ -108,19 +117,19 @@ temp_id=$($K get users -r master -q username="$TEMP_USER" --fields id | sed -n "
 # would refuse that, and the admin console signs in there.
 $K update realms/master -s sslRequired=NONE
 if $K get users -r cairnml -q username="$ADMIN_USER" --fields username | grep -q "\"username\""; then
-  $K set-password -r cairnml --username "$ADMIN_USER" --new-password "$ADMIN_PW" >/dev/null
+  $K set-password -r cairnml --username "$ADMIN_USER" --new-password "$CAIRNML_PW" >/dev/null
 else
   $K create users -r cairnml -s username="$ADMIN_USER" -s enabled=true -s emailVerified=true \
     -s email="$ADMIN_USER@example.test" -s firstName=Admin -s lastName=User >/dev/null
   $K add-roles -r cairnml --uusername "$ADMIN_USER" --rolename cairnml-admin
-  $K set-password -r cairnml --username "$ADMIN_USER" --new-password "$ADMIN_PW"
+  $K set-password -r cairnml --username "$ADMIN_USER" --new-password "$CAIRNML_PW"
 fi
 cairnml_temp_id=$($K get users -r cairnml -q username="$TEMP_USER" --fields id | sed -n "s/.*\"id\" *: *\"\([^\"]*\)\".*/\1/p" | head -n1)
 [ -z "$cairnml_temp_id" ] || $K delete "users/$cairnml_temp_id" -r cairnml
 '
 kc_user_setup() {
   docker compose exec -T \
-    -e ADMIN_USER="$KC_ADMIN" -e ADMIN_PW="$KC_ADMIN_PASSWORD" \
+    -e ADMIN_USER="$KC_ADMIN" -e ADMIN_PW="$KC_ADMIN_PASSWORD" -e CAIRNML_PW="$CAIRNML_ADMIN_PASSWORD" \
     -e TEMP_USER="$TEMP_ADMIN" -e PREV_PW="$PREV_ADMIN_PASSWORD" \
     cairnml-idp sh -c "$KC_USER_SETUP" >/dev/null
 }
@@ -137,7 +146,7 @@ if ! kc_user_setup; then
   fi
 fi
 rm -f "$LEGACY_PASSWORD_FILE"
-echo "admin login set from deploy/.env: user $KC_ADMIN, same password for Keycloak and CairnML"
+echo "admin login set from deploy/.env: user $KC_ADMIN; KC_ADMIN_PASSWORD for Keycloak, CAIRNML_ADMIN_PASSWORD for CairnML"
 
 # CairnML secrets, written once and kept. Nothing is printed. A secret that is missing is created on every run, so an
 # install from before a secret existed gets it on its next run (git_credentials_key, for example). The umask keeps a
