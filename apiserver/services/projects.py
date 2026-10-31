@@ -22,6 +22,7 @@ from apiserver.apimodels.projects import (
     ProjectUserNamesRequest,
     EntityTypeEnum,
 )
+from apiserver.bll import webhooks
 from apiserver.bll.organization import OrgBLL, Tags
 from apiserver.bll.project.access import ProjectAccessBLL
 from apiserver.bll.project import ProjectBLL, ProjectQueries
@@ -355,6 +356,11 @@ def update(call: APICall, company: str, request: ProjectRequest):
         call.data, create_fields, Project.get_fields(), discard_none_values=False
     )
     conform_tag_fields(call, fields, validate=True)
+    if "notification_webhook" in fields:
+        # an empty value clears the webhook
+        fields["notification_webhook"] = fields["notification_webhook"] or None
+        if fields["notification_webhook"]:
+            webhooks.validate_url(fields["notification_webhook"])
     updated = ProjectBLL.update(company=company, project_id=request.project, **fields)
     conform_output_tags(call, fields)
     call.result.data_model = UpdateResponse(updated=updated, fields=fields)
