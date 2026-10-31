@@ -6,6 +6,8 @@ from unittest import mock
 import pytest
 
 from apiserver.idp import public_origin
+from apiserver.idp.assertion import AssertionInvalid, make_assertion, verify_assertion
+from apiserver.idp.keys import generate_private_key
 from apiserver.idp.oidc import _same_realm
 
 DEFAULTS = {
@@ -157,6 +159,20 @@ def test_a_pinned_address_is_named_without_forwarded_headers():
     urls = request({}, host="evil.example", **PINNED)
 
     assert urls["api"] == "https://cairnml.example/cairnml/api"
+
+
+@pytest.mark.parametrize("host", ["evil.example", "cairnml.example.evil"])
+def test_a_device_assertion_for_another_host_is_refused_when_the_address_is_pinned(host):
+    # The device exchange checks the assertion's audience against api_url(): with a pinned address the audience of a
+    # request for another host is still the pinned one, so an assertion addressed to that host fails.
+    urls = request({"X-Forwarded-Host": host, "X-Forwarded-Proto": "https"}, **PINNED)
+    key = generate_private_key()
+    forged = make_assertion(key, "dev_1", f"https://{host}/cairnml/api")
+    canonical = make_assertion(key, "dev_1", urls["api"])
+
+    with pytest.raises(AssertionInvalid):
+        verify_assertion(forged, key.public_key(), urls["api"])
+    assert verify_assertion(canonical, key.public_key(), urls["api"])["iss"] == "dev_1"
 
 
 def test_a_request_for_another_host_is_logged_under_a_pinned_address():
