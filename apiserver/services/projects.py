@@ -59,6 +59,7 @@ create_fields = {
     "tags": list,
     "system_tags": list,
     "default_output_destination": None,
+    "notification_webhook": None,
 }
 
 

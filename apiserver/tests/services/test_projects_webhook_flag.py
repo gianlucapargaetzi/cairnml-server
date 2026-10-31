@@ -83,3 +83,18 @@ def test_get_all_ex_reports_the_flag_per_project_and_never_the_address(company):
     assert by_id[never]["has_notification_webhook"] is False
     assert URL not in repr(call.result.data)
     assert all("notification_webhook" not in p for p in by_id.values())
+
+
+def test_update_stores_the_webhook_and_an_empty_value_clears_it(company):
+    project_id = f"upd-{uuid4().hex[:8]}"
+    make_project(company, project_id, webhook=None)
+    call = FakeCall(admin(company))
+    call.data = {"project": project_id, "notification_webhook": URL}
+    svc.update(call, company, ProjectRequest(project=project_id))
+    assert call.result.data_model.fields["notification_webhook"] == URL
+    assert Project.objects(id=project_id).only("notification_webhook").first().notification_webhook == URL
+
+    call = FakeCall(admin(company))
+    call.data = {"project": project_id, "notification_webhook": ""}
+    svc.update(call, company, ProjectRequest(project=project_id))
+    assert Project.objects(id=project_id).only("notification_webhook").first().notification_webhook is None
