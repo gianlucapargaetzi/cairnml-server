@@ -248,6 +248,7 @@ The pins are the only record of which versions go together. This repository's te
 
 - **Use the SDK and the agent at the commits the pins name.** A client installed from another source may work, but it is not tested with this server.
 - **Old clients get a warning, not a refusal.** The SDK and the agent send their name and version in the `X-CairnML-Client` header. When a client is older than the minimum set in `apiserver.client_versions` (`min_sdk_version` 0.0.2, `min_agent_version` 0.0.1 in the shipped configuration), the server still serves it, adds an `X-CairnML-Upgrade` header to each response that says what to upgrade, and logs the warning once in `docker compose logs apiserver`.
+- **Differences from upstream ClearML.** The commands, the dataset workflow, the sign-in and the storage differ from upstream. The [compatibility matrix](docs/compatibility/README.md) lists each area with its status and migration path: CLI commands ([CLI migration](docs/compatibility/cli-migration.md)), datasets ([Dataset migration](docs/compatibility/dataset-migration.md)), sign-in and storage ([Auth and storage](docs/compatibility/auth-and-storage.md)). The agent's app metering and proxy path is not supported ([Agent metering](docs/compatibility/agent-metering.md)).
 - **API version.** Clients name the API version in the address (`/cairnml/api/v2.8/...`). The device sign-in (enrolment, token exchange, job tokens) needs API version 2.8 or later, so a client that uses only older API versions cannot enrol.
 
 ## Running the server's tests
