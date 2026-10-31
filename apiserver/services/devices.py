@@ -113,6 +113,8 @@ def idp_settings(call: APICall, _company, _):
         # The address devices must use: a device's assertion is addressed to it, so it must match exactly.
         "public_url": public_origin.api_url().rstrip("/"),
         "web_url": public_origin.web_url(),
+        # Whether a GitHub App is configured. Only the flag: the App's id and key are never returned.
+        "github_app": bool(config.get("apiserver.idp.github_app_id", "")),
     }
 
 
