@@ -109,7 +109,9 @@ def get_by_id(call: APICall, company: str, request: ProjectRequest):
         if not project:
             raise errors.bad_request.InvalidProjectId(id=project_id)
 
-        project_dict = project.to_proper_dict()
+        # The webhook address may carry a secret token: it is never returned, only whether one is set
+        project_dict = project.to_proper_dict(exclude=["notification_webhook"])
+        project_dict["has_notification_webhook"] = bool(project.notification_webhook)
         conform_output_tags(call, project_dict)
 
         call.result.data = {"project": project_dict}
@@ -238,6 +240,18 @@ def get_all_ex(call: APICall, company_id: str, request: ProjectsGetRequest):
 
     conform_output_tags(call, projects)
     project_ids = list({project["id"] for project in projects})
+    # notification_webhook is excluded by default, so the flag is looked up separately
+    with_webhook = {
+        p.id
+        for p in Project.objects(
+            company=company_id,
+            id__in=project_ids,
+            notification_webhook__exists=True,
+            notification_webhook__nin=[None, ""],
+        ).only("id")
+    }
+    for project in projects:
+        project["has_notification_webhook"] = project["id"] in with_webhook
 
     stats_filter, stats_search_hidden = _get_project_stats_filter(request)
     if request.check_own_contents:
