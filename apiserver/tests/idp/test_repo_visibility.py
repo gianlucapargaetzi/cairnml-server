@@ -135,14 +135,14 @@ class TestIsPrivate(TestCase):
         self.assertEqual(seen["adapter"]._name, "gitlab.example.org")
 
     def test_the_tls_name_check_uses_the_host_name_not_the_address(self):
-        adapter = repo_visibility._PinnedAdapter("gitlab.example.org", tls=True)
+        adapter = repo_visibility.PinnedAdapter("gitlab.example.org", tls=True)
         adapter.init_poolmanager(1, 1)
         pool = adapter.poolmanager.connection_from_url(f"https://{PUBLIC}:443/")
         self.assertEqual(adapter.poolmanager.connection_pool_kw["server_hostname"], "gitlab.example.org")
         self.assertEqual(pool.host, PUBLIC)
 
     def test_a_plain_http_probe_is_not_given_a_tls_name(self):
-        adapter = repo_visibility._PinnedAdapter("gitlab.example.org", tls=False)
+        adapter = repo_visibility.PinnedAdapter("gitlab.example.org", tls=False)
         adapter.init_poolmanager(1, 1)
         pool = adapter.poolmanager.connection_from_url(f"http://{PUBLIC}:80/")
         self.assertEqual(pool.host, PUBLIC)

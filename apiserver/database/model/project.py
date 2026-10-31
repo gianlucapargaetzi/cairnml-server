@@ -65,6 +65,9 @@ class Project(AttributedDocument):
     tags = SafeSortedListField(StringField(required=True))
     system_tags = SafeSortedListField(StringField(required=True))
     default_output_destination = StrippedStringField()
+    notification_webhook = StringField(exclude_by_default=True)
+    """ https URL that receives a POST when a task of the project completes, fails or is stopped. Not returned by
+    default: it may carry a secret token. Set by project admins only. """
     last_update = DateTimeField()
     featured = IntField(default=9999)
     logo_url = StringField()
