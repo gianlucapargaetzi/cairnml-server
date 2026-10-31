@@ -184,6 +184,8 @@ Two more ports are not published: the API and the sign-in service listen only in
 
 Run `deploy/scripts/bootstrap.sh` again after changing a port.
 
+The server builds the addresses it hands out (sign-in redirects, the identity provider's issuer, storage links) from the address the proxy received. It believes the forwarded address headers only from the proxies in `CAIRNML_TRUSTED_PROXIES`, which by default are loopback and the Docker network of the stack. If another reverse proxy sits in front of the stack, add its range there. A deployment with a fixed address sets `CAIRNML_PUBLIC_ORIGIN`: the server then ignores the Host of every request.
+
 Clients and agents reach the stack on the first two ports, so the machine's firewall must let them in on `CAIRNML_HTTP_PORT` and `CAIRNML_STORAGE_PORT`. The storage console on `CAIRNML_STORAGE_CONSOLE_PORT` answers on loopback only.
 
 ## Datasets
@@ -223,6 +225,7 @@ The settings a user may set are in `deploy/.env`, copied from [`deploy/.env.exam
 | `CAIRNML_IDP_PORT` | `8180` | The sign-in service, inside the stack. |
 | `CAIRNML_COOKIE_SECURE` | `false` | Keep `false`: the first release serves plain HTTP only. See [Network and security](#network-and-security). |
 | `CAIRNML_PUBLIC_ORIGIN` | empty | A fixed address for the stack, with scheme and port, when clients should not use the address they typed. Empty for a LAN. See [Connect the clients](#connect-the-clients). |
+| `CAIRNML_TRUSTED_PROXIES` | `["127.0.0.0/8","::1/128","172.16.0.0/12"]` | The JSON list of proxies whose forwarded address headers the server believes. Headers from other addresses are ignored and logged. Add the range of a reverse proxy in front of the stack. See [Ports](#ports). |
 | `GITHUB_APP_ID` | empty | The GitHub App. See [GitHub App](#github-app). |
 | `GITHUB_API_URL` | `https://api.github.com` | The GitHub API the App uses. Change it only for GitHub Enterprise Server. |
 | `CAIRNML_DATASET_REGISTRY` | empty | The dataset registry repository. See [Datasets](#datasets). |

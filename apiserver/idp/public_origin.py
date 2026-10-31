@@ -7,10 +7,14 @@ issuer, the storage endpoint) name the host the client typed, so nothing has to 
 A deployment can pin its address with apiserver.public_origin (scheme, host and port). Then the server uses that
 address for everything security-relevant and ignores the Host and X-Forwarded-* headers of the request; a request that
 names another host is logged.
+
+The X-Forwarded-* headers are believed only from the proxies in apiserver.idp.trusted_proxies (by default loopback and
+the Docker network the stack's proxy sits on). A request from any other address keeps its own Host and scheme.
 """
 
 import contextvars
-from typing import Callable, List
+import ipaddress
+from typing import Callable, List, Optional
 from urllib.parse import urlencode, urlsplit
 
 from apiserver.config_repo import config
@@ -25,12 +29,38 @@ def pinned_origin() -> str:
     return (config.get("apiserver.idp.public_origin") or "").rstrip("/")
 
 
-def remember(headers, host: str) -> None:
-    """Called for every request: the proxy's X-Forwarded-* headers name the address the client used."""
-    scheme = headers.get("X-Forwarded-Proto") or "http"
-    netloc = headers.get("X-Forwarded-Host") or host
+def is_trusted_proxy(remote_addr: Optional[str], get: Optional[Callable] = None) -> bool:
+    """True when the request comes from one of apiserver.idp.trusted_proxies. An unknown address is not trusted."""
+    if not remote_addr:
+        return False
+    try:
+        address = ipaddress.ip_address(str(remote_addr).split("%")[0])
+    except ValueError:
+        return False
+    if address.version == 6 and address.ipv4_mapped:
+        address = address.ipv4_mapped
+    return any(address in network for network in _trusted_networks(get))
+
+
+def _trusted_networks(get: Optional[Callable] = None) -> list:
+    get = get or config.get
+    return [ipaddress.ip_network(str(entry), strict=False) for entry in get("apiserver.idp.trusted_proxies") or []]
+
+
+def remember(headers, host: str, remote_addr: Optional[str] = None) -> None:
+    """Called for every request: the X-Forwarded-* headers name the address the client used, when a trusted proxy
+    passed them on. From any other address they are ignored, and the Host of the request is used."""
+    trusted = is_trusted_proxy(remote_addr)
+    forwarded = headers.get("X-Forwarded-Host") or headers.get("X-Forwarded-Proto")
+    if forwarded and not trusted:
+        log.warning("forwarded headers from %s ignored: not a trusted proxy (apiserver.idp.trusted_proxies)", remote_addr)
+    if trusted:
+        scheme = headers.get("X-Forwarded-Proto") or "http"
+        netloc = headers.get("X-Forwarded-Host") or host
+    else:
+        scheme, netloc = "http", host
     pinned = pinned_origin()
-    if pinned and headers.get("X-Forwarded-Host") and netloc.lower() != urlsplit(pinned).netloc.lower():
+    if pinned and trusted and headers.get("X-Forwarded-Host") and netloc.lower() != urlsplit(pinned).netloc.lower():
         log.warning("request for host %s ignored: the server is pinned to %s", netloc, pinned)
     _origin.set(f"{scheme}://{netloc}")
 
@@ -61,6 +91,17 @@ def public_origin_problems(get: Callable = config.get) -> List[str]:
     if address.scheme not in ("http", "https") or not address.hostname or address.path or address.query:
         return problem
     return []
+
+
+def trusted_proxies_problems(get: Callable = config.get) -> List[str]:
+    """Refuses an entry of apiserver.idp.trusted_proxies that is not an address or a network."""
+    problems = []
+    for entry in get("apiserver.idp.trusted_proxies") or []:
+        try:
+            ipaddress.ip_network(str(entry), strict=False)
+        except ValueError:
+            problems.append(f"apiserver.idp.trusted_proxies: {entry!r} is not an address or network, e.g. 10.0.0.0/8")
+    return problems
 
 
 def base_path() -> str:
