@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import Collection, Sequence, Tuple, Optional, Dict, Any, List
+from typing import Callable, Collection, Sequence, Tuple, Optional, Dict, Any, List
 
 import six
 from mongoengine import Q
@@ -58,6 +58,25 @@ log = config.logger(__file__)
 org_bll = OrgBLL()
 queue_bll = QueueBLL()
 project_bll = ProjectBLL()
+
+
+def folder_root_id(start_id: str, lookup: Callable[[str], Optional[Any]]) -> str:
+    """
+    The root of the parent chain that starts at start_id: the task reached by following parents until a task has no
+    live parent. lookup(task_id) returns the task (with its parent) or None when it cannot be read. A missing task, a
+    deleted parent or a loop stops the walk at the last readable task, so the result always names a task that exists.
+    """
+    current_id = start_id
+    visited = {start_id}
+    while True:
+        task = lookup(current_id)
+        parent_id = getattr(task, "parent", None) if task is not None else None
+        if not parent_id or parent_id.startswith(deleted_prefix) or parent_id in visited:
+            return current_id
+        if lookup(parent_id) is None:
+            return current_id
+        visited.add(parent_id)
+        current_id = parent_id
 
 
 class TaskBLL:
@@ -328,11 +347,20 @@ class TaskBLL:
 
             return execution
 
-        parent_task = (
-            task.parent
-            if task.parent and not task.parent.startswith(deleted_prefix)
-            else task.id
-        )
+        def readable_task(task_id: str):
+            try:
+                return cls.get_by_id(
+                    company_id=company_id,
+                    task_id=task_id,
+                    only_fields=["id", "parent"],
+                    allow_public=True,
+                )
+            except errors.bad_request.InvalidTaskId:
+                return None
+
+        # A clone is filed under the root of its source's folder, not under the source itself: the folder is named
+        # after the root, and a folder can only be read through a root that is in the same project.
+        parent_task = folder_root_id(parent or task.id, readable_task)
         new_task = Task(
             id=create_id(),
             user=user_id,
@@ -343,7 +371,7 @@ class TaskBLL:
             last_changed_by=user_id,
             name=name or task.name,
             comment=comment or task.comment,
-            parent=parent or parent_task,
+            parent=parent_task,
             project=project or task.project,
             tags=tags or task.tags,
             system_tags=system_tags or clean_system_tags(task.system_tags),
