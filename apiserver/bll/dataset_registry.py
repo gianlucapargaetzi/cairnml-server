@@ -46,6 +46,27 @@ def entry_text(repo: str, head: str, name: str) -> str:
     )
 
 
+def _entry_field(text: str, field: str) -> Optional[str]:
+    match = re.search(rf"^{field}:\s*(\S+)\s*$", text, re.M)
+    return match.group(1) if match else None
+
+
+def list_entries(*, app: GitHubApp, registry: str) -> list:
+    """Every entry of the registry: its name, how its data is read (``source``) and its link. Read-only."""
+    if not registry:
+        return []
+    entries = []
+    for file_name, text in sorted(app.read_dir_texts(registry, ENTRY_DIR).items()):
+        if not file_name.endswith(".yaml"):
+            continue
+        entries.append({
+            "name": file_name[: -len(".yaml")],
+            "source": _entry_field(text, "source") or "",
+            "link": _entry_field(text, "link") or "",
+        })
+    return entries
+
+
 def _linked_repo(text: str) -> Optional[str]:
     match = re.search(r"^link:\s*(\S+)\s*$", text, re.M)
     found = repo_of(match.group(1)) if match else None
