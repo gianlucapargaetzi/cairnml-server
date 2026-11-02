@@ -79,6 +79,7 @@ def test_agent_registers_as_a_worker_listening_to_its_queue(client_home, machine
     assert "default" in [q.get("name") for q in record.get("queues", [])], record
 
 
+@pytest.fixture(scope="module")
 def keyless(tmp_path_factory, admin_account):
     """One agent machine whose device key was removed: started once, shared by the two keyless checks (one daemon,
     not two: docs/e2e_testing/E2E.md, speed section, item 5). It is up when its log names the missing key."""
