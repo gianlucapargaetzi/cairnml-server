@@ -61,10 +61,14 @@ class Api:
 
     @property
     def base(self) -> str:
-        return f"{settings.API_URL}/v{self.version}/"
+        return self.base_for(self.version)
 
-    def call(self, endpoint: str, body=None, *, token=None, raw_token=None) -> dict:
-        base = self.base
+    @staticmethod
+    def base_for(version: str) -> str:
+        return f"{settings.API_URL}/v{version}/"
+
+    def call(self, endpoint: str, body=None, *, token=None, raw_token=None, version: str = None) -> dict:
+        base = self.base_for(version) if version else self.base
         headers = {}
         if raw_token is not None:
             headers["Authorization"] = raw_token
@@ -90,5 +94,5 @@ class Api:
         self._token_expires = jwt.decode(self._token, options={"verify_signature": False}).get("exp", 0)
         return self._token
 
-    def authed(self, endpoint: str, body=None) -> dict:
-        return self.call(endpoint, body, token=self.token())
+    def authed(self, endpoint: str, body=None, *, version: str = None) -> dict:
+        return self.call(endpoint, body, token=self.token(), version=version)
