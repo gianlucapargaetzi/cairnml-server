@@ -20,7 +20,7 @@ sequenceDiagram
         Agent->>Server: devices.job_token again, the file is rewritten
     end
     Job->>Server: devices.git_token (task, repository), with the job token
-    Note over Server: only the task's own repository, or a dataset repository the GitHub App is installed on; a public repository gets no token
+    Note over Server: only the task's own repository, or a dataset repository the GitHub App is installed on; a public repository gets no token (the answer has `token: null`)
     Server-->>Job: read-only installation token for the repository
     Job->>Git: clone or fetch the recorded commit
 ```
@@ -34,7 +34,7 @@ The agent renews at 80 percent of the lifetime. If a renewal fails for a network
 | Endpoint | Caller | Purpose |
 |---|---|---|
 | `devices.job_token` | agent | Issues a job token for a task the agent is running |
-| `devices.git_token` | job or agent | Issues a read-only repository token. A job gets only its own task's repository, or a dataset repository the GitHub App is installed on (one with a `dataset.yaml` at its root). A public repository gets no token: it is cloned without one |
+| `devices.git_token` | job or agent | Issues a read-only repository token. A job gets only its own task's repository, or a dataset repository the GitHub App is installed on (one with a `dataset.yaml` at its root). A public repository gets no token (`token: null`): it is cloned anonymously |
 
 ## Limits
 

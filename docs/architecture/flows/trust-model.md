@@ -18,7 +18,7 @@ This page says who may act for whom, and where the current implementation is wea
 - Each device assertion is bound to one server address and can be used once.
 - The server never returns a stored Git secret. It issues short-lived, read-only repository tokens instead.
 - Own datasets live in their own repositories and are not registered anywhere. Discovery and access follow the GitHub App's installations: the server lists the repositories the App is installed on, and a job may get a token for any one of them that has a `dataset.yaml` at its root and a footprint that holds. An installed repository without `dataset.yaml` gets no token.
-- A public repository is cloned without authentication: the server issues no token for it, and the App is not needed for it.
+- A public repository gets no token: the server answers a job's token request for it with success and `token: null`, and the job clones it anonymously. The App is not asked for it, and it is not needed for it.
 - The dataset registry holds public datasets and adapters only. A registry entry with `source: repo` is ignored.
 - Disabling a person in Keycloak takes effect within about a minute, because the server synchronises users.
 

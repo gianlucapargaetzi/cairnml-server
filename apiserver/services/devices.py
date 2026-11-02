@@ -246,11 +246,13 @@ def git_token(call: APICall, company, request: GitTokenRequest):
     app = build_from_config()
     if request.repository:
         # A dataset is a repository the GitHub App is installed on, with a dataset.yaml at its root and a footprint that
-        # holds (see bll/dataset_access). A public repository is cloned without a token, so none is issued for it.
+        # holds (see bll/dataset_access). A public repository is cloned without a token: the answer has no token.
         repo = repo_of(request.repository)
         if repo is None:
             raise errors.bad_request.ValidationError("the repository is not on GitHub")
-        _refuse_if_public(repo, actor, company, claims, request.task, call)
+        public = _public_answer(repo, actor, company, claims, request.task, call)
+        if public is not None:
+            return public
         if app is None:
             raise errors.bad_request.ValidationError("GitHub is not configured")
         try:
@@ -271,7 +273,9 @@ def git_token(call: APICall, company, request: GitTokenRequest):
     repo = repo_of(repository)
     if repo is None:
         return _stored_token(company, actor, request.task, repository, client_address(call))
-    _refuse_if_public(repo, actor, company, claims, request.task, call)
+    public = _public_answer(repo, actor, company, claims, request.task, call)
+    if public is not None:
+        return public
     # GitHub: the App when it is set up and installed on the repository, else the Git credentials stored for it.
     if app is not None:
         try:
@@ -285,16 +289,17 @@ def git_token(call: APICall, company, request: GitTokenRequest):
     raise errors.bad_request.ValidationError(f"the GitHub App is not installed on {repo}")
 
 
-def _refuse_if_public(repo: str, actor: str, company, claims: dict, task_id: str, call: APICall) -> None:
-    """A public repository is cloned without a token: none is issued, and the App is not asked for it."""
+def _public_answer(repo: str, actor: str, company, claims: dict, task_id: str, call: APICall):
+    """The answer for a public repository: success with no token, since it is cloned without one. None when the
+    repository is not public. The App is not asked for a public repository."""
     try:
         public = public_repo(repo)
     except GitHubError:
         raise errors.bad_request.ValidationError("GitHub could not be reached") from None
-    if public:
-        audit(actor, "git_token.refused", ip=client_address(call), company=company, device=claims.get("device"), task=task_id, reason=f"{repo} is public")
-        raise errors.bad_request.ValidationError(
-            f"{repo} is a public repository: it is cloned without a token, so none is issued")
+    if not public:
+        return None
+    audit(actor, "git_token.public", ip=client_address(call), company=company, device=claims.get("device"), task=task_id, repo=repo)
+    return {"token": None, "expires_at": None, "username": None}
 
 
 def _github_token(app, repo: str, actor: str, task_id: str, ip=None, company=None) -> dict:

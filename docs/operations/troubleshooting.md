@@ -137,4 +137,3 @@ is the only sign of an old client, so look for it when a client behaves oddly af
 | `the GitHub App is not installed on <owner>/<repo>` | Install the App on that repository, with **Only select repositories** (README, section "Datasets"). |
 | `<owner>/<repo> is not a CairnML dataset: dataset.yaml is missing on its default branch` | The repository has no `dataset.yaml` at its root on its default branch. Commit the dataset to that branch, or do not expect it to be listed. |
 | `<owner>/<repo>@<commit> on <branch> does not pass its footprint check` | The dataset's data does not match its declared footprint. Run `cairnml dataset check` in the dataset repository, fix what it reports, and commit again. The repository is left out of the list until then. |
-| `<owner>/<repo> is a public repository: it is cloned without a token, so none is issued` | Not a fault: a public repository needs no token. The job clones it without one. |

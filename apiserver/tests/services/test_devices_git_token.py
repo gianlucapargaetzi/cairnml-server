@@ -63,16 +63,14 @@ def test_a_job_token_for_an_existing_task_gets_the_task_repository_token(monkeyp
     assert response["username"] == "x-access-token"
 
 
-def test_a_public_task_repository_gets_no_token(monkeypatch, job_token):
+def test_a_public_task_repository_gets_a_successful_answer_with_no_token(monkeypatch, job_token):
     monkeypatch.setattr(devices, "Task", SimpleNamespace(objects=FakeTasks(task())))
     github = FakeGitHub({"acme/proj": good_files()})
     use_github(monkeypatch, github, public={"acme/proj"})
 
-    with pytest.raises(errors.bad_request.ValidationError) as ctx:
-        devices.git_token(job_token, None, GitTokenRequest(task="t1"))
+    response = devices.git_token(job_token, None, GitTokenRequest(task="t1"))
 
-    assert "public repository" in str(ctx.value)
-    assert "cloned without a token" in str(ctx.value)
+    assert response == {"token": None, "expires_at": None, "username": None}
     assert github.token_requests == []
 
 
@@ -136,10 +134,9 @@ def test_a_public_repository_as_a_dataset_gets_no_token_and_the_app_is_not_asked
     github = FakeGitHub({"acme/open-data": good_files()})
     use_github(monkeypatch, github, public={"acme/open-data"})
 
-    with pytest.raises(errors.bad_request.ValidationError) as ctx:
-        devices.git_token(job_token, None, dataset_request("https://github.com/acme/open-data"))
+    response = devices.git_token(job_token, None, dataset_request("https://github.com/acme/open-data"))
 
-    assert "public repository" in str(ctx.value)
+    assert response["token"] is None
     assert github.token_requests == []
     assert github.reads == []
 
@@ -148,10 +145,9 @@ def test_a_public_dataset_without_the_app_needs_no_app_and_gets_no_token(monkeyp
     monkeypatch.setattr(devices, "Task", SimpleNamespace(objects=FakeTasks(task())))
     use_github(monkeypatch, None, public={"acme/open-data"})
 
-    with pytest.raises(errors.bad_request.ValidationError) as ctx:
-        devices.git_token(job_token, None, dataset_request("https://github.com/acme/open-data"))
+    response = devices.git_token(job_token, None, dataset_request("https://github.com/acme/open-data"))
 
-    assert "public repository" in str(ctx.value)
+    assert response["token"] is None
 
 
 def test_without_the_app_a_private_dataset_is_refused_as_not_configured(monkeypatch, job_token):

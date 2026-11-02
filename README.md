@@ -194,7 +194,7 @@ A dataset is a Git repository of its own, with a `dataset.yaml` at its root. Not
 
 - **Discovery.** The server lists the repositories the App is installed on, and keeps those whose default branch has a `dataset.yaml` at its root and whose footprint holds (`dataset.lock.json` against `data.dvc`). The Datasets page reads that list. A `DATASET.md` at the root of a dataset is shown as its description: it is text, cut to 20 KB, and never run.
 - **Access.** A job may get a read-only token for any repository the App is installed on that is a dataset. An installed repository without `dataset.yaml` is refused, with `<owner>/<repo> is not a CairnML dataset: dataset.yaml is missing on its default branch`.
-- **Public repositories.** A public repository is cloned without a token, by any job. It needs neither the App nor an installation.
+- **Public repositories.** A public repository gets no token, by any job: the server answers the token request with success and `token: null`, and the job clones the repository anonymously. It needs neither the App nor an installation.
 
 To make a dataset readable and listed, install the App on its repository, with **Only select repositories** (see [GitHub App](#github-app)). Whoever can install the App on a repository decides which datasets the server reads.
 
