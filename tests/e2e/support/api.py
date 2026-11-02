@@ -43,19 +43,32 @@ def make_assertion(key, device_id: str, audience: str, *, ttl: int = 60) -> str:
     return jwt.encode(claims, key, algorithm="EdDSA")
 
 
+# A token is not used in the last seconds of its life.
+TOKEN_REUSE_MARGIN_SEC = 30
+
+
 class Api:
-    """Calls the API as one device. Tokens are fetched per call, as the device would."""
+    """Calls the API as one device. A token is exchanged when none is held, or the held one is about to expire."""
+
+    _token = None
+    _token_expires = 0
 
     def __init__(self, device_id: str, key_path: Path, http=None):
         self.device_id = device_id
         self.key = load_device_key(key_path)
         self.http = http or requests.Session()
+        self.version = API_VERSION
 
-    def base(self, version: str = API_VERSION) -> str:
+    @property
+    def base(self) -> str:
+        return self.base_for(self.version)
+
+    @staticmethod
+    def base_for(version: str) -> str:
         return f"{settings.API_URL}/v{version}/"
 
-    def call(self, endpoint: str, body=None, *, token=None, raw_token=None, version: str = API_VERSION) -> dict:
-        base = self.base(version)
+    def call(self, endpoint: str, body=None, *, token=None, raw_token=None, version: str = None) -> dict:
+        base = self.base_for(version) if version else self.base
         headers = {}
         if raw_token is not None:
             headers["Authorization"] = raw_token
@@ -72,8 +85,14 @@ class Api:
         return payload.get("data", {})
 
     def token(self) -> str:
+        """The device's access token. It is reused until shortly before it expires: the server rate-limits the
+        exchange, and a test that makes many calls would otherwise exchange a new assertion for each one."""
+        if self._token and time.time() < self._token_expires - TOKEN_REUSE_MARGIN_SEC:
+            return self._token
         assertion = make_assertion(self.key, self.device_id, settings.API_URL)
-        return self.call("devices.exchange", {"assertion": assertion})["access_token"]
+        self._token = self.call("devices.exchange", {"assertion": assertion})["access_token"]
+        self._token_expires = jwt.decode(self._token, options={"verify_signature": False}).get("exp", 0)
+        return self._token
 
-    def authed(self, endpoint: str, body=None, *, version: str = API_VERSION) -> dict:
+    def authed(self, endpoint: str, body=None, *, version: str = None) -> dict:
         return self.call(endpoint, body, token=self.token(), version=version)

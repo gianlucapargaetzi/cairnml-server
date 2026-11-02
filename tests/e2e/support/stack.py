@@ -203,12 +203,7 @@ class IsolatedStack:
         for folder in ("data/idp", "data/rustfs", "data/mongo/db", "data/mongo/configdb", "data/redis",
                        "data/elastic", "data/logs", "secrets"):
             (self.state / folder).mkdir(parents=True, exist_ok=True)
-        for name in ("token_secret", "session_secret", "s3_secret_key"):
-            path = self.state / "secrets" / name
-            if self.reuse and path.exists():
-                continue  # a reused stack keeps its secrets: the server's tokens stay valid across sessions
-            path.write_text(secrets.token_urlsafe(48))
-            path.chmod(0o600)
+        self._write_missing_secrets()
         shutil.copy(STORAGE_SCRIPT, self.state / "init.py")
         self._write_nginx_template()
         self._write_realm()
@@ -301,10 +296,22 @@ class IsolatedStack:
                 return False
         return True
 
+    def _write_missing_secrets(self) -> None:
+        """The server's secrets. A reused stack keeps the ones it has, so the server's tokens stay valid across sessions;
+        a secret added since (git_credentials_key) is written at once, because a reused stack skips the rest of start."""
+        (self.state / "secrets").mkdir(parents=True, exist_ok=True)
+        for name in ("token_secret", "session_secret", "s3_secret_key", "git_credentials_key"):
+            path = self.state / "secrets" / name
+            if self.reuse and path.exists():
+                continue
+            path.write_text(secrets.token_urlsafe(48))
+            path.chmod(0o600)
+
     def start(self) -> None:
         self.configure_settings()
         self.fingerprint = source_fingerprint() if self.reuse else None
         if self.reuse and self.healthy() and self.started_from == self.fingerprint:
+            self._write_missing_secrets()
             return  # kept running from an earlier session, built from the same sources
         with self._start_lock():
             if self.reuse and self.healthy() and (self._read_saved() or {}).get("fingerprint") == self.fingerprint:

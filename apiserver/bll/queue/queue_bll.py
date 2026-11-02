@@ -41,13 +41,15 @@ class QueueBLL(object):
         system_tags: Optional[Sequence[str]] = None,
         metadata: Optional[dict] = None,
         public: bool = False,
+        created_by: Optional[str] = None,
     ) -> Queue:
-        """Creates a queue"""
+        """Creates a queue owned by 'created_by'"""
         with translate_errors_context():
             now = datetime.utcnow()
             queue = Queue(
                 id=database.utils.id(),
                 public=public,
+                created_by=created_by,
                 company=company_id,
                 created=now,
                 name=name,
