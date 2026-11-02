@@ -1,12 +1,17 @@
 """
-Who may use and allocate a queue.
+Who may see, use, manage and allocate a queue.
 
-- Admins (company admin or root) manage queues: create, update, delete, metadata and grants.
-- A queue is usable by a user when it is public, when the user holds a grant on it, or when it is allocated to a root
-  project the user owns or is a member of (in any role). Admins may use every queue.
+- Any company user may create a queue. The creator is its owner (`created_by`). Queues created before ownership have
+  no owner and stay admin-managed.
+- A user sees a queue when it is public, when they are its owner, when they hold a grant on it, or when it is allocated
+  to a root project they own or are a member of (in any role). Admins (company admin or root) see every queue.
+- A queue is usable (enqueue, dequeue, peek and the other task actions) by the same users who see it.
+- The owner manages the queue: update, delete, grants, metadata and the `public` flag. Admins manage every queue. A
+  public queue is visible and allocatable by every company user, and any user's agent may serve it.
 - A grant lets the user use the queue and allocate it to the root projects they own. Only the owner of a root project
   changes its allocations, and the owner may allocate only the queues they may use without admin rights: public
-  queues and queues they hold a grant on.
+  queues, queues they hold a grant on, and queues they own.
+- An agent may serve a queue only when it is public, its user owns it, holds a grant on it, or is an admin.
 """
 
 from typing import Iterable, Set
@@ -28,27 +33,35 @@ class QueueAccessBLL:
         return identity.role in _ADMIN_ROLES
 
     @staticmethod
-    def assert_admin(identity: Identity) -> None:
-        if not QueueAccessBLL.is_admin(identity):
-            raise errors.forbidden.NoWritePermission(
-                "only company admins can manage queues"
-            )
+    def is_owner(identity: Identity, queue: Queue) -> bool:
+        return bool(queue.created_by) and queue.created_by == identity.user
+
+    @staticmethod
+    def can_manage(identity: Identity, queue: Queue) -> bool:
+        """ Admins and the owner of the queue may update, delete, manage grants and metadata """
+        return QueueAccessBLL.is_admin(identity) or QueueAccessBLL.is_owner(identity, queue)
+
+    @staticmethod
+    def visible_root_query(identity: Identity) -> Q:
+        """ Root projects of the user's company that the user owns or is a member of (in any role) """
+        return (
+            Q(company=identity.company)
+            & Q(parent=None)
+            & (Q(user=identity.user) | Q(members__user=identity.user))
+        )
 
     @staticmethod
     def allocated_queue_ids(identity: Identity) -> Set[str]:
         """ Queues allocated to root projects the user owns or is a member of """
-        roots = Project.objects(
-            Q(company=identity.company)
-            & Q(parent=None)
-            & (Q(user=identity.user) | Q(members__user=identity.user))
-        ).only("queues")
+        roots = Project.objects(QueueAccessBLL.visible_root_query(identity)).only("queues")
         return {queue_id for root in roots for queue_id in root.queues}
 
     @staticmethod
     def usable_query(identity: Identity) -> Q:
-        """ Queues the user may use, without the admin exception """
+        """ Queues the user may see and use, without the admin exception """
         return (
             Q(public=True)
+            | Q(created_by=identity.user)
             | Q(users__user=identity.user)
             | Q(id__in=list(QueueAccessBLL.allocated_queue_ids(identity)))
         )
@@ -85,11 +98,53 @@ class QueueAccessBLL:
             raise errors.bad_request.InvalidQueueId(id=queue_id)
 
     @staticmethod
+    def assert_can_manage(identity: Identity, company_id: str, queue_id: str) -> None:
+        """
+        A queue the user may not see is reported as not found. A visible queue that the user does not own is refused.
+        """
+        if QueueAccessBLL.is_admin(identity):
+            return
+        queue = (
+            Queue.objects(company=company_id, id=queue_id)
+            .filter(QueueAccessBLL.visible_query(identity))
+            .only("id", "created_by")
+            .first()
+        )
+        if not queue:
+            raise errors.bad_request.InvalidQueueId(id=queue_id)
+        if not QueueAccessBLL.can_manage(identity, queue):
+            raise errors.forbidden.NoWritePermission(
+                "only the owner or a company admin can manage the queue"
+            )
+
+    @staticmethod
+    def assert_can_serve(identity: Identity, company_id: str, queue_ids: Iterable[str]) -> None:
+        """
+        An agent may serve a queue only when it is public, the user owns it, holds a grant on it, or is an admin.
+        :raise errors.bad_request.InvalidQueueId: for the queues the user may not serve
+        """
+        if identity is None:
+            raise errors.forbidden.NoWritePermission("the caller is not known")
+        if QueueAccessBLL.is_admin(identity):
+            return
+        queue_ids = set(queue_ids)
+        allowed = set(
+            Queue.objects(
+                Q(company=company_id, id__in=list(queue_ids))
+                & (Q(public=True) | Q(created_by=identity.user) | Q(users__user=identity.user))
+            ).scalar("id")
+        )
+        invalid = queue_ids - allowed
+        if invalid:
+            raise errors.bad_request.InvalidQueueId(ids=sorted(invalid))
+
+    @staticmethod
     def assignable_queue_ids(company_id: str, user_id: str) -> Set[str]:
-        """ What a project owner may allocate: public queues and queues granted to them, without admin rights """
+        """ What a project owner may allocate: public, granted and owned queues, without admin rights """
         return set(
             Queue.objects(
-                Q(company=company_id) & (Q(public=True) | Q(users__user=user_id))
+                Q(company=company_id)
+                & (Q(public=True) | Q(users__user=user_id) | Q(created_by=user_id))
             ).scalar("id")
         )
 
