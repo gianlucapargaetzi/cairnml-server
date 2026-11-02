@@ -1,3 +1,4 @@
+import re
 import time
 from types import SimpleNamespace
 from unittest import TestCase
@@ -41,6 +42,10 @@ class FakeHttp:
         for (m, suffix), reply in self.replies.items():
             if m == method and url.endswith(suffix):
                 return reply
+        # The anonymous check of a repository (is it public?) answers "not found": a private repository.
+        headers = kwargs.get("headers") or {}
+        if method == "GET" and "Authorization" not in headers and re.fullmatch(r"https://[^/]+/repos/[^/]+/[^/]+", url):
+            return Resp(404)
         raise AssertionError(f"unexpected {method} {url}")
 
 
@@ -60,7 +65,8 @@ class TestGitHubApp(TestCase):
         http = FakeHttp({INSTALL: Resp(404)})
         with self.assertRaises(RepoNotAccessible):
             app(http, pem).commit_exists("acme/proj", "abc123")
-        auth = http.requests[0][2]["headers"]["Authorization"]
+        # the first request is the public check (no token); the installation lookup is the one signed with the App key
+        auth = next(kw["headers"]["Authorization"] for _m, url, kw in http.requests if url.endswith("/installation"))
         claims = jwt.decode(auth.split(" ", 1)[1], public, algorithms=["RS256"], options={"verify_aud": False, "verify_exp": False})
         self.assertEqual(claims["iss"], "123")
 

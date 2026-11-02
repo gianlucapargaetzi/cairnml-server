@@ -14,7 +14,7 @@ from apiserver.apimodels.devices import (
     ReassignRequest,
     RevokeRequest,
 )
-from apiserver.bll.dataset_registry import allowed_repositories
+from apiserver.bll.dataset_registry import allowed_repositories, configured_registries
 from apiserver.config_repo import config
 from apiserver.database.model.auth import Role, User
 from apiserver.database.model.device import Device, DeviceKind
@@ -252,7 +252,7 @@ def git_token(call: APICall, company, request: GitTokenRequest):
         if repo is None:
             raise errors.bad_request.ValidationError("the repository is not on GitHub")
         try:
-            registered = allowed_repositories(app, config.get("apiserver.dataset_registry.repository", ""))
+            registered = set().union(*(allowed_repositories(app, r) for r in configured_registries()))
         except GitHubError:
             raise errors.bad_request.ValidationError("the dataset registry could not be read") from None
         if repo.lower() not in registered:
