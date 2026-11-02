@@ -19,13 +19,16 @@ from apiserver.apimodels.queues import (
     UpdateRequest,
     UserRequest,
 )
+from apiserver.apimodels.tasks import DequeueRequest
 from apiserver.bll.queue.queue_access import QueueAccessBLL
 from apiserver.database.model.auth import Role, User
 from apiserver.database.model.project import Project, ProjectMember, ProjectRole, ProjectVisibility
-from apiserver.database.model.queue import Queue, QueueUser
+from apiserver.database.model.queue import Entry, Queue, QueueUser
+from apiserver.database.model.task.task import Execution, Task, TaskStatus
 from apiserver.service_repo.auth import Identity
 from apiserver.services import project_access as project_svc
 from apiserver.services import queues as svc
+from apiserver.services import tasks as tasks_svc
 from apiserver.tests.db import ensure_db
 from apiserver.utilities.partial_version import PartialVersion
 
@@ -534,3 +537,90 @@ def test_a_user_token_is_not_limited_by_the_agent_rule():
     from apiserver.service_repo.validators import validate_role
 
     validate_role(_endpoint("projects.add_member"), AgentCall("projects.add_member", "web"))
+
+
+# --- projects of a queue ------------------------------------------------------
+
+def projects_of(company, ident, queue_id):
+    call = FakeCall(ident)
+    svc.get_projects(call, company, QueueRequest(queue=queue_id))
+    return {p["id"]: p["name"] for p in call.result.data["projects"]}
+
+
+def test_the_owner_sees_the_projects_of_their_queue_that_they_own(company):
+    queue = make_queue(company, created_by="owner")
+    mine = make_root(company, owner="owner", queues=[queue.id])
+    make_root(company, owner="other", queues=[queue.id])
+    assert set(projects_of(company, identity(company, "owner"), queue.id)) == {mine.id}
+
+
+def test_a_root_project_member_sees_only_the_projects_they_are_in(company):
+    queue = make_queue(company, created_by="queue-owner")
+    mine = make_root(company, owner="owner1", members=[("member", ProjectRole.read)], queues=[queue.id])
+    other = make_root(company, owner="owner2", members=[("someone", ProjectRole.read_write)], queues=[queue.id])
+    result = projects_of(company, identity(company, "member"), queue.id)
+    assert set(result) == {mine.id}
+    assert other.name not in result.values()
+
+
+def test_an_admin_sees_every_root_project_allocated_to_the_queue(company):
+    queue = make_queue(company, created_by="queue-owner")
+    first = make_root(company, owner="owner1", queues=[queue.id])
+    second = make_root(company, owner="owner2", queues=[queue.id])
+    result = projects_of(company, identity(company, "a1", Role.admin), queue.id)
+    assert set(result) == {first.id, second.id}
+
+
+def test_projects_of_a_queue_the_user_cannot_use_are_refused(company):
+    queue = make_queue(company, created_by="owner")
+    make_root(company, owner="owner", queues=[queue.id])
+    with pytest.raises(errors.bad_request.InvalidQueueId):
+        svc.get_projects(FakeCall(identity(company, "stranger")), company, QueueRequest(queue=queue.id))
+
+
+def test_child_projects_are_not_returned_as_queue_projects(company):
+    queue = make_queue(company, created_by="owner")
+    root = make_root(company, owner="owner", queues=[queue.id])
+    Project(
+        id=uuid4().hex, company=company, user="owner", name="child", basename="child",
+        created=datetime.utcnow(), visibility=ProjectVisibility.private, parent=root.id, queues=[queue.id],
+    ).save()
+    assert set(projects_of(company, identity(company, "owner"), queue.id)) == {root.id}
+    assert set(projects_of(company, identity(company, "a1", Role.admin), queue.id)) == {root.id}
+
+
+# --- dequeue -----------------------------------------------------------------
+
+def make_queued_task(company, queue, owner, task_id):
+    now = datetime.utcnow()
+    task = Task(
+        id=task_id, company=company, user=owner, name=task_id, type="training", created=now,
+        status=TaskStatus.queued, execution=Execution(queue=queue.id),
+    )
+    task.save()
+    Queue.objects(id=queue.id).update_one(push__entries=Entry(task=task_id, added=now))
+    return task
+
+
+def test_dequeue_of_a_task_in_a_queue_the_caller_can_no_longer_use_is_refused(company):
+    queue = make_queue(company, created_by="owner", users=["u2"])
+    Queue.objects(id=queue.id).update(set__users=[])
+    make_queued_task(company, queue, "u2", "task-refused")
+    with pytest.raises(errors.bad_request.InvalidQueueId):
+        tasks_svc.dequeue(FakeCall(identity(company, "u2")), company, DequeueRequest(task="task-refused"))
+    assert Task.objects(id="task-refused").first().status == TaskStatus.queued
+    assert [e.task for e in Queue.objects(id=queue.id).first().entries] == ["task-refused"]
+
+
+@pytest.mark.needs_redis
+def test_dequeue_of_a_task_in_a_queue_the_caller_can_use_works(company, monkeypatch):
+    from apiserver.bll.queue.queue_metrics import QueueMetrics
+
+    # the queue metrics go to Elasticsearch, which this check does not need
+    monkeypatch.setattr(QueueMetrics, "log_queue_metrics_to_es", lambda self, company_id, queues: 0)
+    queue = make_queue(company, created_by="owner", users=["u2"])
+    make_queued_task(company, queue, "u2", "task-usable")
+    call = FakeCall(identity(company, "u2"))
+    tasks_svc.dequeue(call, company, DequeueRequest(task="task-usable"))
+    assert call.result.data_model.dequeued == 1
+    assert Queue.objects(id=queue.id).first().entries == []

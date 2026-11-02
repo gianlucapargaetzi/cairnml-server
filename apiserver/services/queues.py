@@ -97,6 +97,19 @@ def _hidden_query(data: dict) -> Q:
     return Q(system_tags__nin=hidden_tags)
 
 
+@endpoint("queues.get_projects", min_version="2.4")
+def get_projects(call: APICall, company_id, request: QueueRequest):
+    """ Root projects the queue is allocated to. Admins see all of them, others only the ones they own or are in """
+    QueueAccessBLL.assert_can_use(call.identity, company_id, request.queue)
+    query = Q(company=company_id) & Q(parent=None) & Q(queues=request.queue)
+    if not QueueAccessBLL.is_admin(call.identity):
+        query &= QueueAccessBLL.visible_root_query(call.identity)
+    projects = Project.objects(query).only("id", "name")
+    call.result.data = {
+        "projects": [{"id": project.id, "name": project.name} for project in projects]
+    }
+
+
 @endpoint("queues.get_all_ex", min_version="2.4")
 def get_all_ex(call: APICall, company: str, request: GetAllRequest):
     conform_tag_fields(call, call.data)

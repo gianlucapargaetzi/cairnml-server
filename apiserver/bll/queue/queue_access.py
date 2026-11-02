@@ -42,13 +42,18 @@ class QueueAccessBLL:
         return QueueAccessBLL.is_admin(identity) or QueueAccessBLL.is_owner(identity, queue)
 
     @staticmethod
-    def allocated_queue_ids(identity: Identity) -> Set[str]:
-        """ Queues allocated to root projects the user owns or is a member of """
-        roots = Project.objects(
+    def visible_root_query(identity: Identity) -> Q:
+        """ Root projects of the user's company that the user owns or is a member of (in any role) """
+        return (
             Q(company=identity.company)
             & Q(parent=None)
             & (Q(user=identity.user) | Q(members__user=identity.user))
-        ).only("queues")
+        )
+
+    @staticmethod
+    def allocated_queue_ids(identity: Identity) -> Set[str]:
+        """ Queues allocated to root projects the user owns or is a member of """
+        roots = Project.objects(QueueAccessBLL.visible_root_query(identity)).only("queues")
         return {queue_id for root in roots for queue_id in root.queues}
 
     @staticmethod
