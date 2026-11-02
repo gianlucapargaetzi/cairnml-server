@@ -342,9 +342,9 @@ brotli==1.2.1 \
     --hash=sha256:fb6a4d400aa531c73a718b337116fad77ba8dc6df34fa615c808bfc55ffb19ca \
     --hash=sha256:ff02e697d947f518e9e99f2b25698045a5ddffa95049c4d95b5a8cf3618d9008
     # via flask-compress
-cairnml==0.0.1 \
-    --hash=sha256:19993e64c24d838d550392a334f6476615d25ed5e63fb72a4b5559e0e06c9553 \
-    --hash=sha256:b41dd37d4775ffcd1564dcaad96bbde33bb3e3c582edb5c183b040a015e6aa5b
+cairnml==0.0.2 \
+    --hash=sha256:e124df0bc30e821f47d7e60224a8caf0b6d7c29d8b824c0bb6e4fd7a3c4de9d6 \
+    --hash=sha256:d452ca88b375c894f2d38ea26c568d8ffa5a20b913ac40a6108ca623cdfd497e
     # via -r apiserver/requirements.txt
 cairnml-agent==0.0.1 \
     --hash=sha256:4633a74ca19f329e443cb9e1f008d64d894545d4edf0397cd8143c00f51d5f3d \
