@@ -43,8 +43,15 @@ def make_assertion(key, device_id: str, audience: str, *, ttl: int = 60) -> str:
     return jwt.encode(claims, key, algorithm="EdDSA")
 
 
+# A token is not used in the last seconds of its life.
+TOKEN_REUSE_MARGIN_SEC = 30
+
+
 class Api:
-    """Calls the API as one device. Tokens are fetched per call, as the device would."""
+    """Calls the API as one device. A token is exchanged when none is held, or the held one is about to expire."""
+
+    _token = None
+    _token_expires = 0
 
     def __init__(self, device_id: str, key_path: Path, http=None):
         self.device_id = device_id
@@ -74,8 +81,14 @@ class Api:
         return payload.get("data", {})
 
     def token(self) -> str:
+        """The device's access token. It is reused until shortly before it expires: the server rate-limits the
+        exchange, and a test that makes many calls would otherwise exchange a new assertion for each one."""
+        if self._token and time.time() < self._token_expires - TOKEN_REUSE_MARGIN_SEC:
+            return self._token
         assertion = make_assertion(self.key, self.device_id, settings.API_URL)
-        return self.call("devices.exchange", {"assertion": assertion})["access_token"]
+        self._token = self.call("devices.exchange", {"assertion": assertion})["access_token"]
+        self._token_expires = jwt.decode(self._token, options={"verify_signature": False}).get("exp", 0)
+        return self._token
 
     def authed(self, endpoint: str, body=None) -> dict:
         return self.call(endpoint, body, token=self.token())
