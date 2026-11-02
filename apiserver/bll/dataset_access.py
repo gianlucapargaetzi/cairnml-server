@@ -9,7 +9,6 @@ A public repository needs no App and no token: it is cloned without one, so this
 """
 
 import json
-import logging
 
 from apiserver.apierrors import errors
 from apiserver.idp.github import GitHubApp, GitHubError, RepoNotAccessible
@@ -18,11 +17,15 @@ from cairnml.datasets import footprint
 ADAPTER_MAX_BYTES = 1024 * 1024  # adapter.py comes from an untrusted repository: it is read only up to this size
 DESCRIPTION_FILE = "DATASET.md"
 DESCRIPTION_MAX_BYTES = 20 * 1024  # DATASET.md is text for the dataset view only; longer text is cut
-log = logging.getLogger(__name__)
 
 
 class NotADataset(errors.bad_request.ValidationError):
     """The repository is installed, but its default branch has no dataset.yaml at its root."""
+
+
+class GitHubUnreadable(errors.bad_request.ValidationError):
+    """GitHub could not be read for the repository now (unreachable, rate-limited, an installation that cannot be read).
+    Unlike a footprint that does not hold, this says nothing about the repository itself, so a refresh keeps its entry."""
 
 
 def _is_local_adapter(config_text):
@@ -81,7 +84,7 @@ def verify_dataset(app: GitHubApp, repo: str) -> tuple:
     except RepoNotAccessible:
         raise errors.bad_request.ValidationError(f"the GitHub App is not installed on {repo}") from None
     except GitHubError as exc:
-        raise errors.bad_request.ValidationError(f"GitHub could not be read for {repo}: {exc}") from None
+        raise GitHubUnreadable(f"GitHub could not be read for {repo}: {exc}") from None
     problems = footprint.verify_files(files, sizes)
     if problems:
         raise errors.bad_request.ValidationError(
@@ -108,29 +111,22 @@ def description_of(app: GitHubApp, repo: str, head: str):
     return raw[:DESCRIPTION_MAX_BYTES].decode("utf-8", "replace"), len(raw) > DESCRIPTION_MAX_BYTES
 
 
-def list_datasets(app: GitHubApp) -> list:
-    """Every repository the App is installed on that is a valid dataset, by repository name.
+def dataset_entry(app: GitHubApp, repo: str) -> dict:
+    """The list entry of one installed repository that is a dataset: the fields datasets.list shows.
 
-    A repository without dataset.yaml is not a dataset and is not listed. One whose footprint does not hold, or that
-    cannot be read now, is left out with a logged warning, so one bad repository does not hide the others.
+    Raises NotADataset when dataset.yaml is missing at its root, GitHubUnreadable when GitHub cannot be read now, and a
+    validation error when the footprint does not hold. See bll/dataset_cache for what a refresh does with each.
     """
-    datasets = []
-    for installed in app.installed_repositories():
-        repo = installed["repository"]
-        try:
-            branch, head, lock = verify_dataset(app, repo)
-            description, truncated = description_of(app, repo, head)
-        except NotADataset:
-            continue
-        except (errors.bad_request.ValidationError, GitHubError) as exc:
-            log.warning("the dataset repository %s is left out of the list: %s", repo, exc)
-            continue
-        datasets.append({
-            "repository": repo,
-            "default_branch": branch,
-            "head_commit": head,
-            "footprint": footprint_summary(lock),
-            "description": description,
-            "description_truncated": truncated,
-        })
-    return sorted(datasets, key=lambda dataset: dataset["repository"].lower())
+    branch, head, lock = verify_dataset(app, repo)
+    try:
+        description, truncated = description_of(app, repo, head)
+    except GitHubError as exc:
+        raise GitHubUnreadable(f"GitHub could not be read for {repo}: {exc}") from None
+    return {
+        "repository": repo,
+        "default_branch": branch,
+        "head_commit": head,
+        "footprint": footprint_summary(lock),
+        "description": description,
+        "description_truncated": truncated,
+    }

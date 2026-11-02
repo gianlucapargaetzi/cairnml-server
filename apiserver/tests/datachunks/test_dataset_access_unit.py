@@ -3,12 +3,10 @@
 Run inside the server image: python -m unittest apiserver.tests.datachunks.test_dataset_access_unit
 """
 
-from types import SimpleNamespace
 from unittest import TestCase
 
 from apiserver.apierrors import errors
 from apiserver.bll import dataset_access as bll
-from apiserver.idp.github import GitHubError
 from apiserver.tests.datachunks.dataset_fakes import ADAPTER, DVC, HEAD, FakeGitHub, good_files, local_files
 from cairnml.datasets import footprint as fp
 
@@ -94,116 +92,33 @@ class TestLocalAdapter(TestCase):
         self.assertEqual([path for _repo, path, _ref in github.reads if path == fp.ADAPTER_FILE], [])
 
 
-class TestListDatasets(TestCase):
-    def test_only_installed_repositories_with_a_dataset_yaml_and_a_holding_footprint_are_listed(self):
-        github = FakeGitHub({
-            "acme/cars": good_files(),
-            "acme/notes": {"README.md": b"not a dataset"},
-            "acme/broken": good_files(dvc=DVC.replace("2048", "4096")),
-        })
-        with self.assertLogs("apiserver.bll.dataset_access", level="WARNING") as logs:
-            datasets = bll.list_datasets(github)
-        self.assertEqual([d["repository"] for d in datasets], ["acme/cars"])
-        self.assertIn("acme/broken", "".join(logs.output))
-
-    def test_each_dataset_has_its_head_commit_branch_and_footprint_summary(self):
-        github = FakeGitHub({"acme/cars": good_files(labels={"class": "class", "color": "text"})})
-        dataset, = bll.list_datasets(github)
-        self.assertEqual(dataset["repository"], "acme/cars")
-        self.assertEqual(dataset["default_branch"], "main")
-        self.assertEqual(dataset["head_commit"], HEAD)
-        self.assertEqual(dataset["footprint"], {"format": "native", "samples": 3,
-                                                "labels": {"class": "class", "color": "text"}})
-
-    def test_the_list_is_sorted_by_repository_name(self):
-        github = FakeGitHub({"acme/zeta": good_files(), "Acme/alpha": good_files(), "acme/mid": good_files()})
-        self.assertEqual([d["repository"] for d in bll.list_datasets(github)],
-                         ["Acme/alpha", "acme/mid", "acme/zeta"])
-
-    def test_a_repository_that_cannot_be_read_now_is_left_out_and_the_others_are_listed(self):
-        github = FakeGitHub({"acme/cars": good_files(), "acme/down": good_files()})
-        github.failing.add("acme/down")
-        with self.assertLogs("apiserver.bll.dataset_access", level="WARNING"):
-            self.assertEqual([d["repository"] for d in bll.list_datasets(github)], ["acme/cars"])
-
-    def test_no_installed_repository_gives_an_empty_list(self):
-        self.assertEqual(bll.list_datasets(FakeGitHub({})), [])
-
-
 class TestDatasetDescription(TestCase):
     def test_dataset_md_is_returned_when_the_repository_has_one(self):
         github = FakeGitHub({COARS: {**good_files(), "DATASET.md": b"# Cars\n\nPhotos of cars.\n"}})
-        dataset, = bll.list_datasets(github)
+        dataset = bll.dataset_entry(github, COARS)
         self.assertEqual(dataset["description"], "# Cars\n\nPhotos of cars.\n")
         self.assertFalse(dataset["description_truncated"])
 
     def test_dataset_md_is_capped_at_20_kb(self):
         text = b"x" * (30 * 1024)
         github = FakeGitHub({COARS: {**good_files(), "DATASET.md": text}})
-        dataset, = bll.list_datasets(github)
+        dataset = bll.dataset_entry(github, COARS)
         self.assertEqual(len(dataset["description"].encode()), bll.DESCRIPTION_MAX_BYTES)
         self.assertEqual(dataset["description"], "x" * bll.DESCRIPTION_MAX_BYTES)
         self.assertTrue(dataset["description_truncated"])
 
     def test_dataset_md_of_exactly_20_kb_is_not_marked_as_truncated(self):
         github = FakeGitHub({COARS: {**good_files(), "DATASET.md": b"y" * bll.DESCRIPTION_MAX_BYTES}})
-        dataset, = bll.list_datasets(github)
+        dataset = bll.dataset_entry(github, COARS)
         self.assertEqual(len(dataset["description"]), bll.DESCRIPTION_MAX_BYTES)
         self.assertFalse(dataset["description_truncated"])
 
     def test_a_missing_dataset_md_is_not_an_error(self):
-        dataset, = bll.list_datasets(FakeGitHub({COARS: good_files()}))
+        dataset = bll.dataset_entry(FakeGitHub({COARS: good_files()}), COARS)
         self.assertIsNone(dataset["description"])
         self.assertFalse(dataset["description_truncated"])
 
     def test_dataset_md_is_read_at_the_head_commit_of_the_default_branch(self):
         github = FakeGitHub({COARS: {**good_files(), "DATASET.md": b"text"}})
-        bll.list_datasets(github)
+        bll.dataset_entry(github, COARS)
         self.assertIn((COARS, "DATASET.md", HEAD), github.reads)
-
-
-class TestDatasetsListEndpoint(TestCase):
-    """datasets.list: the service answers with the datasets of the App, and an empty list without an App."""
-
-    def call(self):
-        return SimpleNamespace(result=SimpleNamespace(data=None))
-
-    def test_the_endpoint_lists_the_datasets_of_the_app(self):
-        from apiserver.services import datasets as service
-
-        github = FakeGitHub({COARS: good_files(), "acme/notes": {"README.md": b"x"}})
-        original = service.build_from_config
-        service.build_from_config = lambda: github
-        try:
-            call = self.call()
-            service.list_datasets(call, "company", None)
-        finally:
-            service.build_from_config = original
-        self.assertEqual([d["repository"] for d in call.result.data["datasets"]], [COARS])
-
-    def test_without_the_app_no_dataset_is_listed(self):
-        from apiserver.services import datasets as service
-
-        original = service.build_from_config
-        service.build_from_config = lambda: None
-        try:
-            call = self.call()
-            service.list_datasets(call, "company", None)
-        finally:
-            service.build_from_config = original
-        self.assertEqual(call.result.data, {"datasets": []})
-
-    def test_a_github_failure_while_listing_is_a_bad_request(self):
-        from apiserver.services import datasets as service
-
-        class Down(FakeGitHub):
-            def installed_repositories(self):
-                raise GitHubError("installations listing failed: 502")
-
-        original = service.build_from_config
-        service.build_from_config = lambda: Down()
-        try:
-            with self.assertRaisesRegex(errors.bad_request.ValidationError, "GitHub request failed"):
-                service.list_datasets(self.call(), "company", None)
-        finally:
-            service.build_from_config = original
