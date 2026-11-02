@@ -20,6 +20,19 @@ def good_files(dvc=DVC):
     return {fp.DVC_FILE: dvc.encode(), fp.CONFIG_FILE: b"format: native\n", fp.LOCK_FILE: json.dumps(lock).encode()}
 
 
+ADAPTER = b"class Adapter:\n    pass\n"
+
+
+def local_files(adapter=ADAPTER, lock_adapter=ADAPTER):
+    """A local dataset: dataset.yaml says adapter: local, and the lock was checked with ``lock_adapter``."""
+    fmt = {"kind": "local", "name": "local", "adapter_sha256": fp.sha256_bytes(lock_adapter)}
+    lock = fp.build_lock(fp.parse_dvc_file(DVC), fmt, 3, {"image": "image"}, {"class": "class"}, "2.1.13")
+    files = {fp.DVC_FILE: DVC.encode(), fp.CONFIG_FILE: b"adapter: local\n", fp.LOCK_FILE: json.dumps(lock).encode()}
+    if adapter is not None:
+        files[fp.ADAPTER_FILE] = adapter
+    return files
+
+
 class FakeApp:
     """Just enough of the GitHub App client: one dataset repository and one registry."""
 
@@ -32,6 +45,8 @@ class FakeApp:
         self.opened = []
         self.folder_reads = 0
         self.github_down = False
+        self.tree_overrides = {}  # sizes that the tree lists on top of the files, for example a size GitHub reports
+        self.reads = []  # every path read from the dataset repository, at the ref it was read at
 
     def default_branch_head(self, repo):
         if not self.installed:
@@ -41,10 +56,15 @@ class FakeApp:
     def read_file(self, repo, path, ref=None):
         if repo == "acme/registry":
             return self.entries.get(path.split("/", 1)[1], None) and self.entries[path.split("/", 1)[1]].encode()
+        self.reads.append((path, ref))
         return self.files.get(path)
 
     def tree_sizes(self, repo, ref):
-        return {"data.dvc": 120, "dataset.yaml": 20, "dataset.lock.json": 400}
+        sizes = {"data.dvc": 120, "dataset.yaml": 20, "dataset.lock.json": 400}
+        if self.files.get(fp.ADAPTER_FILE) is not None:
+            sizes[fp.ADAPTER_FILE] = len(self.files[fp.ADAPTER_FILE])
+        sizes.update(self.tree_overrides)
+        return sizes
 
     def list_dir(self, repo, path, ref=None):
         return list(self.entries)
@@ -226,3 +246,70 @@ class TestListEntries(TestCase):
         app.github_down = True
         with self.assertRaises(GitHubError):
             bll.list_entries(app=app, registry="acme/registry")
+
+
+class TestLocalAdapter(TestCase):
+    """A dataset with adapter: local: the server reads adapter.py at the registered commit and the footprint checks its hash."""
+
+    def test_a_local_dataset_whose_adapter_has_the_checked_hash_is_registered(self):
+        app = FakeApp(files=local_files())
+        result = register(app)
+        self.assertEqual(result["name"], "cars-data")
+        self.assertEqual(len(app.opened), 1)
+        self.assertIn((fp.ADAPTER_FILE, HEAD), app.reads)
+
+    def test_a_changed_adapter_is_refused_and_the_message_names_it(self):
+        app = FakeApp(files=local_files(adapter=b"class Adapter:\n    changed = True\n", lock_adapter=ADAPTER))
+        with self.assertRaisesRegex(errors.bad_request.ValidationError, "adapter.py"):
+            register(app)
+        self.assertEqual(app.opened, [])
+
+    def test_a_missing_adapter_is_refused_and_the_message_names_it(self):
+        app = FakeApp(files=local_files(adapter=None))
+        with self.assertRaisesRegex(errors.bad_request.ValidationError, "adapter.py is missing"):
+            register(app)
+        self.assertEqual(app.opened, [])
+
+    def test_an_adapter_over_the_size_limit_is_refused_before_it_is_read(self):
+        big = b"#" * (bll.ADAPTER_MAX_BYTES + 1)
+        app = FakeApp(files=local_files(adapter=big))
+        with self.assertRaisesRegex(errors.bad_request.ValidationError, "adapter.py .* may be at most"):
+            register(app)
+        self.assertNotIn((fp.ADAPTER_FILE, HEAD), app.reads)
+        self.assertEqual(app.opened, [])
+
+    def test_an_adapter_that_the_tree_lists_small_but_that_is_large_is_refused(self):
+        app = FakeApp(files=local_files(adapter=b"#" * (bll.ADAPTER_MAX_BYTES + 1)))
+        app.tree_overrides = {fp.ADAPTER_FILE: 10}
+        with self.assertRaisesRegex(errors.bad_request.ValidationError, "adapter.py .* may be at most"):
+            register(app)
+        self.assertEqual(app.opened, [])
+
+    def test_an_adapter_at_the_size_limit_is_read(self):
+        app = FakeApp(files=local_files(adapter=b"#" * bll.ADAPTER_MAX_BYTES, lock_adapter=b"#" * bll.ADAPTER_MAX_BYTES))
+        register(app)
+        self.assertEqual(len(app.opened), 1)
+
+    def test_a_native_dataset_does_not_read_an_adapter(self):
+        app = FakeApp()
+        register(app)
+        self.assertEqual([path for path, _ref in app.reads if path == fp.ADAPTER_FILE], [])
+        self.assertEqual(len(app.opened), 1)
+
+    def test_a_registry_adapter_dataset_does_not_read_an_adapter(self):
+        files = good_files()
+        lock = fp.build_lock(fp.parse_dvc_file(DVC), {"kind": "adapter", "name": "coco", "registry": "acme/adapters",
+                                                      "registry_commit": "b" * 40}, 3, {"image": "image"},
+                             {"class": "class"}, "2.1.13")
+        files[fp.CONFIG_FILE] = b"adapter: coco\nregistry: acme/adapters\n"
+        files[fp.LOCK_FILE] = json.dumps(lock).encode()
+        app = FakeApp(files=files)
+        register(app)
+        self.assertEqual([path for path, _ref in app.reads if path == fp.ADAPTER_FILE], [])
+        self.assertEqual(len(app.opened), 1)
+
+    def test_a_native_dataset_with_an_adapter_at_the_top_is_refused_as_before(self):
+        files = good_files()
+        files[fp.ADAPTER_FILE] = ADAPTER
+        with self.assertRaisesRegex(errors.bad_request.ValidationError, "adapter.py is tracked by git"):
+            register(FakeApp(files=files))
