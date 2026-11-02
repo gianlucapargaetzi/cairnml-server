@@ -214,6 +214,7 @@ services:
       # The registry is also the list of dataset repositories a job may clone: nothing else lists them.
       CAIRNML__apiserver__dataset_registry__repository: ${CAIRNML_DATASET_REGISTRY:-}
       CAIRNML__apiserver__dataset_registry__allowed_owners: ${CAIRNML_DATASET_OWNERS:-[]}
+      CAIRNML__apiserver__dataset_registry__repositories: ${CAIRNML_DATASET_REGISTRIES:-[]}
       CAIRNML__services__async_urls_delete__enabled: "true"
       # Object storage: internal address for the server's own calls. The public address that presigned URLs name is the
       # address the client used (port 9000); CAIRNML_STORAGE_PUBLIC_URL overrides it.

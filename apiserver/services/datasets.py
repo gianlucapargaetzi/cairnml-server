@@ -2,7 +2,7 @@
 
 from apiserver.apierrors import errors
 from apiserver.bll import dataset_details as bll
-from apiserver.config_repo import config
+from apiserver.bll import dataset_registry as registry_bll
 from apiserver.idp.github import GitHubError
 from apiserver.idp.github_check import build_from_config
 from apiserver.service_repo import APICall, endpoint
@@ -18,7 +18,7 @@ def get_details(call: APICall, _company: str, _request):
         call.result.data = bll.details(
             app,
             repository=request.get("repository"),
-            registry=config.get("apiserver.dataset_registry.repository", ""),
+            registries=registry_bll.configured_registries(),
             registry_name=request.get("registry_name"),
             commit=request.get("commit"),
         )

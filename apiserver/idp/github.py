@@ -22,6 +22,9 @@ class GitHubError(Exception):
     pass
 
 
+_ANONYMOUS = {"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"}
+
+
 class RepoNotAccessible(GitHubError):
     pass
 
@@ -46,6 +49,7 @@ class GitHubApp:
         self._clock = clock
         self._installations: dict[str, int] = {}
         self._tokens: dict[str, InstallationToken] = {}
+        self._public: dict[str, bool] = {}
 
     def _send(self, method: str, url: str, **kwargs):
         try:
@@ -102,8 +106,7 @@ class GitHubApp:
 
     def commit_exists(self, repo: str, sha: str) -> bool:
         """True when GitHub has the commit; False when it does not; GitHubError when the check itself fails."""
-        token = self.installation_token(repo).token
-        response = self._send("GET", f"{self._api}/repos/{repo}/commits/{sha}", headers=self._headers(token))
+        response = self._send("GET", f"{self._api}/repos/{repo}/commits/{sha}", headers=self._read_headers(repo))
         if response.status_code in (404, 422):
             return False
         if response.status_code != 200:
@@ -112,7 +115,16 @@ class GitHubApp:
 
     # What dataset registration needs: reading a repository's files, and a pull request into the registry.
 
+    def _is_public(self, repo: str) -> bool:
+        """True when GitHub shows the repository to anyone without a token. Such a repository is read without the App."""
+        if repo not in self._public:
+            response = self._send("GET", f"{self._api}/repos/{repo}", headers=_ANONYMOUS)
+            self._public[repo] = response.status_code == 200 and response.json().get("private") is False
+        return self._public[repo]
+
     def _read_headers(self, repo: str) -> dict:
+        if self._is_public(repo):
+            return _ANONYMOUS
         return self._headers(self.installation_token(repo).token)
 
     def default_branch_head(self, repo: str) -> tuple:
@@ -165,6 +177,17 @@ class GitHubApp:
         Returns an empty dict when there is no such folder. Files that are not text, or too large to come back whole,
         are left out.
         """
+        if self._is_public(repo):
+            # The GraphQL endpoint needs a token; a public repository is read file by file instead.
+            texts = {}
+            for name in self.list_dir(repo, path):
+                content = self.read_file(repo, f"{path}/{name}")
+                if content is not None:
+                    try:
+                        texts[name] = content.decode("utf-8")
+                    except UnicodeDecodeError:
+                        continue
+            return texts
         owner, name = repo.split("/", 1)
         query = (
             "query($owner: String!, $name: String!, $expr: String!) { repository(owner: $owner, name: $name) "

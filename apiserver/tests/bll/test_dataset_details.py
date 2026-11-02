@@ -67,7 +67,7 @@ class TestDatasetDetails(TestCase):
         try:
             app = FakeApp(files={("head-sha", "metadata/cifar10.json"): json.dumps(
                 {"modalities": {"image": "image"}, "labels": {"class": "class"}, "splits": {"train": 50000}}).encode()})
-            details = bll.registry_details(app, "acme/registry", "cifar10")
+            details = bll.registry_details(app, ["acme/registry"], "cifar10")
         finally:
             bll.registry_bll.list_entries = original
         self.assertEqual(details["kind"], "registry")
@@ -77,9 +77,29 @@ class TestDatasetDetails(TestCase):
 
     def test_owner_and_name_are_accepted_as_well(self):
         app = FakeApp(files={("head-sha", "DATASET.md"): b"text"})
-        details = bll.details(app, repository="acme/greenhouse", registry="", registry_name=None, commit=None)
+        details = bll.details(app, repository="acme/greenhouse", registries=[], registry_name=None, commit=None)
         self.assertEqual(details["repository"], "acme/greenhouse")
+
+    def test_a_dataset_is_found_in_a_later_registry_when_the_first_lacks_it(self):
+        from apiserver.idp.github import GitHubError
+        original = bll.registry_bll.list_entries
+
+        def entries(app, registry):
+            if registry == "acme/private":
+                raise GitHubError("not accessible")
+            if registry == "acme/public":
+                return [{"name": "cars", "source": "web", "link": "https://example.org/cars"}]
+            return []
+
+        bll.registry_bll.list_entries = entries
+        try:
+            app = FakeApp(files={("head-sha", "metadata/cars.json"): json.dumps(
+                {"modalities": {"image": "image"}, "labels": {}, "splits": {"train": 3}}).encode()})
+            details = bll.registry_details(app, ["acme/private", "acme/public"], "cars")
+        finally:
+            bll.registry_bll.list_entries = original
+        self.assertEqual(details["link"], "https://example.org/cars")
 
     def test_a_repository_must_be_on_github(self):
         with self.assertRaises(errors.bad_request.ValidationError):
-            bll.details(FakeApp(), repository="https://example.org/x/y", registry="", registry_name=None, commit=None)
+            bll.details(FakeApp(), repository="https://example.org/x/y", registries=[], registry_name=None, commit=None)

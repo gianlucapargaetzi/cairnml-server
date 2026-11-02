@@ -59,33 +59,41 @@ def own_details(app: GitHubApp, repository: str, commit: Optional[str]) -> dict:
         raise errors.bad_request.ValidationError(f"the dataset could not be read ({exc})") from None
 
 
-def registry_details(app: GitHubApp, registry: str, name: str) -> dict:
-    """A dataset of the registry: its entry (source and link) and its metadata. It has no history of its own."""
-    entry = next((e for e in registry_bll.list_entries(app=app, registry=registry) if e["name"] == name), None)
-    if entry is None:
-        raise errors.bad_request.ValidationError(f"no dataset {name} in the registry")
-    try:
-        raw = app.read_file(registry, f"{REGISTRY_METADATA_DIR}/{name}.json")
-    except GitHubError as exc:
-        raise errors.bad_request.ValidationError(f"the registry could not be read ({exc})") from None
-    return {
-        "kind": "registry",
-        "name": name,
-        "repository": None,
-        "link": entry["link"],
-        "source": entry["source"],
-        "revision": None,
-        "branch": None,
-        "metadata": _metadata(raw),
-        "description": None,
-        "commits": [],
-    }
+def registry_details(app: GitHubApp, registries: list, name: str) -> dict:
+    """A dataset of a registry: its entry (source and link) and its metadata, read from the first registry that lists it.
+    A dataset of the registry has no history of its own."""
+    for registry in registries:
+        try:
+            entries = registry_bll.list_entries(app=app, registry=registry)
+        except GitHubError:
+            continue
+        entry = next((e for e in entries if e["name"] == name), None)
+        if entry is None:
+            continue
+        try:
+            raw = app.read_file(registry, f"{REGISTRY_METADATA_DIR}/{name}.json")
+        except GitHubError as exc:
+            raise errors.bad_request.ValidationError(f"the registry could not be read ({exc})") from None
+        return {
+            "kind": "registry",
+            "name": name,
+            "repository": None,
+            "registry": registry,
+            "link": entry["link"],
+            "source": entry["source"],
+            "revision": None,
+            "branch": None,
+            "metadata": _metadata(raw),
+            "description": None,
+            "commits": [],
+        }
+    raise errors.bad_request.ValidationError(f"no dataset {name} in the registries of this server")
 
 
-def details(app: GitHubApp, *, repository: Optional[str], registry: str, registry_name: Optional[str],
+def details(app: GitHubApp, *, repository: Optional[str], registries: list, registry_name: Optional[str],
             commit: Optional[str]) -> dict:
     if registry_name:
-        return registry_details(app, registry, registry_name)
+        return registry_details(app, registries, registry_name)
     repo = repo_of(repository or "")
     if not repo and re.fullmatch(r"[\w.-]+/[\w.-]+", repository or ""):
         repo = repository

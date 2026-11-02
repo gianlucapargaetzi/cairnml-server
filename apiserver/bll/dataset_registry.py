@@ -51,6 +51,20 @@ def _entry_field(text: str, field: str) -> Optional[str]:
     return match.group(1) if match else None
 
 
+def configured_registries() -> list:
+    """The dataset registries of this server: the one in ``repository`` (which registration writes to), and the others in
+    ``repositories``. Each is a repository of owner/name, public or one the GitHub App can read. Duplicates are dropped."""
+    from apiserver.config_repo import config
+
+    registries = [config.get("apiserver.dataset_registry.repository", "") or ""]
+    registries += list(config.get("apiserver.dataset_registry.repositories", []) or [])
+    result = []
+    for registry in registries:
+        if registry and registry not in result:
+            result.append(registry)
+    return result
+
+
 def list_entries(*, app: GitHubApp, registry: str) -> list:
     """Every entry of the registry: its name, how its data is read (``source``) and its link. Read-only."""
     if not registry:
