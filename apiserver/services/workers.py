@@ -87,6 +87,7 @@ def register(call: APICall, company_id, request: RegisterRequest):
         tags=request.tags,
         system_tags=request.system_tags,
         resources=request.resources,
+        identity=call.identity,
     )
 
 
@@ -106,6 +107,7 @@ def status_report(call: APICall, company_id, request: StatusReportRequest):
         report=request,
         tags=request.tags,
         system_tags=request.system_tags,
+        identity=call.identity,
     )
 
 

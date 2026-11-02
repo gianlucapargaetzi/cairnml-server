@@ -63,7 +63,6 @@ def test_a_job_longer_than_its_token_lifetime_completes_and_its_token_is_renewed
         jobs.explain(api, long_job, record) + "\n" + "\n".join(jobs.console(api, long_job, size=200)[-40:])
     )
     assert "result" in [a["key"] for a in record["execution"]["artifacts"]]
-    # the agent writes its own log of the job next to the job's temporary files; the renewals are logged there
-    agent_logs = list(Path(tempfile.gettempdir()).glob(f"cairnml-jobs-*/{long_job}.log"))
-    agent_log = agent_logs[0].read_text(errors="replace") if agent_logs else ""
+    # the worker prints the renewals to the agent's background output (see AgentMachine.worker_log)
+    agent_log = job_agent.worker_log()
     assert f"Job token renewed for task {long_job}" in agent_log, agent_log[-3000:]

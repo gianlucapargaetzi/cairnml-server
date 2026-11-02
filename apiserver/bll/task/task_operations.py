@@ -1,8 +1,11 @@
 from datetime import datetime
 from typing import Callable, Any, Tuple, Union, Sequence, Optional
 
+from mongoengine import Q
+
 from apiserver.apierrors import errors, APIError
 from apiserver.bll.queue import QueueBLL
+from apiserver.bll.queue.queue_access import QueueAccessBLL
 from apiserver.bll.task import (
     TaskBLL,
     validate_status_change,
@@ -14,6 +17,7 @@ from apiserver.bll.util import update_project_time
 from apiserver.config_repo import config
 from apiserver.database.model import EntityVisibility
 from apiserver.database.model.model import Model
+from apiserver.database.model.queue import Queue
 from apiserver.database.model.task.output import Output
 from apiserver.database.model.task.task import (
     TaskStatus,
@@ -150,6 +154,20 @@ def unarchive_task(
     return unarchive_task_core(task)
 
 
+def _assert_can_use_task_queues(
+    identity: Identity, company_id: str, task_id: str, execution_queue: Optional[str] = None
+) -> None:
+    """
+    Dequeue takes the task out of its execution queue and, with remove_from_all_queues, out of every queue that
+    holds it. The caller must be able to use each of those queues. Queues that no longer exist are skipped.
+    """
+    query = Q(entries__task=task_id)
+    if execution_queue:
+        query |= Q(id=execution_queue)
+    for queue_id in Queue.objects(company=company_id).filter(query).scalar("id"):
+        QueueAccessBLL.assert_can_use(identity, company_id, queue_id)
+
+
 def dequeue_task(
     task_id: str,
     company_id: str,
@@ -170,6 +188,7 @@ def dequeue_task(
         include_public=True,
     )
     if not task:
+        _assert_can_use_task_queues(identity, company_id, task_id)
         TaskBLL.remove_task_from_all_queues(company_id, task_id=task_id)
         return 1, {"updated": 0}
 
@@ -186,6 +205,9 @@ def dequeue_task(
             "project",
             "enqueue_status",
         ),
+    )
+    _assert_can_use_task_queues(
+        identity, company_id, task_id, execution_queue=task.execution.queue if task.execution else None
     )
 
     res = TaskBLL.dequeue_and_change_status(
@@ -220,6 +242,8 @@ def enqueue_task(
     task = get_task_with_write_access(
         task_id=task_id, company_id=company_id, identity=identity
     )
+    if queue_id:
+        QueueAccessBLL.assert_can_use(identity, company_id, queue_id)
     if queue_id or queue_name:
         # A job must be runnable: its commit exists on GitHub and the App can read its repository.
         from apiserver.idp.github_check import build_from_config as _github, check_submission
@@ -239,12 +263,16 @@ def enqueue_task(
             company_id=company_id, queue_name=queue_name, only=("id",)
         )
         if not queue:
-            queue = queue_bll.create(company_id=company_id, name=queue_name)
+            # the caller creates the queue, so they own it
+            queue = queue_bll.create(
+                company_id=company_id, name=queue_name, created_by=identity.user
+            )
         queue_id = queue.id
 
     if not queue_id:
         # try to get default queue
         queue_id = queue_bll.get_default(company_id).id
+    QueueAccessBLL.assert_can_use(identity, company_id, queue_id)
 
     user_id = identity.user
     if validate:

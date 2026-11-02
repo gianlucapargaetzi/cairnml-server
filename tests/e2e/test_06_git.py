@@ -109,16 +109,23 @@ def test_job_clones_the_recorded_commit_and_reports_it(client_home, project, che
     Expect: The job completes, and reports the commit it was recorded with.
     """
     work = checkout["work"]
+    api = workspace.device_api(client_home)
     # the job's container clones the remote, so the remote is served on an address the container can reach
     with git.served(checkout["remote"].parent) as base:
+        # The server never contacts a loopback address, so it cannot see that this repository is readable, and it
+        # refuses a job on a host it cannot check without stored Git credentials (repo_visibility). The admin stores
+        # one for this host, as an admin does for a private repository. git:// sends no credential, so the clone is
+        # anonymous, as the daemon allows.
+        host = base.removeprefix("git://")
+        api.authed("git_credentials.set", {"host": host, "username": "e2e", "secret": "e2e-unused"})
         git.git(work, "remote", "set-url", "origin", f"{base}/{checkout['remote'].name}")
         try:
             run = run_json(client_home, str(work / "job_script.py"),
                            ["--project", project, "--name", new_name("clone-job"), "--git", "--scalars", "2"])
             jobs.enqueue(client_home, run["task_id"])
-            api = workspace.device_api(client_home)
             record = jobs.wait_for(api, run["task_id"], jobs.FINAL)
         finally:
+            api.authed("git_credentials.delete", {"host": host})
             git.git(work, "remote", "set-url", "origin", checkout["remote"].as_posix())
     assert record["status"] == "completed", jobs.explain(api, run["task_id"], record)
     assert record["script"]["version_num"] == checkout["commit"], "the job must report the commit it cloned"

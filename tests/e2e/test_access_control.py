@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from support import client, settings, workspace
+from support import client, workspace
 from support.api import Api, ApiError
 from support.workspace import new_name
 
@@ -32,10 +32,6 @@ class VersionedApi(Api):
         self.key = api.key
         self.http = api.http
         self.version = version
-
-    @property
-    def base(self) -> str:
-        return f"{settings.API_URL}/v{self.version}/"
 
 
 @dataclass

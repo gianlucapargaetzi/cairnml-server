@@ -2,6 +2,7 @@
 default queue."""
 
 import os
+import re
 import signal
 import subprocess
 import time
@@ -84,6 +85,14 @@ class AgentMachine:
 
     def log(self) -> str:
         return self.log_path.read_text(errors="replace") if self.log_path.exists() else ""
+
+    def worker_log(self) -> str:
+        """The output of the worker itself (its job-token renewals, for one): the agent's background daemon writes it to
+        a temporary file, named in the daemon log, which the agent removes when it stops."""
+        match = re.search(r"writing stdout/stderr to (\S+)", self.log())
+        if not match or not Path(match.group(1)).exists():
+            return ""
+        return Path(match.group(1)).read_text(errors="replace")
 
     def wait_until(self, condition, timeout: float = 60, poll: float = 1.0):
         deadline = time.monotonic() + timeout
