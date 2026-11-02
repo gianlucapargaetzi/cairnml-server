@@ -23,6 +23,7 @@ from apiserver.idp.github_check import repo_of
 
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 ENTRY_DIR = "datasets"
+ADAPTER_MAX_BYTES = 1024 * 1024  # adapter.py comes from an untrusted repository: it is read only up to this size
 
 
 def entry_name(repo: str, requested: Optional[str]) -> str:
@@ -87,8 +88,44 @@ def _linked_repo(text: str) -> Optional[str]:
     return found.lower() if found else None
 
 
+def _is_local_adapter(config_text: Optional[bytes]) -> bool:
+    """True when dataset.yaml says ``adapter: local``. A file that cannot be read is left to the footprint check to refuse."""
+    if config_text is None:
+        return False
+    try:
+        return footprint.config_format(footprint.parse_config(config_text.decode()))["kind"] == "local"
+    except (ValueError, UnicodeDecodeError):
+        return False
+
+
+def _read_adapter(app: GitHubApp, repo: str, head: str, sizes: dict) -> Optional[bytes]:
+    """The bytes of adapter.py at the top of the repository at ``head``, or None when there is none.
+
+    Only the bytes are kept: the file is hashed by the footprint check and never imported, run or parsed here. Its size
+    is checked from the tree before it is downloaded, and again after, since the tree may not list a size.
+    """
+    size = sizes.get(footprint.ADAPTER_FILE)
+    if size is None:
+        return None
+    if size > ADAPTER_MAX_BYTES:
+        raise errors.bad_request.ValidationError(
+            f"{footprint.ADAPTER_FILE} in {repo}@{head[:10]} is {size} bytes; the adapter may be at most "
+            f"{ADAPTER_MAX_BYTES} bytes"
+        )
+    content = app.read_file(repo, footprint.ADAPTER_FILE, head)
+    if content is not None and len(content) > ADAPTER_MAX_BYTES:
+        raise errors.bad_request.ValidationError(
+            f"{footprint.ADAPTER_FILE} in {repo}@{head[:10]} is {len(content)} bytes; the adapter may be at most "
+            f"{ADAPTER_MAX_BYTES} bytes"
+        )
+    return content
+
+
 def verify_repository(app: GitHubApp, repo: str):
-    """Read the default branch of a dataset repository and verify its footprint. Returns (branch, head sha)."""
+    """Read the default branch of a dataset repository and verify its footprint. Returns (branch, head sha).
+
+    For ``adapter: local`` the top-level adapter.py at the same commit is read too, so the footprint can check its hash.
+    """
     try:
         branch, head = app.default_branch_head(repo)
         files = {
@@ -96,6 +133,8 @@ def verify_repository(app: GitHubApp, repo: str):
             for name in (footprint.DVC_FILE, footprint.CONFIG_FILE, footprint.LOCK_FILE)
         }
         sizes = app.tree_sizes(repo, head)
+        if _is_local_adapter(files[footprint.CONFIG_FILE]):
+            files[footprint.ADAPTER_FILE] = _read_adapter(app, repo, head, sizes)
     except RepoNotAccessible:
         raise errors.bad_request.ValidationError(f"the GitHub App is not installed on {repo}") from None
     except GitHubError as exc:
