@@ -189,6 +189,25 @@ class GitHubApp:
                 texts[entry["name"]] = blob["text"]
         return texts
 
+    def list_commits(self, repo: str, ref: str, limit: int) -> list:
+        """The latest commits of a ref, newest first: sha, first line of the message, author, date and parent shas."""
+        response = self._send("GET", f"{self._api}/repos/{repo}/commits", headers=self._read_headers(repo),
+                              params={"sha": ref, "per_page": str(min(limit, 100))})
+        if response.status_code != 200:
+            raise GitHubError(f"commit list failed: {response.status_code}")
+        commits = []
+        for item in response.json():
+            details = item.get("commit") or {}
+            author = details.get("author") or {}
+            commits.append({
+                "sha": item["sha"],
+                "message": ((details.get("message") or "").splitlines() or [""])[0],
+                "author": author.get("name") or "",
+                "date": author.get("date") or "",
+                "parents": [parent["sha"] for parent in item.get("parents") or []],
+            })
+        return commits
+
     def branch_exists(self, repo: str, branch: str) -> bool:
         response = self._send("GET", f"{self._api}/repos/{repo}/git/ref/heads/{branch}", headers=self._read_headers(repo))
         if response.status_code == 404:
