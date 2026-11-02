@@ -90,7 +90,7 @@ Switch the user's **Enabled** off in the `cairnml` realm. Their new sign-ins are
 
 ## GitHub App
 
-Remote execution checks the repository of every job before it is queued. For a repository on `github.com` the check needs a GitHub App: the job is refused until the App is set up and installed on that repository. For a repository on another Git host, a public repository is accepted, and a private one needs Git credentials stored for its host (see [Git credentials for other hosts](#git-credentials-for-other-hosts)).
+Remote execution checks the repository of every job before it is queued. For a repository on `github.com` the check needs a GitHub App: the job is refused until the App is set up and installed on that repository. A public repository on `github.com` needs no App: it is cloned without a token. For a repository on another Git host, a public repository is accepted, and a private one needs Git credentials stored for its host (see [Git credentials for other hosts](#git-credentials-for-other-hosts)).
 
 The server uses one App. Create it once, and install it on every repository that jobs will run from; step 1 says which accounts can hold an installation.
 
@@ -99,7 +99,7 @@ The server uses one App. Create it once, and install it on every repository that
 - **GitHub App name:** any name, for example `cairnml-<your-name>`.
 - **Homepage URL:** the server's web address, for example `http://<server-ip>/cairnml/`.
 - **Webhook:** untick **Active**. CairnML does not use webhooks.
-- **Repository permissions:** set **Contents** and **Pull requests** to **Read and write**. Leave every other permission at **No access**. A job only reads its repository. Dataset registration writes to the registry through a pull request, and the server asks GitHub for write access only at that moment. See [Datasets](#datasets).
+- **Repository permissions:** set **Contents** to **Read-only**. Leave every other permission at **No access**. The server only reads: a job reads its repository, and the server reads the datasets of the App's installations. See [Datasets](#datasets).
 - **Where can this GitHub App be installed?** choose **Only on this account**, unless other accounts must use it.
 
 Click **Create GitHub App**. Note the **App ID** shown at the top of the App's page.
@@ -190,20 +190,15 @@ Clients and agents reach the stack on the first two ports, so the machine's fire
 
 ## Datasets
 
-The dataset registry lets `cairnml dataset register` add a dataset repository to a registry repository, through a pull request that the server opens. It needs the GitHub App above, and three things more:
+A dataset is a Git repository of its own, with a `dataset.yaml` at its root. Nothing registers it: the server finds it through the GitHub App, and a job reads it with the App's token.
 
-1. **Permissions.** Step 1 above already sets **Contents** and **Pull requests** to **Read and write**, which registration needs. Jobs alone need only read access. If you change the permissions of an App that is already installed, GitHub asks the owner of each installation to accept the change.
-2. **Installation.** Install the App on the registry repository and on every dataset repository.
-3. **Settings.** In `deploy/.env`, name the registry and the owners whose dataset repositories may be registered in it:
+- **Discovery.** The server lists the repositories the App is installed on, and keeps those whose default branch has a `dataset.yaml` at its root and whose footprint holds (`dataset.lock.json` against `data.dvc`). The Datasets page reads that list. A `DATASET.md` at the root of a dataset is shown as its description: it is text, cut to 20 KB, and never run.
+- **Access.** A job may get a read-only token for any repository the App is installed on that is a dataset. An installed repository without `dataset.yaml` is refused, with `<owner>/<repo> is not a CairnML dataset: dataset.yaml is missing on its default branch`.
+- **Public repositories.** A public repository gets no token, by any job: the server answers the token request with success and `token: null`, and the job clones the repository anonymously. It needs neither the App nor an installation.
 
-   ```
-   CAIRNML_DATASET_REGISTRY=<owner>/<registry-repository>
-   CAIRNML_DATASET_OWNERS='["<owner>"]'
-   ```
+To make a dataset readable and listed, install the App on its repository, with **Only select repositories** (see [GitHub App](#github-app)). Whoever can install the App on a repository decides which datasets the server reads.
 
-Then run `deploy/scripts/bootstrap.sh` again. The registry also lists the dataset repositories that a job may clone, so only add repositories you trust to it.
-
-Without the App, `cairnml dataset register` fails with `GitHub is not configured on this server`. With the App but without `CAIRNML_DATASET_REGISTRY`, it fails with `the dataset registry is not configured on this server`. An owner that is not listed fails with `datasets of <owner> may not be registered here`.
+**Public registries (optional).** A registry is a public repository with one file per public dataset or adapter. `CAIRNML_DATASET_REGISTRY` names one, and `CAIRNML_DATASET_REGISTRIES` lists more. A registry lists public datasets and adapters only: an entry with `source: repo` is ignored, because a dataset of our own lives in its own repository.
 
 ## Settings reference
 
@@ -229,8 +224,7 @@ The settings a user may set are in `deploy/.env`, copied from [`deploy/.env.exam
 | `CAIRNML_TRUSTED_PROXIES` | `["127.0.0.0/8","::1/128","172.16.0.0/12"]` | The JSON list of proxies whose forwarded address headers the server believes. Headers from other addresses are ignored and logged. Add the range of a reverse proxy in front of the stack. See [Ports](#ports). |
 | `GITHUB_APP_ID` | empty | The GitHub App. See [GitHub App](#github-app). |
 | `GITHUB_API_URL` | `https://api.github.com` | The GitHub API the App uses. Change it only for GitHub Enterprise Server. |
-| `CAIRNML_DATASET_REGISTRY` | empty | The dataset registry repository. See [Datasets](#datasets). |
-| `CAIRNML_DATASET_OWNERS` | `[]` | The owners whose dataset repositories may be registered. See [Datasets](#datasets). |
+| `CAIRNML_DATASET_REGISTRY` | empty | A public dataset registry (public datasets and adapters only). See [Datasets](#datasets). |
 | `CAIRNML_WEB_DIR` | empty | A checkout of the web app to build instead of the pinned one. See `scripts/fetch-sources.sh`. |
 
 ## Compatibility

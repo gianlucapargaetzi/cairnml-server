@@ -39,6 +39,52 @@ def valid_repo(repo: str) -> bool:
     return bool(_REPO_RE.fullmatch(repo)) and ".." not in repo
 
 
+# Public repositories need no GitHub App: they are cloned without a token. Asking GitHub whether a repository is public
+# is an anonymous request, and GitHub limits those per address, so each answer is kept for a while.
+_PUBLIC_TTL_SEC = 600
+_public_answers: dict = {}  # repository in lower case -> (is public, when it was asked)
+
+
+def _anonymous_get(api_url: str, path: str, http=None):
+    try:
+        return (http or requests.Session()).request(
+            "GET", f"{api_url.rstrip('/')}{path}", headers=_ANONYMOUS, timeout=_TIMEOUT)
+    except requests.RequestException:
+        raise GitHubError("GitHub transport error") from None
+
+
+def public_repository(api_url: str, repo: str, clock=time.monotonic, http=None) -> bool:
+    """True when GitHub shows the repository to anyone without a token. Needs no GitHub App.
+    GitHubError when GitHub cannot be asked."""
+    key = repo.lower()
+    cached = _public_answers.get(key)
+    if cached and clock() - cached[1] < _PUBLIC_TTL_SEC:
+        return cached[0]
+    response = _anonymous_get(api_url, f"/repos/{repo}", http)
+    if response.status_code == 404:
+        answer = False
+    elif response.status_code != 200:
+        raise GitHubError(f"repository lookup failed: {response.status_code}")
+    else:
+        answer = response.json().get("private") is False
+    _public_answers[key] = (answer, clock())
+    return answer
+
+
+def public_commit_exists(api_url: str, repo: str, sha: str, http=None) -> bool:
+    """Whether GitHub has the commit of a public repository, asked without a token."""
+    response = _anonymous_get(api_url, f"/repos/{repo}/commits/{sha}", http)
+    if response.status_code in (404, 422):
+        return False
+    if response.status_code != 200:
+        raise GitHubError(f"GitHub request failed: {response.status_code}")
+    return True
+
+
+def clear_public_cache() -> None:
+    _public_answers.clear()
+
+
 class GitHubApp:
     def __init__(self, app_id: str, private_key_pem: str, api_url: str, http=None, clock=time.time) -> None:
         # The id is a number when it comes from the environment; PyJWT needs the issuer as a string.
@@ -113,7 +159,42 @@ class GitHubApp:
             raise GitHubError(f"GitHub request failed: {response.status_code}")
         return True
 
-    # What dataset registration needs: reading a repository's files, and a pull request into the registry.
+    def installed_repositories(self) -> list:
+        """Every repository the App is installed on, as {repository, default_branch, private}.
+
+        The installations are listed with the App's own token; the repositories of each one with a token for that
+        installation. Each page is one request of up to 100 items.
+        """
+        repos = []
+        for installation in self._pages(f"{self._api}/app/installations", self._headers(self._app_jwt())):
+            minted = self._send(
+                "POST", f"{self._api}/app/installations/{installation['id']}/access_tokens",
+                headers=self._headers(self._app_jwt()), json={"permissions": {"contents": "read"}})
+            if minted.status_code != 201:
+                raise GitHubError(f"token request failed: {minted.status_code}")
+            headers = self._headers(minted.json()["token"])
+            for item in self._pages(f"{self._api}/installation/repositories", headers, key="repositories"):
+                repos.append({
+                    "repository": item["full_name"],
+                    "default_branch": item.get("default_branch") or "",
+                    "private": item.get("private"),
+                })
+        return repos
+
+    def _pages(self, url: str, headers: dict, key: str = None) -> list:
+        items, page = [], 1
+        while True:
+            response = self._send("GET", url, headers=headers, params={"per_page": "100", "page": str(page)})
+            if response.status_code != 200:
+                raise GitHubError(f"listing failed: {response.status_code}")
+            body = response.json()
+            batch = (body.get(key) if key else body) or []
+            items.extend(batch)
+            if len(batch) < 100:
+                return items
+            page += 1
+
+    # What dataset access needs: reading a repository's files and folders.
 
     def _is_public(self, repo: str) -> bool:
         """True when GitHub shows the repository to anyone without a token. Such a repository is read without the App."""
@@ -230,43 +311,3 @@ class GitHubApp:
                 "parents": [parent["sha"] for parent in item.get("parents") or []],
             })
         return commits
-
-    def branch_exists(self, repo: str, branch: str) -> bool:
-        response = self._send("GET", f"{self._api}/repos/{repo}/git/ref/heads/{branch}", headers=self._read_headers(repo))
-        if response.status_code == 404:
-            return False
-        if response.status_code != 200:
-            raise GitHubError(f"branch lookup failed: {response.status_code}")
-        return True
-
-    def open_registration_pull_request(self, repo: str, branch: str, path: str, content: str, message: str,
-                                       title: str, body: str) -> str:
-        """Add one file to the repository through a new branch and a pull request, with auto-merge. Returns the PR URL.
-
-        Needs the App to hold write access to contents and pull requests on this repository.
-        """
-        write = self._headers(self.installation_token(repo, {"contents": "write", "pull_requests": "write"}).token)
-        base_branch, base_sha = self.default_branch_head(repo)
-        made = self._send("POST", f"{self._api}/repos/{repo}/git/refs", headers=write,
-                          json={"ref": f"refs/heads/{branch}", "sha": base_sha})
-        if made.status_code != 201:
-            raise GitHubError(f"branch creation failed: {made.status_code}")
-        import base64
-
-        put = self._send("PUT", f"{self._api}/repos/{repo}/contents/{path}", headers=write,
-                         json={"message": message, "branch": branch,
-                               "content": base64.b64encode(content.encode()).decode()})
-        if put.status_code not in (200, 201):
-            raise GitHubError(f"file creation failed: {put.status_code}")
-        pull = self._send("POST", f"{self._api}/repos/{repo}/pulls", headers=write,
-                          json={"title": title, "head": branch, "base": base_branch, "body": body})
-        if pull.status_code != 201:
-            raise GitHubError(f"pull request creation failed: {pull.status_code}")
-        info = pull.json()
-        # Auto-merge is best effort: it needs the repository setting, and only GraphQL can turn it on.
-        self._send("POST", f"{self._api}/graphql", headers=write, json={
-            "query": "mutation($id: ID!) { enablePullRequestAutoMerge(input: {pullRequestId: $id, mergeMethod: MERGE})"
-                     " { clientMutationId } }",
-            "variables": {"id": info.get("node_id")},
-        })
-        return info["html_url"]

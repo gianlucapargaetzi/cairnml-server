@@ -93,20 +93,6 @@ def test_a_commit_that_was_not_pushed_is_refused(client_home, dataset, tmp_path)
     assert "is not on" in result.output
 
 
-def test_registration_is_refused_when_the_server_has_no_registry(client_home):
-    """The registration endpoint refuses a dataset when the server has no GitHub App and no registry.
-
-    Expect: `dataset_registry.register` answers 400 with a message that the server is not configured.
-    """
-    from support.api import ApiError
-
-    api = workspace.device_api(client_home)
-    with pytest.raises(ApiError) as refused:
-        api.authed("dataset_registry.register", {"repository": "https://github.com/acme/cars-data"})
-    assert refused.value.status == 400
-    assert "not configured" in refused.value.message
-
-
 def test_dataset_fetch_of_an_unknown_commit_fails(client_home, dataset):
     """Fetching an unknown commit fails.
 

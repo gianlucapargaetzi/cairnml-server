@@ -6,7 +6,7 @@ commit is the version, the repository is the address, and the files are held in 
 server) or in the Git LFS of the repository.
 
 A script that uses dataset IDs has to change to use a repository and a commit. There is no mapping from an upstream ID to
-a CairnML repository; register the existing data once and use the repository from then on.
+a CairnML repository; push the existing data to a repository once and use the repository from then on.
 
 ## Command mapping
 
@@ -19,9 +19,8 @@ a CairnML repository; register the existing data once and use the repository fro
 | `publish` | not needed: `push` publishes | |
 | `get --id ID` | `cairnml dataset get <repository-url> <commit>` in the shell, or `Dataset.get(<repository-url>, <commit>)` in a script | Pass a commit, tag or branch. A commit is the only way to rerun the same data. |
 | `list`, `sync`, `squash` | `cairnml dataset status`, `cairnml dataset cache info` | Listing across datasets is not provided; each dataset is a repository. |
-| `ls` / dataset metadata by ID | the repository on GitHub and the registry | |
+| `ls` / dataset metadata by ID | the repository on GitHub, and the datasets list of the server | |
 | (no equivalent) | `cairnml dataset doctor` | Checks the GitHub settings that publishing relies on. |
-| (no equivalent) | `cairnml dataset register` | Adds the repository to the registry, once. |
 
 ## Moving an existing dataset
 
@@ -34,7 +33,6 @@ a CairnML repository; register the existing data once and use the repository fro
    cairnml dataset commit -m "Import from the upstream dataset <ID>"
    cairnml dataset doctor
    cairnml dataset push
-   cairnml dataset register
    ```
 
 2. In scripts, replace the dataset ID with the repository and the commit:

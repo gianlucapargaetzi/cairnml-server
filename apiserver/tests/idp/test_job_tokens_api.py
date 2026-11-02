@@ -103,15 +103,22 @@ class TestGitToken(TestCase):
         expected = "the task's repository is not on GitHub" if build_from_config() else "GitHub is not configured"
         self.assertIn(expected, response.text)
 
-    def test_a_repository_that_is_not_in_the_registry_gets_no_token(self):
+    def test_a_repository_the_app_is_not_installed_on_gets_no_token(self):
+        # Whatever the deployment's App setup, a private repository the App is not on is refused. A public one is
+        # cloned without a token, so its answer is a success with no token.
         response = call(
             "devices.git_token",
             {"task": self.task_id, "repository": "https://github.com/not-allowed/secret-code"},
             token=self.agent_token,
         )
+        if response.status_code == 200:
+            self.assertIsNone(response.json()["data"]["token"], response.text)
+            return
         self.assertEqual(response.status_code, 400)
         self.assertTrue(
-            "is not a registered dataset repository" in response.text or "GitHub is not configured" in response.text or "registry could not be read" in response.text,
+            any(text in response.text for text in (
+                "the GitHub App is not installed on", "GitHub is not configured", "GitHub could not be reached",
+            )),
             response.text,
         )
 

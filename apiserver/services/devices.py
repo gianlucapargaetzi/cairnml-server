@@ -14,7 +14,7 @@ from apiserver.apimodels.devices import (
     ReassignRequest,
     RevokeRequest,
 )
-from apiserver.bll.dataset_registry import allowed_repositories, configured_registries
+from apiserver.bll.dataset_access import verify_dataset
 from apiserver.config_repo import config
 from apiserver.database.model.auth import Role, User
 from apiserver.database.model.device import Device, DeviceKind
@@ -23,7 +23,7 @@ from apiserver.idp.assertion import AssertionInvalid, unverified_issuer, verify_
 from apiserver.idp.audit import client_address, record as audit
 from apiserver.idp.checks import AccessDenied, check_device, check_job_issue
 from apiserver.idp.github import GitHubError, RepoNotAccessible
-from apiserver.idp.github_check import build_from_config, repo_of
+from apiserver.idp.github_check import build_from_config, public_repo, repo_of
 from apiserver.idp.keys import load_public_key
 from apiserver.idp import git_credentials as store
 from apiserver.idp import public_origin
@@ -245,19 +245,21 @@ def git_token(call: APICall, company, request: GitTokenRequest):
     actor = claims.get("device") or claims.get("sub") or "unknown"
     app = build_from_config()
     if request.repository:
-        # A dataset repository is registered on GitHub, so it is read with the GitHub App only.
-        if app is None:
-            raise errors.bad_request.ValidationError("GitHub is not configured")
+        # A dataset is a repository the GitHub App is installed on, with a dataset.yaml at its root and a footprint that
+        # holds (see bll/dataset_access). A public repository is cloned without a token: the answer has no token.
         repo = repo_of(request.repository)
         if repo is None:
             raise errors.bad_request.ValidationError("the repository is not on GitHub")
+        public = _public_answer(repo, actor, company, claims, request.task, call)
+        if public is not None:
+            return public
+        if app is None:
+            raise errors.bad_request.ValidationError("GitHub is not configured")
         try:
-            registered = set().union(*(allowed_repositories(app, r) for r in configured_registries()))
-        except GitHubError:
-            raise errors.bad_request.ValidationError("the dataset registry could not be read") from None
-        if repo.lower() not in registered:
-            audit(actor, "git_token.refused", ip=client_address(call), company=company, device=claims.get("device"), task=request.task, reason=f"{repo} is not in the dataset registry")
-            raise errors.bad_request.ValidationError(f"{repo} is not a registered dataset repository")
+            verify_dataset(app, repo)
+        except errors.bad_request.ValidationError as exc:
+            audit(actor, "git_token.refused", ip=client_address(call), company=company, device=claims.get("device"), task=request.task, reason=str(exc))
+            raise
         try:
             return _github_token(app, repo, actor, request.task, client_address(call), company)
         except RepoNotAccessible:
@@ -271,6 +273,9 @@ def git_token(call: APICall, company, request: GitTokenRequest):
     repo = repo_of(repository)
     if repo is None:
         return _stored_token(company, actor, request.task, repository, client_address(call))
+    public = _public_answer(repo, actor, company, claims, request.task, call)
+    if public is not None:
+        return public
     # GitHub: the App when it is set up and installed on the repository, else the Git credentials stored for it.
     if app is not None:
         try:
@@ -282,6 +287,19 @@ def git_token(call: APICall, company, request: GitTokenRequest):
     if app is None:
         raise errors.bad_request.ValidationError("GitHub is not configured")
     raise errors.bad_request.ValidationError(f"the GitHub App is not installed on {repo}")
+
+
+def _public_answer(repo: str, actor: str, company, claims: dict, task_id: str, call: APICall):
+    """The answer for a public repository: success with no token, since it is cloned without one. None when the
+    repository is not public. The App is not asked for a public repository."""
+    try:
+        public = public_repo(repo)
+    except GitHubError:
+        raise errors.bad_request.ValidationError("GitHub could not be reached") from None
+    if not public:
+        return None
+    audit(actor, "git_token.public", ip=client_address(call), company=company, device=claims.get("device"), task=task_id, repo=repo)
+    return {"token": None, "expires_at": None, "username": None}
 
 
 def _github_token(app, repo: str, actor: str, task_id: str, ip=None, company=None) -> dict:
