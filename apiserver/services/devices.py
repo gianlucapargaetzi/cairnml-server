@@ -2,6 +2,7 @@
 a signed assertion for short-lived access tokens. Ported from the mlops server's enrol and exchange."""
 
 import jwt
+import logging
 import uuid
 from datetime import datetime
 
@@ -14,6 +15,7 @@ from apiserver.apimodels.devices import (
     ReassignRequest,
     RevokeRequest,
 )
+from apiserver.bll import dataset_cache
 from apiserver.bll.dataset_access import verify_dataset
 from apiserver.config_repo import config
 from apiserver.database.model.auth import Role, User
@@ -36,6 +38,7 @@ from apiserver.service_repo import APICall, endpoint
 from apiserver.service_repo.auth import Token
 
 ADMIN_ROLES = (Role.admin, Role.root, Role.system)
+log = logging.getLogger(__name__)
 
 
 def _bearer(call: APICall) -> str:
@@ -261,9 +264,11 @@ def git_token(call: APICall, company, request: GitTokenRequest):
             audit(actor, "git_token.refused", ip=client_address(call), company=company, device=claims.get("device"), task=request.task, reason=str(exc))
             raise
         try:
-            return _github_token(app, repo, actor, request.task, client_address(call), company)
+            token = _github_token(app, repo, actor, request.task, client_address(call), company)
         except RepoNotAccessible:
             raise errors.bad_request.ValidationError(f"the GitHub App is not installed on {repo}") from None
+        _refresh_dataset_entry(app, repo)
+        return token
 
     if task is None:
         raise errors.bad_request.InvalidId("task not found")
@@ -287,6 +292,15 @@ def git_token(call: APICall, company, request: GitTokenRequest):
     if app is None:
         raise errors.bad_request.ValidationError("GitHub is not configured")
     raise errors.bad_request.ValidationError(f"the GitHub App is not installed on {repo}")
+
+
+def _refresh_dataset_entry(app, repo: str) -> None:
+    """Refreshes the repository's entry in the dataset list when it is missing or stale (bll/dataset_cache). The job's
+    token is already issued: a failure here is logged and changes nothing in the answer."""
+    try:
+        dataset_cache.refresh_repository(app, repo)
+    except Exception:
+        log.warning("the dataset list entry of %s could not be refreshed", repo, exc_info=True)
 
 
 def _public_answer(repo: str, actor: str, company, claims: dict, task_id: str, call: APICall):

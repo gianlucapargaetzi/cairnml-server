@@ -168,3 +168,29 @@ def test_a_dataset_repository_that_is_not_on_github_is_refused(monkeypatch, job_
         devices.git_token(job_token, None, GitTokenRequest(task="t1", repository="https://gitlab.example.org/a/b"))
 
     assert "the repository is not on GitHub" in str(ctx.value)
+
+
+def test_a_job_token_for_a_dataset_refreshes_its_entry_in_the_dataset_list(monkeypatch, job_token):
+    monkeypatch.setattr(devices, "Task", SimpleNamespace(objects=FakeTasks(task())))
+    use_github(monkeypatch, FakeGitHub({"acme/cars": good_files()}))
+    refreshed = []
+    monkeypatch.setattr(devices.dataset_cache, "refresh_repository", lambda app, repo: refreshed.append(repo))
+
+    response = devices.git_token(job_token, None, dataset_request())
+
+    assert response["token"] == "token-for-acme/cars"
+    assert refreshed == ["acme/cars"]
+
+
+def test_a_failed_refresh_of_the_dataset_list_does_not_change_the_token_answer(monkeypatch, job_token):
+    monkeypatch.setattr(devices, "Task", SimpleNamespace(objects=FakeTasks(task())))
+    use_github(monkeypatch, FakeGitHub({"acme/cars": good_files()}))
+
+    def broken(app, repo):
+        raise RuntimeError("the cache is unreachable")
+
+    monkeypatch.setattr(devices.dataset_cache, "refresh_repository", broken)
+
+    response = devices.git_token(job_token, None, dataset_request())
+
+    assert response["token"] == "token-for-acme/cars"

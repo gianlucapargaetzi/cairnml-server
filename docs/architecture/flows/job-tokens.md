@@ -29,12 +29,17 @@ sequenceDiagram
 
 The agent renews at 80 percent of the lifetime. If a renewal fails for a network reason it tries again after 30 seconds. If the server refuses the renewal, the task has ended and the agent stops renewing.
 
+## Dataset list refresh
+
+When a job token is issued for a dataset repository, the server also refreshes that repository's entry in the dataset list, if the entry is missing or more than an hour old, and at most once in five minutes for the same repository. The refresh does not change the answer: the token is issued from the live check, and a failed refresh is only logged. The list itself is rebuilt once an hour in the background. See [Datasets](../../../README.md#datasets).
+
 ## Endpoints
 
 | Endpoint | Caller | Purpose |
 |---|---|---|
 | `devices.job_token` | agent | Issues a job token for a task the agent is running |
 | `devices.git_token` | job or agent | Issues a read-only repository token. A job gets only its own task's repository, or a dataset repository the GitHub App is installed on (one with a `dataset.yaml` at its root). A public repository gets no token (`token: null`): it is cloned anonymously |
+| `datasets.list` | person | Lists the datasets from the cached snapshot, with `refreshed_at` and each dataset's `checked_at`. It does not call GitHub |
 
 ## Limits
 
