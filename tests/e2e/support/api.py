@@ -50,12 +50,14 @@ class Api:
         self.device_id = device_id
         self.key = load_device_key(key_path)
         self.http = http or requests.Session()
+        self.version = API_VERSION
 
-    def base(self, version: str = API_VERSION) -> str:
-        return f"{settings.API_URL}/v{version}/"
+    @property
+    def base(self) -> str:
+        return f"{settings.API_URL}/v{self.version}/"
 
-    def call(self, endpoint: str, body=None, *, token=None, raw_token=None, version: str = API_VERSION) -> dict:
-        base = self.base(version)
+    def call(self, endpoint: str, body=None, *, token=None, raw_token=None) -> dict:
+        base = self.base
         headers = {}
         if raw_token is not None:
             headers["Authorization"] = raw_token
@@ -75,5 +77,5 @@ class Api:
         assertion = make_assertion(self.key, self.device_id, settings.API_URL)
         return self.call("devices.exchange", {"assertion": assertion})["access_token"]
 
-    def authed(self, endpoint: str, body=None, *, version: str = API_VERSION) -> dict:
-        return self.call(endpoint, body, token=self.token(), version=version)
+    def authed(self, endpoint: str, body=None) -> dict:
+        return self.call(endpoint, body, token=self.token())
