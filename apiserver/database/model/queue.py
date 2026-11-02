@@ -79,3 +79,5 @@ class Queue(DbModelMixin, Document):
     """ Users granted access to the queue (see QueueAccessBLL) """
     public = BooleanField(default=False, user_set_allowed=True)
     """ Every company user may use and allocate a public queue """
+    created_by = StringField()
+    """ ID of the user who created the queue: their owner. Empty for queues created before ownership """

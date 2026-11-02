@@ -3,6 +3,7 @@ and the API answering is a container of this suite's compose project.
 """
 
 import subprocess
+from urllib.parse import urlsplit
 
 from support import settings
 from support.stack import BIND, HOST
@@ -22,7 +23,8 @@ def test_the_addresses_are_not_the_ones_of_the_deploy_stack():
     """
     for url in (settings.API_URL, settings.WEB_URL, settings.IDP_URL, settings.STORAGE_URL):
         assert _port(url) not in REAL_STACK_PORTS, url
-        assert not any(name in url for name in REAL_STACK_NAMES), url
+        # the host name only: the web server's path starts with /cairnml on every stack, the deploy one included
+        assert urlsplit(url).hostname not in REAL_STACK_NAMES, url
 
 
 def test_the_api_is_served_by_this_suites_compose_project(isolated_stack):

@@ -191,6 +191,30 @@ The scalars chart, console, debug samples, comparison, dashboards and live job s
 |---|---|
 | `test_a_job_longer_than_its_token_lifetime_completes_and_its_token_is_renewed` | A job that runs past its first token's expiry completes with its result artifact, and the agent's log records a renewal for the task. |
 
+## test_queue_ownership.py: who owns, uses and sees a queue
+
+Queue ownership through the REST API as enrolled plain users, with the admin for the admin rules. A queue the caller may
+not use is reported as missing (400 `Invalid queue id`); a refusal to manage it is 403.
+
+| Test | Checks |
+|---|---|
+| `test_a_non_admin_creates_a_queue_and_it_is_recorded_as_theirs` | A plain user's queue records the user as `created_by`. |
+| `test_the_owner_updates_the_queue` | The owner renames its queue. |
+| `test_the_owner_sets_its_queue_public` | The owner sets the public flag. |
+| `test_the_owner_adds_and_removes_a_grant` | The owner grants the queue to a user and removes the grant. |
+| `test_the_owner_sets_the_metadata_of_its_queue` | The owner adds metadata to its queue. |
+| `test_a_grantee_enqueues_a_task_in_the_queue` | A grantee enqueues its own task. |
+| `test_a_grantee_cannot_update_or_delete_the_queue` | A grantee's update and delete are refused (403). |
+| `test_a_grantee_cannot_add_a_grant_or_set_metadata` | A grantee's grant and metadata changes are refused (403). |
+| `test_a_grantee_cannot_set_the_queue_public` | A grantee cannot set the public flag (403). |
+| `test_a_project_member_sees_only_the_allocated_projects_they_belong_to` | `queues.get_projects` lists only the allocated root projects the member is in. |
+| `test_an_outsider_cannot_see_or_use_the_queue` | An outsider cannot read, list, or enqueue into the queue. |
+| `test_an_admin_sees_every_queue_and_every_allocated_project` | The admin lists the queue and every root project it is allocated to. |
+| `test_a_grantee_dequeue_is_refused_once_the_grant_is_removed` | After its grant is removed, the grantee cannot dequeue its task, which stays queued. |
+| `test_the_owner_dequeues_its_own_task_while_it_can_use_the_queue` | The owner dequeues its own task. |
+| `test_a_worker_for_a_queue_the_user_neither_owns_nor_holds_is_refused` | Registering a worker for a private queue of someone else is refused (400). |
+| `test_a_worker_for_a_public_queue_is_accepted` | Registering a worker for a public queue is accepted. |
+
 ## Status of the last full run
 
 The status of the last full run, the open results and the known defects are in [E2E.md](E2E.md). The status is kept there

@@ -82,7 +82,7 @@ def test_token_of_a_device_is_refused_once_the_user_is_disabled(tmp_path, member
         refused = False
         while time.monotonic() < deadline and not refused:
             try:
-                api.token()
+                workspace.device_api(home).token()  # a new exchange each time: a held token is not checked again
             except ApiError as exc:
                 refused = exc.status in (401, 403)
                 break

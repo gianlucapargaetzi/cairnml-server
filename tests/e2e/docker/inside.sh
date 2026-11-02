@@ -30,6 +30,8 @@ cp -r /workspace/cairnml-agent "$STAGE/src/cairnml-agent"
 rm -rf "$STAGE/src/cairnml/build" "$STAGE/src/cairnml/dist" "$STAGE/src/cairnml-agent/build" "$STAGE/src/cairnml-agent/dist"
 docker build -q -t "$IMAGE" -f "$STAGE/runner.Dockerfile" "$STAGE" >/dev/null
 
+# The runner runs as the host's user, who has no entry in the image's passwd file. dvc names the user with getpass, which
+# reads LOGNAME before it asks the passwd file, so the runner's name is set here (dataset tests: dvc init failed).
 RUN="docker run --rm -i --network host \
   --user $HOST_UID:$HOST_GID --group-add $DOCKER_GID \
   -v /var/run/docker.sock:/var/run/docker.sock \
@@ -37,6 +39,7 @@ RUN="docker run --rm -i --network host \
   -v /e2e-state:/e2e-state \
   -v /e2e-cache:/e2e-cache \
   -e HOME=/e2e-cache/home \
+  -e LOGNAME=e2e \
   -e XDG_CACHE_HOME=/e2e-cache \
   -e TMPDIR=/e2e-state/tmp \
   -e CAIRNML_E2E_STATE_DIR=/e2e-state/stack \
