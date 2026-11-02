@@ -136,8 +136,6 @@ def get_all(call: APICall, company: str, request: GetAllRequest):
 
 @endpoint("queues.create", min_version="2.4")
 def create(call: APICall, company_id, request: CreateRequest):
-    if request.public:
-        QueueAccessBLL.assert_admin(call.identity)
     tags, system_tags = conform_tags(
         call, request.tags, request.system_tags, validate=True
     )
@@ -162,8 +160,6 @@ def create(call: APICall, company_id, request: CreateRequest):
 def update(call: APICall, company_id, request: UpdateRequest):
     QueueAccessBLL.assert_can_manage(call.identity, company_id, request.queue)
     data = call.data_model_for_partial_update
-    if "public" in data:
-        QueueAccessBLL.assert_admin(call.identity)
     conform_tag_fields(call, data, validate=True)
     escape_metadata(data)
     updated, fields = queue_bll.update(

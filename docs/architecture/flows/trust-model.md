@@ -15,8 +15,8 @@ This page says who may act for whom, and where the current implementation is wea
 
 - An agent can be enrolled only by an admin.
 - Any company user may create a queue and becomes its owner. A user sees a queue when they own it, hold a grant on it, are a member of a root project it is allocated to, or when it is public. Admins see every queue. Queues created before ownership have no owner and stay admin-managed.
-- The owner manages a queue (update, delete, grants and metadata); only admins may set its `public` flag. A grantee uses the queue but cannot manage it.
-- An agent may serve a queue only when its user owns the queue, holds a grant on it, or is an admin. Agent tokens cannot create, update, delete or manage the grants of queues.
+- The owner manages a queue (update, delete, grants and metadata); the owner and admins may set its `public` flag. Any user's agent may serve a public queue. A grantee uses the queue but cannot manage it.
+- An agent may serve a queue only when the queue is public, its user owns it, holds a grant on it, or the user is an admin. Agent tokens cannot create, update, delete or manage the grants of queues.
 - A device or job token stops working when its device is revoked, its owner is disabled, or (for a job) its task is no longer queued or running.
 - Each device assertion is bound to one server address and can be used once.
 - The server never returns a stored Git secret. It issues short-lived, read-only repository tokens instead.

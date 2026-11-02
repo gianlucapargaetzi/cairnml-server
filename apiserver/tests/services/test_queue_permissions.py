@@ -100,10 +100,11 @@ def test_a_non_admin_creates_a_queue_and_becomes_its_owner(company):
     assert call.result.data == {"id": queue.id}
 
 
-def test_a_non_admin_cannot_create_a_public_queue(company):
-    with pytest.raises(errors.forbidden.NoWritePermission):
-        svc.create(FakeCall(identity(company, "u1")), company, CreateRequest(name="user-public", public=True))
-    assert Queue.objects(company=company, name="user-public").first() is None
+def test_a_non_admin_creates_a_public_queue_as_its_owner(company):
+    svc.create(FakeCall(identity(company, "u1")), company, CreateRequest(name="user-public", public=True))
+    queue = Queue.objects(company=company, name="user-public").first()
+    assert queue.public is True
+    assert queue.created_by == "u1"
 
 
 def test_an_admin_creating_a_queue_becomes_its_owner_too(company):
@@ -249,10 +250,16 @@ def test_public_queues_stay_visible_to_everyone(company):
     assert queue.id in visible_ids(company, identity(company, "stranger"))
 
 
-def test_the_owner_cannot_set_the_public_flag(company):
+def test_the_owner_sets_the_public_flag(company):
     queue = make_queue(company, created_by="owner")
+    svc.update(UpdateCall(identity(company, "owner"), public=True), company, UpdateRequest(queue=queue.id, public=True))
+    assert Queue.objects(id=queue.id).first().public is True
+
+
+def test_a_grantee_cannot_set_the_public_flag(company):
+    queue = make_queue(company, created_by="owner", users=["u1"])
     with pytest.raises(errors.forbidden.NoWritePermission):
-        svc.update(UpdateCall(identity(company, "owner"), public=True), company, UpdateRequest(queue=queue.id, public=True))
+        svc.update(UpdateCall(identity(company, "u1"), public=True), company, UpdateRequest(queue=queue.id, public=True))
     assert Queue.objects(id=queue.id).first().public is False
 
 
@@ -469,9 +476,9 @@ def test_an_agent_may_serve_only_the_queues_its_user_owns_or_is_granted(company)
     user = identity(company, "u1")
 
     QueueAccessBLL.assert_can_serve(user, company, [owned.id, granted.id])
-    for queue in (other, public):
-        with pytest.raises(errors.bad_request.InvalidQueueId):
-            QueueAccessBLL.assert_can_serve(user, company, [owned.id, queue.id])
+    QueueAccessBLL.assert_can_serve(user, company, [owned.id, public.id])
+    with pytest.raises(errors.bad_request.InvalidQueueId):
+        QueueAccessBLL.assert_can_serve(user, company, [owned.id, other.id])
 
 
 def test_an_admin_may_have_an_agent_serve_any_queue(company):

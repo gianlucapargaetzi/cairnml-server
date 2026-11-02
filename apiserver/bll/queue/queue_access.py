@@ -6,12 +6,12 @@ Who may see, use, manage and allocate a queue.
 - A user sees a queue when it is public, when they are its owner, when they hold a grant on it, or when it is allocated
   to a root project they own or are a member of (in any role). Admins (company admin or root) see every queue.
 - A queue is usable (enqueue, dequeue, peek and the other task actions) by the same users who see it.
-- The owner manages the queue: update, delete, grants and metadata. Admins manage every queue. The `public` flag is
-  set by admins only, since a public queue is visible and allocatable by every company user.
+- The owner manages the queue: update, delete, grants, metadata and the `public` flag. Admins manage every queue. A
+  public queue is visible and allocatable by every company user, and any user's agent may serve it.
 - A grant lets the user use the queue and allocate it to the root projects they own. Only the owner of a root project
   changes its allocations, and the owner may allocate only the queues they may use without admin rights: public
   queues, queues they hold a grant on, and queues they own.
-- An agent may serve a queue only when its user owns it, holds a grant on it, or is an admin.
+- An agent may serve a queue only when it is public, its user owns it, holds a grant on it, or is an admin.
 """
 
 from typing import Iterable, Set
@@ -31,13 +31,6 @@ class QueueAccessBLL:
     @staticmethod
     def is_admin(identity: Identity) -> bool:
         return identity.role in _ADMIN_ROLES
-
-    @staticmethod
-    def assert_admin(identity: Identity) -> None:
-        if not QueueAccessBLL.is_admin(identity):
-            raise errors.forbidden.NoWritePermission(
-                "only company admins can set the public flag of a queue"
-            )
 
     @staticmethod
     def is_owner(identity: Identity, queue: Queue) -> bool:
@@ -122,7 +115,7 @@ class QueueAccessBLL:
     @staticmethod
     def assert_can_serve(identity: Identity, company_id: str, queue_ids: Iterable[str]) -> None:
         """
-        An agent may serve a queue only when the user owns it, holds a grant on it, or is an admin.
+        An agent may serve a queue only when it is public, the user owns it, holds a grant on it, or is an admin.
         :raise errors.bad_request.InvalidQueueId: for the queues the user may not serve
         """
         if identity is None:
@@ -133,7 +126,7 @@ class QueueAccessBLL:
         allowed = set(
             Queue.objects(
                 Q(company=company_id, id__in=list(queue_ids))
-                & (Q(created_by=identity.user) | Q(users__user=identity.user))
+                & (Q(public=True) | Q(created_by=identity.user) | Q(users__user=identity.user))
             ).scalar("id")
         )
         invalid = queue_ids - allowed
