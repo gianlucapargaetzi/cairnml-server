@@ -209,11 +209,9 @@ services:
       CAIRNML__apiserver__idp__trusted_proxies: '${CAIRNML_TRUSTED_PROXIES:-["127.0.0.0/8","::1/128","172.16.0.0/12"]}'
       CAIRNML__apiserver__idp__github_app_id: ${GITHUB_APP_ID:-}
       CAIRNML__apiserver__idp__github_api_url: ${GITHUB_API_URL:-https://api.github.com}
-      # The dataset registry (owner/name of its repository) and the owners whose dataset repositories may be registered
-      # in it, e.g. CAIRNML_DATASET_REGISTRY=acme/external-datasets and CAIRNML_DATASET_OWNERS='["acme"]' in deploy/.env.
-      # The registry is also the list of dataset repositories a job may clone: nothing else lists them.
+      # The public dataset registries, e.g. CAIRNML_DATASET_REGISTRY=acme/public-datasets in deploy/.env. They list public
+      # datasets and adapters only; a dataset of our own lives in its own repository, found through the GitHub App.
       CAIRNML__apiserver__dataset_registry__repository: ${CAIRNML_DATASET_REGISTRY:-}
-      CAIRNML__apiserver__dataset_registry__allowed_owners: ${CAIRNML_DATASET_OWNERS:-[]}
       CAIRNML__apiserver__dataset_registry__repositories: ${CAIRNML_DATASET_REGISTRIES:-[]}
       CAIRNML__services__async_urls_delete__enabled: "true"
       # Object storage: internal address for the server's own calls. The public address that presigned URLs name is the

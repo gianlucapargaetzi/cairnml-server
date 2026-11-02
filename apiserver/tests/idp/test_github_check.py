@@ -28,8 +28,36 @@ def task(repository="https://github.com/acme/proj.git", commit="abc123"):
 
 
 class TestSubmissionCheck(TestCase):
+    def setUp(self):
+        # No test reaches GitHub: every repository is private unless a test says otherwise.
+        patcher = mock.patch("apiserver.idp.github_check.public_repo", return_value=False)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_a_repository_on_github_with_its_commit_is_accepted(self):
         check_submission(task(), FakeApp())
+
+    def test_a_public_repository_is_accepted_without_the_app_and_its_commit_is_looked_up_without_a_token(self):
+        with mock.patch("apiserver.idp.github_check.public_repo", return_value=True), \
+                mock.patch("apiserver.idp.github_check.public_commit_exists", return_value=True) as exists:
+            check_submission(task(), None)
+        exists.assert_called_once()
+
+    def test_a_public_repository_with_a_missing_commit_is_refused(self):
+        with mock.patch("apiserver.idp.github_check.public_repo", return_value=True), \
+                mock.patch("apiserver.idp.github_check.public_commit_exists", return_value=False):
+            with self.assertRaisesRegex(errors.bad_request.ValidationError, "push it first"):
+                check_submission(task(), None)
+
+    def test_a_public_repository_is_accepted_with_the_app_without_asking_for_an_installation(self):
+        app = FakeApp(installed=False)
+        with mock.patch("apiserver.idp.github_check.public_repo", return_value=True):
+            check_submission(task(), app)
+
+    def test_a_failing_visibility_check_refuses_the_job(self):
+        with mock.patch("apiserver.idp.github_check.public_repo", side_effect=GitHubError("boom")):
+            with self.assertRaisesRegex(errors.bad_request.ValidationError, "could not be reached"):
+                check_submission(task(), FakeApp())
 
     def test_a_missing_commit_is_refused_with_a_clear_message(self):
         with self.assertRaises(errors.bad_request.ValidationError) as ctx:

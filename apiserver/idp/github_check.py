@@ -1,11 +1,12 @@
-"""The check made when a job is submitted. On GitHub, its commit must exist and the GitHub App must be installed
-on its repository. On another host, a private repository needs stored Git credentials (repo_visibility). Otherwise
-the job is refused at once with a clear message, instead of failing later in the agent when it tries to clone."""
+"""The check made when a job is submitted. On GitHub, its commit must exist, and a private repository needs the GitHub App
+installed on it; a public repository needs neither the App nor a token. On another host, a private repository needs
+stored Git credentials (repo_visibility). Otherwise the job is refused at once with a clear message, instead of failing
+later in the agent when it tries to clone."""
 
 from urllib.parse import urlsplit
 
 from apiserver.apierrors import errors
-from apiserver.idp.github import GitHubError, RepoNotAccessible
+from apiserver.idp.github import GitHubError, RepoNotAccessible, public_commit_exists, public_repository
 from apiserver.idp.repo_visibility import check_readable
 
 # The section of the server README that sets the App up: every refusal below points to it.
@@ -25,35 +26,57 @@ def repo_of(repository: str):
     return path if path.count("/") == 1 else None
 
 
+def public_repo(repo: str) -> bool:
+    """True when GitHub shows the repository to anyone without a token. Needs no GitHub App."""
+    return public_repository(_api_url(), repo)
+
+
 def check_submission(task, app) -> None:
-    """Raise a validation error when the task's GitHub repository or commit cannot be used."""
+    """Raise a validation error when the task's GitHub repository or commit cannot be used.
+
+    A public repository is cloned without a token, so it needs neither the GitHub App nor an installation; its commit
+    is looked up without one. A private repository needs the App installed on it.
+    """
     repo = repo_of(task.script.repository)
     if repo is None:
         if task.script.repository:
             check_readable(task.company, task.script.repository)
         return
-    if app is None:
-        raise errors.bad_request.ValidationError(
-            f"GitHub is not set up: the job's repository {repo} cannot be checked without the GitHub App. "
-            f"Set GITHUB_APP_ID in deploy/.env, copy the App's key, and run deploy/scripts/bootstrap.sh. "
-            f"Steps: {GITHUB_APP_DOCS}")
     commit = task.script.version_num
-    if not commit:
-        raise errors.bad_request.ValidationError(f"no commit is recorded for {repo}: commit and push first")
     try:
-        app.installation_token(repo)
-    except RepoNotAccessible:
-        raise errors.bad_request.ValidationError(
-            f"the GitHub App is not installed on {repo}: install it on this repository, with 'Only select "
-            f"repositories' (steps: {GITHUB_APP_DOCS})") from None
+        public = public_repo(repo)
     except GitHubError:
         raise errors.bad_request.ValidationError("GitHub could not be reached to check the job") from None
+    if not public:
+        if app is None:
+            raise errors.bad_request.ValidationError(
+                f"GitHub is not set up: the job's repository {repo} cannot be checked without the GitHub App. "
+                f"Set GITHUB_APP_ID in deploy/.env, copy the App's key, and run deploy/scripts/bootstrap.sh. "
+                f"Steps: {GITHUB_APP_DOCS}")
+    if not commit:
+        raise errors.bad_request.ValidationError(f"no commit is recorded for {repo}: commit and push first")
+    if not public:
+        try:
+            app.installation_token(repo)
+        except RepoNotAccessible:
+            raise errors.bad_request.ValidationError(
+                f"the GitHub App is not installed on {repo}: install it on this repository, with 'Only select "
+                f"repositories' (steps: {GITHUB_APP_DOCS})") from None
+        except GitHubError:
+            raise errors.bad_request.ValidationError("GitHub could not be reached to check the job") from None
     try:
-        found = app.commit_exists(repo, commit)
+        found = app.commit_exists(repo, commit) if app is not None else public_commit_exists(
+            _api_url(), repo, commit)
     except GitHubError:
         raise errors.bad_request.ValidationError("GitHub could not be reached to check the job") from None
     if not found:
         raise errors.bad_request.ValidationError(f"commit not found on GitHub: push it first ({repo}@{commit[:8]})")
+
+
+def _api_url() -> str:
+    from apiserver.config_repo import config
+
+    return config.get("apiserver.idp.github_api_url")
 
 
 def build_from_config():
