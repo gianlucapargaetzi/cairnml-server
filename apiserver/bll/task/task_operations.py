@@ -3,6 +3,7 @@ from typing import Callable, Any, Tuple, Union, Sequence, Optional
 
 from apiserver.apierrors import errors, APIError
 from apiserver.bll.queue import QueueBLL
+from apiserver.bll.queue.queue_access import QueueAccessBLL
 from apiserver.bll.task import (
     TaskBLL,
     validate_status_change,
@@ -220,6 +221,8 @@ def enqueue_task(
     task = get_task_with_write_access(
         task_id=task_id, company_id=company_id, identity=identity
     )
+    if queue_id:
+        QueueAccessBLL.assert_can_use(identity, company_id, queue_id)
     if queue_id or queue_name:
         # A job must be runnable: its commit exists on GitHub and the App can read its repository.
         from apiserver.idp.github_check import build_from_config as _github, check_submission
@@ -239,12 +242,16 @@ def enqueue_task(
             company_id=company_id, queue_name=queue_name, only=("id",)
         )
         if not queue:
-            queue = queue_bll.create(company_id=company_id, name=queue_name)
+            # the caller creates the queue, so they own it
+            queue = queue_bll.create(
+                company_id=company_id, name=queue_name, created_by=identity.user
+            )
         queue_id = queue.id
 
     if not queue_id:
         # try to get default queue
         queue_id = queue_bll.get_default(company_id).id
+    QueueAccessBLL.assert_can_use(identity, company_id, queue_id)
 
     user_id = identity.user
     if validate:

@@ -57,13 +57,20 @@ def conform_queue_data(call: APICall, queue_data: Union[Sequence[dict], dict]):
     unescape_metadata(call, queue_data)
 
 
+def _with_owner(queue_data: Union[Sequence[dict], dict]) -> Union[Sequence[dict], dict]:
+    """ The owner is always reported, null for queues created before ownership (mongo omits empty fields) """
+    for queue in [queue_data] if isinstance(queue_data, dict) else queue_data:
+        queue.setdefault("created_by", None)
+    return queue_data
+
+
 @endpoint("queues.get_by_id", min_version="2.4")
 def get_by_id(call: APICall, company_id, request: GetByIdRequest):
     QueueAccessBLL.assert_can_use(call.identity, company_id, request.queue)
     queue = queue_bll.get_by_id(
         company_id, request.queue, max_task_entries=request.max_task_entries
     )
-    queue_dict = queue.to_proper_dict()
+    queue_dict = _with_owner(queue.to_proper_dict())
     conform_queue_data(call, queue_dict)
     call.result.data = {"queue": queue_dict}
 
@@ -105,6 +112,7 @@ def get_all_ex(call: APICall, company: str, request: GetAllRequest):
         count_task_entries=request.count_task_entries,
         ret_params=ret_params,
     )
+    _with_owner(queues)
     conform_queue_data(call, queues)
     call.result.data = {"queues": queues, **ret_params}
 
@@ -121,13 +129,15 @@ def get_all(call: APICall, company: str, request: GetAllRequest):
         max_task_entries=request.max_task_entries,
         ret_params=ret_params,
     )
+    _with_owner(queues)
     conform_queue_data(call, queues)
     call.result.data = {"queues": queues, **ret_params}
 
 
 @endpoint("queues.create", min_version="2.4")
 def create(call: APICall, company_id, request: CreateRequest):
-    QueueAccessBLL.assert_admin(call.identity)
+    if request.public:
+        QueueAccessBLL.assert_admin(call.identity)
     tags, system_tags = conform_tags(
         call, request.tags, request.system_tags, validate=True
     )
@@ -139,6 +149,7 @@ def create(call: APICall, company_id, request: CreateRequest):
         system_tags=system_tags,
         metadata=Metadata.metadata_from_api(request.metadata),
         public=bool(request.public),
+        created_by=call.identity.user,
     )
     call.result.data = {"id": queue.id}
 
@@ -149,8 +160,10 @@ def create(call: APICall, company_id, request: CreateRequest):
     response_data_model=UpdateResponse,
 )
 def update(call: APICall, company_id, request: UpdateRequest):
-    QueueAccessBLL.assert_admin(call.identity)
+    QueueAccessBLL.assert_can_manage(call.identity, company_id, request.queue)
     data = call.data_model_for_partial_update
+    if "public" in data:
+        QueueAccessBLL.assert_admin(call.identity)
     conform_tag_fields(call, data, validate=True)
     escape_metadata(data)
     updated, fields = queue_bll.update(
@@ -162,7 +175,7 @@ def update(call: APICall, company_id, request: UpdateRequest):
 
 @endpoint("queues.delete", min_version="2.4")
 def delete(call: APICall, company_id, request: DeleteRequest):
-    QueueAccessBLL.assert_admin(call.identity)
+    QueueAccessBLL.assert_can_manage(call.identity, company_id, request.queue)
     queue_bll.delete(
         company_id=company_id,
         user_id=call.identity.user,
@@ -419,7 +432,7 @@ def get_queue_metrics(
 def add_or_update_metadata(
     call: APICall, company_id: str, request: AddOrUpdateMetadataRequest
 ):
-    QueueAccessBLL.assert_admin(call.identity)
+    QueueAccessBLL.assert_can_manage(call.identity, company_id, request.queue)
     queue_id = request.queue
     queue = queue_bll.get_by_id(company_id=company_id, queue_id=queue_id, only=("id",))
     return {
@@ -431,7 +444,7 @@ def add_or_update_metadata(
 
 @endpoint("queues.delete_metadata", min_version="2.13")
 def delete_metadata(call: APICall, company_id: str, request: DeleteMetadataRequest):
-    QueueAccessBLL.assert_admin(call.identity)
+    QueueAccessBLL.assert_can_manage(call.identity, company_id, request.queue)
     queue_id = request.queue
     queue = queue_bll.get_by_id(company_id=company_id, queue_id=queue_id, only=("id",))
     return {"updated": Metadata.delete_metadata(queue, keys=request.keys)}
@@ -468,7 +481,7 @@ def _get_queue_or_fail(company_id: str, queue_id: str) -> Queue:
 
 @endpoint("queues.get_users")
 def get_users(call: APICall, company_id: str, request: QueueRequest):
-    QueueAccessBLL.assert_admin(call.identity)
+    QueueAccessBLL.assert_can_manage(call.identity, company_id, request.queue)
     queue = _get_queue_or_fail(company_id, request.queue)
     call.result.data = {
         "users": [
@@ -480,7 +493,7 @@ def get_users(call: APICall, company_id: str, request: QueueRequest):
 
 @endpoint("queues.add_user", response_data_model=UpdateResponse)
 def add_user(call: APICall, company_id: str, request: UserRequest):
-    QueueAccessBLL.assert_admin(call.identity)
+    QueueAccessBLL.assert_can_manage(call.identity, company_id, request.queue)
     _get_queue_or_fail(company_id, request.queue)
     if not User.objects(id=request.user, company=company_id).only("id").first():
         raise errors.bad_request.InvalidUserId(id=request.user)
@@ -500,7 +513,7 @@ def add_user(call: APICall, company_id: str, request: UserRequest):
 
 @endpoint("queues.remove_user", response_data_model=UpdateResponse)
 def remove_user(call: APICall, company_id: str, request: UserRequest):
-    QueueAccessBLL.assert_admin(call.identity)
+    QueueAccessBLL.assert_can_manage(call.identity, company_id, request.queue)
     queue = _get_queue_or_fail(company_id, request.queue)
     if not any(u.user == request.user for u in queue.users):
         raise errors.bad_request.InvalidUserId(id=request.user)

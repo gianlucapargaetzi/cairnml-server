@@ -29,6 +29,7 @@ from apiserver.database.model.project import Project
 from apiserver.database.model.queue import Queue
 from apiserver.database.model.task.task import Task
 from apiserver.bll.project.access import ProjectAccessBLL
+from apiserver.bll.queue.queue_access import QueueAccessBLL
 from apiserver.redis_manager import redman
 from apiserver.service_repo.auth import Identity
 from apiserver.utilities.dicts import nested_get
@@ -61,6 +62,7 @@ class WorkerBLL:
         tags: Sequence[str] = None,
         system_tags: Sequence[str] = None,
         resources: Resources = None,
+        identity: Identity = None,
     ) -> WorkerEntry:
         """
         Register a worker
@@ -71,7 +73,9 @@ class WorkerBLL:
         :param queues: queues reported as being monitored by the worker
         :param timeout: registration expiration timeout in seconds
         :param tags: a list of tags for this worker
+        :param identity: the caller, required when queues are reported (see QueueAccessBLL.assert_can_serve)
         :raise bad_request.InvalidUserId: in case the calling user or company does not exist
+        :raise bad_request.InvalidQueueId: in case a queue does not exist or the caller may not serve it
         :return: worker entry instance
         """
         key = WorkerBLL._get_worker_key(company_id, user_id, worker)
@@ -93,6 +97,8 @@ class WorkerBLL:
             if len(queue_objs) < len(queues):
                 invalid = set(queues).difference(q.id for q in queue_objs)
                 raise bad_request.InvalidQueueId(ids=invalid)
+            if queues:
+                QueueAccessBLL.assert_can_serve(identity, company_id, queues)
 
             if resources and queues:
                 Queue.objects(queues_query).update(resources=resources.to_struct())
@@ -138,6 +144,7 @@ class WorkerBLL:
         report: StatusReportRequest,
         tags: Sequence[str] = None,
         system_tags: Sequence[str] = None,
+        identity: Identity = None,
     ) -> None:
         """
         Write worker status report
@@ -146,9 +153,17 @@ class WorkerBLL:
         :param ip: worker IP
         :param report: the report itself
         :param tags: tags for this worker
+        :param identity: the caller, checked against the queues the report names (see QueueAccessBLL.assert_can_serve)
         :raise bad_request.InvalidTaskId: the reported task was not found
+        :raise bad_request.InvalidQueueId: the caller may not serve a queue named in the report
         :return: worker entry instance
         """
+        served = set(report.queues or [])
+        if report.queue:
+            served.add(report.queue)
+        if served:
+            QueueAccessBLL.assert_can_serve(identity, company_id, served)
+
         entry = self._get_worker(company_id, user_id, report.worker)
 
         try:
