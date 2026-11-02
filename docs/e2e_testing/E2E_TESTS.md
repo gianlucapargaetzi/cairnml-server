@@ -109,7 +109,6 @@ Section 7 of E2E.md. Each step runs in its own process.
 | `test_an_older_version_keeps_its_deleted_file` | The first commit still has the file the second one removed. |
 | `test_a_run_records_the_dataset_it_used` | The run has the repository, commit and content hash under `Datasets/<alias>`. |
 | `test_a_commit_that_was_not_pushed_is_refused` | A commit that exists only on the author's machine cannot be fetched. |
-| `test_registration_is_refused_when_the_server_has_no_registry` | `dataset_registry.register` answers 400 "not configured" when the server has no GitHub App and no registry. |
 | `test_dataset_fetch_of_an_unknown_commit_fails` | An unknown commit fails. |
 | `test_model_is_listed_under_its_run` | The model is listed in the run's output models. |
 | `test_model_downloads_intact_on_another_machine` | The model's weights come back with the same digest. |

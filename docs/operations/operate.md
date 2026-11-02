@@ -41,7 +41,7 @@ part of every backup.
 
 Open the first two in the machine's firewall. No other port is published: the API, the sign-in service and the databases
 are reachable only inside Docker. The server calls GitHub over HTTPS (`GITHUB_API_URL`) when a job from
-a GitHub repository is submitted and when a dataset is registered, and it asks other Git hosts over HTTPS when a job from
+a GitHub repository is submitted and when a dataset is listed or read, and it asks other Git hosts over HTTPS when a job from
 one of them is submitted. The machine needs outbound HTTPS for those.
 
 The first release serves plain HTTP only, for a LAN; TLS is not supported yet. The sign-in service's admin console is

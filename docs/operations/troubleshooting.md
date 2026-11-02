@@ -19,7 +19,7 @@ docker compose logs --tail 100 <service>      # apiserver, webserver, cairnml-id
 - [An upload fails](#an-upload-fails)
 - [Object storage is unreachable](#object-storage-is-unreachable)
 - [A job from GitHub is refused](#a-job-from-github-is-refused)
-- [Dataset registration is refused](#dataset-registration-is-refused)
+- [A dataset is refused or not listed](#a-dataset-is-refused-or-not-listed)
 - [An SDK or agent is older than the server expects](#an-sdk-or-agent-is-older-than-the-server-expects)
 
 ## The server does not start, or the setup fails
@@ -129,13 +129,12 @@ configuration (`apiserver.client_versions`), its calls still work, but the serve
 Upgrade the named client to the commit the server's pin names (see the README, section "Compatibility"). The warning
 is the only sign of an old client, so look for it when a client behaves oddly after an upgrade of the server.
 
-## Dataset registration is refused
+## A dataset is refused or not listed
 
 | Message | Cause and fix |
 |---|---|
-| `GitHub is not configured on this server` | Set up the GitHub App (README, section "GitHub App"). |
-| `the dataset registry is not configured on this server` | Set `CAIRNML_DATASET_REGISTRY` in `deploy/.env` (README, section "Datasets"). |
-| `datasets of <owner> may not be registered here` | Add the owner to `CAIRNML_DATASET_OWNERS`. |
-| `the registry could not be updated (...); the GitHub App needs write access ...` | The App lacks **Contents** and **Pull requests** write access on the registry repository. See README, section "Datasets". |
-| `... does not pass its footprint check` | The dataset repository's data does not match its declared footprint. Run `cairnml dataset check` in the dataset repository, fix what it reports, and commit again. |
-| `<name> is already registered` | The dataset is in the registry already. |
+| `GitHub is not configured on this server` | Set up the GitHub App (README, section "GitHub App"). Without it no dataset is listed, and a private dataset is refused. |
+| `the GitHub App is not installed on <owner>/<repo>` | Install the App on that repository, with **Only select repositories** (README, section "Datasets"). |
+| `<owner>/<repo> is not a CairnML dataset: dataset.yaml is missing on its default branch` | The repository has no `dataset.yaml` at its root on its default branch. Commit the dataset to that branch, or do not expect it to be listed. |
+| `<owner>/<repo>@<commit> on <branch> does not pass its footprint check` | The dataset's data does not match its declared footprint. Run `cairnml dataset check` in the dataset repository, fix what it reports, and commit again. The repository is left out of the list until then. |
+| `<owner>/<repo> is a public repository: it is cloned without a token, so none is issued` | Not a fault: a public repository needs no token. The job clones it without one. |
