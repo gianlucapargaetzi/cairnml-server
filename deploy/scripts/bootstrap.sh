@@ -128,12 +128,29 @@ cairnml_temp_id=$($K get users -r cairnml -q username="$TEMP_USER" --fields id |
 [ -z "$cairnml_temp_id" ] || $K delete "users/$cairnml_temp_id" -r cairnml
 '
 kc_user_setup() {
-  docker compose exec -T \
+  # The output is shown only when the setup fails.
+  local out
+  if ! out=$(docker compose exec -T \
     -e ADMIN_USER="$KC_ADMIN" -e ADMIN_PW="$KC_ADMIN_PASSWORD" -e CAIRNML_PW="$CAIRNML_ADMIN_PASSWORD" \
     -e TEMP_USER="$TEMP_ADMIN" -e PREV_PW="$PREV_ADMIN_PASSWORD" \
-    cairnml-idp sh -c "$KC_USER_SETUP" >/dev/null
+    cairnml-idp sh -c "$KC_USER_SETUP" 2>&1); then
+    printf '%s\n' "$out" | tail -n 20 >&2
+    return 1
+  fi
+}
+# True when KC_ADMIN_PASSWORD is the admin's current password (the sign-in is checked, nothing is changed).
+kc_admin_signs_in() {
+  docker compose exec -T -e U="$KC_ADMIN" -e P="$KC_ADMIN_PASSWORD" cairnml-idp sh -c \
+    'K=/opt/keycloak/bin/kcadm.sh; $K config credentials --server http://localhost:$KC_HTTP_PORT/cairnml/idp --realm master --user "$U" --password "$P"' \
+    >/dev/null 2>&1
 }
 if ! kc_user_setup; then
+  # The prompt is only for a changed password: when the admin can sign in with KC_ADMIN_PASSWORD, the password is
+  # right and the setup failed for another reason (shown above).
+  if kc_admin_signs_in; then
+    echo "the admin signs in with KC_ADMIN_PASSWORD, so the setup failed for another reason (see the output above)" >&2
+    exit 1
+  fi
   # KC_ADMIN_PASSWORD is not the admin's password yet: a changed password needs the one set before.
   if [ -t 0 ]; then
     printf 'Enter the admin password set before (not shown, empty to stop): ' >&2

@@ -91,13 +91,75 @@ clear_dir() {
   fi
 }
 
+# The device key signs in as its device (devices.exchange) and revokes it on the server (devices.revoke). Run inside the
+# API container, with the key on stdin, so the key never lands in the container. The audience is the stack's public
+# address (the proxy on port 80); the forwarded headers make the server use it, as they do for the proxy.
+REVOKE_PY='import json, sys, time, urllib.request, uuid
+import jwt
+from cryptography.hazmat.primitives import serialization
+
+device_id = sys.argv[1]
+key = serialization.load_pem_private_key(sys.stdin.buffer.read(), password=None)
+PUBLIC_AUD = "http://localhost/cairnml/api"
+
+def call(path, body, token=None):
+    headers = {"Content-Type": "application/json", "X-Forwarded-Host": "localhost", "X-Forwarded-Proto": "http"}
+    if token:
+        headers["Authorization"] = "Bearer " + token
+    req = urllib.request.Request("http://127.0.0.1:8008/" + path, data=json.dumps(body).encode(), method="POST", headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=20) as r:
+            return r.status, json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        return e.code, json.loads(e.read() or b"{}")
+
+now = int(time.time())
+assertion = jwt.encode({"iss": device_id, "sub": device_id, "aud": PUBLIC_AUD, "iat": now, "exp": now + 120, "jti": uuid.uuid4().hex}, key, algorithm="EdDSA")
+status, body = call("devices.exchange", {"assertion": assertion})
+if status != 200:
+    reason = body.get("meta", {}).get("result_msg", "")
+    if "unknown device" in reason or "revoked" in reason:
+        print("  already gone on the server:", device_id, "-", reason)
+        sys.exit(0)
+    print("  could not sign in as", device_id, "-", reason)
+    sys.exit(1)
+status, body = call("devices.revoke", {"id": device_id}, body["data"]["access_token"])
+if status != 200:
+    print("  revoke refused:", device_id, "-", body.get("meta", {}).get("result_msg", ""))
+    sys.exit(1)
+print("  revoked on the server:", device_id)'
+
+# revoke_device KEY_FILE DEVICE_ID : revokes the device on the running server. Skipped when the stack is not running
+# (then the device stays on the server until its data is removed with --data).
+revoke_device() {
+  local key="$1" id="$2"
+  if [ "$DRY_RUN" -eq 1 ]; then
+    say "  would revoke on the server: $id"
+    return 0
+  fi
+  if ! docker ps --format '{{.Names}}' | grep -qx cairnml-apiserver; then
+    say "  skip: the API server is not running, so $id stays on the server until --data"
+    return 0
+  fi
+  docker exec -i cairnml-apiserver python3 -c "$REVOKE_PY" "$id" < "$key" \
+    || say "  warning: could not revoke $id on the server (it stays until --data)"
+}
+
+# device_id_of FILE : the device_id a CairnML config file names, if any
+device_id_of() {
+  if [ -f "$1" ]; then
+    sed -n 's/.*device_id: *"\(dev_[0-9a-f]*\)".*/\1/p' "$1" | head -1
+  fi
+  return 0
+}
+
 # ---------------------------------------------------------------- plan
 say "cairnml teardown"
 say "deploy folder: $DEPLOY_DIR"
 say "state folder:  $STATE"
 say ""
 say "This removes:"
-say "  - the sign-in keys and the CairnML config on this machine (~/.cairnml, ~/cairnml.conf if it names our server)"
+say "  - the sign-in keys of the CLI and the agent, and the CairnML config files on this machine (~/.cairnml, ~/cairnml.conf and ~/cairnml-agent.conf, if they name our server)"
 say "  - the containers, volumes and network of the stack (deploy/compose.yaml)"
 say "  - the images cairnml-server-fork:local and the Keycloak image"
 [ "$DATA" -eq 1 ] && say "  - the data: $STATE/data and the folders deploy/data (users, databases, logs, object storage, artifacts)"
@@ -120,18 +182,36 @@ fi
 command -v docker >/dev/null || { echo "docker is required" >&2; exit 1; }
 
 # ---------------------------------------------------------------- 1. this machine's access
-say "1. Revoking access on this machine"
+say "1. Revoking access: the server first (the stack must be running), then this machine"
+agent_id=$(device_id_of "$HOME/cairnml-agent.conf")
+if [ -n "$agent_id" ] && [ -f "$HOME/.cairnml/agent/device.key" ]; then
+  revoke_device "$HOME/.cairnml/agent/device.key" "$agent_id"
+fi
+client_id=$(device_id_of "$HOME/cairnml.conf")
+if [ -n "$client_id" ] && [ -f "$HOME/.cairnml/device.key" ]; then
+  revoke_device "$HOME/.cairnml/device.key" "$client_id"
+fi
 if [ -f "$HOME/.cairnml/device.key" ]; then
   run rm -f "$HOME/.cairnml/device.key"
-  say "  the server keeps this device's record until the data is removed"
 fi
 if [ -f "$HOME/.cairnml/.session.json" ]; then
   run rm -f "$HOME/.cairnml/.session.json"
+fi
+# The agent's own device key (the agent signs in with it, not with the CLI's key).
+if [ -f "$HOME/.cairnml/agent/device.key" ]; then
+  run rm -f "$HOME/.cairnml/agent/device.key"
+  say "  the agent's device key"
 fi
 if [ -f "$HOME/cairnml.conf" ] && grep -q "cairnml" "$HOME/cairnml.conf"; then
   run rm -f "$HOME/cairnml.conf"
   say "  ~/cairnml.conf names the cairnml server"
 fi
+# The agent config names the server and holds the device id. It can also hold a git token, so it goes with the key.
+if [ -f "$HOME/cairnml-agent.conf" ] && grep -q "cairnml" "$HOME/cairnml-agent.conf"; then
+  run rm -f "$HOME/cairnml-agent.conf"
+  say "  ~/cairnml-agent.conf names the cairnml server (it can hold git credentials)"
+fi
+say "  revoked devices stay listed on the server until the data is removed (--data)"
 
 # ---------------------------------------------------------------- 2. containers and images
 # deploy/.env is read by compose from this folder, because compose.yaml is here.
