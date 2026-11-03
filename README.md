@@ -237,9 +237,9 @@ Each component has its own version number, and the numbers are not related: serv
 | Server | this repository | the commit you run | `apiserver/version.py` (2.4.0 here) |
 | SDK (`cairnml`) | `cairnml` | `docker/build/sdk-ref` | 0.0.2 |
 | Agent (`cairnml-agent`) | `cairnml-agent` | `docker/build/agent-ref` | 0.0.1 |
-| Web app | `cairnml-web` | `docker/build/web-ref` | 2.5.0 |
+| Web app | `cairnml-web` | `docker/build/web-ref` | the latest `main` at the build (`main`) |
 
-The pins are the only record of which versions go together. This repository's tests do not check other combinations.
+The SDK and the agent are fixed to the commits named in their pin files. The web app's pin names the branch `main`, so every build takes the newest commit of the web app's `main`. The version of the web app is the `version` in its `package.json` at that commit. The pins are the only record of which versions go together. This repository's tests do not check other combinations.
 
 - **Use the SDK and the agent at the commits the pins name.** A client installed from another source may work, but it is not tested with this server.
 - **Old clients get a warning, not a refusal.** The SDK and the agent send their name and version in the `X-CairnML-Client` header. When a client is older than the minimum set in `apiserver.client_versions` (`min_sdk_version` 0.0.2, `min_agent_version` 0.0.1 in the shipped configuration), the server still serves it, adds an `X-CairnML-Upgrade` header to each response that says what to upgrade, and logs the warning once in `docker compose logs apiserver`.

@@ -3,7 +3,7 @@ name: docker
 # - Pull request: builds the image and scans it. Nothing is pushed.
 # - Tag vX.Y.Z: builds, scans, and pushes the image to Docker Hub. The job waits for the owner's approval
 #   (environment "dockerhub"), which also holds the Docker Hub credentials.
-# The web app comes from the commit named in docker/build/web-ref (update it by pull request, like a pin).
+# The web app comes from the branch named in docker/build/web-ref ("main": the newest commit of cairnml-web's main).
 on:
   pull_request:
     branches: [main]
