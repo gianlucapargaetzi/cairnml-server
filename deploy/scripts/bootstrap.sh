@@ -95,11 +95,9 @@ signed_in() { $K config credentials --server http://localhost:$KC_HTTP_PORT/cair
 # Signs in as the admin, or as the temporary admin, with the current password or the previous one.
 admin_signed_in() { signed_in "$ADMIN_USER" "$ADMIN_PW" || { [ -n "$PREV_PW" ] && signed_in "$ADMIN_USER" "$PREV_PW"; }; }
 temp_signed_in() { signed_in "$TEMP_USER" "$ADMIN_PW" || { [ -n "$PREV_PW" ] && signed_in "$TEMP_USER" "$PREV_PW"; }; }
+# Keycloak is ready before this runs (wait_for_keycloak on the host): one sign-in attempt is enough.
 ok=0
-for _ in $(seq 1 90); do
-  if admin_signed_in || temp_signed_in; then ok=1; break; fi
-  sleep 2
-done
+if admin_signed_in || temp_signed_in; then ok=1; fi
 [ "$ok" = 1 ] || { echo "could not sign in to Keycloak: check KC_ADMIN and KC_ADMIN_PASSWORD" >&2; exit 1; }
 if ! admin_signed_in; then
   # The admin is not created yet, or the password was changed: the temporary admin (first start) takes it from here.
@@ -144,6 +142,18 @@ kc_admin_signs_in() {
     'K=/opt/keycloak/bin/kcadm.sh; $K config credentials --server http://localhost:$KC_HTTP_PORT/cairnml/idp --realm master --user "$U" --password "$P"' \
     >/dev/null 2>&1
 }
+# Waits until Keycloak serves the cairnml realm: the check the container healthcheck makes, over HTTP (quick), instead of
+# a kcadm login on each try (each one starts a Java process).
+wait_for_keycloak() {
+  local url="http://127.0.0.1:${CAIRNML_IDP_ADMIN_PORT:-8180}/cairnml/idp/realms/cairnml/.well-known/openid-configuration"
+  for _ in $(seq 1 90); do
+    if curl -fs -o /dev/null "$url" 2>/dev/null; then return 0; fi
+    sleep 2
+  done
+  echo "Keycloak does not answer at $url" >&2
+  return 1
+}
+wait_for_keycloak || exit 1
 if ! kc_user_setup; then
   # The prompt is only for a changed password: when the admin can sign in with KC_ADMIN_PASSWORD, the password is
   # right and the setup failed for another reason (shown above).
