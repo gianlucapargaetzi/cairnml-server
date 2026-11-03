@@ -74,9 +74,9 @@ class TestDeviceEndpoints(TestCase):
                         token=idp_token())
         self.assertEqual(response.status_code, 400)
 
-    def test_agent_enrolment_is_refused_for_a_non_admin(self):
+    def test_agent_enrolment_is_allowed_for_a_non_admin(self):
         response = self.enrol(kind="agent", roles=())
-        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.status_code, 200, response.text)
 
     def test_agent_enrolment_is_allowed_for_an_admin(self):
         response = self.enrol(kind="agent", roles=("admin",), sub="sub-admin")

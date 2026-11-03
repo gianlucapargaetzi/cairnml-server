@@ -32,7 +32,7 @@ from apiserver.idp import public_origin
 from apiserver.idp.oidc import OidcError
 from apiserver.idp.replay import claim_jti
 from apiserver.idp.tokens import issue_access_token, issue_job_token
-from apiserver.idp.users import role_for, upsert_idp_user
+from apiserver.idp.users import upsert_idp_user
 from apiserver.idp.verifier import get_verifier
 from apiserver.service_repo import APICall, endpoint
 from apiserver.service_repo.auth import Token
@@ -88,9 +88,6 @@ def enroll(call: APICall, _company, request: EnrollRequest):
     user = upsert_idp_user(issuer, identity.subject, identity.username, identity.roles, admin_role)
     if user.idp_disabled:
         raise errors.forbidden.RoleNotAllowed("user is disabled")
-    if request.kind == DeviceKind.agent and role_for(identity.roles, admin_role) != Role.admin:
-        audit(user.id, "device.enrol_refused", ip=client_address(call), company=user.company, kind=request.kind)
-        raise errors.forbidden.RoleNotAllowed("only an admin may enrol an agent")
 
     device = Device(
         id=f"dev_{uuid.uuid4().hex}",
