@@ -64,7 +64,6 @@ Enrolment is what `cairnml init` (SDK) and `cairnml-agent init` do. The server r
 
 | Message | Cause and fix |
 |---|---|
-| `only an admin may enrol an agent` | Only an admin can enrol an agent. Sign in as an admin, or ask one to enrol it. |
 | `user is disabled` | The user who enrols is disabled in the `cairnml` realm. |
 | `unknown device`, `device revoked` | The machine's key was revoked, or the record was removed. Enrol the machine again. |
 | `unknown owner`, `owner disabled` | The user who owns the device is missing or disabled. Enable the user, or enrol the machine as an enabled user. |
@@ -80,7 +79,7 @@ Work through these in order:
 
 1. **The agent is running** on its machine, with the server's address it was enrolled with.
 2. **The agent can reach the server** at `http://<server-ip>/cairnml/api` (or the port set by `CAIRNML_HTTP_PORT`). Check the port from the agent's machine, for example with `curl -fsS http://<server-ip>/cairnml/api/v2.8/login.supported_modes -H 'Content-Type: application/json' -d '{}'`. It should answer with JSON.
-3. **The agent is enrolled**, and it was enrolled by an admin. See [A machine cannot enrol](#a-machine-cannot-enrol).
+3. **The agent is enrolled**, and the signed-in user who enrolled it may use the queue. See [A machine cannot enrol](#a-machine-cannot-enrol).
 4. **The agent reports to a live server.** A worker that has not reported for `services.workers.default_worker_timeout_sec` (600 seconds by default) is no longer listed. Restart the agent, and it appears at its next report.
 
 ## A task stays queued
