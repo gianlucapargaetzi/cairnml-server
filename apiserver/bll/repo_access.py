@@ -12,10 +12,11 @@ from typing import Optional
 
 import requests
 
+from apiserver.bll import user_access
 from apiserver.bll.dataset_registry import canonical_url, parse_github_url
 from apiserver.config_repo import config
 from apiserver.idp import git_credentials as store
-from apiserver.idp.github import GitHubError, RepoNotAccessible, public_repository
+from apiserver.idp.github import GitHubApp, GitHubError, RepoNotAccessible, public_repository
 from apiserver.idp.github_check import build_from_config
 from apiserver.idp.repo_visibility import is_private
 from apiserver.idp.secrets import SecretMissing
@@ -49,7 +50,7 @@ def _token_works(repo: str, token: str) -> bool:
     return response.status_code == 200
 
 
-def _github(company: str, repository: str, owner: str, name: str) -> dict:
+def _github(company: str, user: Optional[str], repository: str, owner: str, name: str) -> dict:
     repo = f"{owner}/{name}"
     api_url = config.get("apiserver.idp.github_api_url")
     try:
@@ -57,6 +58,18 @@ def _github(company: str, repository: str, owner: str, name: str) -> dict:
             return _result(repository, PUBLIC, "", "Publicly accessible")
     except GitHubError:
         log.warning("GitHub could not say whether %s is public", repo, exc_info=True)
+
+    # the user's own accesses first: their apps and their tokens, in the order they were added
+    host, path = store.host_and_path(canonical_url(repo))
+    for entry, secret in user_access.usable_for(company, user, host, path):
+        if entry.kind == "app":
+            try:
+                GitHubApp(entry.app_id, secret, entry.api_url or api_url).installation_token(repo)
+                return _result(repository, APP, entry.label, f"Accessible via your GitHub App {entry.label}")
+            except (RepoNotAccessible, GitHubError):
+                continue
+        elif _token_works(repo, secret):
+            return _result(repository, TOKEN, entry.label, f"Accessible via your token {entry.label}")
 
     try:
         app = build_from_config()
@@ -90,9 +103,14 @@ def _github(company: str, repository: str, owner: str, name: str) -> dict:
                    "Ask an admin to install the App on the repository or to store a token.")
 
 
-def _other_host(company: str, repository: str) -> dict:
+def _other_host(company: str, user: Optional[str], repository: str) -> dict:
     if is_private(repository) is False:
         return _result(repository, PUBLIC, "", "Publicly accessible")
+    host, path = store.host_and_path(repository)
+    for entry, _secret in user_access.usable_for(company, user, host, path):
+        if entry.kind == "token":
+            return _result(repository, TOKEN, entry.label,
+                           f"Your token {entry.label} is stored for {host}; it is not verified until a job runs")
     credential = store.find_credential(company, repository)
     if credential is not None:
         # Git hosts other than GitHub are not asked with the token here: it is recorded as stored, not verified.
@@ -104,17 +122,18 @@ def _other_host(company: str, repository: str) -> dict:
                    "Ask an admin to store them.")
 
 
-def resolve_one(company: str, repository: str, now: Optional[float] = None) -> dict:
+def resolve_one(company: str, repository: str, user: Optional[str] = None, now: Optional[float] = None) -> dict:
     now = time.time() if now is None else now
-    key = (company, repository)
+    key = (company, user, repository)
     cached = _cache.get(key)
     if cached and now - cached[0] < CACHE_SEC:
         return cached[1]
     parsed = parse_github_url(repository)
-    result = _github(company, repository, *parsed) if parsed else _other_host(company, repository)
+    result = (_github(company, user, repository, *parsed) if parsed
+              else _other_host(company, user, repository))
     _cache[key] = (now, result)
     return result
 
 
-def resolve(company: str, repositories: list) -> list:
-    return [resolve_one(company, repository) for repository in repositories if repository]
+def resolve(company: str, repositories: list, user: Optional[str] = None) -> list:
+    return [resolve_one(company, repository, user) for repository in repositories if repository]
