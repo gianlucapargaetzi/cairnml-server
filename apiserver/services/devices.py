@@ -25,7 +25,6 @@ from apiserver.idp.assertion import AssertionInvalid, unverified_issuer, verify_
 from apiserver.idp.audit import client_address, record as audit
 from apiserver.idp.checks import AccessDenied, check_device, check_job_issue
 from apiserver.idp.github import GitHubApp, GitHubError, RepoNotAccessible, TokenReader
-from apiserver.bll.dataset_access import verify_dataset
 from apiserver.bll import user_access
 from apiserver.bll.dataset_registry import canonical_url
 from apiserver.idp.github_check import build_from_config, public_repo, repo_of
