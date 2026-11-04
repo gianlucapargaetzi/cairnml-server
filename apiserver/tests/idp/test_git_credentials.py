@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 from apiserver.apierrors import errors
 from apiserver.database.model.audit import AuditEvent
-from apiserver.database.model.git_credential import GitCredential
+from apiserver.database.model.user_access import UserAccess
 from apiserver.idp import git_credentials as store
 from apiserver.idp.secrets import read_secret
 from apiserver.tests.db import ensure_db
@@ -99,14 +99,14 @@ class TestCredentialStore(TestCase):
         self.addCleanup(env.stop)
         self.company = f"company-{uuid.uuid4().hex}"
         self.actor = "tester-" + self.company
-        self.addCleanup(lambda: GitCredential.objects(company=self.company).delete())
+        self.addCleanup(lambda: UserAccess.objects(company=self.company).delete())
         self.addCleanup(lambda: AuditEvent.objects(actor=self.actor).delete())
 
     def test_the_stored_value_is_encrypted_and_the_answers_never_carry_it(self):
         view = store.set_credential(self.company, "gitlab.example.com", "team", "ci-bot", SECRET, self.actor)
         self.assertEqual(view, {"host": "gitlab.example.com", "path": "team", "username": "ci-bot",
                                 "updated": view["updated"]})
-        stored = GitCredential.objects(company=self.company).get()
+        stored = UserAccess.objects(company=self.company).get()
         self.assertNotIn(SECRET, stored.secret)
         listed = store.list_credentials(self.company)
         self.assertEqual(len(listed), 1)
@@ -116,7 +116,7 @@ class TestCredentialStore(TestCase):
     def test_setting_again_replaces_the_entry(self):
         store.set_credential(self.company, "gitlab.example.com", "team", "ci-bot", SECRET, self.actor)
         store.set_credential(self.company, "gitlab.example.com", "/Team/", "ci-bot-2", "new-value", self.actor)
-        self.assertEqual(GitCredential.objects(company=self.company).count(), 1)
+        self.assertEqual(UserAccess.objects(company=self.company).count(), 1)
         entry = store.find_credential(self.company, "https://gitlab.example.com/team/project")
         self.assertEqual(entry.username, "ci-bot-2")
         self.assertEqual(store.secret_of(entry), "new-value")

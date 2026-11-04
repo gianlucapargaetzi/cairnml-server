@@ -33,6 +33,8 @@ class UserAccess(DbModelMixin, Document):
     api_url = StringField()
     secret = StringField(required=True)
     """ The token, or the App's private key, encrypted (a Fernet token) """
+    username = StringField()
+    """ The user name a token is used with, for a company token on a Git host (the credential's user name) """
 
     created = DateTimeField()
     updated = DateTimeField()

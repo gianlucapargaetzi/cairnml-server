@@ -161,24 +161,6 @@ def credentials_for(company: str, user: str, is_admin: bool) -> list:
             for entry in UserAccess.objects(company=company, user=user, scope="user").order_by("created")]
     rows += [_row(entry, "Company", is_admin)
              for entry in UserAccess.objects(company=company, scope="company").order_by("created")]
-    for credential in GitCredential.objects(company=company).order_by("host", "path"):
-        rows.append({
-            "id": f"git:{credential.host}:{credential.path}",
-            "source": "git",
-            "type": "Token",
-            "name": credential.username,
-            "owner": "Company",
-            "scope": "company",
-            "valid_for": valid_for("token", credential.host, credential.path),
-            "state": "unverified",
-            "message": "Not verified until a job uses it",
-            "last_checked": None,
-            "granted_projects": [],
-            "can_edit": is_admin,
-            "app_id": None,
-            "host": credential.host,
-            "path": credential.path,
-        })
     return rows
 
 
@@ -186,10 +168,7 @@ def list_for(company: str, user: str) -> dict:
     """The user's own accesses, and the company's (set by admins), which the user can use but not change."""
     own = [_view(entry) for entry in UserAccess.objects(company=company, user=user, scope="user").order_by("created")]
     company_apps = [_view(entry) for entry in UserAccess.objects(company=company, scope="company").order_by("created")]
-    company_tokens = [
-        {"host": entry.host, "path": entry.path, "username": entry.username}
-        for entry in GitCredential.objects(company=company).order_by("host", "path")
-    ]
+    company_tokens = [_view(entry) for entry in UserAccess.objects(company=company, scope="company", kind="token")]
     return {"own": own, "company": company_tokens, "company_apps": company_apps}
 
 
