@@ -125,6 +125,63 @@ def add_app(company: str, user: str, label: str, app_id: str, api_url: str, key:
     return _view(entry)
 
 
+def valid_for(kind: str, host: str, path: str) -> str:
+    """What a credential is valid for, in words: the repositories of its host, or of one path prefix on it."""
+    if kind == "app":
+        return "Repositories where the GitHub App is installed"
+    if not path:
+        return f"All repositories on {host}"
+    return f"{host}/{path}"
+
+
+def _row(entry: UserAccess, owner_name: str, can_edit: bool, source: str = "access") -> dict:
+    return {
+        "id": entry.id,
+        "source": source,
+        "type": "GitHub App" if entry.kind == "app" else "Token",
+        "name": entry.label,
+        "owner": owner_name,
+        "scope": entry.scope or "user",
+        "valid_for": valid_for(entry.kind, entry.host, entry.path),
+        "state": entry.last_state or "unchecked",
+        "message": entry.last_message or "",
+        "last_checked": entry.last_checked.isoformat() if entry.last_checked else None,
+        "granted_projects": list(entry.granted_projects or []),
+        "can_edit": can_edit,
+        "app_id": entry.app_id,
+    }
+
+
+def credentials_for(company: str, user: str, is_admin: bool) -> list:
+    """Every credential the user sees, in one list: their own accesses, the company's GitHub App, and the company's Git
+    credentials for other hosts. Each says who owns it, what it is valid for, whether it is valid, and whether this user
+    may change it (an owner changes their own; an admin changes the company's)."""
+    me = User.objects(id=user).only("name").first()
+    rows = [_row(entry, me.name if me else user, True)
+            for entry in UserAccess.objects(company=company, user=user, scope="user").order_by("created")]
+    rows += [_row(entry, "Company", is_admin)
+             for entry in UserAccess.objects(company=company, scope="company").order_by("created")]
+    for credential in GitCredential.objects(company=company).order_by("host", "path"):
+        rows.append({
+            "id": f"git:{credential.host}:{credential.path}",
+            "source": "git",
+            "type": "Token",
+            "name": credential.username,
+            "owner": "Company",
+            "scope": "company",
+            "valid_for": valid_for("token", credential.host, credential.path),
+            "state": "unverified",
+            "message": "Not verified until a job uses it",
+            "last_checked": None,
+            "granted_projects": [],
+            "can_edit": is_admin,
+            "app_id": None,
+            "host": credential.host,
+            "path": credential.path,
+        })
+    return rows
+
+
 def list_for(company: str, user: str) -> dict:
     """The user's own accesses, and the company's (set by admins), which the user can use but not change."""
     own = [_view(entry) for entry in UserAccess.objects(company=company, user=user, scope="user").order_by("created")]

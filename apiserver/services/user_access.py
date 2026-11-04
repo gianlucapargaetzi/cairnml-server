@@ -8,7 +8,9 @@ from apiserver.service_repo import APICall, endpoint
 
 @endpoint("user_access.get_all")
 def get_all(call: APICall, company: str, _request):
+    is_admin = call.identity.role in (Role.admin, Role.root)
     data = access_bll.list_for(company, call.identity.user)
+    data["credentials"] = access_bll.credentials_for(company, call.identity.user, is_admin)
     data["projects"] = access_bll.my_projects(company, call.identity.user)
     call.result.data = data
 
