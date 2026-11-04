@@ -3,7 +3,7 @@ name: docker
 # - Pull request: builds the image and scans it. Nothing is pushed.
 # - Tag vX.Y.Z: builds, scans, and pushes the image to Docker Hub. The job waits for the owner's approval
 #   (environment "dockerhub"), which also holds the Docker Hub credentials.
-# The web app comes from the commit named in docker/build/web-ref (update it by pull request, like a pin).
+# The web app comes from the branch named in docker/build/web-ref ("main": the newest commit of cairnml-web's main).
 on:
   pull_request:
     branches: [main]
@@ -42,13 +42,12 @@ jobs:
           tags: cairnml-server:check
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      # The scanner runs from its own image on Docker Hub, pinned to a version, instead of downloading the binary from
+      # GitHub at each run; that download failed intermittently on the runners.
       - name: Scan the image (report only on pull requests)
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        with:
-          image-ref: cairnml-server:check
-          severity: CRITICAL,HIGH
-          ignore-unfixed: true
-          exit-code: "0"
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.70.0 image \
+            --severity CRITICAL,HIGH --ignore-unfixed --exit-code 0 cairnml-server:check
 
   publish:
     name: publish
@@ -100,12 +99,9 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - name: Scan the image (a critical vulnerability with a fix stops the release)
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        with:
-          image-ref: cairnml-server:scan
-          severity: CRITICAL
-          ignore-unfixed: true
-          exit-code: "1"
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.70.0 image \
+            --severity CRITICAL --ignore-unfixed --exit-code 1 cairnml-server:scan
       - name: Push with provenance and an SBOM
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:

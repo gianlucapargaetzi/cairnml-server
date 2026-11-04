@@ -95,11 +95,9 @@ signed_in() { $K config credentials --server http://localhost:$KC_HTTP_PORT/cair
 # Signs in as the admin, or as the temporary admin, with the current password or the previous one.
 admin_signed_in() { signed_in "$ADMIN_USER" "$ADMIN_PW" || { [ -n "$PREV_PW" ] && signed_in "$ADMIN_USER" "$PREV_PW"; }; }
 temp_signed_in() { signed_in "$TEMP_USER" "$ADMIN_PW" || { [ -n "$PREV_PW" ] && signed_in "$TEMP_USER" "$PREV_PW"; }; }
+# Keycloak is ready before this runs (wait_for_keycloak on the host): one sign-in attempt is enough.
 ok=0
-for _ in $(seq 1 90); do
-  if admin_signed_in || temp_signed_in; then ok=1; break; fi
-  sleep 2
-done
+if admin_signed_in || temp_signed_in; then ok=1; fi
 [ "$ok" = 1 ] || { echo "could not sign in to Keycloak: check KC_ADMIN and KC_ADMIN_PASSWORD" >&2; exit 1; }
 if ! admin_signed_in; then
   # The admin is not created yet, or the password was changed: the temporary admin (first start) takes it from here.
@@ -128,12 +126,41 @@ cairnml_temp_id=$($K get users -r cairnml -q username="$TEMP_USER" --fields id |
 [ -z "$cairnml_temp_id" ] || $K delete "users/$cairnml_temp_id" -r cairnml
 '
 kc_user_setup() {
-  docker compose exec -T \
+  # The output is shown only when the setup fails.
+  local out
+  if ! out=$(docker compose exec -T \
     -e ADMIN_USER="$KC_ADMIN" -e ADMIN_PW="$KC_ADMIN_PASSWORD" -e CAIRNML_PW="$CAIRNML_ADMIN_PASSWORD" \
     -e TEMP_USER="$TEMP_ADMIN" -e PREV_PW="$PREV_ADMIN_PASSWORD" \
-    cairnml-idp sh -c "$KC_USER_SETUP" >/dev/null
+    cairnml-idp sh -c "$KC_USER_SETUP" 2>&1); then
+    printf '%s\n' "$out" | tail -n 20 >&2
+    return 1
+  fi
 }
+# True when KC_ADMIN_PASSWORD is the admin's current password (the sign-in is checked, nothing is changed).
+kc_admin_signs_in() {
+  docker compose exec -T -e U="$KC_ADMIN" -e P="$KC_ADMIN_PASSWORD" cairnml-idp sh -c \
+    'K=/opt/keycloak/bin/kcadm.sh; $K config credentials --server http://localhost:$KC_HTTP_PORT/cairnml/idp --realm master --user "$U" --password "$P"' \
+    >/dev/null 2>&1
+}
+# Waits until Keycloak serves the cairnml realm: the check the container healthcheck makes, over HTTP (quick), instead of
+# a kcadm login on each try (each one starts a Java process).
+wait_for_keycloak() {
+  local url="http://127.0.0.1:${CAIRNML_IDP_ADMIN_PORT:-8180}/cairnml/idp/realms/cairnml/.well-known/openid-configuration"
+  for _ in $(seq 1 90); do
+    if curl -fs -o /dev/null "$url" 2>/dev/null; then return 0; fi
+    sleep 2
+  done
+  echo "Keycloak does not answer at $url" >&2
+  return 1
+}
+wait_for_keycloak || exit 1
 if ! kc_user_setup; then
+  # The prompt is only for a changed password: when the admin can sign in with KC_ADMIN_PASSWORD, the password is
+  # right and the setup failed for another reason (shown above).
+  if kc_admin_signs_in; then
+    echo "the admin signs in with KC_ADMIN_PASSWORD, so the setup failed for another reason (see the output above)" >&2
+    exit 1
+  fi
   # KC_ADMIN_PASSWORD is not the admin's password yet: a changed password needs the one set before.
   if [ -t 0 ]; then
     printf 'Enter the admin password set before (not shown, empty to stop): ' >&2
