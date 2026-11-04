@@ -16,3 +16,12 @@ class TestAccessRefused(TestCase):
 
     def test_a_plain_validation_error_is_not_an_access_refusal(self):
         self.assertFalse(issubclass(errors.bad_request.ValidationError, AccessRefused))
+
+
+class TestTokenReader(TestCase):
+    def test_a_token_reader_sends_the_token_for_every_repository_and_issues_nothing(self):
+        from apiserver.idp.github import TokenReader
+
+        reader = TokenReader("granted-token", "https://api.github.com")
+        headers = reader._read_headers("acme/cars-data")
+        self.assertEqual(headers["Authorization"], "Bearer granted-token")

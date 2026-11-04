@@ -24,7 +24,8 @@ from apiserver.database.model.task.task import Task
 from apiserver.idp.assertion import AssertionInvalid, unverified_issuer, verify_assertion
 from apiserver.idp.audit import client_address, record as audit
 from apiserver.idp.checks import AccessDenied, check_device, check_job_issue
-from apiserver.idp.github import GitHubApp, GitHubError, RepoNotAccessible
+from apiserver.idp.github import GitHubApp, GitHubError, RepoNotAccessible, TokenReader
+from apiserver.bll.dataset_access import verify_dataset
 from apiserver.bll import user_access
 from apiserver.bll.dataset_registry import canonical_url
 from apiserver.idp.github_check import build_from_config, public_repo, repo_of
@@ -258,10 +259,10 @@ def git_token(call: APICall, company, request: GitTokenRequest):
         public = _public_answer(repo, actor, company, claims, request.task, call)
         if public is not None:
             return public
-        # the accesses shared with the task's project come first, as for the task's own repository. The grant decides
-        # access; the dataset layout check below needs the company's App, so it is not run for a granted token.
+        # the accesses shared with the task's project come first, as for the task's own repository. The layout is
+        # checked with the same access that reads the repository.
         if task is not None:
-            granted = _granted_token(company, task, actor, request.task, client_address(call), repo)
+            granted = _granted_token(company, task, actor, request.task, client_address(call), repo, dataset=True)
             if granted is not None:
                 return granted
         if app is None:
@@ -344,10 +345,13 @@ AGENT_NOTICE = (
 )
 
 
-def _granted_token(company: str, task, actor: str, task_id: str, ip, repo: str):
+def _granted_token(company: str, task, actor: str, task_id: str, ip, repo: str, dataset: bool = False):
     """A token for the repository from the accesses shared with the task's project, or None. The job is the project's:
     the access comes from its grants, while its owner is a member and active, and the user who queued the task is a
-    member and active. The agent's owner's own accesses are never used here."""
+    member and active. The agent's owner's own accesses are never used here.
+
+    For a dataset, the layout is checked with the same granted access that will read it: a repository that is not a
+    valid dataset is refused with the reason, as it is with the company's App."""
     root = user_access.root_project(company, task.project) if task.project else None
     if root is None:
         return None
@@ -363,15 +367,29 @@ def _granted_token(company: str, task, actor: str, task_id: str, ip, repo: str):
                 token = app.installation_token(repo)
             except (RepoNotAccessible, GitHubError):
                 continue
+            if dataset:
+                _check_layout(app, repo, actor, company, task_id, ip)
             audit(actor, "git_token.issued", ip=ip, company=company, task=task_id, repo=repo,
                   via="project_access", access=entry.id, owner=entry.user, project=root)
             return {"token": token.token, "expires_at": token.expires_at.isoformat(), "username": "x-access-token"}
         if user_access.project_agent_tokens_allowed(company, root):
+            if dataset:
+                _check_layout(TokenReader(secret, config.get("apiserver.idp.github_api_url")), repo, actor, company,
+                              task_id, ip)
             audit(actor, "git_token.issued", ip=ip, company=company, task=task_id, repo=repo,
                   via="project_access_token", access=entry.id, owner=entry.user, project=root)
             return {"token": secret, "expires_at": None, "username": "x-access-token",
                     "warning": f"a personal token of {entry.user} is in use: it reaches everything that token reaches"}
     return None
+
+
+def _check_layout(reader, repo: str, actor: str, company: str, task_id: str, ip) -> None:
+    """The dataset layout check with the reader of a granted access. A repository that fails it is refused, and audited."""
+    try:
+        verify_dataset(reader, repo)
+    except errors.bad_request.ValidationError as exc:
+        audit(actor, "git_token.refused", ip=ip, company=company, task=task_id, repo=repo, reason=str(exc))
+        raise
 
 
 def _stored_token(company: str, actor: str, task_id: str, repository: str, ip=None) -> dict:
