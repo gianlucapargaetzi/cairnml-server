@@ -25,6 +25,7 @@ This page says who may act for whom, and where the current implementation is wea
 - A public repository gets no token: the server answers a job's token request for it with success and `token: null`, and the job clones it anonymously. The App is not asked for it, and it is not needed for it.
 - The dataset registry holds public datasets and adapters only. A registry entry with `source: repo` is ignored.
 - Disabling a person in Keycloak takes effect within about a minute, because the server synchronises users.
+- Every enabled person of the realm gets a CairnML user within about a minute, without signing in first, so the add-user lists of the web app show them. Disabled people get none.
 
 ## Known weaknesses
 

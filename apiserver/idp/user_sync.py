@@ -10,7 +10,7 @@ import logging
 import threading
 
 from apiserver.idp.directory import DirectoryError, DirectoryUser
-from apiserver.idp.users import role_for
+from apiserver.idp.users import role_for, upsert_idp_user
 
 log = logging.getLogger("cairnml.idp.sync")
 
@@ -67,8 +67,29 @@ def audit_disabled_owner(user_id: str, company: str = None) -> list:
     return device_ids
 
 
+def import_missing(directory, issuer: str, admin_role: str) -> int:
+    """Create the CairnML user of every enabled directory user that has none yet, as the user's first sign-in would.
+
+    Users who never signed in are then in the company's user list (the add-user dialogs), and can be given access
+    before their first sign-in. Disabled users and users the directory no longer answers for are not created.
+    """
+    from apiserver.database.model.auth import User
+
+    known = {user.idp_subject for user in User.objects(idp_subject__ne=None).only("idp_subject")}
+    created = 0
+    for user_id, username, enabled in directory.list_users():
+        if not enabled or f"{issuer}|{user_id}" in known:
+            continue
+        answer = directory.get_user(user_id)
+        if not isinstance(answer, DirectoryUser) or not answer.enabled:
+            continue
+        upsert_idp_user(issuer, user_id, username, answer.roles, admin_role)
+        created += 1
+    return created
+
+
 def sync_once(directory, admin_role: str) -> int:
-    """Run one pass against the database. Returns the number of users changed."""
+    """Run one pass against the database. Returns the number of users changed or created."""
     from apiserver.database.model.auth import User
 
     users = list(User.objects(idp_subject__ne=None))
@@ -79,9 +100,16 @@ def sync_once(directory, admin_role: str) -> int:
         User.objects(id=user_id).update_one(set__idp_disabled=disabled, set__role=role)
         if disabled:
             audit_disabled_owner(user_id, company=companies.get(user_id))
-    if actions:
-        log.info("user sync changed %d user(s)", len(actions))
-    return len(actions)
+    changed = len(actions)
+    if hasattr(directory, "list_users"):
+        from apiserver.config_repo import config
+        try:
+            changed += import_missing(directory, config.get("apiserver.idp.issuer"), admin_role)
+        except DirectoryError as exc:
+            log.warning("user import skipped: %s", exc)
+    if changed:
+        log.info("user sync changed or created %d user(s)", changed)
+    return changed
 
 
 class UserSyncThread(threading.Thread):
