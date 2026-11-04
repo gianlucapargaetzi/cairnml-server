@@ -258,6 +258,12 @@ def git_token(call: APICall, company, request: GitTokenRequest):
         public = _public_answer(repo, actor, company, claims, request.task, call)
         if public is not None:
             return public
+        # the accesses shared with the task's project come first, as for the task's own repository. The grant decides
+        # access; the dataset layout check below needs the company's App, so it is not run for a granted token.
+        if task is not None:
+            granted = _granted_token(company, task, actor, request.task, client_address(call), repo)
+            if granted is not None:
+                return granted
         if app is None:
             raise errors.bad_request.ValidationError("GitHub is not configured")
         try:
