@@ -18,7 +18,12 @@ class UserAccess(DbModelMixin, Document):
     id = StringField(primary_key=True)
     company = StringField(required=True)
     user = StringField(required=True)
-    """ The owner: the only user who may read, check, change or delete the access """
+    """ The owner: the only user who may read, check, change or delete the access. For a company access, the admin who
+    added it """
+
+    scope = StringField(default="user", choices=("user", "company"))
+    """ "user": one user's access. "company": the server's GitHub App, added and removed by admins only; every
+    repository and dataset check uses it when no user's access reaches a repository """
 
     kind = StringField(required=True, choices=("token", "app"))
     label = StringField(required=True)

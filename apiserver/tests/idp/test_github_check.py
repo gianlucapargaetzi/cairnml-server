@@ -96,6 +96,6 @@ class TestSubmissionCheck(TestCase):
         with self.assertRaises(errors.bad_request.ValidationError) as ctx:
             check_submission(task(), None)
         self.assertIn("GitHub", str(ctx.exception))
-        self.assertIn("GITHUB_APP_ID", str(ctx.exception))
+        self.assertIn("Settings > Access", str(ctx.exception))
         self.assertIn(GITHUB_APP_DOCS, str(ctx.exception))
 

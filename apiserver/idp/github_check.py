@@ -52,7 +52,7 @@ def check_submission(task, app) -> None:
         if app is None:
             raise AccessRefused(
                 f"GitHub is not set up: the job's repository {repo} cannot be checked without the GitHub App. "
-                f"Set GITHUB_APP_ID in deploy/.env, copy the App's key, and run deploy/scripts/bootstrap.sh. "
+                f"An admin adds the App in the web app (Settings > Access). "
                 f"Steps: {GITHUB_APP_DOCS}")
     if not commit:
         raise errors.bad_request.ValidationError(f"no commit is recorded for {repo}: commit and push first")
@@ -81,12 +81,14 @@ def _api_url() -> str:
 
 
 def build_from_config():
-    """The App client from configuration and the secrets mount; None when no App is configured."""
+    """The server's GitHub App client, from the company access an admin added in the UI (Settings > Access); None when
+    no admin has added one. Its ID and key are kept in the database, encrypted, not in the configuration."""
+    from apiserver.bll.user_access import server_app
     from apiserver.config_repo import config
     from apiserver.idp.github import GitHubApp
-    from apiserver.idp.secrets import read_secret
 
-    app_id = config.get("apiserver.idp.github_app_id", "")
-    if not app_id:
+    found = server_app()
+    if found is None:
         return None
-    return GitHubApp(app_id, read_secret("github_app_key"), config.get("apiserver.idp.github_api_url"))
+    entry, key = found
+    return GitHubApp(entry.app_id, key, entry.api_url or config.get("apiserver.idp.github_api_url"))

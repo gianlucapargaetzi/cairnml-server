@@ -2,7 +2,7 @@
 
 It runs in four steps, and a failed step stops the rest:
 
-1. configured: GITHUB_APP_ID is set and the key file is readable.
+1. configured: the server's GitHub App is stored (an admin added it in the UI).
 2. app: GitHub accepts the App ID and key (GET /app with a token made from the key).
 3. repositories: the repositories the App is installed on, and their count.
 4. registries: every dataset registry, and the datasets each one lists.
@@ -48,16 +48,16 @@ def run_check() -> dict:
     def step(name: str, ok: bool, detail: str) -> None:
         steps.append({"name": name, "ok": ok, "detail": detail})
 
-    if not config.get("apiserver.idp.github_app_id", ""):
-        step("configured", False, "GITHUB_APP_ID is not set in deploy/.env")
-        return _result("not_configured", steps, "GitHub App is not configured: GITHUB_APP_ID is not set")
-
     try:
         app = build_from_config()
-    except SecretMissing as exc:
+    except Exception as exc:  # the stored App cannot be read: an admin must add it again
         step("configured", False, str(exc))
         return _result("refused", steps, f"GitHub App Access Refused: {exc}")
-    step("configured", True, "the App ID is set and the key is readable")
+    if app is None:
+        step("configured", False, "no GitHub App is added for the server")
+        return _result("not_configured", steps,
+                       "GitHub App is not configured: an admin adds it in Settings > Access")
+    step("configured", True, "the server's GitHub App is stored")
 
     try:
         info = app.app_info()

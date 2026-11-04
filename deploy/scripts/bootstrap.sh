@@ -39,15 +39,10 @@ TEMP_ADMIN=kcadmin
 
 
 # The stack's state (data and secrets) lives outside the repository: CAIRNML_HOME, default ~/.local/share/cairnml.
-# Set it in deploy/.env to put it somewhere else. The GitHub App key used to be deploy/secrets/github-app.pem: it is
-# copied here if it is not there yet. The old file is kept, so nothing is lost if the copy goes wrong.
+# Set it in deploy/.env to put it somewhere else. Setup starts with no GitHub App, no registry and no Git credential:
+# an admin adds them in the web app. Nothing about them is read from deploy/.env.
 export CAIRNML_HOME="${CAIRNML_HOME:-$HOME/.local/share/cairnml}"
 STATE="$CAIRNML_HOME"
-if [ ! -f "$STATE/secrets/github-app.pem" ] && [ -f secrets/github-app.pem ]; then
-  mkdir -p "$STATE/secrets"
-  cp -p secrets/github-app.pem "$STATE/secrets/github-app.pem"
-  echo "copied the GitHub App key to $STATE/secrets/ (the old copy in deploy/secrets is kept)"
-fi
 mkdir -p "$STATE/secrets/cairnml"
 
 # Nothing is stopped here: the containers are started or recreated below, and only where their image or configuration
@@ -185,10 +180,6 @@ for name in token_secret session_secret s3_secret_key git_credentials_key; do
     echo "wrote $STATE/secrets/cairnml/$name"
   fi
 done
-if [ -f "$STATE/secrets/github-app.pem" ]; then
-  cp "$STATE/secrets/github-app.pem" "$STATE/secrets/cairnml/github_app_key"
-  chmod 600 "$STATE/secrets/cairnml/github_app_key"
-fi
 
 # CairnML keeps its data in host folders too ($CAIRNML_HOME/data/cairnml/). Mongo and Redis run as uid 999,
 # Elasticsearch as 1000.

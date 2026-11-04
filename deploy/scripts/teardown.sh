@@ -33,7 +33,7 @@ Modes:
   (none)              stop and remove the containers, volumes and images of the stack; keep all state
   --data              also remove the data: users, databases, logs, object storage, artifacts
 
-Never removed: the secrets, deploy/.env, and the GitHub App key (github-app.pem) and its copies (github_app_key).
+Never removed: the secrets and deploy/.env. The GitHub App and the dataset registries are kept in the database.
 
 Options:
   --dry-run           print what would be removed, change nothing

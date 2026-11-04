@@ -119,7 +119,8 @@ def idp_settings(call: APICall, _company, _):
         "public_url": public_origin.api_url().rstrip("/"),
         "web_url": public_origin.web_url(),
         # Whether a GitHub App is configured. Only the flag: the App's id and key are never returned.
-        "github_app": bool(config.get("apiserver.idp.github_app_id", "")),
+        # whether an admin has added the server's GitHub App: the flag only, never its ID or key
+        "github_app": user_access.server_app() is not None,
     }
 
 

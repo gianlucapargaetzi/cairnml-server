@@ -38,7 +38,7 @@ class TestNoSecretInAView(TestCase):
     def test_the_view_has_no_secret_field(self):
         entry = SimpleNamespace(id="a1", kind="token", label="mine", host="github.com", path="acme", app_id=None,
                                 api_url=None, created=None, last_checked=None, last_state=None, last_message=None,
-                                secret="ENCRYPTED-VALUE", granted_projects=[])
+                                secret="ENCRYPTED-VALUE", granted_projects=[], scope="user")
         view = bll._view(entry)
         self.assertNotIn("secret", view)
         self.assertNotIn("ENCRYPTED-VALUE", str(view))

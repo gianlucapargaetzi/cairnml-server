@@ -12,12 +12,7 @@ from apiserver.idp.secrets import SecretMissing
 
 
 class FakeConfig:
-    def __init__(self, app_id="12345"):
-        self.app_id = app_id
-
     def get(self, key, default=None):
-        if key == "apiserver.idp.github_app_id":
-            return self.app_id
         return default
 
 
@@ -40,7 +35,7 @@ class FakeApp:
 
 
 class TestRunCheck(TestCase):
-    def run_with(self, app=None, build_error=None, app_id="12345", registries=None, entries=None, unreadable=()):
+    def run_with(self, app=None, build_error=None, registries=None, entries=None, unreadable=()):
         registries = ["acme/public-datasets", "acme/private-datasets"] if registries is None else registries
         entries = {} if entries is None else entries
 
@@ -54,16 +49,16 @@ class TestRunCheck(TestCase):
                 raise build_error
             return app
 
-        with patch("apiserver.config_repo.config", FakeConfig(app_id)), \
+        with patch("apiserver.config_repo.config", FakeConfig()), \
                 patch("apiserver.bll.github_status.build_from_config", side_effect=build), \
                 patch("apiserver.bll.dataset_registry.configured_registries", return_value=registries), \
                 patch("apiserver.bll.dataset_registry.list_entries", side_effect=list_entries):
             return github_status.run_check()
 
-    def test_no_app_id_is_not_configured(self):
-        result = self.run_with(app=FakeApp(), app_id="")
+    def test_no_app_added_is_not_configured(self):
+        result = self.run_with(app=None)
         self.assertEqual(result["state"], "not_configured")
-        self.assertIn("GITHUB_APP_ID is not set", result["message"])
+        self.assertIn("Settings > Access", result["message"])
 
     def test_a_missing_key_is_refused_with_the_secret_named(self):
         result = self.run_with(build_error=SecretMissing("secret file 'github_app_key' is missing"))

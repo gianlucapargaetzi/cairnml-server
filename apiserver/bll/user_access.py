@@ -40,6 +40,7 @@ def _view(entry: UserAccess) -> dict:
     return {
         "id": entry.id,
         "kind": entry.kind,
+        "scope": entry.scope or "user",
         "label": entry.label,
         "host": entry.host,
         "path": entry.path,
@@ -53,8 +54,18 @@ def _view(entry: UserAccess) -> dict:
     }
 
 
+def _owned_or_company(company: str, user: str, access_id: str, is_admin: bool) -> UserAccess:
+    """The user's own access, or the company's App when the user is an admin."""
+    entry = UserAccess.objects(company=company, id=access_id).first()
+    if entry is not None and entry.scope == "company":
+        if not is_admin:
+            raise errors.bad_request.ValidationError("only an admin may change the company's GitHub App")
+        return entry
+    return _owned(company, user, access_id)
+
+
 def _owned(company: str, user: str, access_id: str) -> UserAccess:
-    entry = UserAccess.objects(company=company, user=user, id=access_id).first()
+    entry = UserAccess.objects(company=company, user=user, id=access_id, scope="user").first()
     if entry is None:
         # the same answer for an access of someone else: its existence is not revealed
         raise errors.bad_request.ValidationError("no such access of yours")
@@ -77,7 +88,7 @@ def add_token(company: str, user: str, label: str, host: str, path: str, token: 
     return _view(entry)
 
 
-def add_app(company: str, user: str, label: str, app_id: str, api_url: str, key: str) -> dict:
+def add_app(company: str, user: str, label: str, app_id: str, api_url: str, key: str, scope: str = "user") -> dict:
     app_id = (app_id or "").strip()
     if not APP_ID_RE.match(app_id):
         raise errors.bad_request.ValidationError("the App ID is a number, as GitHub shows it")
@@ -94,36 +105,53 @@ def add_app(company: str, user: str, label: str, app_id: str, api_url: str, key:
     except GitHubError:
         raise errors.bad_request.ValidationError("GitHub could not be reached to check the App") from None
     now = datetime.utcnow()
+    if scope == "company":
+        # the server has one GitHub App: adding another replaces it
+        UserAccess.objects(company=company, scope="company", kind="app").delete()
     entry = UserAccess(
-        id=uuid.uuid4().hex, company=company, user=user, kind="app", label=_label(label),
+        id=uuid.uuid4().hex, company=company, user=user, kind="app", label=_label(label), scope=scope,
         host="github.com", app_id=app_id, api_url=api,
         secret=store.encrypt(pem, store.key_material()), created=now, updated=now,
         last_checked=now, last_state="ok",
         last_message=f"GitHub accepts the App {info.get('slug') or app_id}",
     )
     entry.save()
-    audit(user, "user_access.added", company=company, kind="app", app_id=app_id)
+    audit(user, "user_access.added", company=company, kind="app", app_id=app_id, scope=scope)
     return _view(entry)
 
 
 def list_for(company: str, user: str) -> dict:
     """The user's own accesses, and the company's (set by admins), which the user can use but not change."""
-    own = [_view(entry) for entry in UserAccess.objects(company=company, user=user).order_by("created")]
+    own = [_view(entry) for entry in UserAccess.objects(company=company, user=user, scope="user").order_by("created")]
+    company_apps = [_view(entry) for entry in UserAccess.objects(company=company, scope="company").order_by("created")]
     company_tokens = [
         {"host": entry.host, "path": entry.path, "username": entry.username}
         for entry in GitCredential.objects(company=company).order_by("host", "path")
     ]
-    return {"own": own, "company": company_tokens}
+    return {"own": own, "company": company_tokens, "company_apps": company_apps}
 
 
-def delete(company: str, user: str, access_id: str) -> None:
-    entry = _owned(company, user, access_id)
+def server_app():
+    """The server's GitHub App, as (entry, key), or None when no admin has added one. It is the company's access
+    that every repository check falls back to; the key is decrypted for this call only."""
+    entry = UserAccess.objects(scope="company", kind="app").order_by("created").first()
+    if entry is None:
+        return None
+    try:
+        return entry, _secret(entry)
+    except store.CredentialUnreadable:
+        log.warning("the GitHub App of the server cannot be read with the current key")
+        return None
+
+
+def delete(company: str, user: str, access_id: str, is_admin: bool = False) -> None:
+    entry = _owned_or_company(company, user, access_id, is_admin)
     entry.delete()
     audit(user, "user_access.deleted", company=company, kind=entry.kind)
 
 
-def check(company: str, user: str, access_id: str) -> dict:
-    entry = _owned(company, user, access_id)
+def check(company: str, user: str, access_id: str, is_admin: bool = False) -> dict:
+    entry = _owned_or_company(company, user, access_id, is_admin)
     secret = _secret(entry)
     now = datetime.utcnow()
     if entry.kind == "app":
@@ -264,7 +292,7 @@ def usable_for(company: str, user: str, host: str, path: str, project: Optional[
     if not user or not is_active(user):
         return []
     found = []
-    for entry in UserAccess.objects(company=company, user=user).order_by("created"):
+    for entry in UserAccess.objects(company=company, user=user, scope="user").order_by("created"):
         if entry.kind == "token" and (entry.host != host or not store.covers(entry.path, path)):
             continue
         found.append(entry)
