@@ -6,6 +6,7 @@ from flask_compress import Compress
 from flask_cors import CORS
 from packaging.version import Version
 
+from apiserver.bll import github_status
 from apiserver.bll.dataset_cache import refresher as dataset_cache_refresher
 from apiserver.bll.queue.queue_metrics import MetricsRefresher
 from apiserver.bll.task.non_responsive_tasks_watchdog import NonResponsiveTasksWatchdog
@@ -46,6 +47,7 @@ class AppSequence:
         check_no_legacy_settings()
         self._configure()
         self._init_dbs()
+        github_status.start_check_in_background()
         self._load_services()
         self._start_worker()
         atexit.register(self._on_worker_stop)

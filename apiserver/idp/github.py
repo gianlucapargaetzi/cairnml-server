@@ -29,6 +29,11 @@ class RepoNotAccessible(GitHubError):
     pass
 
 
+class GitHubRefused(GitHubError):
+    """GitHub answered that the App ID or its key is not accepted. Not a network problem: fix the App settings."""
+    pass
+
+
 @dataclass(frozen=True)
 class InstallationToken:
     token: str
@@ -158,6 +163,16 @@ class GitHubApp:
         if response.status_code != 200:
             raise GitHubError(f"GitHub request failed: {response.status_code}")
         return True
+
+    def app_info(self) -> dict:
+        """The App itself: its name (slug) and id. Proves that the App ID and the key are accepted by GitHub."""
+        response = self._send("GET", f"{self._api}/app", headers=self._headers(self._app_jwt()))
+        if response.status_code in (401, 403):
+            raise GitHubRefused(f"GitHub did not accept the App ID or its key ({response.status_code})")
+        if response.status_code != 200:
+            raise GitHubError(f"app lookup failed: {response.status_code}")
+        body = response.json()
+        return {"slug": body.get("slug") or "", "name": body.get("name") or "", "id": body.get("id")}
 
     def installed_repositories(self) -> list:
         """Every repository the App is installed on, as {repository, default_branch, private}.
