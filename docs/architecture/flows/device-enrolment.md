@@ -26,7 +26,7 @@ sequenceDiagram
 
 ## Agent
 
-The agent's key is stored in `~/.cairnml/agent/device.key`. The server accepts the enrolment only when the signed-in person is an admin, because an agent runs other people's jobs.
+The agent's key is stored in `~/.cairnml/agent/device.key`. The server accepts the enrolment from any signed-in user. The agent runs with that user's role, so it sees and serves only what that user may.
 
 ```mermaid
 sequenceDiagram
@@ -37,19 +37,13 @@ sequenceDiagram
     Agent->>Server: GET devices.idp_settings
     Server-->>Agent: issuer, client id, public_url
     Note over Agent: generate agent key, stored in ~/.cairnml/agent/device.key (0600)
-    Agent->>IDP: browser sign-in as an admin (PKCE)
+    Agent->>IDP: browser sign-in as any user (PKCE)
     IDP-->>Agent: authorization code
     Agent->>IDP: POST /token
     IDP-->>Agent: tokens
-    alt user is admin
-        Agent->>Server: POST devices.enroll (kind agent, public key)
-        Note over Server: store Device with kind agent, owned by the admin, audit device.enrolled
-        Server-->>Agent: device id
-    else user is not admin
-        Agent->>Server: POST devices.enroll (kind agent, public key)
-        Note over Server: refuse, audit device.enrol_refused, store nothing
-        Server-->>Agent: error, only an admin may enrol an agent
-    end
+    Agent->>Server: POST devices.enroll (kind agent, public key)
+    Note over Server: store Device with kind agent, owned by the signed-in user, audit device.enrolled
+    Server-->>Agent: device id
 ```
 
 ## Endpoints
@@ -57,7 +51,7 @@ sequenceDiagram
 | Endpoint | Auth | Purpose |
 |---|---|---|
 | `devices.idp_settings` | none | Returns the issuer and client id the machine needs for sign-in, and the address that device assertions must name |
-| `devices.enroll` | identity-provider token | Stores the device's public key and owner. Agents need an admin |
+| `devices.enroll` | identity-provider token | Stores the device's public key and owner. Any signed-in user may enrol an agent |
 
 ## Notes
 

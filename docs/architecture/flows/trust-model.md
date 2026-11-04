@@ -13,7 +13,7 @@ This page says who may act for whom, and where the current implementation is wea
 
 ## Rules that hold
 
-- An agent can be enrolled only by an admin.
+- Any signed-in user may enrol an agent. The agent then holds that user's role, not an admin's: its jobs and queues follow the rules for that user.
 - Any company user may create a queue and becomes its owner. A user sees a queue when they own it, hold a grant on it, are a member of a root project it is allocated to, or when it is public. Admins see every queue. Queues created before ownership have no owner and stay admin-managed.
 - The owner manages a queue (update, delete, grants and metadata); the owner and admins may set its `public` flag. Any user's agent may serve a public queue. A grantee uses the queue but cannot manage it.
 - An agent may serve a queue only when the queue is public, its user owns it, holds a grant on it, or the user is an admin. Agent tokens cannot create, update, delete or manage the grants of queues.

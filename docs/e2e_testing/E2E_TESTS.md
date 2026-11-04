@@ -121,7 +121,7 @@ Section 5 of E2E.md. The agent is the daemon on the default queue, in its own ho
 |---|---|
 | `test_admin_enrols_the_agent_machine_with_its_own_key` | `cairnml-agent init` (as admin) writes an agent key with mode 0600 and a device id. |
 | `test_agent_device_is_kind_agent` | The device is listed as kind `agent`, not revoked. |
-| `test_member_cannot_enrol_an_agent` | A plain user is refused ("only an admin may enrol an agent"); no key is written. |
+| `test_member_can_enrol_an_agent` | A plain user enrols an agent; an agent key and a device id are written. |
 | `test_agent_registers_as_a_worker_listening_to_its_queue` | The worker is in the server's worker list, and its queues include the default queue. |
 | `test_agent_without_its_key_does_not_register` | An agent whose key is removed never registers, and its log names the key. |
 | `test_agent_without_its_key_says_to_enrol_it` | The log says to run `cairnml-agent init`, not a raw `Errno 2`. |

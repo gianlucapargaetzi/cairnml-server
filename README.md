@@ -155,7 +155,7 @@ The server needs no address of its own: it answers to any address of this machin
 The clients take the address of the server and work out the rest:
 
 - **SDK:** `cairnml init http://<server-ip>`, see the [SDK](https://github.com/gianlucapargaetzi/cairnml).
-- **Agents:** an admin enrols each agent with `cairnml-agent init http://<server-ip>`, see the [agent](https://github.com/gianlucapargaetzi/cairnml-agent).
+- **Agents:** any signed-in user enrols an agent with `cairnml-agent init http://<server-ip>`, see the [agent](https://github.com/gianlucapargaetzi/cairnml-agent).
 
 Opening `http://<server-ip>/` leads to the web app. Nothing else is served at the root.
 

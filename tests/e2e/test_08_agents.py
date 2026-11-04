@@ -55,18 +55,16 @@ def test_agent_device_is_kind_agent(client_home, machine):
     assert mine["revoked"] is False
 
 
-def test_member_cannot_enrol_an_agent(member_account, tmp_path):
-    """Only an admin may enrol an agent, because it runs other people's code.
+def test_member_can_enrol_an_agent(member_account, tmp_path):
+    """Any signed-in user may enrol an agent; the agent then acts with that user's role.
 
-    Expect: a plain user's attempt to enrol an agent is refused and leaves no device key behind.
+    Expect: a plain user's enrolment writes an agent key and a device id.
     """
-    machine = AgentMachine(tmp_path / "member-agent", worker_name="e2e-refused")
+    machine = AgentMachine(tmp_path / "member-agent", worker_name="e2e-member")
     machine.home.mkdir()
     result = agent.init(machine.home, member_account)
-    assert "only an admin" in result.output or "not enrolled" in result.output, result.output
-    assert not machine.key_path.exists()
-    assert not (machine.home / "cairnml-agent.conf").exists() or "device_id" not in (
-        machine.home / "cairnml-agent.conf").read_text()
+    assert machine.key_path.exists(), result.output
+    assert "device_id" in (machine.home / "cairnml-agent.conf").read_text()
 
 
 def test_agent_registers_as_a_worker_listening_to_its_queue(client_home, machine):
