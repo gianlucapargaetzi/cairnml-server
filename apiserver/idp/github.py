@@ -123,6 +123,9 @@ class GitHubApp:
                                   headers=self._headers(self._app_jwt()))
             if response.status_code == 404:
                 raise RepoNotAccessible(repo)
+            if response.status_code == 401:
+                # GitHub does not accept the App ID or its key: not a network problem, and not fixed by retrying
+                raise GitHubRefused("GitHub did not accept the App ID or its key (401)")
             if response.status_code != 200:
                 raise GitHubError(f"installation lookup failed: {response.status_code}")
             installation_id = response.json().get("id")

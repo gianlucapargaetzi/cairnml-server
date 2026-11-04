@@ -16,7 +16,7 @@ from apiserver.bll import user_access
 from apiserver.bll.dataset_registry import canonical_url, parse_github_url
 from apiserver.config_repo import config
 from apiserver.idp import git_credentials as store
-from apiserver.idp.github import GitHubApp, GitHubError, RepoNotAccessible, public_repository
+from apiserver.idp.github import GitHubApp, GitHubError, GitHubRefused, RepoNotAccessible, public_repository
 from apiserver.idp.github_check import build_from_config
 from apiserver.idp.repo_visibility import is_private
 from apiserver.idp.secrets import SecretMissing
@@ -82,6 +82,9 @@ def _github(company: str, user: Optional[str], project: Optional[str], repositor
             return _result(repository, APP, label, f"Accessible via GitHub App {label}")
         except RepoNotAccessible:
             pass
+        except GitHubRefused:
+            return _result(repository, REFUSED, "",
+                           "GitHub refused the server's GitHub App (its App ID or key); an admin must fix it")
         except GitHubError:
             return _result(repository, REFUSED, "", "GitHub could not be reached to check this repository")
 
