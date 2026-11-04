@@ -230,19 +230,19 @@ The settings a user may set are in `deploy/.env`, copied from [`deploy/.env.exam
 
 ## Compatibility
 
-Each component has its own version number, and the numbers are not related: server 2.4.0 does not mean SDK 2.4.0. The server image is built from one commit of each component, named by the pin file in `docker/build/`. The versions at the commits this repository pins are:
+Each component has its own version number, and the numbers are not related: server 0.0.3 does not mean SDK 0.0.3. The server image is built from one commit of each component, named by the pin file in `docker/build/`. The versions at the commits this repository pins are:
 
 | Component | Repository | Pin file | Version at the pinned commit |
 |---|---|---|---|
-| Server | this repository | the commit you run | `apiserver/version.py` (2.4.0 here) |
-| SDK (`cairnml`) | `cairnml` | `docker/build/sdk-ref` | 0.0.2 |
-| Agent (`cairnml-agent`) | `cairnml-agent` | `docker/build/agent-ref` | 0.0.1 |
+| Server | this repository | the commit you run | `apiserver/version.py` (0.0.3 here) |
+| SDK (`cairnml`) | `cairnml` | `docker/build/sdk-ref` | 0.0.3 |
+| Agent (`cairnml-agent`) | `cairnml-agent` | `docker/build/agent-ref` | 0.0.3 |
 | Web app | `cairnml-web` | `docker/build/web-ref` | the latest `main` at the build (`main`) |
 
 The SDK and the agent are fixed to the commits named in their pin files. The web app's pin names the branch `main`, so every build takes the newest commit of the web app's `main`. The version of the web app is the `version` in its `package.json` at that commit. The pins are the only record of which versions go together. This repository's tests do not check other combinations.
 
 - **Use the SDK and the agent at the commits the pins name.** A client installed from another source may work, but it is not tested with this server.
-- **Old clients get a warning, not a refusal.** The SDK and the agent send their name and version in the `X-CairnML-Client` header. When a client is older than the minimum set in `apiserver.client_versions` (`min_sdk_version` 0.0.2, `min_agent_version` 0.0.1 in the shipped configuration), the server still serves it, adds an `X-CairnML-Upgrade` header to each response that says what to upgrade, and logs the warning once in `docker compose logs apiserver`.
+- **Old clients get a warning, not a refusal.** The SDK and the agent send their name and version in the `X-CairnML-Client` header. When a client is older than the minimum set in `apiserver.client_versions` (`min_sdk_version` 0.0.3, `min_agent_version` 0.0.3 in the shipped configuration), the server still serves it, adds an `X-CairnML-Upgrade` header to each response that says what to upgrade, and logs the warning once in `docker compose logs apiserver`.
 - **Differences from upstream ClearML.** The commands, the dataset workflow, the sign-in and the storage differ from upstream. The [compatibility matrix](docs/compatibility/README.md) lists each area with its status and migration path: CLI commands ([CLI migration](docs/compatibility/cli-migration.md)), datasets ([Dataset migration](docs/compatibility/dataset-migration.md)), sign-in and storage ([Auth and storage](docs/compatibility/auth-and-storage.md)). The agent's app metering and proxy path is not supported ([Agent metering](docs/compatibility/agent-metering.md)).
 - **API version.** Clients name the API version in the address (`/cairnml/api/v2.8/...`). The device sign-in (enrolment, token exchange, job tokens) needs API version 2.8 or later, so a client that uses only older API versions cannot enrol.
 

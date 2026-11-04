@@ -123,7 +123,7 @@ The server does not refuse a client for its version. When the SDK or an agent is
 configuration (`apiserver.client_versions`), its calls still work, but the server:
 
 - adds an `X-CairnML-Upgrade` header to each response, which names the client and the version it needs, and
-- logs one warning, in `docker compose logs apiserver`: `the SDK (cairnml) 0.0.1 is older than this server's minimum 0.0.2: upgrade cairnml`.
+- logs one warning, in `docker compose logs apiserver`: `the SDK (cairnml) 0.0.2 is older than this server's minimum 0.0.3: upgrade cairnml`.
 
 Upgrade the named client to the commit the server's pin names (see the README, section "Compatibility"). The warning
 is the only sign of an old client, so look for it when a client behaves oddly after an upgrade of the server.
