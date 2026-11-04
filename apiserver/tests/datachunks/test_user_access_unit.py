@@ -65,3 +65,9 @@ class TestGrantRule(TestCase):
 
     def test_a_grant_to_another_project_does_not_apply(self):
         self.assertFalse(bll.grant_applies("p1", "p2", True, True, True, True))
+
+
+class TestKeyFormat(TestCase):
+    def test_a_malformed_key_is_a_validation_error_not_a_crash(self):
+        with self.assertRaises(errors.bad_request.ValidationError):
+            bll.add_app("c", "u", "app", "12345", "", "-----BEGIN PRIVATE KEY-----\nnot-base64!\n-----END PRIVATE KEY-----")

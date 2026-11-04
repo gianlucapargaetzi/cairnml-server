@@ -10,6 +10,7 @@ from datetime import datetime
 from typing import Optional, Sequence
 
 import requests
+from cryptography.hazmat.primitives.serialization import load_pem_private_key
 from mongoengine import Q
 
 from apiserver.apierrors import errors
@@ -95,6 +96,10 @@ def add_app(company: str, user: str, label: str, app_id: str, api_url: str, key:
     pem = (key or "").strip()
     if "-----BEGIN" not in pem or "PRIVATE KEY" not in pem:
         raise errors.bad_request.ValidationError("the key must be the App's private key file (a .pem file)")
+    try:
+        load_pem_private_key(pem.encode(), password=None)
+    except (ValueError, TypeError):
+        raise errors.bad_request.ValidationError("the key is not a valid private key (PEM)") from None
     api = (api_url or "").strip() or config.get("apiserver.idp.github_api_url")
     if not api.startswith(("https://", "http://")):
         raise errors.bad_request.ValidationError("the API address must start with https://")
