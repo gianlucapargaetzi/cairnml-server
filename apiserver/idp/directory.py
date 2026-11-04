@@ -15,6 +15,9 @@ from urllib.parse import quote
 import requests
 
 
+USER_PAGE = 100
+
+
 class DirectoryError(Exception):
     pass
 
@@ -98,6 +101,26 @@ class KeycloakDirectory:
                 continue
             return response
         raise DirectoryError("unreachable")
+
+    def list_users(self) -> list[tuple[str, str, bool]]:
+        """Every user of the realm as (id, username, enabled), read a page at a time."""
+        users: list[tuple[str, str, bool]] = []
+        first = 0
+        while True:
+            response = self._get(f"/users?first={first}&max={USER_PAGE}")
+            if response.status_code != 200:
+                raise DirectoryError(f"user list failed: {response.status_code}")
+            items = _json(response, "users")
+            if not isinstance(items, list):
+                raise DirectoryError("malformed user list")
+            for item in items:
+                if (not isinstance(item, dict) or not isinstance(item.get("id"), str)
+                        or not isinstance(item.get("username"), str) or not isinstance(item.get("enabled"), bool)):
+                    raise DirectoryError("malformed user list")
+                users.append((item["id"], item["username"], item["enabled"]))
+            if len(items) < USER_PAGE:
+                return users
+            first += USER_PAGE
 
     def get_user(self, subject: str) -> DirectoryUser | None:
         # the HTTP client normalizes dot segments, so "." and ".." would address other endpoints.
