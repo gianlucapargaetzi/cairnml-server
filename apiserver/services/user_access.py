@@ -55,7 +55,20 @@ def revoke(call: APICall, company: str, _request):
         company, call.identity.user, data.get("id", ""), data.get("project", ""), is_admin)}
 
 
+@endpoint("user_access.set_agent_tokens")
+def set_agent_tokens(call: APICall, company: str, _request):
+    data = call.data or {}
+    is_admin = call.identity.role in (Role.admin, Role.root)
+    call.result.data = access_bll.set_agent_tokens_allowed(
+        company, call.identity.user, data.get("project", ""), bool(data.get("allowed", True)), is_admin)
+
+
 @endpoint("user_access.project_grants")
 def project_grants(call: APICall, company: str, _request):
-    call.result.data = {"grants": access_bll.project_grants(
-        company, call.identity.user, (call.data or {}).get("project", ""))}
+    project = (call.data or {}).get("project", "")
+    grants = access_bll.project_grants(company, call.identity.user, project)
+    call.result.data = {
+        "grants": grants,
+        "agent_tokens_allowed": access_bll.project_agent_tokens_allowed(
+            company, access_bll.root_project(company, project)),
+    }

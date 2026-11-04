@@ -162,7 +162,9 @@ def check_readable(company: str, repository: str) -> None:
     if store.find_credential(company, repository) is not None:
         return
     host, _path = store.host_and_path(repository)
-    raise errors.bad_request.ValidationError(
+    from apiserver.idp.access_refused import AccessRefused
+
+    raise AccessRefused(
         f"the repository on {host} is private or cannot be checked, and no Git credentials are stored for {host}: "
         "an admin adds them with the git_credentials.set call (the web app's Settings page), or the repository "
         "must be public and reachable from the server")

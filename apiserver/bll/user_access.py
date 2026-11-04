@@ -284,3 +284,43 @@ def usable_for(company: str, user: str, host: str, path: str, project: Optional[
         except store.CredentialUnreadable:
             log.warning("the access %s cannot be read with the current key", entry.id)
     return pairs
+
+
+def granted_for_job(company: str, enqueuer: str, root: str, host: str, path: str) -> list:
+    """The accesses shared with a project that a job of the project may use, as (entry, secret) pairs: the grants whose
+    owner is still a member and active, while the user who queued the job is a member and active. The agent's owner is
+    not consulted: the access comes from the project. A token counts only for its host and path prefix."""
+    if not root or not is_active(enqueuer) or not is_member(company, root, enqueuer):
+        return []
+    pairs = []
+    for entry in UserAccess.objects(company=company, granted_projects=root).order_by("created"):
+        if entry.kind == "token" and (entry.host != host or not store.covers(entry.path, path)):
+            continue
+        if not grant_applies(root, root, is_member(company, root, entry.user), True,
+                             is_active(entry.user), True):
+            continue
+        try:
+            pairs.append((entry, _secret(entry)))
+        except store.CredentialUnreadable:
+            log.warning("the access %s cannot be read with the current key", entry.id)
+    return pairs
+
+
+def project_agent_tokens_allowed(company: str, root: str) -> bool:
+    """Whether a project lets its agents be given personal access tokens shared with it. On by default, with a warning
+    at the time of sharing; a project may turn it off."""
+    project = Project.objects(company=company, id=root).only("agent_tokens_allowed").first()
+    return project is None or project.agent_tokens_allowed is not False
+
+
+def set_agent_tokens_allowed(company: str, actor: str, project_id: str, allowed: bool, is_admin: bool) -> dict:
+    """The owner of the project (or an admin) decides whether its agents may be given personal tokens."""
+    root = root_project(company, project_id)
+    project = Project.objects(company=company, id=root).only("user").first() if root else None
+    if project is None:
+        raise errors.bad_request.ValidationError("no such project")
+    if not (is_admin or project.user == actor):
+        raise errors.bad_request.ValidationError("only the owner of the project may change this")
+    Project.objects(company=company, id=root).update_one(set__agent_tokens_allowed=bool(allowed))
+    audit(actor, "project.agent_tokens", company=company, project=root, allowed=bool(allowed))
+    return {"project": root, "agent_tokens_allowed": bool(allowed)}

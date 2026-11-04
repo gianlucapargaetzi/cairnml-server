@@ -247,8 +247,21 @@ def enqueue_task(
     if queue_id or queue_name:
         # A job must be runnable: its commit exists on GitHub and the App can read its repository.
         from apiserver.idp.github_check import build_from_config as _github, check_submission
+        from apiserver.idp.access_refused import AccessRefused
 
-        check_submission(task, _github())
+        try:
+            check_submission(task, _github())
+        except AccessRefused as exc:
+            # no access reaches the repository: the task is listed as Failed, with the reason, not refused
+            ChangeStatusRequest(
+                task=task,
+                new_status=TaskStatus.failed,
+                status_reason="access refused",
+                status_message=str(exc),
+                force=True,
+                user_id=identity.user,
+            ).execute()
+            return 0, {"status": TaskStatus.failed}
     if not update_execution_queue:
         if not (
             task.status == TaskStatus.queued and task.execution and task.execution.queue
