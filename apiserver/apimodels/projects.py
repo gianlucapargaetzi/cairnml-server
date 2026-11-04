@@ -64,6 +64,10 @@ class ProjectUserNamesRequest(MultiProjectRequest):
     entity = ActualEnumField(EntityTypeEnum, default=EntityTypeEnum.task)
 
 
+# Longest contribution period: wide enough for the activity grid of the web app at its widest (about 60 weeks).
+MAX_CONTRIBUTIONS_PERIOD_DAYS = 730
+
+
 class ProjectContributionsRequest(models.Base):
     project = fields.StringField(required=True)
     period_days = fields.IntField(default=30)

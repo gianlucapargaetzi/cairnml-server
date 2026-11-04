@@ -23,6 +23,7 @@ from apiserver.apimodels.projects import (
     ProjectContributionsRequest,
     EntityTypeEnum,
 )
+from apiserver.apimodels.projects import MAX_CONTRIBUTIONS_PERIOD_DAYS
 from apiserver.bll import webhooks
 from apiserver.bll.organization import OrgBLL, Tags
 from apiserver.bll.project.access import ProjectAccessBLL
@@ -715,7 +716,7 @@ def get_contributions(
     call.result.data = ProjectBLL.get_contributions(
         company_id,
         project_id=request.project,
-        period_days=min(max(request.period_days, 1), 365),
+        period_days=min(max(request.period_days, 1), MAX_CONTRIBUTIONS_PERIOD_DAYS),
         utc_offset_minutes=min(max(request.utc_offset_minutes, -840), 840),
         limit=min(max(request.limit, 1), 50),
     )
