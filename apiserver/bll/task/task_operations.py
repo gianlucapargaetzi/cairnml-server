@@ -303,6 +303,8 @@ def enqueue_task(
         user_id=user_id,
     ).execute(enqueue_status=before_enqueue_status)
 
+    Task.objects(id=task.id).update(set__execution__enqueued_by=user_id)
+
     try:
         queue_bll.add_task(company_id=company_id, queue_id=queue_id, task_id=task.id)
     except Exception:

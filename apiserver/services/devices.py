@@ -346,7 +346,11 @@ def _granted_token(company: str, task, actor: str, task_id: str, ip, repo: str):
     if root is None:
         return None
     host, path = store.host_and_path(canonical_url(repo))
-    for entry, secret in user_access.granted_for_job(company, task.user, root, host, path):
+    enqueuer = task.execution.enqueued_by if task.execution else None
+    if not enqueuer:
+        # a task queued before this was recorded: nothing is granted, rather than guessing who queued it
+        return None
+    for entry, secret in user_access.granted_for_job(company, enqueuer, root, host, path):
         if entry.kind == "app":
             app = GitHubApp(entry.app_id, secret, entry.api_url or config.get("apiserver.idp.github_api_url"))
             try:

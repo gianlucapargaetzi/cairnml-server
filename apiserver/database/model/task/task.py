@@ -142,6 +142,8 @@ class Execution(EmbeddedDocument, ProperDictMixin):
     artifacts: Dict[str, Artifact] = SafeMapField(field=EmbeddedDocumentField(Artifact))
     queue = StringField(reference_field="Queue")
     """ Queue ID where task was queued """
+    enqueued_by = StringField()
+    """ The user who queued the task. Project grants are checked for this user, not for the agent's owner """
 
 
 class TaskType(object):
