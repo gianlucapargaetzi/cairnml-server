@@ -50,7 +50,7 @@ def _token_works(repo: str, token: str) -> bool:
     return response.status_code == 200
 
 
-def _github(company: str, user: Optional[str], repository: str, owner: str, name: str) -> dict:
+def _github(company: str, user: Optional[str], project: Optional[str], repository: str, owner: str, name: str) -> dict:
     repo = f"{owner}/{name}"
     api_url = config.get("apiserver.idp.github_api_url")
     try:
@@ -61,7 +61,7 @@ def _github(company: str, user: Optional[str], repository: str, owner: str, name
 
     # the user's own accesses first: their apps and their tokens, in the order they were added
     host, path = store.host_and_path(canonical_url(repo))
-    for entry, secret in user_access.usable_for(company, user, host, path):
+    for entry, secret in user_access.usable_for(company, user, host, path, project):
         if entry.kind == "app":
             try:
                 GitHubApp(entry.app_id, secret, entry.api_url or api_url).installation_token(repo)
@@ -103,11 +103,11 @@ def _github(company: str, user: Optional[str], repository: str, owner: str, name
                    "Ask an admin to install the App on the repository or to store a token.")
 
 
-def _other_host(company: str, user: Optional[str], repository: str) -> dict:
+def _other_host(company: str, user: Optional[str], project: Optional[str], repository: str) -> dict:
     if is_private(repository) is False:
         return _result(repository, PUBLIC, "", "Publicly accessible")
     host, path = store.host_and_path(repository)
-    for entry, _secret in user_access.usable_for(company, user, host, path):
+    for entry, _secret in user_access.usable_for(company, user, host, path, project):
         if entry.kind == "token":
             return _result(repository, TOKEN, entry.label,
                            f"Your token {entry.label} is stored for {host}; it is not verified until a job runs")
@@ -122,18 +122,19 @@ def _other_host(company: str, user: Optional[str], repository: str) -> dict:
                    "Ask an admin to store them.")
 
 
-def resolve_one(company: str, repository: str, user: Optional[str] = None, now: Optional[float] = None) -> dict:
+def resolve_one(company: str, repository: str, user: Optional[str] = None, project: Optional[str] = None,
+                now: Optional[float] = None) -> dict:
     now = time.time() if now is None else now
-    key = (company, user, repository)
+    key = (company, user, project, repository)
     cached = _cache.get(key)
     if cached and now - cached[0] < CACHE_SEC:
         return cached[1]
     parsed = parse_github_url(repository)
-    result = (_github(company, user, repository, *parsed) if parsed
-              else _other_host(company, user, repository))
+    result = (_github(company, user, project, repository, *parsed) if parsed
+              else _other_host(company, user, project, repository))
     _cache[key] = (now, result)
     return result
 
 
-def resolve(company: str, repositories: list, user: Optional[str] = None) -> list:
-    return [resolve_one(company, repository, user) for repository in repositories if repository]
+def resolve(company: str, repositories: list, user: Optional[str] = None, project: Optional[str] = None) -> list:
+    return [resolve_one(company, repository, user, project) for repository in repositories if repository]

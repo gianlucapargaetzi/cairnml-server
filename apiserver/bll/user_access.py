@@ -7,14 +7,16 @@ import logging
 import re
 import uuid
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Sequence
 
 import requests
+from mongoengine import Q
 
 from apiserver.apierrors import errors
 from apiserver.config_repo import config
 from apiserver.database.model.auth import User
 from apiserver.database.model.git_credential import GitCredential
+from apiserver.database.model.project import Project
 from apiserver.database.model.user_access import UserAccess
 from apiserver.idp import git_credentials as store
 from apiserver.idp.audit import record as audit
@@ -47,6 +49,7 @@ def _view(entry: UserAccess) -> dict:
         "last_checked": entry.last_checked.isoformat() if entry.last_checked else None,
         "last_state": entry.last_state,
         "last_message": entry.last_message,
+        "granted_projects": list(entry.granted_projects or []),
     }
 
 
@@ -158,17 +161,126 @@ def _secret(entry: UserAccess) -> str:
     return store.decrypt(entry.secret, store.key_material())
 
 
-def usable_for(company: str, user: str, host: str, path: str) -> list:
-    """The accesses the user may use for a repository on this host and path, as (entry, secret) pairs: every app of the
-    user, and every token whose host matches and whose path prefix covers the repository. A disabled user has none."""
-    if not user or User.objects(id=user, idp_disabled=True).only("id").first():
+def root_project(company: str, project_id: Optional[str]) -> Optional[str]:
+    """The root project of a project (grants are made on root projects); None when there is no such project."""
+    current = Project.objects(company=company, id=project_id).only("id", "parent").first() if project_id else None
+    seen = set()
+    while current is not None and current.parent and current.id not in seen:
+        seen.add(current.id)
+        current = Project.objects(company=company, id=current.parent).only("id", "parent").first()
+    return current.id if current is not None else None
+
+
+def is_member(company: str, project_id: str, user: str) -> bool:
+    """The owner of the project, or one of its members (any role)."""
+    project = Project.objects(company=company, id=project_id).only("user", "members").first()
+    if project is None or not user:
+        return False
+    return project.user == user or any(member.user == user for member in project.members)
+
+
+def is_active(user: str) -> bool:
+    return bool(user) and User.objects(id=user, idp_disabled=True).only("id").first() is None
+
+
+def grant_applies(grant_root: str, project_root: Optional[str], owner_is_member: bool, user_is_member: bool,
+                  owner_active: bool, user_active: bool) -> bool:
+    """The one rule for a grant: it applies to the project it names, while its owner is still a member and active, and
+    the user is still a member and active."""
+    return (project_root == grant_root and owner_is_member and user_is_member and owner_active and user_active)
+
+
+def grant(company: str, owner: str, access_id: str, project_id: str) -> dict:
+    """The owner shares one of their accesses with a project. Only a member of the project may do so."""
+    entry = _owned(company, owner, access_id)
+    root = root_project(company, project_id)
+    if root is None:
+        raise errors.bad_request.ValidationError("no such project")
+    if not is_member(company, root, owner):
+        raise errors.bad_request.ValidationError("you are not a member of this project")
+    if root not in (entry.granted_projects or []):
+        entry.granted_projects = list(entry.granted_projects or []) + [root]
+        entry.updated = datetime.utcnow()
+        entry.save()
+        audit(owner, "user_access.granted", company=company, kind=entry.kind, project=root)
+    return _view(entry)
+
+
+def revoke(company: str, actor: str, access_id: str, project_id: str, is_admin: bool) -> dict:
+    """The owner of the access, or an admin, or the owner of the project, stops a grant at once."""
+    entry = UserAccess.objects(company=company, id=access_id).first()
+    if entry is None:
+        raise errors.bad_request.ValidationError("no such access")
+    root = root_project(company, project_id)
+    project_owner = Project.objects(company=company, id=root).only("user").first() if root else None
+    allowed = actor == entry.user or is_admin or (project_owner is not None and project_owner.user == actor)
+    if not allowed:
+        raise errors.bad_request.ValidationError("no such access of yours")
+    if root in (entry.granted_projects or []):
+        entry.granted_projects = [p for p in entry.granted_projects if p != root]
+        entry.updated = datetime.utcnow()
+        entry.save()
+        audit(actor, "user_access.revoked", company=company, kind=entry.kind, project=root)
+    return _view(entry)
+
+
+def project_grants(company: str, actor: str, project_id: str) -> list:
+    """The accesses shared with a project, for its members: the label and the kind, the owner's name and what the access
+    reaches. No secret."""
+    root = root_project(company, project_id)
+    if root is None or not is_member(company, root, actor):
+        raise errors.bad_request.ValidationError("no such project")
+    result = []
+    for entry in UserAccess.objects(company=company, granted_projects=root).order_by("created"):
+        owner = User.objects(id=entry.user).only("name").first()
+        result.append({
+            "id": entry.id,
+            "kind": entry.kind,
+            "label": entry.label,
+            "host": entry.host,
+            "path": entry.path,
+            "app_id": entry.app_id,
+            "owner": entry.user,
+            "owner_name": owner.name if owner else entry.user,
+            "owner_active": is_active(entry.user),
+            "owner_is_member": is_member(company, root, entry.user),
+        })
+    return result
+
+
+def my_projects(company: str, user: str) -> list:
+    """The root projects the user owns or is a member of: the ones they may share an access with."""
+    projects = Project.objects(
+        Q(company=company) & Q(parent=None) & (Q(user=user) | Q(members__user=user))).only("id", "name")
+    return [{"id": project.id, "name": project.name} for project in projects]
+
+
+def usable_for(company: str, user: str, host: str, path: str, project: Optional[str] = None) -> list:
+    """The accesses the user may use for a repository on this host and path, as (entry, secret) pairs.
+
+    Their own: every app, and every token whose host matches and whose path prefix covers the repository. Shared with
+    the project: the accesses granted to the project's root, while their owner is still a member and active, and the
+    user is still a member and active. A disabled user has none."""
+    if not user or not is_active(user):
         return []
     found = []
     for entry in UserAccess.objects(company=company, user=user).order_by("created"):
         if entry.kind == "token" and (entry.host != host or not store.covers(entry.path, path)):
             continue
+        found.append(entry)
+    root = root_project(company, project) if project else None
+    if root:
+        user_is_member = is_member(company, root, user)
+        for entry in UserAccess.objects(company=company, granted_projects=root, user__ne=user).order_by("created"):
+            if entry.kind == "token" and (entry.host != host or not store.covers(entry.path, path)):
+                continue
+            if grant_applies(root, root, is_member(company, root, entry.user), user_is_member,
+                             is_active(entry.user), is_active(user)):
+                found.append(entry)
+    pairs = []
+    for entry in found:
         try:
-            found.append((entry, _secret(entry)))
+            pairs.append((entry, _secret(entry)))
         except store.CredentialUnreadable:
-            log.warning("the owner's access %s cannot be read with the current key", entry.id)
-    return found
+            log.warning("the access %s cannot be read with the current key", entry.id)
+    return pairs

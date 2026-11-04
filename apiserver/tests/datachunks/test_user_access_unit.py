@@ -38,7 +38,7 @@ class TestNoSecretInAView(TestCase):
     def test_the_view_has_no_secret_field(self):
         entry = SimpleNamespace(id="a1", kind="token", label="mine", host="github.com", path="acme", app_id=None,
                                 api_url=None, created=None, last_checked=None, last_state=None, last_message=None,
-                                secret="ENCRYPTED-VALUE")
+                                secret="ENCRYPTED-VALUE", granted_projects=[])
         view = bll._view(entry)
         self.assertNotIn("secret", view)
         self.assertNotIn("ENCRYPTED-VALUE", str(view))
@@ -47,3 +47,21 @@ class TestNoSecretInAView(TestCase):
 class TestWhoMayUse(TestCase):
     def test_no_user_has_no_accesses(self):
         self.assertEqual(bll.usable_for("company-1", None, "github.com", "acme/x"), [])
+
+
+class TestGrantRule(TestCase):
+    def test_a_grant_applies_only_while_both_sides_are_members_and_active(self):
+        self.assertTrue(bll.grant_applies("p1", "p1", True, True, True, True))
+
+    def test_the_owner_leaving_the_project_stops_the_grant(self):
+        self.assertFalse(bll.grant_applies("p1", "p1", False, True, True, True))
+
+    def test_the_user_leaving_the_project_stops_the_grant(self):
+        self.assertFalse(bll.grant_applies("p1", "p1", True, False, True, True))
+
+    def test_a_deactivated_owner_or_user_stops_the_grant(self):
+        self.assertFalse(bll.grant_applies("p1", "p1", True, True, False, True))
+        self.assertFalse(bll.grant_applies("p1", "p1", True, True, True, False))
+
+    def test_a_grant_to_another_project_does_not_apply(self):
+        self.assertFalse(bll.grant_applies("p1", "p2", True, True, True, True))

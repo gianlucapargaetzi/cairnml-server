@@ -13,4 +13,6 @@ def resolve(call: APICall, company: str, request):
     repositories = (call.data or {}).get("repositories") or []
     if not isinstance(repositories, list) or len(repositories) > MAX_REPOSITORIES:
         raise errors.bad_request.ValidationError(f"give a list of at most {MAX_REPOSITORIES} repositories")
-    call.result.data = {"repositories": access_bll.resolve(company, [str(item) for item in repositories], call.identity.user)}
+    project = (call.data or {}).get("project") or None
+    call.result.data = {"repositories": access_bll.resolve(
+        company, [str(item) for item in repositories], call.identity.user, project)}
