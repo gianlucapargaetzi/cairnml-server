@@ -87,10 +87,10 @@ class TestUpgradeNotice(object):
         client_versions._logged.clear()
 
     def test_the_shipped_minimum_does_not_refuse_the_current_sdk_or_agent(self):
-        # The versions the server's pins name at this commit: cairnml 0.0.2 and cairnml-agent 0.0.1.
-        assert client_versions._minimum("min_sdk_version") == "0.0.2"
-        assert client_versions._minimum("min_agent_version") == "0.0.1"
-        assert upgrade_notice({"X-CairnML-Client": "cairnml-0.0.2, cairnml_agent-0.0.1"}) is None
+        # The versions the server's pins name at this commit: cairnml 0.0.3 and cairnml-agent 0.0.3.
+        assert client_versions._minimum("min_sdk_version") == "0.0.3"
+        assert client_versions._minimum("min_agent_version") == "0.0.3"
+        assert upgrade_notice({"X-CairnML-Client": "cairnml-0.0.3, cairnml_agent-0.0.3"}) is None
 
 
 class TestResponseHeader(object):
