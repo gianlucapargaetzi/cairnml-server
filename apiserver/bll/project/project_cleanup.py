@@ -14,9 +14,7 @@ from apiserver.bll.task.task_cleanup import (
 )
 from apiserver.config_repo import config
 from apiserver.database.model import EntityVisibility
-from apiserver.database.model.dataset import Dataset
 from apiserver.database.model.model import Model
-from apiserver.database.model.user_access import UserAccess
 from apiserver.database.model.project import Project
 from apiserver.database.model.share import Share
 from apiserver.database.model.task.task import Task, ArtifactModes, TaskType, TaskStatus
@@ -213,11 +211,8 @@ def delete_project(
 
     affected = {*project_ids, *(project.path or [])}
     res.deleted = Project.objects(id__in=project_ids).delete()
-    # the old fields of the datasets and credentials that pointed at the projects, then their shares
-    ids = list(project_ids)
-    Dataset.objects(company=company, projects__in=ids).update(pull_all__projects=ids)
-    UserAccess.objects(company=company, granted_projects__in=ids).update(pull_all__granted_projects=ids)
-    Share.objects(company=company, scope="projects", project__in=ids).delete()
+    # the shares that the projects gave to queues, datasets and credentials
+    Share.objects(company=company, scope="projects", project__in=list(project_ids)).delete()
 
     return res, affected
 

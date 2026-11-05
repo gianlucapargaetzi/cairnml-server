@@ -5,25 +5,29 @@ OTHER = "u2"
 
 
 def dataset(**overrides) -> dict:
-    values = {"id": "d1", "name": "cars", "owner": OWNER, "visibility": "user", "projects": [], "credential": None}
+    values = {"id": "d1", "name": "cars", "owner": OWNER, "visibility": "user", "credential": None}
     values.update(overrides)
     return values
 
 
 class TestVisibleTo:
-    def test_user_visibility_is_the_owner_and_admins_only(self):
-        assert bll.visible_to(dataset(), OWNER, set(), False)
-        assert bll.visible_to(dataset(), OTHER, set(), True)
-        assert not bll.visible_to(dataset(), OTHER, set(), False)
+    """ Who may see a stored dataset, from its share records (bll/access), against the database """
 
-    def test_projects_visibility_is_the_owner_admins_and_members_of_an_allocated_project(self):
-        shared = dataset(visibility="projects", projects=["p1"])
-        assert bll.visible_to(shared, OTHER, {"p1"}, False)
-        assert not bll.visible_to(shared, OTHER, {"p2"}, False)
-        assert bll.visible_to(shared, OWNER, set(), False)
+    def test_user_visibility_is_the_owner_and_admins_only(self, projects):
+        dataset_id = add_private_dataset(OWNER, "user")
+        assert bll.can_see(COMPANY, OWNER, False, dataset_id)
+        assert bll.can_see(COMPANY, OTHER, True, dataset_id)
+        assert not bll.can_see(COMPANY, OTHER, False, dataset_id)
 
-    def test_public_visibility_is_every_user(self):
-        assert bll.visible_to(dataset(visibility="Public"), OTHER, set(), False)
+    def test_projects_visibility_is_the_owner_admins_and_members_of_an_allocated_project(self, projects):
+        dataset_id = add_private_dataset(OWNER, "projects", projects=["p-team"])
+        assert bll.can_see(COMPANY, OTHER, False, dataset_id)
+        assert not bll.can_see(COMPANY, "u3", False, dataset_id)
+        assert bll.can_see(COMPANY, OWNER, False, dataset_id)
+
+    def test_public_visibility_is_every_user(self, projects):
+        dataset_id = add_private_dataset(OWNER, "Public")
+        assert bll.can_see(COMPANY, OTHER, False, dataset_id)
 
 
 class TestCredentialState:
@@ -172,10 +176,10 @@ def projects():
 
 
 def add_private_dataset(owner: str, visibility: str = "user", projects=None, credential=None) -> str:
-    """A dataset with its old fields and the share records the writers keep beside them (Public, and one project share
-    for each allocated project, granted by the owner of the project)."""
+    """A dataset with the share records the writers keep (Public, and one project share for each allocated project,
+    granted by the owner of the project)."""
     dataset = Dataset(id=f"d-{owner}-{visibility}", company=COMPANY, kind="repo", ref=f"acme/{owner}-{visibility}",
-                      name=f"{owner}-{visibility}", owner=owner, visibility=visibility, projects=projects or [],
+                      name=f"{owner}-{visibility}", owner=owner, visibility=visibility,
                       credential=credential, created=datetime.utcnow(), updated=datetime.utcnow(),
                       last_checked=datetime.utcnow())
     dataset.save()
@@ -259,14 +263,15 @@ def test_app_discovered_repositories_belong_to_the_owner_of_the_app_credential(p
 def add_access(access_id: str, owner: str) -> None:
     UserAccess.objects(company=COMPANY, id=access_id).delete()
     UserAccess(id=access_id, company=COMPANY, user=owner, kind="token", label=access_id, host="github.com", path="",
-               secret="x", scope="user", created=datetime.utcnow(), granted_projects=[]).save()
+               secret="x", scope="user", created=datetime.utcnow()).save()
 
 
 def test_sharing_a_dataset_shares_its_credential_when_the_owner_of_the_credential_does_it(projects):
     add_access("cred-u1", "u1")
     dataset_id = add_private_dataset("u1", "Public", credential="cred-u1")
     bll.allocate(COMPANY, "u1", dataset_id, "p-team", False)
-    assert "p-team" in UserAccess.objects(company=COMPANY, id="cred-u1").first().granted_projects
+    assert Share.objects(company=COMPANY, resource_type="credential", resource_id="cred-u1", scope="projects",
+                         project="p-team").count() == 1
 
 
 def test_another_member_cannot_share_a_dataset_whose_credential_is_not_shared_with_the_project(projects):
@@ -281,7 +286,7 @@ def test_a_public_dataset_shared_with_a_project_is_recorded_on_that_project(proj
     result = bll.allocate(COMPANY, "u2", dataset_id, "p-team", False)
     assert result["projects"] == ["p-team"]
     bll.unallocate(COMPANY, "u2", dataset_id, "p-team", False)
-    assert Dataset.objects(id=dataset_id).first().projects == []
+    assert bll.view(Dataset.objects(id=dataset_id).first())["projects"] == []
 
 
 def test_a_registry_and_a_repository_are_found_by_their_address_but_an_entry_is_not(projects):

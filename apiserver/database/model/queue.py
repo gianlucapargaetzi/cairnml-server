@@ -31,14 +31,6 @@ class Entry(EmbeddedDocument, ProperDictMixin):
     """ Added to the queue """
 
 
-class QueueUser(EmbeddedDocument):
-    """ A user granted access to a queue: they may use it and allocate it to the projects they own """
-
-    user = StringField(required=True)
-    added = DateTimeField(required=True)
-    added_by = StringField(required=True)
-
-
 class Resources(EmbeddedDocument):
     cpu_usage = FloatField()
     gpu_usage = FloatField()
@@ -75,8 +67,6 @@ class Queue(DbModelMixin, Document):
         field=EmbeddedDocumentField(MetadataItem), user_set_allowed=True
     )
     resources = EmbeddedDocumentField(Resources)
-    users = EmbeddedDocumentListField(QueueUser, default=list)
-    """ Users granted access to the queue (see QueueAccessBLL) """
     public = BooleanField(default=False, user_set_allowed=True)
     """ Every company user may use and allocate a public queue """
     created_by = StringField()

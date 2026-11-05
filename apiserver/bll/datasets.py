@@ -30,18 +30,6 @@ OK = "ok"
 
 # --- Rules on plain values
 
-def visible_to(dataset: dict, user: str, user_projects: set, is_admin: bool) -> bool:
-    """True when the user may see the dataset under its visibility."""
-    if is_admin or dataset.get("owner") == user:
-        return True
-    visibility = dataset.get("visibility")
-    if visibility == "Public":
-        return True
-    if visibility == "projects":
-        return bool(set(dataset.get("projects") or []) & set(user_projects))
-    return False
-
-
 def credential_state(dataset: dict, credential_ids: set) -> tuple:
     """(state, message) for a dataset given the credentials the viewer can still use. A public dataset (no credential)
     is always ok. A dataset whose credential is gone has no access, and the message is the banner text."""
@@ -203,7 +191,7 @@ def _save(company: str, user: str, kind: str, repo: str, name: str, visibility: 
         access.refuse_inactive(user)
     dataset = Dataset(
         id=uuid.uuid4().hex, company=company, kind=kind, ref=repo, name=name, owner=user, visibility=visibility,
-        projects=[], credential=credential, state=state, state_message=message, created=now, updated=now,
+        credential=credential, state=state, state_message=message, created=now, updated=now,
         last_checked=now,
     )
     dataset.save()
@@ -260,6 +248,14 @@ def add_registry(company: str, user: str, url: str, visibility: str = "user", pr
     return view(registry)
 
 
+def _shared_projects(dataset: Dataset) -> list:
+    """The root projects the dataset is shared with, from its share records. A registry entry has no share of its own."""
+    resource_type = _share_type(dataset)
+    if resource_type is None:
+        return []
+    return sorted(access.shared_project_ids(dataset.company, resource_type, dataset.id))
+
+
 def view(dataset: Dataset) -> dict:
     """What the API returns for a dataset: never a secret, only the id of the credential that reads it."""
     return {
@@ -269,7 +265,7 @@ def view(dataset: Dataset) -> dict:
         "name": dataset.name,
         "owner": dataset.owner,
         "visibility": dataset.visibility,
-        "projects": list(dataset.projects or []),
+        "projects": _shared_projects(dataset),
         "credential": dataset.credential,
         "state": dataset.state,
         "state_message": dataset.state_message or "",
@@ -330,13 +326,11 @@ def list_visible(company: str, user: str, is_admin: bool) -> list:
 
 def regrant_project_shares(company: str, root: str, new_owner: str, actor: str) -> None:
     """The owner of a project changed: the dataset shares that the project gives are now granted by its new owner (R20).
-    The old fields are not changed here: the project still lists the datasets."""
-    for dataset in Dataset.objects(company=company, projects=root):
-        resource_type = _share_type(dataset)
-        if resource_type is None:
-            continue
-        access.remove_grant(company, resource_type, dataset.id, "projects", root, actor=actor)
-        access.record_grant(company, new_owner, resource_type, dataset.id, "projects", root, actor=actor)
+    The shares are re-granted by the new owner."""
+    for resource_type in ("dataset", "registry"):
+        for resource_id in access.resource_ids_shared_with(company, resource_type, root):
+            access.remove_grant(company, resource_type, resource_id, "projects", root, actor=actor)
+            access.record_grant(company, new_owner, resource_type, resource_id, "projects", root, actor=actor)
 
 
 def set_visibility(company: str, user: str, dataset_id: str, visibility: str, projects: list, is_admin: bool) -> dict:
@@ -354,13 +348,12 @@ def set_visibility(company: str, user: str, dataset_id: str, visibility: str, pr
             if root is None:
                 raise errors.bad_request.ValidationError("no such project")
             roots.append(root)
-    previous = set(dataset.projects or [])
+    resource_type = _share_type(dataset)
+    previous = set(access.shared_project_ids(company, resource_type, dataset.id)) if resource_type else set()
     dataset.visibility = visibility
-    dataset.projects = roots
     dataset.updated = datetime.utcnow()
     dataset.save()
     _set_public_share(company, user, dataset, visibility == "Public")
-    resource_type = _share_type(dataset)
     if resource_type is not None:
         for root in previous - set(roots):
             access.remove_grant(company, resource_type, dataset.id, "projects", root, actor=user)
@@ -398,8 +391,6 @@ def _change_allocation(company: str, user: str, dataset_id: str, project: str, i
                 raise errors.bad_request.ValidationError(
                     "the credential that reads this dataset is not shared with this project; its owner must share it first")
             user_access.grant(company, credential.user, credential.id, root)
-    # the project is recorded whatever the visibility, so a Public dataset shows in the project's list as well
-    dataset.projects = [p for p in dataset.projects if p != root] + ([root] if add else [])
     dataset.updated = datetime.utcnow()
     dataset.save()
     resource_type = _share_type(dataset)

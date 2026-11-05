@@ -175,14 +175,12 @@ def test_a_share_record_alone_gives_the_listing(world):
     q, c = world.queues, world.company
     record_grant(c, OWNER, "queue", q["first"], "projects", world.root, actor=OWNER)
 
-    assert Project.objects(id=world.root).first().queues == []
     assert listed(c, OWNER, world.root) == [q["first"]]
     assert listed(c, MEMBER, world.root) == [q["first"]]
 
 
-def test_the_old_field_alone_gives_no_listing(world):
-    q, c = world.queues, world.company
-    Project.objects(id=world.root).update_one(push__queues=q["first"])
+def test_no_share_gives_no_listing(world):
+    c = world.company
 
     assert listed(c, OWNER, world.root) == []
     assert listed(c, MEMBER, world.root) == []

@@ -11,6 +11,7 @@ import pytest
 
 from apiserver.apimodels.project_access import AddQueuesRequest, RemoveQueueRequest
 from apiserver.apimodels.queues import CreateRequest, DeleteRequest, QueueRequest, UpdateRequest, UserRequest
+from apiserver.bll.access import resource_ids_shared_with
 from apiserver.bll.queue.queue_access import QueueAccessBLL
 from apiserver.apierrors import errors
 from apiserver.database.model.auth import Role, User
@@ -304,7 +305,7 @@ def test_a_project_owner_allocates_only_the_queues_they_may_use_without_admin_ri
     other.save()
     granted_only = FakeCall(identity(c, GRANTEE))
     project_svc.add_queues(granted_only, c, AddQueuesRequest(project=other.id, queues=[q["granted"]]))
-    assert Project.objects(id=other.id).first().queues == [q["granted"]]
+    assert resource_ids_shared_with(c, "queue", other.id) == [q["granted"]]
 
     refused = outcome(lambda: project_svc.add_queues(FakeCall(identity(c, GRANTEE)), c,
                                                      AddQueuesRequest(project=other.id, queues=[q["own"]])))

@@ -68,7 +68,6 @@ def test_a_deactivated_owner_cannot_grant_a_queue_to_a_user(gone):
     deactivate(gone)
     with pytest.raises(errors.bad_request.InvalidQueueId):
         svc.add_user(call(gone), gone, UserRequest(queue=queue.id, user="u2"))
-    assert Queue.objects(company=gone, id=queue.id).get().users == []
     assert share_count(gone, "queue", queue.id, "user") == 0
 
 
@@ -78,7 +77,6 @@ def test_a_deactivated_owner_cannot_take_back_a_queue_grant(gone):
     deactivate(gone)
     with pytest.raises(errors.bad_request.InvalidQueueId):
         svc.remove_user(call(gone), gone, UserRequest(queue=queue.id, user="u2"))
-    assert [u.user for u in Queue.objects(company=gone, id=queue.id).get().users] == ["u2"]
     assert share_count(gone, "queue", queue.id, "user") == 1
 
 
@@ -99,7 +97,7 @@ def test_a_deactivated_owner_cannot_change_the_visibility_of_a_dataset(gone):
     with pytest.raises(errors.forbidden.NoWritePermission):
         datasets.set_visibility(gone, "gone", "d1", "projects", ["root1"], False)
     dataset = Dataset.objects(company=gone, id="d1").get()
-    assert dataset.visibility == "user" and dataset.projects == []
+    assert dataset.visibility == "user"
     assert share_count(gone, "dataset", "d1", "projects") == 0
 
 
@@ -109,7 +107,6 @@ def test_a_deactivated_owner_cannot_grant_a_credential_to_a_project(gone):
     deactivate(gone)
     with pytest.raises(errors.forbidden.NoWritePermission):
         user_access.grant(gone, "gone", "acc1", "root1")
-    assert UserAccess.objects(company=gone, id="acc1").get().granted_projects == []
     assert share_count(gone, "credential", "acc1", "projects") == 0
 
 

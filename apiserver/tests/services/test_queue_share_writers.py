@@ -8,7 +8,7 @@ import pytest
 
 from apiserver.apierrors import errors
 from apiserver.apimodels.project_access import AddQueuesRequest, RemoveQueueRequest, TransferOwnershipRequest
-from apiserver.apimodels.queues import DeleteRequest, UpdateRequest, UserRequest
+from apiserver.apimodels.queues import DeleteRequest, QueueRequest, UpdateRequest, UserRequest
 from apiserver.bll.queue.queue_access import QueueAccessBLL
 from apiserver.bll.queue.queue_bll import QueueBLL
 from apiserver.database.model.auth import Role, User
@@ -120,25 +120,26 @@ def test_removing_a_grant_takes_back_the_allocations_the_user_made(company, setu
     assert can_use(company, "u2", "q1")
 
     svc.remove_user(FakeCall(identity(company, "owner1")), company, UserRequest(queue="q1", user="u2"))
-    assert Project.objects(id="root2").only("queues").first().queues == []
+    assert Share.objects(company=company, resource_type="queue", resource_id="q1", scope="projects",
+                         project="root2").count() == 0
 
 
-# --- consistency: after each writer, the old fields and the share records describe the same users
+# --- consistency: after each writer, the public flag and the users listed by the queue match its share records
 
 
 def grants_of(company, queue_id):
-    """(from the old fields, from the share records) for one queue: its public flag, its users and its projects"""
+    """(from the public flag and the users the queue lists, from the share records) for one queue"""
     queue = Queue.objects(company=company, id=queue_id).first()
+    listing = FakeCall(identity(company, "owner1"))
+    svc.get_users(listing, company, QueueRequest(queue=queue_id))
     old = {
         "public": bool(queue.public),
-        "users": {grant.user for grant in queue.users},
-        "projects": {root.id for root in Project.objects(company=company, parent=None, queues=queue_id).only("id")},
+        "users": {user["user"] for user in listing.result.data["users"]},
     }
     shares = Share.objects(company=company, resource_type="queue", resource_id=queue_id)
     records = {
         "public": any(s.scope == "public" for s in shares),
         "users": {s.user for s in shares if s.scope == "user"},
-        "projects": {s.project for s in shares if s.scope == "projects"},
     }
     return old, records
 
@@ -209,10 +210,10 @@ def test_transferring_a_project_regrants_its_queues_from_the_new_owner(company, 
     assert granted.granted_by == "u9"
 
 
-# --- the order inside a writer: the old field first, then the share; a failed share write fails the request
+# --- a failed share write fails the request
 
 
-def test_a_failed_share_write_fails_the_request_and_the_old_field_is_already_changed(company, setup, monkeypatch):
+def test_a_failed_share_write_fails_the_request_and_leaves_no_grant(company, setup, monkeypatch):
     from apiserver.services import queues as queues_module
 
     def fail(*args, **kwargs):
@@ -221,4 +222,4 @@ def test_a_failed_share_write_fails_the_request_and_the_old_field_is_already_cha
     monkeypatch.setattr(queues_module, "record_grant", fail)
     with pytest.raises(RuntimeError, match="the share write failed"):
         svc.add_user(FakeCall(identity(company, "owner1")), company, UserRequest(queue="q1", user="u2"))
-    assert [grant.user for grant in Queue.objects(company=company, id="q1").first().users] == ["u2"]
+    assert Share.objects(company=company, resource_type="queue", resource_id="q1", scope="user", user="u2").count() == 0

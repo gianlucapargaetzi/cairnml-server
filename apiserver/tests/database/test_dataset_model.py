@@ -16,7 +16,6 @@ def make(**overrides) -> Dataset:
 def test_a_new_dataset_is_owner_only_with_no_credential_and_ok_state():
     dataset = make()
     dataset.validate()
-    assert dataset.projects == []
     assert dataset.credential is None
     assert dataset.state == "ok"
 

@@ -25,6 +25,7 @@ from apiserver.bll.access import (
     queue_ids_allocated,
     queue_ids_held,
     remove_grant,
+    shared_project_ids,
 )
 from apiserver.bll.user_access import my_projects
 from apiserver.database.model.auth import Role
@@ -140,19 +141,8 @@ class QueueAccessBLL:
         return queue_ids_held(company_id, user_id, set(), include_projects=False)
 
     @staticmethod
-    def remove_from_allocations(queue_ids: Iterable[str]) -> None:
-        """ Take queues out of every project's allocations """
-        Project.objects(queues__in=list(queue_ids)).update(
-            pull_all__queues=list(queue_ids)
-        )
-
-    @staticmethod
     def remove_user_allocations(company_id: str, user_id: str, queue_id: str, actor: str) -> None:
         """ Take a queue out of the allocations of the root projects the user owns (the cascade of a removed grant) """
-        roots = [root.id for root in Project.objects(company=company_id, parent=None, user=user_id, queues=queue_id)
-                 .only("id")]
-        Project.objects(
-            company=company_id, parent=None, user=user_id, queues=queue_id
-        ).update(pull__queues=queue_id)
-        for root_id in roots:
+        owned = {root.id for root in Project.objects(company=company_id, parent=None, user=user_id).only("id")}
+        for root_id in sorted(shared_project_ids(company_id, "queue", queue_id) & owned):
             remove_grant(company_id, "queue", queue_id, "projects", root_id, actor=actor)

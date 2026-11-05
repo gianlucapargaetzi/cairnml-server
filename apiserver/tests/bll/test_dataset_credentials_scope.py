@@ -54,11 +54,10 @@ def sts(monkeypatch):
 
 
 def add_dataset(company, owner=OWNER, visibility="user", projects=None, kind="repo", ref="acme/cars"):
-    """A dataset with its old fields and the share records the writers keep beside them (Public, and one project share
-    for each allocated project)."""
+    """A dataset with the share records the writers keep (Public, and one project share for each allocated project)."""
     record = Dataset(
         id=f"d-{uuid4().hex[:8]}", company=company, kind=kind, ref=ref, name=ref.split("/")[-1], owner=owner,
-        visibility=visibility, projects=projects or [], created=datetime.utcnow(),
+        visibility=visibility, created=datetime.utcnow(),
     )
     record.save()
     resource_type = "registry" if kind == "registry" else "dataset"

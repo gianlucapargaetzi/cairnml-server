@@ -71,22 +71,21 @@ def test_a_grant_lets_the_members_of_the_project_use_the_credential_until_it_is_
     assert usable_by(company, "u2", "root1") == []
 
 
-# --- consistency: after each writer, the old field and the share records describe the same projects
+# --- the share records follow every grant and revoke
 
 
 def grants_of(company, access_id):
-    """(from the old field, from the share records) for one credential: the projects it is granted to"""
-    entry = UserAccess.objects(company=company, id=access_id).first()
+    """The projects the credential is shared with, from its share records"""
     shares = Share.objects(company=company, resource_type="credential", resource_id=access_id, scope="projects")
-    return set(entry.granted_projects or []) if entry else set(), {s.project for s in shares}
+    return {s.project for s in shares}
 
 
 def test_the_credential_shares_follow_every_grant_and_revoke(company, setup):
     user_access.grant(company, "u1", "acc1", "root1")
-    assert grants_of(company, "acc1")[0] == grants_of(company, "acc1")[1] == {"root1"}
+    assert grants_of(company, "acc1") == {"root1"}
 
     user_access.revoke(company, "owner1", "acc1", "root1", is_admin=False)
-    assert grants_of(company, "acc1")[0] == grants_of(company, "acc1")[1] == set()
+    assert grants_of(company, "acc1") == set()
 
 
 def test_a_grant_is_granted_by_the_owner_of_the_credential(company, setup):

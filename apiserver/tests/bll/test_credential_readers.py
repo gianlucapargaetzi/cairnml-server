@@ -242,9 +242,7 @@ def test_a_share_record_alone_gives_the_use_of_the_credential(company, setup):
     assert user_access.credentials_for(company, "u1", False)[0]["granted_projects"] == ["root1"]
 
 
-def test_the_old_field_alone_gives_no_use_of_the_credential(company, setup):
-    UserAccess.objects(company=company, id="acc1").update_one(push__granted_projects="root1")
-
+def test_no_share_gives_no_use_of_the_credential(company, setup):
     assert usable_by(company, "u2", "root1") == []
     assert job_uses(company, "u2", "root1") == []
     assert user_access.project_grants(company, "u2", "root1") == []

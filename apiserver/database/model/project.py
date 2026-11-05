@@ -79,5 +79,3 @@ class Project(AttributedDocument):
     members = EmbeddedDocumentListField(ProjectMember, default=list)
     agent_tokens_allowed = BooleanField(default=True)
     """ Whether the agents that run this project's jobs may be given personal access tokens shared with it """
-    queues = ListField(StringField(required=True), default=list)
-    """ Ids of the queues allocated to this root project. Sub-projects use the queues of their root. """

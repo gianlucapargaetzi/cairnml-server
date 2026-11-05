@@ -89,14 +89,14 @@ def test_delete_removes_the_dataset_for_everyone(company, setup, public_github):
     assert Dataset.objects(company=company, id=dataset["id"]).first() is None
 
 
-# --- consistency: after each writer, the old fields and the share records describe the same users
+# --- consistency: after each writer, the visibility and the share records describe the same users
 
 
 def grants_of(company, dataset_id):
-    """(from the old fields, from the share records) for one dataset or registry: whether it is Public, and the
-    projects it is allocated to"""
+    """(from the visibility and the listed projects, from the share records) for one dataset or registry: whether it is
+    Public, and the projects it is allocated to"""
     record = Dataset.objects(company=company, id=dataset_id).first()
-    old = {"public": record.visibility == "Public", "projects": set(record.projects or [])}
+    old = {"public": record.visibility == "Public", "projects": set(datasets.view(record)["projects"])}
     shares = Share.objects(company=company, resource_id=dataset_id, resource_type__in=["dataset", "registry"])
     records = {
         "public": any(s.scope == "public" for s in shares),

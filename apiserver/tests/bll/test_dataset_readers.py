@@ -13,6 +13,7 @@ from apiserver.bll import datasets
 from apiserver.database.model.auth import Role, User
 from apiserver.database.model.dataset import Dataset
 from apiserver.database.model.project import Project, ProjectMember, ProjectRole
+from apiserver.database.model.share import Share
 from apiserver.database.model.user_access import UserAccess
 from apiserver.services import dataset_registry as registry_svc
 from apiserver.services import datasets as datasets_svc
@@ -171,7 +172,8 @@ def test_the_owner_of_a_credential_may_allocate_a_dataset_that_uses_it(company, 
     dataset = datasets.add_repo(company, "owner1", REPO_URL, visibility="Public")
     Dataset.objects(company=company, id=dataset["id"]).update(credential="cred-owner1")
     datasets.allocate(company, "owner1", dataset["id"], "root1", False)
-    assert "root1" in UserAccess.objects(company=company, id="cred-owner1").first().granted_projects
+    assert Share.objects(company=company, resource_type="credential", resource_id="cred-owner1", scope="projects",
+                         project="root1").count() == 1
 
 
 def test_a_dataset_that_is_not_visible_cannot_be_allocated(company, setup, github):
@@ -263,40 +265,38 @@ def test_get_details_for_a_repository_that_is_not_kept_asks_no_visibility(compan
     assert seen["repository"] == "owner/unkept"
 
 
-# --- the readers read the share records: a share alone gives access, the old field alone gives none
+# --- the readers read the share records: a share alone gives access, a visibility alone gives none
 
 
-def add_bare_dataset(company, dataset_id, owner, visibility="user", projects=None):
-    """A dataset row with the old fields set and no share record of its own."""
+def add_bare_dataset(company, dataset_id, owner, visibility="user"):
+    """A dataset row with no share record of its own."""
     Dataset(id=dataset_id, company=company, kind="repo", ref=f"owner/{dataset_id}", name=dataset_id, owner=owner,
-            visibility=visibility, projects=projects or [], created=datetime.utcnow(),
-            updated=datetime.utcnow()).save()
+            visibility=visibility, created=datetime.utcnow(), updated=datetime.utcnow()).save()
     return dataset_id
 
 
 def add_share(company, dataset_id, scope, granted_by="owner1", project="", user=""):
-    from apiserver.database.model.share import Share
     Share(id=uuid4().hex, company=company, resource_type="dataset", resource_id=dataset_id, scope=scope,
           project=project, user=user, level="read", granted_by=granted_by, created=datetime.utcnow()).save()
 
 
-def test_a_public_share_alone_gives_every_user_access_with_an_empty_old_field(company, setup, github):
+def test_a_public_share_alone_gives_every_user_access(company, setup, github):
     add_bare_dataset(company, "share-public", "owner1", visibility="user")
     add_share(company, "share-public", "public")
     assert sees(company, "stranger", "share-public")
 
 
-def test_a_project_share_alone_gives_the_members_of_the_project_access_with_an_empty_old_field(company, setup, github):
-    add_bare_dataset(company, "share-project", "owner1", visibility="user", projects=[])
+def test_a_project_share_alone_gives_the_members_of_the_project_access(company, setup, github):
+    add_bare_dataset(company, "share-project", "owner1", visibility="user")
     add_share(company, "share-project", "projects", project="root1")
     assert sees(company, "u2", "share-project")
     assert not sees(company, "stranger", "share-project")
 
 
-def test_the_old_field_alone_gives_no_access(company, setup, github):
-    """A Public visibility or an allocation in the old fields, with no share record: the readers give nothing."""
+def test_a_visibility_alone_gives_no_access(company, setup, github):
+    """A Public or projects visibility with no share record: the readers give nothing."""
     add_bare_dataset(company, "old-public", "owner1", visibility="Public")
-    add_bare_dataset(company, "old-project", "owner1", visibility="projects", projects=["root1"])
+    add_bare_dataset(company, "old-project", "owner1", visibility="projects")
     assert not sees(company, "stranger", "old-public")
     assert not sees(company, "u2", "old-project")
 

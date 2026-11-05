@@ -1,4 +1,3 @@
-from datetime import datetime
 from typing import Union, Sequence
 
 from mongoengine import Q
@@ -41,8 +40,9 @@ from apiserver.bll.queue.queue_access import QueueAccessBLL
 from apiserver.bll.queue.queue_bll import MOVE_FIRST, MOVE_LAST
 from apiserver.bll.workers import WorkerBLL
 from apiserver.config_repo import config
-from apiserver.database.model.queue import Queue, QueueUser
 from apiserver.database.model.auth import User
+from apiserver.database.model.queue import Queue
+from apiserver.database.model.share import Share
 from apiserver.database.model.project import Project
 from apiserver.database.model.task.task import Task, TaskStatus
 from apiserver.service_repo import APICall, endpoint
@@ -204,7 +204,6 @@ def delete(call: APICall, company_id, request: DeleteRequest):
         queue_id=request.queue,
         force=request.force,
     )
-    QueueAccessBLL.remove_from_allocations([request.queue])
     drop_resource_shares(company_id, "queue", request.queue, actor=call.identity.user)
     call.result.data = {"deleted": 1}
 
@@ -504,7 +503,7 @@ def get_num_entries(call: APICall, company_id: str, request: QueueRequest):
 
 
 def _get_queue_or_fail(company_id: str, queue_id: str) -> Queue:
-    queue = Queue.objects(company=company_id, id=queue_id).only("id", "users").first()
+    queue = Queue.objects(company=company_id, id=queue_id).only("id").first()
     if not queue:
         raise errors.bad_request.InvalidQueueId(id=queue_id)
     return queue
@@ -513,11 +512,14 @@ def _get_queue_or_fail(company_id: str, queue_id: str) -> Queue:
 @endpoint("queues.get_users")
 def get_users(call: APICall, company_id: str, request: QueueRequest):
     QueueAccessBLL.assert_can_manage(call.identity, company_id, request.queue)
-    queue = _get_queue_or_fail(company_id, request.queue)
+    _get_queue_or_fail(company_id, request.queue)
+    # the users granted the queue are its user shares: added is the share's creation, added_by who granted it
+    shares = Share.objects(company=company_id, resource_type="queue", resource_id=request.queue, scope="user").order_by(
+        "created")
     call.result.data = {
         "users": [
-            {"user": u.user, "added": u.added, "added_by": u.added_by}
-            for u in queue.users
+            {"user": share.user, "added": share.created, "added_by": share.granted_by}
+            for share in shares
         ]
     }
 
@@ -533,13 +535,6 @@ def add_user(call: APICall, company_id: str, request: UserRequest):
     if find_share(company_id, "queue", request.queue, "user", user=request.user):
         return UpdateResponse(updated=0)
 
-    Queue.objects(company=company_id, id=request.queue).update_one(
-        push__users=QueueUser(
-            user=request.user,
-            added=datetime.utcnow(),
-            added_by=call.identity.user,
-        )
-    )
     record_grant(company_id, call.identity.user, "queue", request.queue, "user", user=request.user,
                  actor=call.identity.user)
     return UpdateResponse(updated=1)
@@ -553,9 +548,6 @@ def remove_user(call: APICall, company_id: str, request: UserRequest):
     if find_share(company_id, "queue", request.queue, "user", user=request.user) is None:
         raise errors.bad_request.InvalidUserId(id=request.user)
 
-    Queue.objects(company=company_id, id=request.queue).update_one(
-        pull__users__user=request.user
-    )
     remove_grant(company_id, "queue", request.queue, "user", user=request.user, actor=call.identity.user)
     QueueAccessBLL.remove_user_allocations(company_id, request.user, request.queue, actor=call.identity.user)
     return UpdateResponse(updated=1)

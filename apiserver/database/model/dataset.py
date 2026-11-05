@@ -1,8 +1,8 @@
-"""A dataset of the server's environment: one GitHub repository or one registry, with its owner, its visibility, the
-projects it is allocated to, and the credential that reads it. Nothing is copied: the data stays in its repository.
+"""A dataset of the server's environment: one GitHub repository or one registry, with its owner, its visibility, and the
+credential that reads it. The projects it is allocated to are its project shares (bll/access). Nothing is copied: the data stays in its repository.
 See docs/superpowers/specs/2026-11-05-datasets-access-design.md."""
 
-from mongoengine import DateTimeField, Document, ListField, StringField
+from mongoengine import DateTimeField, Document, StringField
 
 from apiserver.database import Database, strict
 from apiserver.database.model import DbModelMixin
@@ -30,8 +30,6 @@ class Dataset(DbModelMixin, Document):
     owner = StringField(required=True)
     """ the user who added it: the only one who may change its visibility, allocate it or delete it """
     visibility = StringField(default="user", choices=VISIBILITIES)
-    projects = ListField(StringField(), default=list)
-    """ root projects the dataset is allocated to; used when visibility is 'projects' """
     credential = StringField()
     """ the UserAccess that reads it; empty when the repository is public """
     source = StringField(default="")

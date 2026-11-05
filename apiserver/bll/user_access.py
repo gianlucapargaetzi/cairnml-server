@@ -57,7 +57,7 @@ def _view(entry: UserAccess) -> dict:
         "last_checked": entry.last_checked.isoformat() if entry.last_checked else None,
         "last_state": entry.last_state,
         "last_message": entry.last_message,
-        "granted_projects": list(entry.granted_projects or []),
+        "granted_projects": _granted_to(entry),
     }
 
 
@@ -285,12 +285,10 @@ def grant(company: str, owner: str, access_id: str, project_id: str) -> dict:
         raise errors.bad_request.ValidationError("no such project")
     if not is_member(company, root, owner):
         raise errors.bad_request.ValidationError("you are not a member of this project")
-    if root not in (entry.granted_projects or []):
+    access = _access()
+    if access.find_share(company, "credential", entry.id, "projects", root) is None:
         # the owner, a member of the project, grants the access to it
-        entry.granted_projects = list(entry.granted_projects or []) + [root]
-        entry.updated = datetime.utcnow()
-        entry.save()
-        _access().record_grant(company, owner, "credential", entry.id, "projects", root, actor=owner)
+        access.record_grant(company, owner, "credential", entry.id, "projects", root, actor=owner)
         audit(owner, "user_access.granted", company=company, kind=entry.kind, project=root)
     return _view(entry)
 
@@ -306,11 +304,9 @@ def revoke(company: str, actor: str, access_id: str, project_id: str, is_admin: 
     allowed = actor == entry.user or is_admin or (project_owner is not None and project_owner.user == actor)
     if not allowed:
         raise errors.bad_request.ValidationError("no such access of yours")
-    if root in (entry.granted_projects or []):
-        entry.granted_projects = [p for p in entry.granted_projects if p != root]
-        entry.updated = datetime.utcnow()
-        entry.save()
-        _access().remove_grant(company, "credential", entry.id, "projects", root, actor=actor)
+    access = _access()
+    if root and access.find_share(company, "credential", entry.id, "projects", root) is not None:
+        access.remove_grant(company, "credential", entry.id, "projects", root, actor=actor)
         audit(actor, "user_access.revoked", company=company, kind=entry.kind, project=root)
     return _view(entry)
 
