@@ -205,13 +205,13 @@ def _app_row_level(company: str, user: str, is_admin: bool, repo: str) -> Option
 def held_on_repository(company: str, user: str, is_admin: bool, repo: str) -> tuple:
     """(level, resource type) the user holds on the dataset of this repository. The kept record decides when the user
     holds a level on it through its shares (bll/access). Otherwise the repository is the App's own, as list_visible
-    shows it: the level comes from _app_row_level. The level is None when neither gives the user one."""
+    shows it: the level comes from _app_row_level, but only when no record keeps the repository. A repository with a record
+    is never the App's own row, so the level is None when its record gives the user none."""
     dataset = kept_for_repository(company, repo)
     if dataset is not None:
         resource_type, resource_id = _gate_of(company, dataset)
         level = access.level_of(company, user, is_admin, resource_type, resource_id, _project_roots(company, user))
-        if level is not None:
-            return level, resource_type
+        return level, resource_type
     return _app_row_level(company, user, is_admin, repo), "dataset"
 
 
@@ -373,7 +373,7 @@ def _visible_rows(company: str, user: str, is_admin: bool) -> list:
         if _record_visible(company, user, is_admin, record, roots):
             state, message = credential_state(dataset, credential_ids)
             rows.append({**dataset, "state": state, "state_message": message})
-    known = {row["ref"].lower() for row in rows}
+    known = {record.ref.lower() for record in records}
     app = UserAccess.objects(company=company, scope="company", kind="app").order_by("created").first()
     if app is not None:
         for entry in dataset_cache.cached_list()["datasets"]:
