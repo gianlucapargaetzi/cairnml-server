@@ -16,7 +16,6 @@ from mongoengine import Q
 from apiserver.apierrors import errors
 from apiserver.config_repo import config
 from apiserver.database.model.auth import User
-from apiserver.database.model.git_credential import GitCredential
 from apiserver.database.model.project import Project
 from apiserver.database.model.share import Share
 from apiserver.database.model.user_access import UserAccess

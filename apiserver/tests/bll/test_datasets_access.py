@@ -42,15 +42,6 @@ class TestCredentialState:
             "no_access", "no access to dataset cars")
 
 
-class TestCanManage:
-    def test_the_owner_and_admins_may_manage(self):
-        assert bll.can_manage(dataset(), OWNER, False)
-        assert bll.can_manage(dataset(), OTHER, True)
-
-    def test_another_user_may_not_manage(self):
-        assert not bll.can_manage(dataset(), OTHER, False)
-
-
 # --- Adding, against the database. GitHub is replaced by fakes.
 
 from types import SimpleNamespace

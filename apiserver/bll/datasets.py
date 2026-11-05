@@ -40,11 +40,6 @@ def credential_state(dataset: dict, credential_ids: set) -> tuple:
     return NO_ACCESS, f"no access to dataset {dataset.get('name')}"
 
 
-def can_manage(dataset: dict, user: str, is_admin: bool) -> bool:
-    """Only the owner, and admins, may change, allocate or delete a dataset."""
-    return is_admin or dataset.get("owner") == user
-
-
 def decide_access(name: str, public: bool, candidates: list, reads) -> tuple:
     """(credential id or None, state, message) for a dataset being added. A public one needs no credential. A private one
     takes the first candidate that can read it; with none, it is still added, with no access. ``candidates`` are the

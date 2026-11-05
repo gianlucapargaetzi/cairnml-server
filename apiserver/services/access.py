@@ -1,6 +1,5 @@
 # apiserver/services/access.py
-"""The shares of queues, datasets, registries and credentials (see bll/access). They are not used for decisions yet: the
-checks still read the grant fields of each resource."""
+"""The shares of queues, datasets, registries and credentials (see bll/access). The checks on those resources read them."""
 
 from apiserver.bll import access as access_bll
 from apiserver.database.model.share import Share

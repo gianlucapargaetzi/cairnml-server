@@ -1,6 +1,7 @@
 """The repository accesses a user owns: their tokens and GitHub Apps. Only the owner sees, checks, changes or deletes
 them; the secret is written once and never returned. See bll/user_access."""
 
+from apiserver.apierrors import errors
 from apiserver.bll import user_access as access_bll
 from apiserver.database.model.auth import Role
 from apiserver.service_repo import APICall, endpoint
