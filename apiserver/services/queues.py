@@ -27,7 +27,7 @@ from apiserver.apimodels.queues import (
     MoveTaskToQueueRequest,
     UserRequest,
 )
-from apiserver.bll.access import drop_resource_shares, record_grant, remove_grant
+from apiserver.bll.access import drop_resource_shares, record_grant, refuse_inactive, remove_grant
 from apiserver.bll.model import Metadata
 from apiserver.bll.queue import QueueBLL
 from apiserver.bll.queue.queue_access import QueueAccessBLL
@@ -174,6 +174,8 @@ def create(call: APICall, company_id, request: CreateRequest):
 def update(call: APICall, company_id, request: UpdateRequest):
     QueueAccessBLL.assert_can_manage(call.identity, company_id, request.queue)
     data = call.data_model_for_partial_update
+    if "public" in data:
+        refuse_inactive(call.identity.user)
     conform_tag_fields(call, data, validate=True)
     escape_metadata(data)
     updated, fields = queue_bll.update(
@@ -188,6 +190,7 @@ def update(call: APICall, company_id, request: UpdateRequest):
 @endpoint("queues.delete", min_version="2.4")
 def delete(call: APICall, company_id, request: DeleteRequest):
     QueueAccessBLL.assert_can_manage(call.identity, company_id, request.queue)
+    refuse_inactive(call.identity.user)
     queue_bll.delete(
         company_id=company_id,
         user_id=call.identity.user,
@@ -515,6 +518,7 @@ def get_users(call: APICall, company_id: str, request: QueueRequest):
 @endpoint("queues.add_user", response_data_model=UpdateResponse)
 def add_user(call: APICall, company_id: str, request: UserRequest):
     QueueAccessBLL.assert_can_manage(call.identity, company_id, request.queue)
+    refuse_inactive(call.identity.user)
     _get_queue_or_fail(company_id, request.queue)
     if not User.objects(id=request.user, company=company_id).only("id").first():
         raise errors.bad_request.InvalidUserId(id=request.user)
@@ -537,6 +541,7 @@ def add_user(call: APICall, company_id: str, request: UserRequest):
 @endpoint("queues.remove_user", response_data_model=UpdateResponse)
 def remove_user(call: APICall, company_id: str, request: UserRequest):
     QueueAccessBLL.assert_can_manage(call.identity, company_id, request.queue)
+    refuse_inactive(call.identity.user)
     queue = _get_queue_or_fail(company_id, request.queue)
     if not any(u.user == request.user for u in queue.users):
         raise errors.bad_request.InvalidUserId(id=request.user)

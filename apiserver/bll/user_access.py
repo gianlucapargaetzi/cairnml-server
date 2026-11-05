@@ -112,6 +112,7 @@ def add_app(company: str, user: str, label: str, app_id: str, api_url: str, key:
     now = datetime.utcnow()
     if scope == "company":
         # the server has one GitHub App: adding another replaces it
+        _access().refuse_inactive(user)
         for previous in UserAccess.objects(company=company, scope="company", kind="app"):
             previous.delete()
             _access().drop_resource_shares(company, "credential", previous.id, actor=user)
@@ -194,6 +195,7 @@ def _access():
 
 
 def delete(company: str, user: str, access_id: str, is_admin: bool = False) -> None:
+    _access().refuse_inactive(user)
     entry = _owned_or_company(company, user, access_id, is_admin)
     entry.delete()
     _access().drop_resource_shares(company, "credential", entry.id, actor=user)
@@ -270,6 +272,7 @@ def grant_applies(grant_root: str, project_root: Optional[str], owner_is_member:
 
 def grant(company: str, owner: str, access_id: str, project_id: str) -> dict:
     """The owner shares one of their accesses with a project. Only a member of the project may do so."""
+    _access().refuse_inactive(owner)
     entry = _owned(company, owner, access_id)
     root = root_project(company, project_id)
     if root is None:
@@ -288,6 +291,7 @@ def grant(company: str, owner: str, access_id: str, project_id: str) -> dict:
 
 def revoke(company: str, actor: str, access_id: str, project_id: str, is_admin: bool) -> dict:
     """The owner of the access, or an admin, or the owner of the project, stops a grant at once."""
+    _access().refuse_inactive(actor)
     entry = UserAccess.objects(company=company, id=access_id).first()
     if entry is None:
         raise errors.bad_request.ValidationError("no such access")

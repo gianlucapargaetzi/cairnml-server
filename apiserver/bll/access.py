@@ -188,7 +188,7 @@ def find_share(company: str, resource_type: str, resource_id: str, scope: str, p
                          project=project, user=user).first()
 
 
-def _refuse_inactive(actor: str) -> None:
+def refuse_inactive(actor: str) -> None:
     """The writers' path refuses a deactivated caller, as share() does. An empty actor is the server itself."""
     if actor and not is_active(actor):
         raise errors.forbidden.NoWritePermission("a deactivated user may not change sharing")
@@ -198,7 +198,7 @@ def record_grant(company: str, granted_by: str, resource_type: str, resource_id:
                  user: str = "", level: str = "read", *, actor: str) -> Share:
     """The share of a grant the old field has just gained, written for the actor who changed the field. An existing
     share of the same grant is kept as it is."""
-    _refuse_inactive(actor)
+    refuse_inactive(actor)
     existing = find_share(company, resource_type, resource_id, scope, project, user)
     if existing is not None:
         return existing
@@ -208,12 +208,12 @@ def record_grant(company: str, granted_by: str, resource_type: str, resource_id:
 def remove_grant(company: str, resource_type: str, resource_id: str, scope: str, project: str = "",
                  user: str = "", *, actor: str) -> None:
     """The share of a grant the old field has just lost. Nothing happens when there is none."""
-    _refuse_inactive(actor)
+    refuse_inactive(actor)
     Share.objects(company=company, resource_type=resource_type, resource_id=resource_id, scope=scope,
                   project=project, user=user).delete()
 
 
 def drop_resource_shares(company: str, resource_type: str, resource_id: str, *, actor: str) -> None:
     """Every share of a resource that has been deleted."""
-    _refuse_inactive(actor)
+    refuse_inactive(actor)
     Share.objects(company=company, resource_type=resource_type, resource_id=resource_id).delete()

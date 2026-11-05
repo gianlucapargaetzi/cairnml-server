@@ -175,6 +175,8 @@ def _set_public_share(company: str, actor: str, dataset: Dataset, public: bool) 
 
 def _save(company: str, user: str, kind: str, repo: str, name: str, visibility: str, credential, state: str,
           message: str, now: datetime) -> Dataset:
+    if visibility == "Public" and kind != "registry_entry":
+        access.refuse_inactive(user)
     dataset = Dataset(
         id=uuid.uuid4().hex, company=company, kind=kind, ref=repo, name=name, owner=user, visibility=visibility,
         projects=[], credential=credential, state=state, state_message=message, created=now, updated=now,
@@ -330,6 +332,7 @@ def regrant_project_shares(company: str, root: str, new_owner: str, actor: str) 
 
 def set_visibility(company: str, user: str, dataset_id: str, visibility: str, projects: list, is_admin: bool) -> dict:
     """Changes the visibility. Only the owner, or an admin, may. Projects are kept only for ``projects``."""
+    access.refuse_inactive(user)
     dataset = _owned(company, dataset_id)
     if not can_manage(view(dataset), user, is_admin):
         raise errors.bad_request.ValidationError("only the owner of this dataset may change it")
@@ -361,6 +364,7 @@ def set_visibility(company: str, user: str, dataset_id: str, visibility: str, pr
 def _change_allocation(company: str, user: str, dataset_id: str, project: str, is_admin: bool, add: bool) -> dict:
     """Allocates a dataset to a project, or takes it back. The user must be a member of the project and must see the
     dataset. A dataset kept for its owner only is shared with the project by its owner (or an admin)."""
+    access.refuse_inactive(user)
     dataset = _owned(company, dataset_id)
     root = user_access.root_project(company, project)
     if root is None:
@@ -410,6 +414,7 @@ def unallocate(company: str, user: str, dataset_id: str, project: str, is_admin:
 
 def delete(company: str, user: str, dataset_id: str, is_admin: bool) -> None:
     """Removes the record only. The data stays in its repository, so nothing is deleted there."""
+    access.refuse_inactive(user)
     dataset = _owned(company, dataset_id)
     if not can_manage(view(dataset), user, is_admin):
         raise errors.bad_request.ValidationError("only the owner of this dataset may remove it")

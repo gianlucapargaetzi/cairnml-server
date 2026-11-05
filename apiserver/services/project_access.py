@@ -14,7 +14,7 @@ from apiserver.apimodels.project_access import (
     TransferOwnershipRequest,
     UpdateMemberRoleRequest,
 )
-from apiserver.bll.access import record_grant, remove_grant
+from apiserver.bll.access import record_grant, refuse_inactive, remove_grant
 from apiserver.bll.datasets import regrant_project_shares
 from apiserver.bll.project.access import ProjectAccessBLL
 from apiserver.bll.queue.queue_access import QueueAccessBLL
@@ -156,6 +156,7 @@ def set_visibility(call: APICall, company_id: str, request: SetVisibilityRequest
 
 @endpoint("projects.transfer_ownership", response_data_model=UpdateResponse)
 def transfer_ownership(call: APICall, company_id: str, request: TransferOwnershipRequest):
+    refuse_inactive(call.identity.user)
     root_id = _resolve_root_id(call, request.project)
     ProjectAccessBLL.assert_can(call.identity, request.project, "owner_only")
 
@@ -228,6 +229,7 @@ def get_assignable_queues(
 
 @endpoint("projects.add_queues", response_data_model=UpdateResponse)
 def add_queues(call: APICall, company_id: str, request: AddQueuesRequest):
+    refuse_inactive(call.identity.user)
     root_id = _resolve_root_id(call, request.project)
     root = _load_root(company_id, root_id)
     _assert_owner(call, root)
@@ -259,6 +261,7 @@ def add_queues(call: APICall, company_id: str, request: AddQueuesRequest):
 
 @endpoint("projects.remove_queue", response_data_model=UpdateResponse)
 def remove_queue(call: APICall, company_id: str, request: RemoveQueueRequest):
+    refuse_inactive(call.identity.user)
     root_id = _resolve_root_id(call, request.project)
     root = _load_root(company_id, root_id)
     _assert_owner(call, root)
