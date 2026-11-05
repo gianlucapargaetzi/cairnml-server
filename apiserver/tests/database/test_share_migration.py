@@ -1,4 +1,5 @@
 import importlib.util
+import logging
 from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
@@ -61,6 +62,9 @@ def build_legacy_grants(company):
             owner="dataset-owner", visibility="projects", projects=["p-root1", "p-root2"]).save()
     Dataset(id="d-private", company=company, kind="repo", ref="o/private", name="private",
             owner="dataset-owner", visibility="user").save()
+    # visibility user, but allocated to a project: the project share is still migrated
+    Dataset(id="d-user-projects", company=company, kind="repo", ref="o/user-projects", name="user projects",
+            owner="dataset-owner", visibility="user", projects=["p-root1"]).save()
     Dataset(id="r-public", company=company, kind="registry", ref="o/registry-public", name="registry public",
             owner="dataset-owner", visibility="Public").save()
     Dataset(id="r-projects", company=company, kind="registry", ref="o/registry-projects", name="registry projects",
@@ -82,6 +86,7 @@ EXPECTED = sorted([
     # the dataset owner is not a member of any project: the project owner grants the project share
     ("dataset", "d-projects", "projects", "p-root1", "", "read", "root-owner"),
     ("dataset", "d-public", "public", "", "", "read", "dataset-owner"),
+    ("dataset", "d-user-projects", "projects", "p-root1", "", "read", "root-owner"),
     ("dataset", "d-two", "projects", "p-root1", "", "read", "root-owner"),
     ("dataset", "d-two", "projects", "p-root2", "", "read", "root-owner"),
     ("registry", "r-public", "public", "", "", "read", "dataset-owner"),
@@ -134,3 +139,20 @@ def _backend_db():
     from mongoengine.connection import get_db
 
     return get_db(Database.backend)
+
+
+def test_a_project_without_an_owner_writes_no_share_and_warns(company, caplog):
+    orphan = Project(id="p-orphan", company=company, name="orphan", basename="orphan", created=NOW,
+                     queues=["q-orphan"])
+    orphan.save()
+    Queue(id="q-orphan", company=company, name="orphan queue", created=NOW, created_by="queue-owner").save()
+    Dataset(id="d-orphan", company=company, kind="repo", ref="o/orphan", name="orphan",
+            owner="dataset-owner", visibility="projects", projects=["p-orphan"]).save()
+
+    with caplog.at_level(logging.WARNING):
+        load_migration().migrate_backend(_backend_db())
+
+    assert shares_of(company) == []
+    warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+    assert any("queue q-orphan" in w and "p-orphan" in w for w in warnings)
+    assert any("dataset d-orphan" in w and "p-orphan" in w for w in warnings)
