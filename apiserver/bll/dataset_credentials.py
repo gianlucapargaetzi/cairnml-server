@@ -84,16 +84,27 @@ def _ttl() -> int:
     return int(config.get("apiserver.storage.dataset_credentials_ttl_sec"))
 
 
-def _authorize(company: str, user: str, repository: str, level: str, is_admin: bool) -> Dataset:
-    """The kept dataset for the repository, when the caller may use the level. A dataset the caller cannot see gets
-    the same answer as a missing one, so a hidden dataset does not reveal itself."""
+def _authorize(company: str, user: str, repository: str, level: str, is_admin: bool) -> str:
+    """The bucket prefix the keys reach, when the caller may use the level.
+
+    A kept dataset is checked as its visibility and owner allow (R13): ``read`` needs it visible to the caller,
+    ``read_write`` needs the caller to own it or to be an admin. A caller who sees a dataset and one who does not get
+    the same answer for a missing one, so a hidden dataset does not reveal itself.
+
+    A repository with no kept record (R14) is new: ``read_write`` gets keys under the caller's own company prefix,
+    so that a dataset can be created through the CLI before it is registered. ``read`` is refused. A name that some
+    other record in the company already has is never opened this way.
+    """
     if level not in LEVELS:
         raise errors.bad_request.ValidationError("the level is read or read_write")
     if not REPOSITORY.match(repository or ""):
         raise errors.bad_request.ValidationError("the repository is owner/name on GitHub")
     dataset = Dataset.objects(company=company, kind="repo", ref__iexact=repository).first()
     if dataset is None:
-        raise errors.bad_request.ValidationError("no such dataset")
+        taken = Dataset.objects(company=company, ref__iexact=repository).first() is not None
+        if level == "read" or taken:
+            raise errors.bad_request.ValidationError("no such dataset")
+        return prefix_of(company, repository)
     as_dict = {"owner": dataset.owner, "visibility": dataset.visibility, "projects": dataset.projects}
     if level == "read":
         user_projects = {project["id"] for project in user_access.my_projects(company, user)}
@@ -101,13 +112,12 @@ def _authorize(company: str, user: str, repository: str, level: str, is_admin: b
             raise errors.bad_request.ValidationError("no such dataset")
     elif not datasets_bll.can_manage(as_dict, user, is_admin):
         raise errors.forbidden.NoWritePermission("only the owner or an admin may write to a dataset")
-    return dataset
+    return prefix_of(company, dataset.ref)
 
 
 def dataset_credentials(company: str, user: str, repository: str, level: str, is_admin: bool = False) -> dict:
     """Temporary keys for one dataset's prefix at one level, with the public address of the store and the prefix."""
-    dataset = _authorize(company, user, repository, level, is_admin)
-    prefix = prefix_of(company, dataset.ref)
+    prefix = _authorize(company, user, repository, level, is_admin)
     ttl = _ttl()
     issued = _sts().assume_role(
         RoleArn="arn:aws:iam::rustfs:role/dataset",

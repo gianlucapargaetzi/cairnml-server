@@ -175,3 +175,33 @@ class TestDatasetCredentials:
         with pytest.raises(errors.bad_request.ValidationError):
             bll.dataset_credentials(company, OWNER, "not a repository", "read")
         sts.assume_role.assert_not_called()
+
+
+# R14: a repository with no kept record is new. Its creator may write under the company prefix, and nobody may read it.
+
+class TestNewDataset:
+    def test_a_new_name_is_writable_under_the_callers_company_prefix(self, company, sts):
+        bll.dataset_credentials(company, OWNER, "acme/new-one", "read_write")
+
+        policy = issued_policy(sts)
+        assert "s3:PutObject" in actions_on(policy, f"arn:aws:s3:::dataset/{company}/acme/new-one/*")
+        assert object_resources(policy) == {f"arn:aws:s3:::dataset/{company}/acme/new-one/*"}
+
+    def test_a_new_name_is_refused_at_read(self, company, sts):
+        with pytest.raises(errors.bad_request.ValidationError):
+            bll.dataset_credentials(company, OWNER, "acme/new-one", "read")
+        sts.assume_role.assert_not_called()
+
+    def test_an_existing_record_is_not_opened_to_a_non_owner_at_read_write(self, company, sts):
+        add_dataset(company, owner=OWNER, visibility="user")
+
+        with pytest.raises(errors.forbidden.NoWritePermission):
+            bll.dataset_credentials(company, OTHER, "acme/cars", "read_write")
+        sts.assume_role.assert_not_called()
+
+    def test_a_name_held_by_another_record_in_the_company_is_not_new(self, company, sts):
+        add_dataset(company, owner=OWNER, kind="registry", ref="acme/taken")
+
+        with pytest.raises(errors.bad_request.ValidationError):
+            bll.dataset_credentials(company, OTHER, "acme/taken", "read_write")
+        sts.assume_role.assert_not_called()
