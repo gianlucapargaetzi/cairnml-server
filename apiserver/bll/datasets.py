@@ -339,6 +339,12 @@ def _owned(company: str, dataset_id: str) -> Dataset:
     return dataset
 
 
+def _refuse_entry(dataset: Dataset) -> None:
+    """A registry entry is shared through its registry as a whole, never on its own: it has no share record of its own."""
+    if dataset.kind == "registry_entry":
+        raise errors.bad_request.ValidationError("a registry entry is shared through its registry")
+
+
 def _visible_rows(company: str, user: str, is_admin: bool) -> list:
     """The datasets the user may see, from the stored records and the repositories the App finds. Each has its state for
     this viewer."""
@@ -391,6 +397,7 @@ def set_visibility(company: str, user: str, dataset_id: str, visibility: str, pr
     """Changes the visibility. Only the owner, or an admin, may. Projects are kept only for ``projects``."""
     access.refuse_inactive(user)
     dataset = _owned(company, dataset_id)
+    _refuse_entry(dataset)
     _require_sharing(company, user, is_admin, dataset)
     if visibility not in VISIBILITIES:
         raise errors.bad_request.ValidationError("the visibility is user, projects or Public")
@@ -422,6 +429,7 @@ def _change_allocation(company: str, user: str, dataset_id: str, project: str, i
     project it is taken from (the spec's revoking rule)."""
     access.refuse_inactive(user)
     dataset = _owned(company, dataset_id)
+    _refuse_entry(dataset)
     root = user_access.root_project(company, project)
     if root is None:
         raise errors.bad_request.ValidationError("no such project")
@@ -466,11 +474,14 @@ def unallocate(company: str, user: str, dataset_id: str, project: str, is_admin:
 
 
 def delete(company: str, user: str, dataset_id: str, is_admin: bool) -> None:
-    """Removes the record only. The data stays in its repository, so nothing is deleted there."""
+    """Removes the record only. The data stays in its repository, so nothing is deleted there. A registry's entries
+    inherit from it, so they are removed with it."""
     access.refuse_inactive(user)
     dataset = _owned(company, dataset_id)
     _require_sharing(company, user, is_admin, dataset)
     resource_type = _share_type(dataset)
+    if dataset.kind == "registry":
+        Dataset.objects(company=company, kind="registry_entry", ref__istartswith=f"{dataset.ref}/").delete()
     dataset.delete()
     if resource_type is not None:
         access.drop_resource_shares(company, resource_type, dataset.id, actor=user)
