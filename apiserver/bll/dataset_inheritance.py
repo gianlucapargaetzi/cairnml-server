@@ -63,6 +63,27 @@ def _share_credential(company: str, run: Task, root: str, credential_id: str) ->
                                actor=run.user, inherited=True, run_id=run.id)
 
 
+def _credential_needed_by_others(company: str, project: str, credential_id: str, dataset_id: str) -> bool:
+    """Whether another dataset shared with the project still uses the credential."""
+    others = [share.resource_id for share in Share.objects(
+        company=company, resource_type="dataset", scope="projects", project=project) if share.resource_id != dataset_id]
+    return bool(others) and Dataset.objects(company=company, id__in=others, credential=credential_id).count() > 0
+
+
+def release_credential_of_revoked(company: str, share: Share) -> None:
+    """After the share of a dataset with a project is revoked: the dataset's credential is removed from the project too,
+    when the credential's share was inherited and no other dataset shared with the project still needs it. A credential
+    shared by hand is kept, as its owner chose it."""
+    dataset = Dataset.objects(company=company, id=share.resource_id).only("credential").first()
+    if dataset is None or not dataset.credential:
+        return
+    if _credential_needed_by_others(company, share.project, dataset.credential, dataset.id):
+        return
+    credential_share = access.find_share(company, "credential", dataset.credential, "projects", share.project)
+    if credential_share is not None and credential_share.inherited:
+        credential_share.delete()
+
+
 def publish_run_datasets(task) -> List[Share]:
     """Shares the datasets the run used with the run's root project, and their credentials where decision 3 allows.
     Returns the shares created. Shares that already exist are left as they are."""

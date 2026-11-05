@@ -21,7 +21,7 @@ from apiserver.apierrors import errors
 from apiserver.bll.user_access import grant_applies, is_active, is_member, my_projects, root_project
 from apiserver.database.model.auth import Role, User
 from apiserver.database.model.dataset import Dataset
-from apiserver.database.model.project import Project
+from apiserver.database.model.project import Project, ProjectRole
 from apiserver.database.model.queue import Queue
 from apiserver.database.model.share import LEVELS, RESOURCE_TYPES, Share
 from apiserver.database.model.task.task import Task
@@ -217,14 +217,38 @@ def share(company: str, actor: str, resource_type: str, resource_id: str, scope:
     return _create(company, actor, resource_type, resource_id, scope, project, level, user)
 
 
+def _project_steward(company: str, project_id: str, actor: str) -> bool:
+    """The owner of the root project, or one of its collaborators: the ones who may revoke a dataset or a credential
+    from the project (decision 5, R34). A plain member is not one."""
+    project = Project.objects(company=company, id=project_id).only("user", "members").first()
+    if project is None or not actor:
+        return False
+    return project.user == actor or any(
+        member.user == actor and member.role == ProjectRole.collaborator for member in project.members)
+
+
+def _may_revoke_from_project(company: str, actor: str, record: Share) -> bool:
+    """A dataset or credential share of a project may be revoked by the project's owner and collaborators, besides
+    the holders of manage_sharing on the resource (see _require_sharing)."""
+    return (record.scope == "projects" and record.resource_type in ("dataset", "credential")
+            and _project_steward(company, record.project, actor))
+
+
 def unshare(company: str, actor: str, share_id: str) -> None:
-    """Removes a share. The actor must be active and hold manage_sharing on the resource it gives."""
+    """Removes a share. The actor must be active and either hold manage_sharing on the resource it gives, or, for a
+    dataset or credential shared with a project, be the project's owner or a collaborator of it. Revoking a dataset
+    also removes its inherited credential share when no other dataset shared with the project still needs it."""
     _require_active(actor)
     record = Share.objects(company=company, id=share_id).first()
     if record is None:
         raise errors.bad_request.ValidationError("no such share")
-    _require_sharing(company, actor, record.resource_type, record.resource_id)
+    if not _may_revoke_from_project(company, actor, record):
+        _require_sharing(company, actor, record.resource_type, record.resource_id)
     record.delete()
+    if record.resource_type == "dataset" and record.scope == "projects":
+        # imported here: bll/dataset_inheritance reads this module
+        from apiserver.bll import dataset_inheritance
+        dataset_inheritance.release_credential_of_revoked(company, record)
 
 
 # --- Writers' path. A writer that changes an old field calls these in the same operation, after its own check of the
