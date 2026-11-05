@@ -2,7 +2,7 @@
 
 import json
 from datetime import datetime
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 from uuid import uuid4
 
 import pytest
@@ -205,3 +205,53 @@ class TestNewDataset:
         with pytest.raises(errors.bad_request.ValidationError):
             bll.dataset_credentials(company, OTHER, "acme/taken", "read_write")
         sts.assume_role.assert_not_called()
+
+
+# Names that could widen or escape the prefix are refused before any key is issued.
+
+@pytest.mark.parametrize("repository", ["*/*", "acme/*", "../..", "acme/cars\n", "acme/c?rs", "a b/c", "./x", "acme/.", "acme/..", "a/b/c", "acme/", "/cars"])
+@pytest.mark.parametrize("level", ["read", "read_write"])
+def test_an_unsafe_repository_name_is_refused_before_any_key_is_issued(company, sts, repository, level):
+    with pytest.raises(errors.bad_request.ValidationError):
+        bll.dataset_credentials(company, OWNER, repository, level)
+    sts.assume_role.assert_not_called()
+
+
+def test_a_company_id_with_a_wildcard_is_refused_before_any_key_is_issued(sts):
+    with pytest.raises(errors.bad_request.ValidationError):
+        bll.dataset_credentials("c*", OWNER, "acme/cars", "read_write")
+    sts.assume_role.assert_not_called()
+
+
+def test_the_prefix_never_contains_a_wildcard(company, sts):
+    bll.dataset_credentials(company, OWNER, "acme/cars-2_b.x", "read_write")
+
+    policy = issued_policy(sts)
+    assert object_resources(policy) == {f"arn:aws:s3:::dataset/{company}/acme/cars-2_b.x/*"}
+    for resource in object_resources(policy):
+        assert resource.count("*") == 1 and resource.endswith("/*")
+
+
+# A job token acts as its task's owner (issue_job_token sets the identity user to the task's user), so the key
+# request from a job is checked for that user like any other caller.
+
+def test_a_job_token_is_checked_as_the_task_owner(company, sts):
+    from types import SimpleNamespace
+
+    from apiserver.database.model.auth import Role
+    from apiserver.idp import tokens
+    from apiserver.services import datachunks as svc
+    from apiserver.apimodels.datachunks import DatasetCredentialsRequest
+    from apiserver.service_repo.auth import Identity
+
+    add_dataset(company, owner=OWNER, visibility="user")
+    task_owner = SimpleNamespace(id=OTHER, company=company, role=Role.user, name="other")
+    token = tokens.issue_job_token(task_owner, "t1", "dev1")
+    token_user = tokens.read_claims(token)["identity"]["user"]
+    assert token_user == OTHER
+
+    call = SimpleNamespace(identity=Identity(user=token_user, company=company, role=Role.user),
+                           result=SimpleNamespace(data=None))
+    with pytest.raises(errors.forbidden.NoWritePermission):
+        svc.get_dataset_credentials(call, company, DatasetCredentialsRequest(repository="acme/cars", level="read_write"))
+    sts.assume_role.assert_not_called()

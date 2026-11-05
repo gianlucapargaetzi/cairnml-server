@@ -27,10 +27,22 @@ from apiserver.idp.secrets import read_secret
 
 BUCKET = "dataset"
 LEVELS = ("read", "read_write")
-REPOSITORY = re.compile(r"^[^/\s]+/[^/\s]+$")
+SEGMENT = re.compile(r"[A-Za-z0-9._-]+")
+""" one part of owner/name: letters, digits, dot, dash, underscore; never a wildcard or a path step """
 
 READ_ACTIONS = ["s3:GetObject"]
 WRITE_ACTIONS = ["s3:PutObject", "s3:AbortMultipartUpload", "s3:ListMultipartUploadParts"]
+
+
+def _valid_repository(repository) -> bool:
+    """True for owner/name with safe characters only. fullmatch refuses a trailing newline; '.' and '..' are refused
+    as segments so that no key can step out of the company prefix."""
+    if not isinstance(repository, str):
+        return False
+    match = re.fullmatch(r"([^/]+)/([^/]+)", repository)
+    if match is None:
+        return False
+    return all(SEGMENT.fullmatch(part) and part not in (".", "..") for part in match.groups())
 
 
 def prefix_of(company: str, repository: str) -> str:
@@ -97,8 +109,10 @@ def _authorize(company: str, user: str, repository: str, level: str, is_admin: b
     """
     if level not in LEVELS:
         raise errors.bad_request.ValidationError("the level is read or read_write")
-    if not REPOSITORY.match(repository or ""):
-        raise errors.bad_request.ValidationError("the repository is owner/name on GitHub")
+    if not _valid_repository(repository):
+        raise errors.bad_request.ValidationError("the repository is owner/name on GitHub, with letters, digits, dots, dashes and underscores")
+    if not SEGMENT.fullmatch(company or ""):
+        raise errors.bad_request.ValidationError("the company id is not a valid key segment")
     dataset = Dataset.objects(company=company, kind="repo", ref__iexact=repository).first()
     if dataset is None:
         taken = Dataset.objects(company=company, ref__iexact=repository).first() is not None
@@ -118,6 +132,8 @@ def _authorize(company: str, user: str, repository: str, level: str, is_admin: b
 def dataset_credentials(company: str, user: str, repository: str, level: str, is_admin: bool = False) -> dict:
     """Temporary keys for one dataset's prefix at one level, with the public address of the store and the prefix."""
     prefix = _authorize(company, user, repository, level, is_admin)
+    if any(ch in prefix for ch in "*?[]"):  # the prefix is a key path: a wildcard in it would widen the policy
+        raise errors.bad_request.ValidationError("the dataset prefix is not a plain path")
     ttl = _ttl()
     issued = _sts().assume_role(
         RoleArn="arn:aws:iam::rustfs:role/dataset",
