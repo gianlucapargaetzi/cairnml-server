@@ -26,7 +26,7 @@ from apiserver.idp.audit import client_address, record as audit
 from apiserver.idp.checks import AccessDenied, check_device, check_job_issue
 from apiserver.idp.github import GitHubApp, GitHubError, RepoNotAccessible, TokenReader
 from apiserver.bll import user_access
-from apiserver.database.model.dataset import Dataset
+from apiserver.bll import datasets as datasets_bll
 from apiserver.bll.dataset_registry import canonical_url
 from apiserver.idp.github_check import build_from_config, public_repo, repo_of
 from apiserver.idp.keys import load_public_key
@@ -262,12 +262,16 @@ def git_token(call: APICall, company, request: GitTokenRequest):
             return public
         # a dataset kept by the environment names the credential that reads it: the job uses that credential, shared with
         # its project, or it is refused with the reason (bll/datasets)
-        kept = Dataset.objects(company=company, kind="repo", ref__iexact=repo).first()
-        if kept is not None and kept.credential:
-            granted = _granted_token(company, task, actor, request.task, client_address(call), repo, dataset=True,
-                                     credential=kept.credential) if task is not None else None
+        kept = datasets_bll.kept_for_repository(company, repo)
+        if kept is not None:
+            # a registry is read as it is: it holds no dataset.yaml, so its layout is not checked (a dataset's is)
+            granted = None
+            if kept.credential and task is not None:
+                granted = _granted_token(company, task, actor, request.task, client_address(call), repo,
+                                         dataset=kept.kind == "repo", credential=kept.credential)
             if granted is None:
-                reason = "the credential of this dataset is not shared with this project"
+                reason = (f"the credential of {kept.name} is not shared with this project" if kept.credential
+                          else f"no access to {kept.kind} {kept.name}")
                 audit(actor, "git_token.refused", ip=client_address(call), company=company, device=claims.get("device"), task=request.task, reason=reason)
                 raise errors.bad_request.ValidationError(reason)
             return granted

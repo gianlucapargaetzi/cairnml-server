@@ -96,6 +96,12 @@ def _candidates(company: str, user: str, project_root, repo_url: str) -> list:
     return user_access.usable_for(company, user, host, path, project_root)
 
 
+def kept_for_repository(company: str, repo: str):
+    """The record that says how a job reads this repository: a dataset of its own, or a registry (the repository that
+    lists datasets, which a job reads to find their entries). None when the environment keeps neither."""
+    return Dataset.objects(company=company, kind__in=["repo", "registry"], ref__iexact=repo).first()
+
+
 def _exists(company: str, kind: str, ref: str) -> bool:
     return Dataset.objects(company=company, kind=kind, ref__iexact=ref).first() is not None
 

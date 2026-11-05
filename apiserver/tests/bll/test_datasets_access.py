@@ -264,3 +264,13 @@ def test_a_public_dataset_shared_with_a_project_is_recorded_on_that_project(proj
     assert result["projects"] == ["p-team"]
     bll.unallocate(COMPANY, "u2", dataset_id, "p-team", False)
     assert Dataset.objects(id=dataset_id).first().projects == []
+
+
+def test_a_registry_and_a_repository_are_found_by_their_address_but_an_entry_is_not(projects):
+    Dataset(id="reg-1", company=COMPANY, kind="registry", ref="acme/registry", name="registry", owner="u1",
+            visibility="Public", created=datetime.utcnow()).save()
+    Dataset(id="entry-1", company=COMPANY, kind="registry_entry", ref="acme/registry/cars", name="cars", owner="u1",
+            visibility="Public", created=datetime.utcnow()).save()
+    assert bll.kept_for_repository(COMPANY, "acme/registry").id == "reg-1"
+    assert bll.kept_for_repository(COMPANY, "acme/cars") is None
+    assert bll.kept_for_repository(COMPANY, "acme/registry/cars") is None
