@@ -51,9 +51,12 @@ def setup(company):
 
 
 def make_dataset(company, owner, ref, credential=None):
+    """A dataset every user can use (visibility Public, with its public share): the run's user may use it, so a run
+    shares it with the project (bll/dataset_inheritance)."""
     dataset = Dataset(id=uuid4().hex, company=company, kind="repo", ref=ref, name=ref.split("/")[1], owner=owner,
-                      visibility="user", credential=credential, state="ok", created=datetime.utcnow())
+                      visibility="Public", credential=credential, state="ok", created=datetime.utcnow())
     dataset.save()
+    access.record_grant(company, owner, "dataset", dataset.id, "public", actor=owner)
     return dataset
 
 
@@ -146,7 +149,8 @@ def test_a_stranger_may_not_revoke_a_dataset_share(setup):
     run_uses(company, [("cars", "dsowner/cars")])
     [share] = dataset_shares(company, dataset)
 
-    with pytest.raises(errors.bad_request.ValidationError):
+    # The dataset is Public, so the stranger sees it and holds read: refused as forbidden, not as not found.
+    with pytest.raises(errors.forbidden.NoWritePermission):
         access.unshare(company, STRANGER, share.id)
 
     assert dataset_shares(company, dataset) == [share]

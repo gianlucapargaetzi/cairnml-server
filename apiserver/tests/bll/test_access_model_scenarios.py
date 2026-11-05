@@ -241,6 +241,7 @@ def test_inheritance_and_revocation_removes_inherited_credential(company):
     make_root(company, "root1", "owner1", members=[("runner", ProjectRole.read)])
     entry = make_credential(company, "runner")
     dataset = make_dataset(company, "dsowner", "dsowner/cars", credential=entry.id)
+    access.record_grant(company, "dsowner", "dataset", dataset.id, "public", actor="dsowner")  # the runner may use it
 
     task = make_run(company, "runner", "root1", refs=[("cars", "dsowner/cars")])
     complete(task, "runner")
@@ -267,6 +268,7 @@ def test_revocation_keeps_hand_made_credential(company):
     make_root(company, "root1", "owner1", members=[("runner", ProjectRole.read)])
     entry = make_credential(company, "runner")
     dataset = make_dataset(company, "dsowner", "dsowner/cars", credential=entry.id)
+    access.record_grant(company, "dsowner", "dataset", dataset.id, "public", actor="dsowner")  # the runner may use it
     manual = access.share(company, "runner", "credential", entry.id, "projects", "root1", "read")
 
     task = make_run(company, "runner", "root1", refs=[("cars", "dsowner/cars")])

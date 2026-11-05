@@ -10,12 +10,15 @@ allocation writers grant it. The dataset's credential is shared the same way onl
 credential of another user is shared with a project only by its owner (decision 3). The run's user is the task's
 owner (Task.user), which stands in for the enqueuer, as queue entries do not record one.
 
-Nothing is shared for a deactivated run user (R25).
+Nothing is shared for a deactivated run user (R25). A dataset the run's user cannot use (bll/access: level_of with the
+user's project roots, and the use action) is skipped, and so is its credential: a run never shares what its user could
+not read.
 """
 
 from typing import List, Optional, Set
 
 from apiserver.bll import access, user_access
+from apiserver.database.model.auth import User
 from apiserver.database.model.dataset import Dataset
 from apiserver.database.model.project import Project
 from apiserver.database.model.share import Share
@@ -46,6 +49,15 @@ def _datasets_of(company: str, task_id: str) -> List[Dataset]:
         for dataset in Dataset.objects(company=company, kind="repo", ref__iexact=repo).only("id", "credential"):
             found[dataset.id] = dataset
     return list(found.values())
+
+
+def _run_user_can_use(company: str, user: str, dataset_id: str) -> bool:
+    """True when the run's user holds a level on the dataset that allows its use, through the share records."""
+    found = User.objects(id=user, company=company).only("role").first()
+    is_admin = found is not None and found.role in access.ADMIN_ROLES
+    roots = {project["id"] for project in user_access.my_projects(company, user)}
+    level = access.level_of(company, user, is_admin, "dataset", dataset_id, roots)
+    return access.allows(level, "use", "dataset")
 
 
 def _root_owner(company: str, root: str) -> Optional[str]:
@@ -99,6 +111,8 @@ def publish_run_datasets(task) -> List[Share]:
 
     created = []
     for dataset in _datasets_of(run.company, run.id):
+        if not _run_user_can_use(run.company, run.user, dataset.id):
+            continue
         if access.find_share(run.company, "dataset", dataset.id, "projects", root) is None:
             created.append(access.record_grant(run.company, owner, "dataset", dataset.id, "projects", root,
                                                level="read", actor=run.user, inherited=True, run_id=run.id))

@@ -7,6 +7,7 @@ from uuid import uuid4
 
 import pytest
 
+from apiserver.bll import access
 from apiserver.bll import dataset_inheritance
 from apiserver.bll.task import utils as task_utils
 from apiserver.bll.task.utils import ChangeStatusRequest
@@ -41,9 +42,12 @@ def setup(company):
 
 
 def make_dataset(company, owner, ref, credential=None):
+    """A dataset every user can use (visibility Public, with its public share), so the run's user may use it: a run
+    shares only the datasets its user can use (bll/dataset_inheritance)."""
     dataset = Dataset(id=uuid4().hex, company=company, kind="repo", ref=ref, name=ref.split("/")[1], owner=owner,
-                      visibility="user", credential=credential, state="ok", created=datetime.utcnow())
+                      visibility="Public", credential=credential, state="ok", created=datetime.utcnow())
     dataset.save()
+    access.record_grant(company, owner, "dataset", dataset.id, "public", actor=owner)
     return dataset
 
 
@@ -123,7 +127,7 @@ def test_a_run_using_no_dataset_creates_nothing(setup):
     finish(task, TaskStatus.completed, RUNNER)
 
     assert dataset_inheritance.publish_run_datasets(task) == []
-    assert Share.objects(company=company).count() == 0
+    assert Share.objects(company=company, scope="projects").count() == 0
 
 
 def test_a_dataset_already_shared_with_the_project_is_left_as_it_is(setup):
