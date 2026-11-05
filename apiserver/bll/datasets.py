@@ -102,6 +102,11 @@ def kept_for_repository(company: str, repo: str):
     return Dataset.objects(company=company, kind__in=["repo", "registry"], ref__iexact=repo).first()
 
 
+def registry_entries_named(company: str, name: str) -> list:
+    """The kept registry entries with this name, from every registry: their refs end with /<name>."""
+    return list(Dataset.objects(company=company, kind="registry_entry", ref__endswith=f"/{name}"))
+
+
 def _exists(company: str, kind: str, ref: str) -> bool:
     return Dataset.objects(company=company, kind=kind, ref__iexact=ref).first() is not None
 

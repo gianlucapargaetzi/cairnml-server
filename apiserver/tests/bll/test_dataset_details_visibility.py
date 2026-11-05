@@ -97,6 +97,32 @@ def test_the_repository_is_matched_case_insensitively(company, app):
     assert app.reads == []
 
 
+def registry_entry(company, owner="userA", name="cars", registry="acme/registry"):
+    Dataset(id=uuid4().hex, company=company, kind="registry_entry", ref=f"{registry}/{name}", name=name, owner=owner,
+            visibility="user").save()
+
+
+def test_a_user_only_registry_entry_is_refused_to_another_user(company, app):
+    registry_entry(company)
+    call = FakeCall(company, "userB", data={"registry_name": "cars"})
+    with pytest.raises(errors.bad_request.ValidationError, match="no such dataset"):
+        svc.get_details(call, company, None)
+    assert app.reads == []
+
+
+def test_the_owner_and_an_admin_get_through_to_a_user_only_registry_entry(company, monkeypatch):
+    reached = []
+    monkeypatch.setattr(svc.bll, "details", lambda app, **kwargs: reached.append(kwargs) or {"found": True})
+    registry_entry(company)
+    owner = FakeCall(company, "userA", data={"registry_name": "cars"})
+    svc.get_details(owner, company, None)
+    admin = FakeCall(company, "userB", role=Role.admin, data={"registry_name": "cars"})
+    svc.get_details(admin, company, None)
+    assert owner.result.data == {"found": True}
+    assert admin.result.data == {"found": True}
+    assert len(reached) == 2
+
+
 def test_a_repository_with_no_kept_record_keeps_today_behaviour(company, app):
     call = FakeCall(company, "userB", data={"repository": REPO})
     svc.get_details(call, company, None)
