@@ -6,7 +6,7 @@ from uuid import uuid4
 import pytest
 
 from apiserver.database.model.dataset import Dataset
-from apiserver.database.model.project import Project
+from apiserver.database.model.project import Project, ProjectMember, ProjectRole
 from apiserver.database.model.queue import Queue, QueueUser
 from apiserver.database.model.share import Share
 from apiserver.database.model.user_access import UserAccess
@@ -34,7 +34,8 @@ def company():
 def build_legacy_grants(company):
     """One example of each field that grants access today, and the cases that must not produce a share."""
     root1 = Project(id="p-root1", company=company, user="root-owner", name="root one", basename="root1", created=NOW,
-                    queues=["q-public-one", "q-granted"])
+                    queues=["q-public-one", "q-granted"],
+                    members=[ProjectMember(user="alice", role=ProjectRole.read, added=NOW, added_by="root-owner")])
     root2 = Project(id="p-root2", company=company, user="root-owner", name="root two", basename="root2", created=NOW)
     sub = Project(id="p-sub", company=company, user="root-owner", name="sub", basename="sub", created=NOW,
                   parent="p-root1", queues=["q-sub-only"])
@@ -49,6 +50,8 @@ def build_legacy_grants(company):
 
     UserAccess(id="t-alice", company=company, user="alice", kind="token", label="token", secret="x",
                granted_projects=["p-root1"]).save()
+    UserAccess(id="t-bob", company=company, user="bob", kind="token", label="token", secret="x",
+               granted_projects=["p-root2"]).save()
 
     Dataset(id="d-projects", company=company, kind="repo", ref="o/projects", name="projects",
             owner="dataset-owner", visibility="projects", projects=["p-root1"]).save()
@@ -62,21 +65,28 @@ def build_legacy_grants(company):
             owner="dataset-owner", visibility="Public").save()
     Dataset(id="r-projects", company=company, kind="registry", ref="o/registry-projects", name="registry projects",
             owner="dataset-owner", visibility="projects", projects=["p-root2"]).save()
+    Dataset(id="e-entry", company=company, kind="registry_entry", ref="o/registry-projects/entry", name="entry",
+            owner="dataset-owner", visibility="Public", projects=["p-root1"]).save()
 
 
 EXPECTED = sorted([
     # (resource_type, resource_id, scope, project, user, level, granted_by)
+    # a queue's public share is granted by its owner; a project share by the owner of the root project
     ("queue", "q-public-one", "public", "", "", "read", "queue-owner"),
     ("queue", "q-public-one", "projects", "p-root1", "", "read", "root-owner"),
     ("queue", "q-granted", "user", "", "alice", "read", "queue-owner"),
     ("queue", "q-granted", "projects", "p-root1", "", "read", "root-owner"),
+    # alice is a member of p-root1, so she grants her token there; bob is not a member of p-root2, so its owner does
     ("credential", "t-alice", "projects", "p-root1", "", "read", "alice"),
-    ("dataset", "d-projects", "projects", "p-root1", "", "read", "dataset-owner"),
+    ("credential", "t-bob", "projects", "p-root2", "", "read", "root-owner"),
+    # the dataset owner is not a member of any project: the project owner grants the project share
+    ("dataset", "d-projects", "projects", "p-root1", "", "read", "root-owner"),
     ("dataset", "d-public", "public", "", "", "read", "dataset-owner"),
-    ("dataset", "d-two", "projects", "p-root1", "", "read", "dataset-owner"),
-    ("dataset", "d-two", "projects", "p-root2", "", "read", "dataset-owner"),
+    ("dataset", "d-two", "projects", "p-root1", "", "read", "root-owner"),
+    ("dataset", "d-two", "projects", "p-root2", "", "read", "root-owner"),
     ("registry", "r-public", "public", "", "", "read", "dataset-owner"),
-    ("registry", "r-projects", "projects", "p-root2", "", "read", "dataset-owner"),
+    ("registry", "r-projects", "projects", "p-root2", "", "read", "root-owner"),
+    # the registry entry e-entry has no share: it inherits from its registry
 ])
 
 
@@ -116,6 +126,7 @@ def test_the_old_fields_are_kept(company):
     assert [u.user for u in queue.users] == ["alice"]
     assert Project.objects(company=company, id="p-root1").get().queues == ["q-public-one", "q-granted"]
     assert UserAccess.objects(company=company, id="t-alice").get().granted_projects == ["p-root1"]
+    assert Dataset.objects(company=company, id="e-entry").get().projects == ["p-root1"]
     assert Dataset.objects(company=company, id="d-two").get().projects == ["p-root1", "p-root2"]
 
 
