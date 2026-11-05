@@ -246,11 +246,11 @@ def add_queues(call: APICall, company_id: str, request: AddQueuesRequest):
     if not request.queues:
         return UpdateResponse(updated=0)
 
-    for queue_id in request.queues:
-        record_grant(company_id, root.user, "queue", queue_id, "projects", root_id)
     Project.objects(id=root_id, company=company_id).update_one(
         push_all__queues=list(request.queues)
     )
+    for queue_id in request.queues:
+        record_grant(company_id, root.user, "queue", queue_id, "projects", root_id)
     return UpdateResponse(updated=1)
 
 
@@ -263,9 +263,9 @@ def remove_queue(call: APICall, company_id: str, request: RemoveQueueRequest):
     if request.queue not in root.queues:
         raise errors.bad_request.InvalidQueueId(id=request.queue)
 
-    remove_grant(company_id, "queue", request.queue, "projects", root_id)
     Project.objects(id=root_id, company=company_id).update_one(
         pull__queues=request.queue
     )
+    remove_grant(company_id, "queue", request.queue, "projects", root_id)
     return UpdateResponse(updated=1)
 

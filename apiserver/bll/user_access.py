@@ -113,8 +113,8 @@ def add_app(company: str, user: str, label: str, app_id: str, api_url: str, key:
     if scope == "company":
         # the server has one GitHub App: adding another replaces it
         for previous in UserAccess.objects(company=company, scope="company", kind="app"):
-            _access().drop_resource_shares(company, "credential", previous.id)
             previous.delete()
+            _access().drop_resource_shares(company, "credential", previous.id)
     entry = UserAccess(
         id=uuid.uuid4().hex, company=company, user=user, kind="app", label=_label(label), scope=scope,
         host="github.com", app_id=app_id, api_url=api,
@@ -195,8 +195,8 @@ def _access():
 
 def delete(company: str, user: str, access_id: str, is_admin: bool = False) -> None:
     entry = _owned_or_company(company, user, access_id, is_admin)
-    _access().drop_resource_shares(company, "credential", entry.id)
     entry.delete()
+    _access().drop_resource_shares(company, "credential", entry.id)
     audit(user, "user_access.deleted", company=company, kind=entry.kind)
 
 
@@ -278,10 +278,10 @@ def grant(company: str, owner: str, access_id: str, project_id: str) -> dict:
         raise errors.bad_request.ValidationError("you are not a member of this project")
     if root not in (entry.granted_projects or []):
         # the owner, a member of the project, grants the access to it
-        _access().record_grant(company, owner, "credential", entry.id, "projects", root)
         entry.granted_projects = list(entry.granted_projects or []) + [root]
         entry.updated = datetime.utcnow()
         entry.save()
+        _access().record_grant(company, owner, "credential", entry.id, "projects", root)
         audit(owner, "user_access.granted", company=company, kind=entry.kind, project=root)
     return _view(entry)
 
@@ -297,10 +297,10 @@ def revoke(company: str, actor: str, access_id: str, project_id: str, is_admin: 
     if not allowed:
         raise errors.bad_request.ValidationError("no such access of yours")
     if root in (entry.granted_projects or []):
-        _access().remove_grant(company, "credential", entry.id, "projects", root)
         entry.granted_projects = [p for p in entry.granted_projects if p != root]
         entry.updated = datetime.utcnow()
         entry.save()
+        _access().remove_grant(company, "credential", entry.id, "projects", root)
         audit(actor, "user_access.revoked", company=company, kind=entry.kind, project=root)
     return _view(entry)
 

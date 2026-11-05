@@ -207,3 +207,18 @@ def test_transferring_a_project_regrants_its_queues_from_the_new_owner(company, 
     assert_consistent(company, "q1")
     granted = Share.objects(company=company, resource_type="queue", resource_id="q1", scope="projects").first()
     assert granted.granted_by == "u9"
+
+
+# --- the order inside a writer: the old field first, then the share; a failed share write fails the request
+
+
+def test_a_failed_share_write_fails_the_request_and_the_old_field_is_already_changed(company, setup, monkeypatch):
+    from apiserver.services import queues as queues_module
+
+    def fail(*args, **kwargs):
+        raise RuntimeError("the share write failed")
+
+    monkeypatch.setattr(queues_module, "record_grant", fail)
+    with pytest.raises(RuntimeError, match="the share write failed"):
+        svc.add_user(FakeCall(identity(company, "owner1")), company, UserRequest(queue="q1", user="u2"))
+    assert [grant.user for grant in Queue.objects(company=company, id="q1").first().users] == ["u2"]

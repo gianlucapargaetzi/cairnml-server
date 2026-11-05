@@ -176,11 +176,11 @@ def update(call: APICall, company_id, request: UpdateRequest):
     data = call.data_model_for_partial_update
     conform_tag_fields(call, data, validate=True)
     escape_metadata(data)
-    if "public" in data:
-        _set_public_share(company_id, call.identity.user, request.queue, bool(data["public"]))
     updated, fields = queue_bll.update(
         company_id=company_id, queue_id=request.queue, **data
     )
+    if "public" in data:
+        _set_public_share(company_id, call.identity.user, request.queue, bool(data["public"]))
     conform_queue_data(call, fields)
     call.result.data_model = UpdateResponse(updated=updated, fields=fields)
 
@@ -522,7 +522,6 @@ def add_user(call: APICall, company_id: str, request: UserRequest):
     if Queue.objects(company=company_id, id=request.queue, users__user=request.user).only("id").first():
         return UpdateResponse(updated=0)
 
-    record_grant(company_id, call.identity.user, "queue", request.queue, "user", user=request.user)
     Queue.objects(company=company_id, id=request.queue).update_one(
         push__users=QueueUser(
             user=request.user,
@@ -530,6 +529,7 @@ def add_user(call: APICall, company_id: str, request: UserRequest):
             added_by=call.identity.user,
         )
     )
+    record_grant(company_id, call.identity.user, "queue", request.queue, "user", user=request.user)
     return UpdateResponse(updated=1)
 
 
@@ -540,10 +540,10 @@ def remove_user(call: APICall, company_id: str, request: UserRequest):
     if not any(u.user == request.user for u in queue.users):
         raise errors.bad_request.InvalidUserId(id=request.user)
 
-    remove_grant(company_id, "queue", request.queue, "user", user=request.user)
     Queue.objects(company=company_id, id=request.queue).update_one(
         pull__users__user=request.user
     )
+    remove_grant(company_id, "queue", request.queue, "user", user=request.user)
     QueueAccessBLL.remove_user_allocations(company_id, request.user, request.queue)
     return UpdateResponse(updated=1)
 

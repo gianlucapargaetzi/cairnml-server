@@ -155,3 +155,16 @@ def test_deleting_a_dataset_removes_its_shares(company, setup, public_github):
     datasets.allocate(company, "owner1", dataset["id"], "root1", False)
     datasets.delete(company, "owner1", dataset["id"], False)
     assert Share.objects(company=company, resource_id=dataset["id"]).count() == 0
+
+
+def test_a_failed_share_write_fails_the_request_and_the_old_field_is_already_changed(company, setup, public_github,
+                                                                                     monkeypatch):
+    dataset = datasets.add_repo(company, "owner1", REPO_URL, visibility="user")
+
+    def fail(*args, **kwargs):
+        raise RuntimeError("the share write failed")
+
+    monkeypatch.setattr(datasets.access, "record_grant", fail)
+    with pytest.raises(RuntimeError, match="the share write failed"):
+        datasets.set_visibility(company, "owner1", dataset["id"], "projects", ["root1"], False)
+    assert Dataset.objects(company=company, id=dataset["id"]).first().visibility == "projects"

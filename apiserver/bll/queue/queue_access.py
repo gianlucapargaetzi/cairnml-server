@@ -159,8 +159,10 @@ class QueueAccessBLL:
     @staticmethod
     def remove_user_allocations(company_id: str, user_id: str, queue_id: str) -> None:
         """ Take a queue out of the allocations of the root projects the user owns (the cascade of a removed grant) """
-        for root in Project.objects(company=company_id, parent=None, user=user_id, queues=queue_id).only("id"):
-            remove_grant(company_id, "queue", queue_id, "projects", root.id)
+        roots = [root.id for root in Project.objects(company=company_id, parent=None, user=user_id, queues=queue_id)
+                 .only("id")]
         Project.objects(
             company=company_id, parent=None, user=user_id, queues=queue_id
         ).update(pull__queues=queue_id)
+        for root_id in roots:
+            remove_grant(company_id, "queue", queue_id, "projects", root_id)

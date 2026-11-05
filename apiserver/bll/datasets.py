@@ -331,17 +331,18 @@ def set_visibility(company: str, user: str, dataset_id: str, visibility: str, pr
             if root is None:
                 raise errors.bad_request.ValidationError("no such project")
             roots.append(root)
-    _set_public_share(company, user, dataset, visibility == "Public")
-    resource_type = _share_type(dataset)
-    if resource_type is not None:
-        for root in set(dataset.projects or []) - set(roots):
-            access.remove_grant(company, resource_type, dataset.id, "projects", root)
-        for root in roots:
-            access.record_grant(company, _root_owner(company, root), resource_type, dataset.id, "projects", root)
+    previous = set(dataset.projects or [])
     dataset.visibility = visibility
     dataset.projects = roots
     dataset.updated = datetime.utcnow()
     dataset.save()
+    _set_public_share(company, user, dataset, visibility == "Public")
+    resource_type = _share_type(dataset)
+    if resource_type is not None:
+        for root in previous - set(roots):
+            access.remove_grant(company, resource_type, dataset.id, "projects", root)
+        for root in roots:
+            access.record_grant(company, _root_owner(company, root), resource_type, dataset.id, "projects", root)
     return view(dataset)
 
 
@@ -374,15 +375,15 @@ def _change_allocation(company: str, user: str, dataset_id: str, project: str, i
                     "the credential that reads this dataset is not shared with this project; its owner must share it first")
             user_access.grant(company, credential.user, credential.id, root)
     # the project is recorded whatever the visibility, so a Public dataset shows in the project's list as well
+    dataset.projects = [p for p in dataset.projects if p != root] + ([root] if add else [])
+    dataset.updated = datetime.utcnow()
+    dataset.save()
     resource_type = _share_type(dataset)
     if resource_type is not None:
         if add:
             access.record_grant(company, _root_owner(company, root), resource_type, dataset.id, "projects", root)
         else:
             access.remove_grant(company, resource_type, dataset.id, "projects", root)
-    dataset.projects = [p for p in dataset.projects if p != root] + ([root] if add else [])
-    dataset.updated = datetime.utcnow()
-    dataset.save()
     return view(dataset)
 
 
@@ -400,6 +401,6 @@ def delete(company: str, user: str, dataset_id: str, is_admin: bool) -> None:
     if not can_manage(view(dataset), user, is_admin):
         raise errors.bad_request.ValidationError("only the owner of this dataset may remove it")
     resource_type = _share_type(dataset)
+    dataset.delete()
     if resource_type is not None:
         access.drop_resource_shares(company, resource_type, dataset.id)
-    dataset.delete()
