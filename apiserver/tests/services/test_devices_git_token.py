@@ -35,7 +35,7 @@ def job_token(monkeypatch):
 
 
 def task(repository="https://github.com/acme/proj.git"):
-    return SimpleNamespace(id="t1", script=SimpleNamespace(repository=repository))
+    return SimpleNamespace(id="t1", project=None, script=SimpleNamespace(repository=repository))
 
 
 def use_github(monkeypatch, github, public=()):
