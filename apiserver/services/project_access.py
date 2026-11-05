@@ -184,10 +184,11 @@ def transfer_ownership(call: APICall, company_id: str, request: TransferOwnershi
     root.save()
     # the allocations are granted by the owner of the project, so the kept ones now come from the new owner
     for queue_id in dropped:
-        remove_grant(company_id, "queue", queue_id, "projects", root_id)
+        remove_grant(company_id, "queue", queue_id, "projects", root_id, actor=call.identity.user)
     for queue_id in kept:
-        remove_grant(company_id, "queue", queue_id, "projects", root_id)
-        record_grant(company_id, request.new_owner, "queue", queue_id, "projects", root_id)
+        remove_grant(company_id, "queue", queue_id, "projects", root_id, actor=call.identity.user)
+        record_grant(company_id, request.new_owner, "queue", queue_id, "projects", root_id,
+                     actor=call.identity.user)
 
     return UpdateResponse(updated=1)
 
@@ -250,7 +251,7 @@ def add_queues(call: APICall, company_id: str, request: AddQueuesRequest):
         push_all__queues=list(request.queues)
     )
     for queue_id in request.queues:
-        record_grant(company_id, root.user, "queue", queue_id, "projects", root_id)
+        record_grant(company_id, root.user, "queue", queue_id, "projects", root_id, actor=call.identity.user)
     return UpdateResponse(updated=1)
 
 
@@ -266,6 +267,6 @@ def remove_queue(call: APICall, company_id: str, request: RemoveQueueRequest):
     Project.objects(id=root_id, company=company_id).update_one(
         pull__queues=request.queue
     )
-    remove_grant(company_id, "queue", request.queue, "projects", root_id)
+    remove_grant(company_id, "queue", request.queue, "projects", root_id, actor=call.identity.user)
     return UpdateResponse(updated=1)
 

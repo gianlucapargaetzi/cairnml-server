@@ -195,16 +195,16 @@ def delete(call: APICall, company_id, request: DeleteRequest):
         force=request.force,
     )
     QueueAccessBLL.remove_from_allocations([request.queue])
-    drop_resource_shares(company_id, "queue", request.queue)
+    drop_resource_shares(company_id, "queue", request.queue, actor=call.identity.user)
     call.result.data = {"deleted": 1}
 
 
 def _set_public_share(company_id: str, actor: str, queue_id: str, public: bool) -> None:
     """The public share follows the public flag, granted by the user who sets it"""
     if public:
-        record_grant(company_id, actor, "queue", queue_id, "public")
+        record_grant(company_id, actor, "queue", queue_id, "public", actor=actor)
     else:
-        remove_grant(company_id, "queue", queue_id, "public")
+        remove_grant(company_id, "queue", queue_id, "public", actor=actor)
 
 
 def update_added_task_properties(queue: str, task: str, update_execution_queue: bool):
@@ -529,7 +529,8 @@ def add_user(call: APICall, company_id: str, request: UserRequest):
             added_by=call.identity.user,
         )
     )
-    record_grant(company_id, call.identity.user, "queue", request.queue, "user", user=request.user)
+    record_grant(company_id, call.identity.user, "queue", request.queue, "user", user=request.user,
+                 actor=call.identity.user)
     return UpdateResponse(updated=1)
 
 
@@ -543,7 +544,7 @@ def remove_user(call: APICall, company_id: str, request: UserRequest):
     Queue.objects(company=company_id, id=request.queue).update_one(
         pull__users__user=request.user
     )
-    remove_grant(company_id, "queue", request.queue, "user", user=request.user)
-    QueueAccessBLL.remove_user_allocations(company_id, request.user, request.queue)
+    remove_grant(company_id, "queue", request.queue, "user", user=request.user, actor=call.identity.user)
+    QueueAccessBLL.remove_user_allocations(company_id, request.user, request.queue, actor=call.identity.user)
     return UpdateResponse(updated=1)
 

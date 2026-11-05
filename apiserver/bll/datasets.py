@@ -168,9 +168,9 @@ def _set_public_share(company: str, actor: str, dataset: Dataset, public: bool) 
     if resource_type is None:
         return
     if public:
-        access.record_grant(company, actor, resource_type, dataset.id, "public")
+        access.record_grant(company, actor, resource_type, dataset.id, "public", actor=actor)
     else:
-        access.remove_grant(company, resource_type, dataset.id, "public")
+        access.remove_grant(company, resource_type, dataset.id, "public", actor=actor)
 
 
 def _save(company: str, user: str, kind: str, repo: str, name: str, visibility: str, credential, state: str,
@@ -340,9 +340,10 @@ def set_visibility(company: str, user: str, dataset_id: str, visibility: str, pr
     resource_type = _share_type(dataset)
     if resource_type is not None:
         for root in previous - set(roots):
-            access.remove_grant(company, resource_type, dataset.id, "projects", root)
+            access.remove_grant(company, resource_type, dataset.id, "projects", root, actor=user)
         for root in roots:
-            access.record_grant(company, _root_owner(company, root), resource_type, dataset.id, "projects", root)
+            access.record_grant(company, _root_owner(company, root), resource_type, dataset.id, "projects", root,
+                                actor=user)
     return view(dataset)
 
 
@@ -381,9 +382,10 @@ def _change_allocation(company: str, user: str, dataset_id: str, project: str, i
     resource_type = _share_type(dataset)
     if resource_type is not None:
         if add:
-            access.record_grant(company, _root_owner(company, root), resource_type, dataset.id, "projects", root)
+            access.record_grant(company, _root_owner(company, root), resource_type, dataset.id, "projects", root,
+                                actor=user)
         else:
-            access.remove_grant(company, resource_type, dataset.id, "projects", root)
+            access.remove_grant(company, resource_type, dataset.id, "projects", root, actor=user)
     return view(dataset)
 
 
@@ -403,4 +405,4 @@ def delete(company: str, user: str, dataset_id: str, is_admin: bool) -> None:
     resource_type = _share_type(dataset)
     dataset.delete()
     if resource_type is not None:
-        access.drop_resource_shares(company, resource_type, dataset.id)
+        access.drop_resource_shares(company, resource_type, dataset.id, actor=user)

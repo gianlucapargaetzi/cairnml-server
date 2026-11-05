@@ -114,7 +114,7 @@ def add_app(company: str, user: str, label: str, app_id: str, api_url: str, key:
         # the server has one GitHub App: adding another replaces it
         for previous in UserAccess.objects(company=company, scope="company", kind="app"):
             previous.delete()
-            _access().drop_resource_shares(company, "credential", previous.id)
+            _access().drop_resource_shares(company, "credential", previous.id, actor=user)
     entry = UserAccess(
         id=uuid.uuid4().hex, company=company, user=user, kind="app", label=_label(label), scope=scope,
         host="github.com", app_id=app_id, api_url=api,
@@ -196,7 +196,7 @@ def _access():
 def delete(company: str, user: str, access_id: str, is_admin: bool = False) -> None:
     entry = _owned_or_company(company, user, access_id, is_admin)
     entry.delete()
-    _access().drop_resource_shares(company, "credential", entry.id)
+    _access().drop_resource_shares(company, "credential", entry.id, actor=user)
     audit(user, "user_access.deleted", company=company, kind=entry.kind)
 
 
@@ -281,7 +281,7 @@ def grant(company: str, owner: str, access_id: str, project_id: str) -> dict:
         entry.granted_projects = list(entry.granted_projects or []) + [root]
         entry.updated = datetime.utcnow()
         entry.save()
-        _access().record_grant(company, owner, "credential", entry.id, "projects", root)
+        _access().record_grant(company, owner, "credential", entry.id, "projects", root, actor=owner)
         audit(owner, "user_access.granted", company=company, kind=entry.kind, project=root)
     return _view(entry)
 
@@ -300,7 +300,7 @@ def revoke(company: str, actor: str, access_id: str, project_id: str, is_admin: 
         entry.granted_projects = [p for p in entry.granted_projects if p != root]
         entry.updated = datetime.utcnow()
         entry.save()
-        _access().remove_grant(company, "credential", entry.id, "projects", root)
+        _access().remove_grant(company, "credential", entry.id, "projects", root, actor=actor)
         audit(actor, "user_access.revoked", company=company, kind=entry.kind, project=root)
     return _view(entry)
 

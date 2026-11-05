@@ -62,7 +62,7 @@ class QueueBLL(object):
             )
             queue.save()
             if public:
-                record_grant(company_id, created_by or "", "queue", queue.id, "public")
+                record_grant(company_id, created_by or "", "queue", queue.id, "public", actor=created_by or "")
             return queue
 
     def get_by_name(
