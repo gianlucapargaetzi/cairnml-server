@@ -133,3 +133,106 @@ def test_a_private_registry_nobody_can_read_is_saved_with_no_entries(github):
     result = bll.add_registry(COMPANY, "u1", "https://github.com/acme/secret-registry")
     assert result["state"] == "no_access"
     assert Dataset.objects(company=COMPANY, kind="registry_entry").count() == 0
+
+
+# --- Listing and permissions, against the database.
+
+from datetime import datetime
+
+from apiserver.database.model.project import Project, ProjectMember, ProjectRole
+from apiserver.database.model.user_access import UserAccess
+
+
+def make_project(project_id: str, owner: str, members=()) -> None:
+    project = Project(id=project_id, company=COMPANY, user=owner, name=project_id, basename=project_id,
+                      created=datetime.utcnow())
+    for member in members:
+        project.members.append(ProjectMember(user=member, role=ProjectRole.collaborator, added=datetime.utcnow(),
+                                             added_by=owner))
+    project.save()
+
+
+@pytest.fixture
+def projects():
+    Project.objects(company=COMPANY).delete()
+    make_project("p-team", "u1", members=["u2"])
+    make_project("p-other", "u3")
+    yield
+    Project.objects(company=COMPANY).delete()
+
+
+def add_private_dataset(owner: str, visibility: str = "user", projects=None, credential=None) -> str:
+    dataset = Dataset(id=f"d-{owner}-{visibility}", company=COMPANY, kind="repo", ref=f"acme/{owner}-{visibility}",
+                      name=f"{owner}-{visibility}", owner=owner, visibility=visibility, projects=projects or [],
+                      credential=credential, created=datetime.utcnow(), updated=datetime.utcnow(),
+                      last_checked=datetime.utcnow())
+    dataset.save()
+    return dataset.id
+
+
+def test_a_user_only_dataset_is_listed_to_its_owner_and_not_to_others(projects):
+    add_private_dataset("u1", "user")
+    assert [r["name"] for r in bll.list_visible(COMPANY, "u1", False)] == ["u1-user"]
+    assert bll.list_visible(COMPANY, "u2", False) == []
+
+
+def test_a_projects_dataset_is_listed_to_the_members_of_its_projects(projects):
+    add_private_dataset("u1", "projects", projects=["p-team"])
+    assert len(bll.list_visible(COMPANY, "u2", False)) == 1
+    assert bll.list_visible(COMPANY, "u3", False) == []
+
+
+def test_a_public_dataset_is_listed_to_everyone(projects):
+    add_private_dataset("u1", "Public")
+    assert len(bll.list_visible(COMPANY, "u3", False)) == 1
+
+
+def test_a_dataset_whose_credential_was_removed_shows_no_access(projects):
+    add_private_dataset("u1", "Public", credential="gone-access")
+    row = bll.list_visible(COMPANY, "u3", False)[0]
+    assert row["state"] == "no_access"
+    assert row["state_message"] == "no access to dataset u1-Public"
+
+
+def test_a_project_member_who_does_not_own_a_user_dataset_cannot_share_it(projects):
+    dataset_id = add_private_dataset("u1", "user")
+    with pytest.raises(errors.bad_request.ValidationError):
+        bll.allocate(COMPANY, "u2", dataset_id, "p-team", False)
+
+
+def test_the_owner_shares_with_a_project_and_its_members_then_see_it(projects):
+    dataset_id = add_private_dataset("u1", "user")
+    result = bll.allocate(COMPANY, "u1", dataset_id, "p-team", False)
+    assert result["visibility"] == "projects"
+    assert result["projects"] == ["p-team"]
+    assert len(bll.list_visible(COMPANY, "u2", False)) == 1
+
+
+def test_a_non_member_cannot_allocate_to_a_project(projects):
+    dataset_id = add_private_dataset("u1", "projects", projects=["p-team"])
+    with pytest.raises(errors.bad_request.ValidationError):
+        bll.allocate(COMPANY, "u3", dataset_id, "p-team", False)
+
+
+def test_only_the_owner_may_change_visibility_or_delete(projects):
+    dataset_id = add_private_dataset("u1", "user")
+    with pytest.raises(errors.bad_request.ValidationError):
+        bll.set_visibility(COMPANY, "u2", dataset_id, "Public", [], False)
+    with pytest.raises(errors.bad_request.ValidationError):
+        bll.delete(COMPANY, "u2", dataset_id, False)
+    bll.delete(COMPANY, "u1", dataset_id, False)
+    assert Dataset.objects(id=dataset_id).first() is None
+
+
+def test_app_discovered_repositories_belong_to_the_owner_of_the_app_credential(projects, monkeypatch):
+    UserAccess.objects(company=COMPANY, scope="company", kind="app").delete()
+    app = UserAccess(id="app-1", company=COMPANY, user="admin1", kind="app", label="App", scope="company",
+                     secret="x", created=datetime.utcnow())
+    app.save()
+    monkeypatch.setattr(bll.dataset_cache, "cached_list", lambda: {"datasets": [{"repository": "acme/found"}]})
+    try:
+        rows = bll.list_visible(COMPANY, "u3", False)
+        found = [r for r in rows if r["ref"] == "acme/found"]
+        assert found and found[0]["owner"] == "admin1" and found[0]["visibility"] == "Public"
+    finally:
+        app.delete()

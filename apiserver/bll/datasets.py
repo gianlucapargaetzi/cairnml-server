@@ -11,10 +11,13 @@ import uuid
 from datetime import datetime
 
 from apiserver.apierrors import errors
+from apiserver.bll import dataset_cache
+from apiserver.bll import dataset_registry as registry_bll
 from apiserver.bll import user_access
 from apiserver.bll.dataset_registry import canonical_url, list_entries
 from apiserver.config_repo import config
-from apiserver.database.model.dataset import Dataset
+from apiserver.database.model.dataset import VISIBILITIES, Dataset
+from apiserver.database.model.user_access import UserAccess
 from apiserver.idp import git_credentials as store
 from apiserver.idp.github import GitHubApp, GitHubError, PublicReader, TokenReader, public_repository
 from apiserver.idp.github_check import repo_of
@@ -198,3 +201,126 @@ def view(dataset: Dataset) -> dict:
         "state_message": dataset.state_message or "",
         "last_checked": dataset.last_checked.isoformat() if dataset.last_checked else None,
     }
+
+
+# --- Listing, visibility, allocation and deletion
+
+def _owned(company: str, dataset_id: str) -> Dataset:
+    dataset = Dataset.objects(company=company, id=dataset_id).first()
+    if dataset is None:
+        raise errors.bad_request.ValidationError("no such dataset")
+    return dataset
+
+
+def _visible_rows(company: str, user: str, is_admin: bool) -> list:
+    """The datasets the user may see, from the stored records, the registries added before this was kept, and the
+    repositories the App finds. Each has its state for this viewer."""
+    user_projects = {project["id"] for project in user_access.my_projects(company, user)}
+    stored = [view(dataset) for dataset in Dataset.objects(company=company)]
+    credential_ids = {
+        entry.id for entry in UserAccess.objects(company=company, id__in=[d["credential"] for d in stored if d["credential"]])
+    }
+    rows = []
+    for dataset in stored:
+        if visible_to(dataset, user, user_projects, is_admin):
+            state, message = credential_state(dataset, credential_ids)
+            rows.append({**dataset, "state": state, "state_message": message})
+    known = {row["ref"].lower() for row in rows}
+    for legacy in registry_bll.list_registries():
+        if legacy["repository"].lower() in known:
+            continue
+        rows.append(_legacy_row(legacy))
+        known.add(legacy["repository"].lower())
+    app = UserAccess.objects(company=company, scope="company", kind="app").order_by("created").first()
+    if app is not None:
+        for entry in dataset_cache.cached_list()["datasets"]:
+            if entry["repository"].lower() in known:
+                continue
+            rows.append(_app_row(entry["repository"], app))
+            known.add(entry["repository"].lower())
+    return rows
+
+
+def _legacy_row(legacy: dict) -> dict:
+    """A registry added before datasets were kept: public, owned by the user who added it."""
+    repo = legacy["repository"]
+    return {
+        "id": f"registry:{repo.lower()}", "kind": "registry", "ref": repo, "name": repo.split("/", 1)[1],
+        "owner": legacy["added_by"], "visibility": "Public", "projects": [], "credential": None,
+        "state": OK, "state_message": "", "last_checked": None,
+    }
+
+
+def _app_row(repo: str, app: UserAccess) -> dict:
+    """A repository the company's App finds: owned by the owner of the App credential, and public to everyone."""
+    return {
+        "id": f"app:{repo.lower()}", "kind": "repo", "ref": repo, "name": repo.split("/", 1)[1], "owner": app.user,
+        "visibility": "Public", "projects": [], "credential": app.id, "state": OK, "state_message": "",
+        "last_checked": None,
+    }
+
+
+def list_visible(company: str, user: str, is_admin: bool) -> list:
+    """What the Datasets page lists for the user."""
+    return _visible_rows(company, user, is_admin)
+
+
+def set_visibility(company: str, user: str, dataset_id: str, visibility: str, projects: list, is_admin: bool) -> dict:
+    """Changes the visibility. Only the owner, or an admin, may. Projects are kept only for ``projects``."""
+    dataset = _owned(company, dataset_id)
+    if not can_manage(view(dataset), user, is_admin):
+        raise errors.bad_request.ValidationError("only the owner of this dataset may change it")
+    if visibility not in VISIBILITIES:
+        raise errors.bad_request.ValidationError("the visibility is user, projects or Public")
+    roots = []
+    if visibility == "projects":
+        for project_id in projects or []:
+            root = user_access.root_project(company, project_id)
+            if root is None:
+                raise errors.bad_request.ValidationError("no such project")
+            roots.append(root)
+    dataset.visibility = visibility
+    dataset.projects = roots
+    dataset.updated = datetime.utcnow()
+    dataset.save()
+    return view(dataset)
+
+
+def _change_allocation(company: str, user: str, dataset_id: str, project: str, is_admin: bool, add: bool) -> dict:
+    """Allocates a dataset to a project, or takes it back. The user must be a member of the project and must see the
+    dataset. A dataset kept for its owner only is shared with the project by its owner (or an admin)."""
+    dataset = _owned(company, dataset_id)
+    root = user_access.root_project(company, project)
+    if root is None:
+        raise errors.bad_request.ValidationError("no such project")
+    if not user_access.is_member(company, root, user):
+        raise errors.bad_request.ValidationError("you are not a member of this project")
+    user_projects = {p["id"] for p in user_access.my_projects(company, user)}
+    current = view(dataset)
+    if not visible_to(current, user, user_projects, is_admin):
+        raise errors.bad_request.ValidationError("no such dataset of yours")
+    if add and dataset.visibility == "user":
+        if not can_manage(current, user, is_admin):
+            raise errors.bad_request.ValidationError("only the owner of this dataset may share it with a project")
+        dataset.visibility = "projects"
+    if dataset.visibility == "projects":
+        dataset.projects = [p for p in dataset.projects if p != root] + ([root] if add else [])
+        dataset.updated = datetime.utcnow()
+        dataset.save()
+    return view(dataset)
+
+
+def allocate(company: str, user: str, dataset_id: str, project: str, is_admin: bool) -> dict:
+    return _change_allocation(company, user, dataset_id, project, is_admin, add=True)
+
+
+def unallocate(company: str, user: str, dataset_id: str, project: str, is_admin: bool) -> dict:
+    return _change_allocation(company, user, dataset_id, project, is_admin, add=False)
+
+
+def delete(company: str, user: str, dataset_id: str, is_admin: bool) -> None:
+    """Removes the record only. The data stays in its repository, so nothing is deleted there."""
+    dataset = _owned(company, dataset_id)
+    if not can_manage(view(dataset), user, is_admin):
+        raise errors.bad_request.ValidationError("only the owner of this dataset may remove it")
+    dataset.delete()
