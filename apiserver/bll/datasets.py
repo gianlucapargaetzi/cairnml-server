@@ -188,6 +188,17 @@ def require_action(company: str, user: str, is_admin: bool, dataset: Dataset, ac
     access.require(company, user, is_admin, resource_type, resource_id, _project_roots(company, user), action)
 
 
+def held_on_repository(company: str, user: str, is_admin: bool, repo: str) -> tuple:
+    """(level, resource type) the user holds on the kept dataset or registry of this repository, through its shares
+    (bll/access). The level is None when the environment keeps nothing for the repository or the user holds none."""
+    dataset = kept_for_repository(company, repo)
+    if dataset is None:
+        return None, "dataset"
+    resource_type, resource_id = _gate_of(company, dataset)
+    level = access.level_of(company, user, is_admin, resource_type, resource_id, _project_roots(company, user))
+    return level, resource_type
+
+
 def _require_sharing(company: str, user: str, is_admin: bool, dataset: Dataset) -> None:
     """The sharing actions refuse a user without the manage_sharing level as a bad request, as they always have."""
     try:

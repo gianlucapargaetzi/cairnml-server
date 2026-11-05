@@ -3,11 +3,15 @@ details of one dataset (from its repository or from the registry), and adding, s
 bll/datasets for who may do what."""
 
 from apiserver.apierrors import errors
+from apiserver.bll import access
 from apiserver.bll import dataset_details as bll
 from apiserver.bll import datasets as access_bll
 from apiserver.database.model.auth import Role
+from apiserver.database.model.device import DeviceKind
 from apiserver.idp import github_check
-from apiserver.idp.github import GitHubError
+from apiserver.idp.audit import client_address, record as audit
+from apiserver.idp.github import GitHubError, RepoNotAccessible
+from apiserver.idp.github_check import build_from_config, public_repo, repo_of
 from apiserver.service_repo import APICall, endpoint
 
 
@@ -92,3 +96,61 @@ def get_details(call: APICall, company: str, _request):
         )
     except GitHubError as exc:
         raise errors.bad_request.ValidationError(f"GitHub request failed ({exc})") from None
+
+
+# A person's token for a dataset repository. read downloads and needs the use action; read_write changes the dataset and
+# needs change_content (bll/access). A read token reads the repository; a write token can push to it, and comes from the
+# GitHub App's installation for that one repository.
+GIT_TOKEN_ACTIONS = {"read": "use", "read_write": "change_content"}
+READ_PERMISSIONS = {"contents": "read"}
+WRITE_PERMISSIONS = {"contents": "write"}
+
+
+def _refuse_token(call: APICall, company: str, user: str, repo: str, level: str, reason: str):
+    audit(user, "git_token.refused", ip=client_address(call), company=company, repo=repo, level=level, reason=reason)
+    raise errors.bad_request.ValidationError(reason)
+
+
+@endpoint("datasets.git_token")
+def git_token(call: APICall, company: str, _request):
+    """A token for one dataset repository, for a person's machine, at the level the person holds on the dataset: read
+    gives a read-only token, read_write a token that may write to that repository and no other. A person with no share
+    is refused as not found. A job or an agent is refused: the job scope and the agent allowlist refuse them for every
+    endpoint outside their own, and this endpoint refuses them by token kind as well."""
+    kind = getattr(call.auth, "token_kind", None)
+    if kind in ("job", DeviceKind.agent):
+        raise errors.forbidden.NoWritePermission(f"a {kind} cannot get a dataset token: a person's machine does")
+    data = call.data or {}
+    action = GIT_TOKEN_ACTIONS.get(data.get("level"))
+    if action is None:
+        raise errors.bad_request.ValidationError("level must be read or read_write")
+    repo = repo_of(data.get("repository") or "")
+    user = call.identity.user
+    level, resource_type = access_bll.held_on_repository(company, user, _is_admin(call), repo) if repo else (None, "dataset")
+    if level is None:
+        raise errors.bad_request.ValidationError("no such dataset")
+    if not access.allows(level, action, resource_type):
+        raise errors.forbidden.NoWritePermission(f"a {level} level does not allow {action} on this {resource_type}")
+
+    write = action == "change_content"
+    if not write:
+        try:
+            public = public_repo(repo)
+        except GitHubError:
+            raise errors.bad_request.ValidationError("GitHub could not be reached") from None
+        if public:
+            # cloned without a token, as a public repository always is
+            audit(user, "git_token.public", ip=client_address(call), company=company, repo=repo, level=level)
+            return {"token": None, "expires_at": None, "username": None}
+    app = build_from_config()
+    if app is None:
+        _refuse_token(call, company, user, repo, level, "GitHub is not configured")
+    try:
+        token = app.installation_token(repo, WRITE_PERMISSIONS if write else READ_PERMISSIONS)
+    except RepoNotAccessible:
+        reason = f"the GitHub App is not installed on {repo}" + (" with write access to its contents" if write else "")
+        _refuse_token(call, company, user, repo, level, reason)
+    except GitHubError as exc:
+        _refuse_token(call, company, user, repo, level, f"GitHub did not issue a token for {repo} ({exc})")
+    audit(user, "git_token.issued", ip=client_address(call), company=company, repo=repo, level=level)
+    return {"token": token.token, "expires_at": token.expires_at.isoformat(), "username": "x-access-token"}
