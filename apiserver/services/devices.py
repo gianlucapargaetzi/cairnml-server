@@ -151,8 +151,10 @@ def exchange(call: APICall, _company, request: ExchangeRequest):
         audit(device_id, "token.refused", ip=client_address(call), company=device.company, device=device_id, reason="assertion reused")
         raise errors.unauthorized.InvalidToken("assertion already used")
 
+    # An agent acts with the user role whatever its owner's role: it never holds admin rights.
+    role = Role.user if device.kind == DeviceKind.agent else owner.role
     token = issue_access_token(owner.id, owner.company, device.id, kind=device.kind,
-                               role=owner.role, user_name=owner.name)
+                               role=role, user_name=owner.name)
     device.last_used = datetime.utcnow()
     device.save()
     audit(owner.id, "token.issued", ip=client_address(call), company=owner.company, device=device.id, kind=device.kind)
