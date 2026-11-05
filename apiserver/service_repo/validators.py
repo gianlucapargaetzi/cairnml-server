@@ -91,6 +91,46 @@ def _agent_refused(endpoint) -> bool:
     return endpoint.name not in AGENT_ALLOWED_ENDPOINTS or endpoint.name.startswith("users.")
 
 
+# Sensitive endpoints that do not authorise their callers (authorize: false) still refuse an agent token. Such an
+# endpoint ignores the token, so the token is read only to learn whether it belongs to an agent.
+AGENT_SENSITIVE_ENDPOINTS = frozenset({
+    "devices.enroll",
+    "devices.revoke",
+    "devices.get_all",
+    "audit.get_all",
+    "git_credentials.set",
+    "git_credentials.delete",
+    "git_credentials.get_all",
+    "datasets.delete",
+    "datasets.set_visibility",
+    "datasets.allocate",
+    "datasets.unallocate",
+    "datasets.add",
+    "dataset_registry.add",
+    "dataset_registry.remove",
+})
+AGENT_SENSITIVE_PREFIXES = ("storage.", "user_access.", "users.")
+
+
+def _agent_sensitive(endpoint) -> bool:
+    return endpoint.name in AGENT_SENSITIVE_ENDPOINTS or endpoint.name.startswith(AGENT_SENSITIVE_PREFIXES)
+
+
+def _refuse_sensitive_agent_call(endpoint, call: "APICall"):
+    """Refuse an agent's bearer token on a sensitive endpoint that does not authorise. Anonymous calls and tokens
+    that cannot be parsed are left as they were: the endpoint then behaves as before."""
+    if not call.authorization or not _agent_sensitive(endpoint):
+        return
+    try:
+        auth_type, _, auth_data = call.authorization.partition(" ")
+        service, _, action = endpoint.name.partition(".")
+        payload = get_auth_func(auth_type)(auth_data, service, action, call)
+    except Exception:
+        return
+    if getattr(payload, "token_kind", None) == "agent":
+        raise errors.forbidden.NoWritePermission(f"agents cannot call {endpoint.name}")
+
+
 def validate_role(endpoint, call):
     try:
         if endpoint.authorize and not endpoint.allows(call.identity.role):
@@ -110,6 +150,7 @@ def validate_auth(endpoint: Endpoint, call: "APICall"):
     For the endpoints with authorize==None the validation will be tried, but it does not have to succeed
     """
     if endpoint.authorize is not None and not endpoint.authorize:
+        _refuse_sensitive_agent_call(endpoint, call)
         return
 
     if not call.authorization:
