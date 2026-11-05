@@ -188,15 +188,30 @@ def require_action(company: str, user: str, is_admin: bool, dataset: Dataset, ac
     access.require(company, user, is_admin, resource_type, resource_id, _project_roots(company, user), action)
 
 
+def _app_row_level(company: str, user: str, is_admin: bool, repo: str) -> Optional[str]:
+    """The level the user holds on a repository the company's App finds and no record keeps: the rows list_visible shows
+    for it. Such a row is public to every user, so a user holds read; the owner of the App credential, and admins, hold
+    a collaborator level. None when the App does not list the repository, or the user is deactivated."""
+    app = UserAccess.objects(company=company, scope="company", kind="app").order_by("created").first()
+    if app is None or not user_access.is_active(user):
+        return None
+    listed = {str(entry["repository"]).lower() for entry in dataset_cache.cached_list()["datasets"]}
+    if repo.lower() not in listed:
+        return None
+    return "collaborator" if is_admin or user == app.user else "read"
+
+
 def held_on_repository(company: str, user: str, is_admin: bool, repo: str) -> tuple:
-    """(level, resource type) the user holds on the kept dataset or registry of this repository, through its shares
-    (bll/access). The level is None when the environment keeps nothing for the repository or the user holds none."""
+    """(level, resource type) the user holds on the dataset of this repository. The kept record decides when the user
+    holds a level on it through its shares (bll/access). Otherwise the repository is the App's own, as list_visible
+    shows it: the level comes from _app_row_level. The level is None when neither gives the user one."""
     dataset = kept_for_repository(company, repo)
-    if dataset is None:
-        return None, "dataset"
-    resource_type, resource_id = _gate_of(company, dataset)
-    level = access.level_of(company, user, is_admin, resource_type, resource_id, _project_roots(company, user))
-    return level, resource_type
+    if dataset is not None:
+        resource_type, resource_id = _gate_of(company, dataset)
+        level = access.level_of(company, user, is_admin, resource_type, resource_id, _project_roots(company, user))
+        if level is not None:
+            return level, resource_type
+    return _app_row_level(company, user, is_admin, repo), "dataset"
 
 
 def _require_sharing(company: str, user: str, is_admin: bool, dataset: Dataset) -> None:
