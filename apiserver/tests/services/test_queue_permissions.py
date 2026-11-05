@@ -509,9 +509,11 @@ def test_an_agent_may_serve_only_the_queues_its_user_owns_or_is_granted(company)
         QueueAccessBLL.assert_can_serve(user, company, [owned.id, other.id])
 
 
-def test_an_admin_may_have_an_agent_serve_any_queue(company):
+def test_an_admin_agent_gets_no_queue_by_the_admin_role(company):
+    """An agent acts with the user role, so the admin role of its owner gives it no queue it holds nothing on."""
     queue = make_queue(company, created_by="owner")
-    QueueAccessBLL.assert_can_serve(identity(company, "a1", Role.admin), company, [queue.id])
+    with pytest.raises(errors.bad_request.InvalidQueueId):
+        QueueAccessBLL.assert_can_serve(identity(company, "a1", Role.user), company, [queue.id])
 
 
 @pytest.mark.needs_redis

@@ -263,9 +263,11 @@ def test_who_may_have_an_agent_serve_each_queue(world, user, queue, allowed):
         assert result == refusal(errors.bad_request.InvalidQueueId(ids=[queue_id]))
 
 
-def test_an_admin_serves_every_queue(world):
-    assert outcome(lambda: QueueAccessBLL.assert_can_serve(identity(world.company, ADMIN, Role.admin), world.company,
-                                                           list(world.queues.values()))) is None
+def test_an_admin_agent_serves_only_what_its_owner_holds(world):
+    """The agent of a company admin has the user role: the admin role gives it no queue (only public ones here)."""
+    q, c = world.queues, world.company
+    result = outcome(lambda: QueueAccessBLL.assert_can_serve(identity(c, ADMIN, Role.user), c, list(q.values())))
+    assert result == refusal(errors.bad_request.InvalidQueueId(ids=sorted(q[k] for k in q if k not in ("public",))))
 
 
 def test_serving_reports_only_the_queues_the_user_may_not_serve(world):

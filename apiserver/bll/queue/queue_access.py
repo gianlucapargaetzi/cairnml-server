@@ -11,7 +11,8 @@ Who may see, use, manage and allocate a queue.
 - A grant lets the user use the queue and allocate it to the root projects they own. Only the owner of a root project
   changes its allocations, and the owner may allocate only the queues they may use without admin rights: public
   queues, queues they hold a grant on, and queues they own.
-- An agent may serve a queue only when it is public, its user owns it, holds a grant on it, or is an admin.
+- An agent serves a queue at the level its owner holds on it, and serving needs use: it is public, the owner owns it,
+  or the owner holds a grant on it. The agent's identity is never an admin, so the admin role gives it no queue.
 """
 
 from typing import Iterable, Set
@@ -131,15 +132,15 @@ class QueueAccessBLL:
     @staticmethod
     def assert_can_serve(identity: Identity, company_id: str, queue_ids: Iterable[str]) -> None:
         """
-        An agent may serve a queue only when it is public, the user owns it, holds a grant on it, or is an admin.
+        An agent serves a queue at the level its owner holds on it (bll/access.level_of), and serving needs use. The
+        agent's identity is its owner with the user role, so an admin's agent gets no queue by the admin role alone.
+        A deactivated owner holds no level, so the agent serves nothing. A public queue is served by any company user.
+        An allocation to a project does not count.
         :raise errors.bad_request.InvalidQueueId: for the queues the user may not serve
         """
         if identity is None:
             raise errors.forbidden.NoWritePermission("the caller is not known")
-        if QueueAccessBLL.is_admin(identity):
-            return
         queue_ids = set(queue_ids)
-        # an allocation to a project does not let an agent serve the queue: only ownership, a grant or public
         allowed = {
             queue_id
             for queue_id in queue_ids

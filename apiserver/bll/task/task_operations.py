@@ -204,11 +204,18 @@ def dequeue_task(
             "status",
             "project",
             "enqueue_status",
+            "user",
         ),
     )
     _assert_can_use_task_queues(
         identity, company_id, task_id, execution_queue=task.execution.queue if task.execution else None
     )
+    # a task another user queued needs change_content on each queue it is taken out of
+    queues_taken_from = {task.execution.queue} if task.execution and task.execution.queue else set()
+    if remove_from_all_queues:
+        queues_taken_from |= set(Queue.objects(company=company_id, entries__task=task_id).scalar("id"))
+    for queue_id in queues_taken_from:
+        QueueAccessBLL.assert_can_change_tasks(identity, company_id, queue_id, [task_id])
 
     res = TaskBLL.dequeue_and_change_status(
         task,
