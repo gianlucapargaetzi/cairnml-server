@@ -126,7 +126,10 @@ def git_token(call: APICall, company: str, _request):
         raise errors.bad_request.ValidationError("level must be read or read_write")
     repo = repo_of(data.get("repository") or "")
     user = call.identity.user
-    level, resource_type = access_bll.held_on_repository(company, user, _is_admin(call), repo) if repo else (None, "dataset")
+    try:
+        level, resource_type = access_bll.held_on_repository(company, user, _is_admin(call), repo) if repo else (None, "dataset")
+    except access_bll.NoGitHubRead as refused:
+        _refuse_token(call, company, user, repo, None, str(refused))
     if level is None:
         raise errors.bad_request.ValidationError("no such dataset")
     if not access.allows(level, action, resource_type):

@@ -90,6 +90,22 @@ def clear_public_cache() -> None:
     _public_answers.clear()
 
 
+def repository_readable_with(api_url: str, token: str, repo: str, http=None) -> bool:
+    """True when a user's own GitHub token reads the repository. GitHub answers 404 (or 403) to a token that cannot see
+    a repository, so those mean no. GitHubError when GitHub cannot be asked, or answers otherwise."""
+    headers = {**_ANONYMOUS, "Authorization": f"Bearer {token}"}
+    try:
+        response = (http or requests.Session()).request(
+            "GET", f"{api_url.rstrip('/')}/repos/{repo}", headers=headers, timeout=_TIMEOUT)
+    except requests.RequestException:
+        raise GitHubError("GitHub transport error") from None
+    if response.status_code in (401, 403, 404):
+        return False
+    if response.status_code != 200:
+        raise GitHubError(f"repository lookup failed: {response.status_code}")
+    return True
+
+
 class GitHubApp:
     def __init__(self, app_id: str, private_key_pem: str, api_url: str, http=None, clock=time.time) -> None:
         # The id is a number when it comes from the environment; PyJWT needs the issuer as a string.

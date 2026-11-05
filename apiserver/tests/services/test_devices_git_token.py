@@ -30,6 +30,9 @@ def job_token(monkeypatch):
     monkeypatch.setattr(devices, "audit", lambda *args, **kwargs: None)
     monkeypatch.setattr(devices, "build_from_config", lambda: FakeApp())
     monkeypatch.setattr(devices, "public_repo", lambda repo: False)
+    # these tests cover the layout check and the App; that the job's user reads the repository on GitHub (R70) is
+    # covered by bll/test_app_row_github_access
+    monkeypatch.setattr(devices.datasets_bll, "require_app_read_for_job", lambda company, user, repo: None)
     return SimpleNamespace(authorization="Bearer x", get_header=lambda header, default=None: default,
                            HEADER_REAL_IP="X-Real-IP", real_ip="127.0.0.1")
 

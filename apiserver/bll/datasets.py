@@ -17,6 +17,7 @@ from apiserver.bll import dataset_cache
 from apiserver.bll import user_access
 from apiserver.bll.dataset_registry import canonical_url, list_entries
 from apiserver.config_repo import config
+from apiserver.database.model.auth import User
 from apiserver.database.model.dataset import VISIBILITIES, Dataset
 from apiserver.database.model.project import Project
 from apiserver.database.model.share import Share
@@ -27,6 +28,12 @@ from apiserver.idp.github_check import repo_of
 
 NO_ACCESS = "no_access"
 OK = "ok"
+NO_GITHUB_READ = "no GitHub read access to {repo}: link a GitHub token in your settings"
+
+
+class NoGitHubRead(Exception):
+    """The user may not read an App-discovered repository on GitHub, so is given no token for it and no row for it (R70).
+    The message is the reason the user is shown."""
 
 
 # --- Rules on plain values
@@ -184,16 +191,35 @@ def require_action(company: str, user: str, is_admin: bool, dataset: Dataset, ac
     access.require(company, user, is_admin, resource_type, resource_id, _project_roots(company, user), action)
 
 
+def require_app_read(company: str, user: str, is_admin: bool, repo: str) -> None:
+    """Raises NoGitHubRead unless the user may read an App-discovered repository on GitHub (R70): an admin and the owner
+    of the App credential always may (R71); any other user needs a token of their own that GitHub lets read it."""
+    app = UserAccess.objects(company=company, scope="company", kind="app").order_by("created").first()
+    if app is None or is_admin or user == app.user:
+        return
+    if not user_access.github_read_on(company, user, repo):
+        raise NoGitHubRead(NO_GITHUB_READ.format(repo=repo))
+
+
+def require_app_read_for_job(company: str, user: Optional[str], repo: str) -> None:
+    """require_app_read for a job, which reads as the user who queued it. The job's user decides, not the agent's owner."""
+    queued_by = User.objects(id=user).only("role").first() if user else None
+    is_admin = queued_by is not None and queued_by.role in access.ADMIN_ROLES
+    require_app_read(company, user or "", is_admin, repo)
+
+
 def _app_row_level(company: str, user: str, is_admin: bool, repo: str) -> Optional[str]:
     """The level the user holds on a repository the company's App finds and no record keeps: the rows list_visible shows
-    for it. Such a row is public to every user, so a user holds read; the owner of the App credential, and admins, hold
-    a collaborator level. None when the App does not list the repository, or the user is deactivated."""
+    for it. The owner of the App credential, and admins, hold a collaborator level. Any other user holds read, and only
+    when GitHub lets the user's own token read the repository (R70); otherwise NoGitHubRead is raised. None when the App
+    does not list the repository, or the user is deactivated."""
     app = UserAccess.objects(company=company, scope="company", kind="app").order_by("created").first()
     if app is None or not user_access.is_active(user):
         return None
     listed = {str(entry["repository"]).lower() for entry in dataset_cache.cached_list()["datasets"]}
     if repo.lower() not in listed:
         return None
+    require_app_read(company, user, is_admin, repo)
     return "collaborator" if is_admin or user == app.user else "read"
 
 
@@ -201,7 +227,8 @@ def held_on_repository(company: str, user: str, is_admin: bool, repo: str) -> tu
     """(level, resource type) the user holds on the dataset of this repository. The kept record decides when the user
     holds a level on it through its shares (bll/access). Otherwise the repository is the App's own, as list_visible
     shows it: the level comes from _app_row_level, but only when no record keeps the repository. A repository with a record
-    is never the App's own row, so the level is None when its record gives the user none."""
+    is never the App's own row, so the level is None when its record gives the user none. Raises NoGitHubRead when the
+    repository is the App's own and the user may not read it on GitHub."""
     dataset = kept_for_repository(company, repo)
     if dataset is not None:
         resource_type, resource_id = _gate_of(company, dataset)
@@ -374,13 +401,19 @@ def _visible_rows(company: str, user: str, is_admin: bool) -> list:
         for entry in dataset_cache.cached_list()["datasets"]:
             if entry["repository"].lower() in known:
                 continue
-            rows.append(_app_row(entry["repository"], app))
             known.add(entry["repository"].lower())
+            # a private repository is not named to a user who cannot read it on GitHub (R70)
+            try:
+                require_app_read(company, user, is_admin, entry["repository"])
+            except NoGitHubRead:
+                continue
+            rows.append(_app_row(entry["repository"], app))
     return rows
 
 
 def _app_row(repo: str, app: UserAccess) -> dict:
-    """A repository the company's App finds: owned by the owner of the App credential, and public to everyone."""
+    """A repository the company's App finds, with no record: owned by the owner of the App credential. Shown to the users
+    who may read it on GitHub (see require_app_read)."""
     return {
         "id": f"app:{repo.lower()}", "kind": "repo", "ref": repo, "name": repo.split("/", 1)[1], "owner": app.user,
         "visibility": "Public", "projects": [], "credential": app.id, "state": OK, "state_message": "",

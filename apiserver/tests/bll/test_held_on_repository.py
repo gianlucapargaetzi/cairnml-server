@@ -10,6 +10,8 @@ import pytest
 
 from apiserver.apierrors import errors
 from apiserver.bll import datasets as bll
+from apiserver.bll import user_access
+from apiserver.idp import git_credentials as store
 from apiserver.database.model.dataset import Dataset
 from apiserver.database.model.user_access import UserAccess
 from apiserver.services import datasets as service
@@ -37,6 +39,16 @@ def app_listing(company, monkeypatch):
     monkeypatch.setattr(bll.dataset_cache, "cached_list", lambda: {"datasets": [{"repository": "acme/found"}]})
     yield
     UserAccess.objects(company=company, kind="app").delete()
+
+
+@pytest.fixture
+def u3_reads_on_github(company, monkeypatch):
+    """u3 has a GitHub token of their own that reads acme/found (R70); nobody else's token is asked for."""
+    monkeypatch.setattr(store, "key_material", lambda: "test-key-material")
+    UserAccess(id=f"tok-{company}", company=company, user="u3", kind="token", label="mine", scope="user",
+               host="github.com", path="", secret=store.encrypt("ghp_u3", store.key_material()),
+               created=datetime.utcnow()).save()
+    monkeypatch.setattr(user_access, "repository_readable_with", lambda api, token, repo, http=None: token == "ghp_u3")
 
 
 class FakeApp:
@@ -73,8 +85,8 @@ def ask(company, call, repository, level):
     return service.git_token(call, company, None)
 
 
-def test_an_app_discovered_repository_with_no_record_is_read_by_everyone_and_collaborated_by_the_app_owner(
-        company, app_listing):
+def test_an_app_discovered_repository_with_no_record_is_read_by_a_user_who_reads_it_on_github_and_collaborated_by_the_app_owner(
+        company, app_listing, u3_reads_on_github):
     assert bll.held_on_repository(company, "u3", False, "acme/found") == ("read", "dataset")
     assert bll.held_on_repository(company, APP_OWNER, False, "acme/found") == ("collaborator", "dataset")
     assert bll.held_on_repository(company, "u3", True, "acme/found") == ("collaborator", "dataset")
@@ -84,14 +96,16 @@ def test_a_repository_the_app_does_not_list_and_no_record_gives_no_level(company
     assert bll.held_on_repository(company, "u3", False, "acme/elsewhere") == (None, "dataset")
 
 
-def test_a_person_gets_the_read_token_for_an_app_discovered_repository_with_no_record(company, app_listing, github):
+def test_a_person_gets_the_read_token_for_an_app_discovered_repository_with_no_record(company, app_listing, github,
+                                                                                    u3_reads_on_github):
     answer = ask(company, person("u3"), "https://github.com/acme/found", "read")
 
     assert answer["token"] == "tok-read"
     assert github.requests == [("acme/found", {"contents": "read"})]
 
 
-def test_a_person_gets_no_write_token_for_an_app_discovered_repository_with_no_record(company, app_listing, github):
+def test_a_person_gets_no_write_token_for_an_app_discovered_repository_with_no_record(company, app_listing, github,
+                                                                                     u3_reads_on_github):
     with pytest.raises(errors.forbidden.NoWritePermission):
         ask(company, person("u3"), "https://github.com/acme/found", "read_write")
     assert github.requests == []
