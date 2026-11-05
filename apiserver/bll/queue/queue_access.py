@@ -22,6 +22,7 @@ from apiserver.apierrors import errors
 from apiserver.bll.access import (
     allows,
     level_of,
+    require,
     queue_ids_allocated,
     queue_ids_held,
     remove_grant,
@@ -31,6 +32,7 @@ from apiserver.bll.user_access import my_projects
 from apiserver.database.model.auth import Role
 from apiserver.database.model.project import Project
 from apiserver.database.model.queue import Queue
+from apiserver.database.model.task.task import Task
 from apiserver.service_repo.auth import Identity
 
 _ADMIN_ROLES = (Role.admin, Role.root)
@@ -109,6 +111,22 @@ class QueueAccessBLL:
             raise errors.forbidden.NoWritePermission(
                 "only the owner or a company admin can manage the queue"
             )
+
+    @staticmethod
+    def require_action(identity: Identity, company_id: str, queue_id: str, action: str) -> None:
+        """ The level check of bll/access for one action on the queue (ACTION_NEEDS) """
+        require(company_id, identity.user, QueueAccessBLL.is_admin(identity), "queue", queue_id,
+                QueueAccessBLL._roots(identity), action)
+
+    @staticmethod
+    def assert_can_change_tasks(identity: Identity, company_id: str, queue_id: str, task_ids: Iterable[str]) -> None:
+        """
+        Moving or removing a task that someone else queued needs read_write on the queue. The user's own tasks need
+        only the use level, which the caller has already checked.
+        """
+        others = Task.objects(company=company_id, id__in=list(task_ids), user__ne=identity.user).scalar("id")
+        if list(others):
+            QueueAccessBLL.require_action(identity, company_id, queue_id, "change_content")
 
     @staticmethod
     def assert_can_serve(identity: Identity, company_id: str, queue_ids: Iterable[str]) -> None:

@@ -280,12 +280,13 @@ def grant(company: str, owner: str, access_id: str, project_id: str) -> dict:
     """The owner shares one of their accesses with a project. Only a member of the project may do so."""
     _access().refuse_inactive(owner)
     entry = _owned(company, owner, access_id)
+    access = _access()
+    access.require(company, owner, False, "credential", entry.id, my_root_ids(company, owner), "manage_sharing")
     root = root_project(company, project_id)
     if root is None:
         raise errors.bad_request.ValidationError("no such project")
     if not is_member(company, root, owner):
         raise errors.bad_request.ValidationError("you are not a member of this project")
-    access = _access()
     if access.find_share(company, "credential", entry.id, "projects", root) is None:
         # the owner, a member of the project, grants the access to it
         access.record_grant(company, owner, "credential", entry.id, "projects", root, actor=owner)
@@ -333,6 +334,11 @@ def project_grants(company: str, actor: str, project_id: str) -> list:
             "owner_is_member": is_member(company, root, entry.user),
         })
     return result
+
+
+def my_root_ids(company: str, user: str) -> set:
+    """The ids of the root projects the user owns or is a member of, as bll/access reads them."""
+    return {project["id"] for project in my_projects(company, user)}
 
 
 def my_projects(company: str, user: str) -> list:

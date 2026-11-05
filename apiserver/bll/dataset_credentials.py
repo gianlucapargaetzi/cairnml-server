@@ -5,8 +5,8 @@ presigned URL. The server assumes a session policy that covers only the prefix o
 actions of the level the caller may use: ``read`` lists and reads the dataset's objects, ``read_write`` also writes them.
 A key that leaks reaches nothing else, and stops working when it expires.
 
-The check on the caller is the one that goes with the dataset's visibility until the share levels exist: ``read`` needs
-the dataset to be visible to the caller, and ``read_write`` needs to be the dataset's owner or an admin.
+The caller's level on the dataset decides: ``read`` needs the use level (read), and ``read_write`` the change_content
+level (read/write), as bll/access.ACTION_NEEDS sets it.
 """
 
 import json
@@ -99,8 +99,8 @@ def _ttl() -> int:
 def _authorize(company: str, user: str, repository: str, level: str, is_admin: bool) -> str:
     """The bucket prefix the keys reach, when the caller may use the level.
 
-    A kept dataset is checked as its visibility and owner allow (R13): ``read`` needs it visible to the caller,
-    ``read_write`` needs the caller to own it or to be an admin. A caller who sees a dataset and one who does not get
+    A kept dataset is checked by the share levels (bll/access): ``read`` needs the use level, ``read_write`` the
+    change_content level. A caller who sees a dataset and one who does not get
     the same answer for a missing one, so a hidden dataset does not reveal itself.
 
     A repository with no kept record (R14) is new: ``read_write`` gets keys under the caller's own company prefix,
@@ -122,8 +122,12 @@ def _authorize(company: str, user: str, repository: str, level: str, is_admin: b
     if level == "read":
         if not datasets_bll.can_see(company, user, is_admin, dataset.id):
             raise errors.bad_request.ValidationError("no such dataset")
-    elif not datasets_bll.can_manage({"owner": dataset.owner}, user, is_admin):
-        raise errors.forbidden.NoWritePermission("only the owner or an admin may write to a dataset")
+    else:
+        # read_write needs the change_content level on the dataset, as bll/access sets it
+        try:
+            datasets_bll.require_action(company, user, is_admin, dataset, "change_content")
+        except errors.bad_request.ValidationError:
+            raise errors.forbidden.NoWritePermission("only an owner, collaborator or admin may write to a dataset") from None
     return prefix_of(company, dataset.ref)
 
 

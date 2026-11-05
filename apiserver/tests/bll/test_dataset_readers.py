@@ -144,10 +144,10 @@ def test_a_user_who_is_not_a_member_of_the_project_may_not_allocate(company, set
         datasets.allocate(company, "owner1", dataset["id"], "root3", False)
 
 
-def test_a_member_may_allocate_a_public_dataset_they_see_to_their_project(company, setup, github):
+def test_a_member_with_read_on_a_public_dataset_may_not_allocate_it_to_their_project(company, setup, github):
     dataset = datasets.add_repo(company, "owner1", REPO_URL, visibility="Public")
-    result = datasets.allocate(company, "u2", dataset["id"], "root1", False)
-    assert result["projects"] == ["root1"]
+    with pytest.raises(errors.bad_request.ValidationError, match="only the owner or a collaborator"):
+        datasets.allocate(company, "u2", dataset["id"], "root1", False)
 
 
 def test_a_member_may_not_change_the_visibility_of_a_dataset_they_do_not_own(company, setup, github):
@@ -162,6 +162,9 @@ def test_an_allocation_of_a_credential_the_project_cannot_use_is_refused_for_a_m
                path="", secret="x", scope="user", created=datetime.utcnow()).save()
     dataset = datasets.add_repo(company, "owner1", REPO_URL, visibility="Public")
     Dataset.objects(company=company, id=dataset["id"]).update(credential="cred-owner1")
+    # u2 is a collaborator of the dataset, through a project of their own, so the credential rule is what refuses
+    Share(id=uuid4().hex, company=company, resource_type="dataset", resource_id=dataset["id"], scope="projects",
+          project="root3", level="collaborator", granted_by="u2", created=datetime.utcnow()).save()
     with pytest.raises(errors.bad_request.ValidationError, match="its owner must share it first"):
         datasets.allocate(company, "u2", dataset["id"], "root1", False)
 

@@ -283,9 +283,9 @@ def test_another_member_cannot_share_a_dataset_whose_credential_is_not_shared_wi
 
 def test_a_public_dataset_shared_with_a_project_is_recorded_on_that_project(projects):
     dataset_id = add_private_dataset("u1", "Public")
-    result = bll.allocate(COMPANY, "u2", dataset_id, "p-team", False)
+    result = bll.allocate(COMPANY, "u1", dataset_id, "p-team", False)
     assert result["projects"] == ["p-team"]
-    bll.unallocate(COMPANY, "u2", dataset_id, "p-team", False)
+    bll.unallocate(COMPANY, "u1", dataset_id, "p-team", False)
     assert bll.view(Dataset.objects(id=dataset_id).first())["projects"] == []
 
 

@@ -169,6 +169,34 @@ def can_see(company: str, user: str, is_admin: bool, dataset_id: str) -> bool:
     return record is not None and _record_visible(company, user, is_admin, record, _project_roots(company, user))
 
 
+def _gate_of(company: str, dataset: Dataset) -> tuple:
+    """The resource type and id whose share levels decide an action on the dataset. A registry entry has no share of its
+    own: its registry decides, and without one, its owner and admins."""
+    if dataset.kind == "registry":
+        return "registry", dataset.id
+    if dataset.kind == "registry_entry":
+        registry = Dataset.objects(company=company, kind="registry",
+                                   ref__iexact=dataset.ref.rsplit("/", 1)[0]).first()
+        if registry is not None:
+            return "registry", registry.id
+    return "dataset", dataset.id
+
+
+def require_action(company: str, user: str, is_admin: bool, dataset: Dataset, action: str) -> None:
+    """Raises unless the user's level on the dataset allows the action (bll/access ACTION_NEEDS)."""
+    resource_type, resource_id = _gate_of(company, dataset)
+    access.require(company, user, is_admin, resource_type, resource_id, _project_roots(company, user), action)
+
+
+def _require_sharing(company: str, user: str, is_admin: bool, dataset: Dataset) -> None:
+    """The sharing actions refuse a user without the manage_sharing level as a bad request, as they always have."""
+    try:
+        require_action(company, user, is_admin, dataset, "manage_sharing")
+    except errors.forbidden.NoWritePermission:
+        raise errors.bad_request.ValidationError(
+            "only the owner or a collaborator of this dataset may change its sharing") from None
+
+
 def _root_owner(company: str, root: str) -> str:
     """The owner of a root project: the granter of the shares that its allocations give (R20)."""
     return Project.objects(company=company, id=root).only("user").first().user
@@ -337,8 +365,7 @@ def set_visibility(company: str, user: str, dataset_id: str, visibility: str, pr
     """Changes the visibility. Only the owner, or an admin, may. Projects are kept only for ``projects``."""
     access.refuse_inactive(user)
     dataset = _owned(company, dataset_id)
-    if not can_manage(view(dataset), user, is_admin):
-        raise errors.bad_request.ValidationError("only the owner of this dataset may change it")
+    _require_sharing(company, user, is_admin, dataset)
     if visibility not in VISIBILITIES:
         raise errors.bad_request.ValidationError("the visibility is user, projects or Public")
     roots = []
@@ -365,7 +392,8 @@ def set_visibility(company: str, user: str, dataset_id: str, visibility: str, pr
 
 def _change_allocation(company: str, user: str, dataset_id: str, project: str, is_admin: bool, add: bool) -> dict:
     """Allocates a dataset to a project, or takes it back. The user must be a member of the project and must see the
-    dataset. A dataset kept for its owner only is shared with the project by its owner (or an admin)."""
+    dataset. Sharing needs the manage_sharing level on the dataset. Taking it back is also allowed to the owner of the
+    project it is taken from (the spec's revoking rule)."""
     access.refuse_inactive(user)
     dataset = _owned(company, dataset_id)
     root = user_access.root_project(company, project)
@@ -373,12 +401,12 @@ def _change_allocation(company: str, user: str, dataset_id: str, project: str, i
         raise errors.bad_request.ValidationError("no such project")
     if not user_access.is_member(company, root, user):
         raise errors.bad_request.ValidationError("you are not a member of this project")
-    current = view(dataset)
     if not _record_visible(company, user, is_admin, dataset, _project_roots(company, user)):
         raise errors.bad_request.ValidationError("no such dataset of yours")
+    project_owner = _root_owner(company, root) == user
+    if add or not project_owner:
+        _require_sharing(company, user, is_admin, dataset)
     if add and dataset.visibility == "user":
-        if not can_manage(current, user, is_admin):
-            raise errors.bad_request.ValidationError("only the owner of this dataset may share it with a project")
         dataset.visibility = "projects"
     if add and dataset.credential:
         # the project uses the dataset's credential, so it must be shared with the project: the owner of the credential
@@ -415,8 +443,7 @@ def delete(company: str, user: str, dataset_id: str, is_admin: bool) -> None:
     """Removes the record only. The data stays in its repository, so nothing is deleted there."""
     access.refuse_inactive(user)
     dataset = _owned(company, dataset_id)
-    if not can_manage(view(dataset), user, is_admin):
-        raise errors.bad_request.ValidationError("only the owner of this dataset may remove it")
+    _require_sharing(company, user, is_admin, dataset)
     resource_type = _share_type(dataset)
     dataset.delete()
     if resource_type is not None:

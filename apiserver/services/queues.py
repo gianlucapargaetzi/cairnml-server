@@ -226,9 +226,12 @@ def update_added_task_properties(queue: str, task: str, update_execution_queue: 
 @endpoint("queues.move_task_to_queue")
 def move_task_to_queue(call: APICall, company_id, request: MoveTaskToQueueRequest):
     QueueAccessBLL.assert_can_use(call.identity, company_id, request.target_queue)
+    # the task leaves the source queue: the caller must use it, and someone else's task needs read_write there
+    QueueAccessBLL.assert_can_use(call.identity, company_id, request.queue)
     # queues aren't project-scoped, so this and the other by-task-id endpoints below need their
     # own check, the same "write" bar tasks.enqueue/dequeue already use for the same operations
     _assert_tasks_access(company_id, call.identity, [request.task], "write")
+    QueueAccessBLL.assert_can_change_tasks(call.identity, company_id, request.queue, [request.task])
     removed = queue_bll.remove_task(
         company_id=company_id,
         user_id=call.identity.user,
@@ -303,6 +306,7 @@ def get_next_task(call: APICall, company_id, request: GetNextTaskRequest):
 def remove_task(call: APICall, company_id, request: RemoveTaskRequest):
     QueueAccessBLL.assert_can_use(call.identity, company_id, request.queue)
     _assert_tasks_access(company_id, call.identity, [request.task], "write")
+    QueueAccessBLL.assert_can_change_tasks(call.identity, company_id, request.queue, [request.task])
     call.result.data = {
         "removed": queue_bll.remove_task(
             company_id=company_id,
@@ -317,6 +321,9 @@ def remove_task(call: APICall, company_id, request: RemoveTaskRequest):
 @endpoint("queues.clear_queue")
 def clear_queue(call: APICall, company_id, request: QueueRequest):
     QueueAccessBLL.assert_can_use(call.identity, company_id, request.queue)
+    queue = Queue.objects(company=company_id, id=request.queue).only("entries").first()
+    QueueAccessBLL.assert_can_change_tasks(
+        call.identity, company_id, request.queue, [entry.task for entry in queue.entries] if queue else [])
     call.result.data = {
         "removed_tasks": queue_bll.clear_queue(
             company_id=company_id,
@@ -334,6 +341,7 @@ def clear_queue(call: APICall, company_id, request: QueueRequest):
 def move_task_forward(call: APICall, company_id, request: MoveTaskRequest):
     QueueAccessBLL.assert_can_use(call.identity, company_id, request.queue)
     _assert_tasks_access(company_id, call.identity, [request.task], "write")
+    QueueAccessBLL.assert_can_change_tasks(call.identity, company_id, request.queue, [request.task])
     call.result.data_model = MoveTaskResponse(
         position=queue_bll.reposition_task(
             company_id=company_id,
@@ -352,6 +360,7 @@ def move_task_forward(call: APICall, company_id, request: MoveTaskRequest):
 def move_task_backward(call: APICall, company_id, request: MoveTaskRequest):
     QueueAccessBLL.assert_can_use(call.identity, company_id, request.queue)
     _assert_tasks_access(company_id, call.identity, [request.task], "write")
+    QueueAccessBLL.assert_can_change_tasks(call.identity, company_id, request.queue, [request.task])
     call.result.data_model = MoveTaskResponse(
         position=queue_bll.reposition_task(
             company_id=company_id,
@@ -370,6 +379,7 @@ def move_task_backward(call: APICall, company_id, request: MoveTaskRequest):
 def move_task_to_front(call: APICall, company_id, request: TaskRequest):
     QueueAccessBLL.assert_can_use(call.identity, company_id, request.queue)
     _assert_tasks_access(company_id, call.identity, [request.task], "write")
+    QueueAccessBLL.assert_can_change_tasks(call.identity, company_id, request.queue, [request.task])
     call.result.data_model = MoveTaskResponse(
         position=queue_bll.reposition_task(
             company_id=company_id,
@@ -388,6 +398,7 @@ def move_task_to_front(call: APICall, company_id, request: TaskRequest):
 def move_task_to_back(call: APICall, company_id, request: TaskRequest):
     QueueAccessBLL.assert_can_use(call.identity, company_id, request.queue)
     _assert_tasks_access(company_id, call.identity, [request.task], "write")
+    QueueAccessBLL.assert_can_change_tasks(call.identity, company_id, request.queue, [request.task])
     call.result.data_model = MoveTaskResponse(
         position=queue_bll.reposition_task(
             company_id=company_id,
