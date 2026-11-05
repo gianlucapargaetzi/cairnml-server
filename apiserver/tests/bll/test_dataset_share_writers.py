@@ -168,3 +168,22 @@ def test_a_failed_share_write_fails_the_request_and_the_old_field_is_already_cha
     with pytest.raises(RuntimeError, match="the share write failed"):
         datasets.set_visibility(company, "owner1", dataset["id"], "projects", ["root1"], False)
     assert Dataset.objects(company=company, id=dataset["id"]).first().visibility == "projects"
+
+
+def test_transferring_a_project_regrants_its_dataset_shares_from_the_new_owner(company, setup, public_github):
+    from apiserver.apimodels.project_access import TransferOwnershipRequest
+    from apiserver.services import project_access as project_svc
+    from apiserver.service_repo.auth import Identity
+    from apiserver.database.model.auth import Role
+    from types import SimpleNamespace
+
+    dataset = datasets.add_repo(company, "owner1", REPO_URL, visibility="user")
+    datasets.allocate(company, "owner1", dataset["id"], "root1", False)
+    assert Share.objects(company=company, resource_id=dataset["id"], project="root1").first().granted_by == "owner1"
+
+    call = SimpleNamespace(identity=Identity(user="owner1", company=company, role=Role.user),
+                           result=SimpleNamespace(data=None, data_model=None))
+    project_svc.transfer_ownership(call, company, TransferOwnershipRequest(project="root1", new_owner="u2"))
+
+    assert_consistent(company, dataset["id"])
+    assert Share.objects(company=company, resource_id=dataset["id"], project="root1").first().granted_by == "u2"

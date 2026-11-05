@@ -317,6 +317,17 @@ def list_visible(company: str, user: str, is_admin: bool) -> list:
     return _visible_rows(company, user, is_admin)
 
 
+def regrant_project_shares(company: str, root: str, new_owner: str, actor: str) -> None:
+    """The owner of a project changed: the dataset shares that the project gives are now granted by its new owner (R20).
+    The old fields are not changed here: the project still lists the datasets."""
+    for dataset in Dataset.objects(company=company, projects=root):
+        resource_type = _share_type(dataset)
+        if resource_type is None:
+            continue
+        access.remove_grant(company, resource_type, dataset.id, "projects", root, actor=actor)
+        access.record_grant(company, new_owner, resource_type, dataset.id, "projects", root, actor=actor)
+
+
 def set_visibility(company: str, user: str, dataset_id: str, visibility: str, projects: list, is_admin: bool) -> dict:
     """Changes the visibility. Only the owner, or an admin, may. Projects are kept only for ``projects``."""
     dataset = _owned(company, dataset_id)

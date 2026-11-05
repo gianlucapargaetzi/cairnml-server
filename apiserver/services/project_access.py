@@ -15,6 +15,7 @@ from apiserver.apimodels.project_access import (
     UpdateMemberRoleRequest,
 )
 from apiserver.bll.access import record_grant, remove_grant
+from apiserver.bll.datasets import regrant_project_shares
 from apiserver.bll.project.access import ProjectAccessBLL
 from apiserver.bll.queue.queue_access import QueueAccessBLL
 from apiserver.database.model.auth import User
@@ -189,6 +190,7 @@ def transfer_ownership(call: APICall, company_id: str, request: TransferOwnershi
         remove_grant(company_id, "queue", queue_id, "projects", root_id, actor=call.identity.user)
         record_grant(company_id, request.new_owner, "queue", queue_id, "projects", root_id,
                      actor=call.identity.user)
+    regrant_project_shares(company_id, root_id, request.new_owner, actor=call.identity.user)
 
     return UpdateResponse(updated=1)
 
