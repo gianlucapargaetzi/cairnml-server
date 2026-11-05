@@ -225,8 +225,8 @@ def share(company: str, actor: str, resource_type: str, resource_id: str, scope:
 
 
 def _project_steward(company: str, project_id: str, actor: str) -> bool:
-    """The owner of the root project, or one of its collaborators: the ones who may revoke a dataset or a credential
-    from the project (decision 5, R34). A plain member is not one."""
+    """The owner of the root project, or one of its collaborators: the ones who may revoke a dataset, credential or queue
+    from the project (decision 5, R34, R62). A plain member is not one."""
     project = Project.objects(company=company, id=project_id).only("user", "members").first()
     if project is None or not actor:
         return False
@@ -235,9 +235,9 @@ def _project_steward(company: str, project_id: str, actor: str) -> bool:
 
 
 def _may_revoke_from_project(company: str, actor: str, record: Share) -> bool:
-    """A dataset or credential share of a project may be revoked by the project's owner and collaborators, besides
+    """A dataset, credential or queue share of a project may be revoked by the project's owner and collaborators, besides
     the holders of manage_sharing on the resource (see _require_sharing)."""
-    return (record.scope == "projects" and record.resource_type in ("dataset", "credential")
+    return (record.scope == "projects" and record.resource_type in ("dataset", "credential", "queue")
             and _project_steward(company, record.project, actor))
 
 
