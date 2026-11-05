@@ -7,6 +7,7 @@ from uuid import uuid4
 import pytest
 
 from apiserver.database.model.dataset import Dataset
+from apiserver.database.model.dataset_registry import DatasetRegistry
 from apiserver.database.model.project import Project, ProjectMember, ProjectRole
 from apiserver.database.model.queue import Queue, QueueUser
 from apiserver.database.model.share import Share
@@ -156,3 +157,30 @@ def test_a_project_without_an_owner_writes_no_share_and_warns(company, caplog):
     warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
     assert any("queue q-orphan" in w and "p-orphan" in w for w in warnings)
     assert any("dataset d-orphan" in w and "p-orphan" in w for w in warnings)
+
+
+def test_a_legacy_registry_is_public_in_every_company_once(company):
+    """A registry of the dataset_registry collection is public to every company's users: one share per company, and
+    the company with no document of its own (a queue only) gets one too. Nothing else is written from it."""
+    registry_id = f"owner/legacy-{uuid4().hex[:8]}"
+    other = f"c-{uuid4().hex[:8]}"
+    queue_id = f"q-{uuid4().hex[:8]}"
+    backend = _backend_db()
+    DatasetRegistry(id=registry_id, repository=registry_id, added=NOW, added_by="admin").save()
+    backend["company"].insert_one({"_id": company})
+    Queue(id=queue_id, company=other, name="queue", created=NOW, created_by="queue-owner").save()
+    try:
+        migration = load_migration()
+        migration.migrate_backend(backend)
+        migration.migrate_backend(backend)
+
+        expected = [("registry", registry_id, "public", "", "", "read", "admin")]
+        assert [s for s in shares_of(company) if s[1] == registry_id] == expected
+        assert [s for s in shares_of(other) if s[1] == registry_id] == expected
+        assert Share.objects(resource_id=registry_id, company__in=[company, other]).count() == 2
+    finally:
+        # the test database is kept between runs: nothing of this test may stay for the next one
+        Share.objects(resource_id=registry_id).delete()
+        DatasetRegistry.objects(id=registry_id).delete()
+        Queue.objects(id=queue_id).delete()
+        backend["company"].delete_one({"_id": company})

@@ -46,6 +46,14 @@ def _grants(db: Database, skipped: list):
                 continue
             yield _share(root["company"], "queue", queue_id, "projects", root["_id"], "", owner)
 
+    # a legacy registry (the dataset_registry collection) is public to every user of the company: one public share per
+    # company, and companies are those of the company collection and every company with a dataset or a queue
+    companies = set(db["company"].distinct("_id")) | set(db["dataset"].distinct("company")) | set(
+        db["queue"].distinct("company"))
+    for registry in db["dataset_registry"].find({}, {"added_by": 1}):
+        for company in sorted(companies):
+            yield _share(company, "registry", registry["_id"], "public", "", "", registry["added_by"])
+
     for access in db["user_access"].find({}, {"company": 1, "user": 1, "granted_projects": 1}):
         for root_id in access.get("granted_projects") or []:
             root = roots.get(root_id)
