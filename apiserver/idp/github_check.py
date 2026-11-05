@@ -8,6 +8,7 @@ from urllib.parse import urlsplit
 from apiserver.apierrors import errors
 from apiserver.idp.github import GitHubError, RepoNotAccessible, public_commit_exists, public_repository
 from apiserver.idp.repo_visibility import check_readable
+from apiserver.idp.access_refused import AccessRefused
 
 # The section of the server README that sets the App up: every refusal below points to it.
 GITHUB_APP_DOCS = "https://github.com/gianlucapargaetzi/cairnml-server/blob/main/README.md#github-app"
@@ -49,9 +50,9 @@ def check_submission(task, app) -> None:
         raise errors.bad_request.ValidationError("GitHub could not be reached to check the job") from None
     if not public:
         if app is None:
-            raise errors.bad_request.ValidationError(
+            raise AccessRefused(
                 f"GitHub is not set up: the job's repository {repo} cannot be checked without the GitHub App. "
-                f"Set GITHUB_APP_ID in deploy/.env, copy the App's key, and run deploy/scripts/bootstrap.sh. "
+                f"An admin adds the App in the web app (Settings > Access). "
                 f"Steps: {GITHUB_APP_DOCS}")
     if not commit:
         raise errors.bad_request.ValidationError(f"no commit is recorded for {repo}: commit and push first")
@@ -59,7 +60,7 @@ def check_submission(task, app) -> None:
         try:
             app.installation_token(repo)
         except RepoNotAccessible:
-            raise errors.bad_request.ValidationError(
+            raise AccessRefused(
                 f"the GitHub App is not installed on {repo}: install it on this repository, with 'Only select "
                 f"repositories' (steps: {GITHUB_APP_DOCS})") from None
         except GitHubError:
@@ -80,12 +81,14 @@ def _api_url() -> str:
 
 
 def build_from_config():
-    """The App client from configuration and the secrets mount; None when no App is configured."""
+    """The server's GitHub App client, from the company access an admin added in the UI (Settings > Access); None when
+    no admin has added one. Its ID and key are kept in the database, encrypted, not in the configuration."""
+    from apiserver.bll.user_access import server_app
     from apiserver.config_repo import config
     from apiserver.idp.github import GitHubApp
-    from apiserver.idp.secrets import read_secret
 
-    app_id = config.get("apiserver.idp.github_app_id", "")
-    if not app_id:
+    found = server_app()
+    if found is None:
         return None
-    return GitHubApp(app_id, read_secret("github_app_key"), config.get("apiserver.idp.github_api_url"))
+    entry, key = found
+    return GitHubApp(entry.app_id, key, entry.api_url or config.get("apiserver.idp.github_api_url"))

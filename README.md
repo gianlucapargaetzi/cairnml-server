@@ -92,7 +92,7 @@ Switch the user's **Enabled** off in the `cairnml` realm. Their new sign-ins are
 
 Remote execution checks the repository of every job before it is queued. For a repository on `github.com` the check needs a GitHub App: the job is refused until the App is set up and installed on that repository. A public repository on `github.com` needs no App: it is cloned without a token. For a repository on another Git host, a public repository is accepted, and a private one needs Git credentials stored for its host (see [Git credentials for other hosts](#git-credentials-for-other-hosts)).
 
-The server uses one App. Create it once, and install it on every repository that jobs will run from; step 1 says which accounts can hold an installation.
+The server uses one App. Create it once, and install it on every repository that jobs will run from; step 1 says which accounts can hold an installation. An admin adds it in the web app; nothing is set in `deploy/.env`.
 
 **1. Create the App.** On GitHub, open **Settings → Developer settings → GitHub Apps → New GitHub App** (for an organisation, the same page under the organisation's settings). Fill in:
 
@@ -108,23 +108,9 @@ Click **Create GitHub App**. Note the **App ID** shown at the top of the App's p
 
 **3. Install the App on your repositories.** On the App's page, open **Install App**, choose the account, and select **Only select repositories**. Pick every repository that jobs will run from. A repository that is not selected is refused when a job is queued.
 
-**4. Give the App to the server.** Put the App ID in `deploy/.env`:
+**4. Give the App to the server.** In the web app, sign in as an admin, open **Settings → Access**, and click **Set company GitHub App**. Enter the **App ID**, leave **API address** empty for github.com, and upload the `.pem` file from step 2. The server checks the key with GitHub before it saves anything, and then keeps the ID and the key encrypted in its database. Nothing about the App is read from `deploy/.env`, and the key is never shown again.
 
-```
-GITHUB_APP_ID=<the App ID>
-```
-
-Copy the key to the state directory, which is `~/.local/share/cairnml/secrets/` unless `CAIRNML_HOME` says otherwise:
-
-```bash
-mkdir -p ~/.local/share/cairnml/secrets
-cp ~/Downloads/<app-name>.*.private-key.pem ~/.local/share/cairnml/secrets/github-app.pem
-chmod 600 ~/.local/share/cairnml/secrets/github-app.pem
-```
-
-Then run `deploy/scripts/bootstrap.sh` again. It is safe to run again, and it passes the App ID and key to the server.
-
-To check the setup, commit and push a change to a repository the App is installed on, and enqueue a job from it: a job runs only from a commit that GitHub has. A refused job names the step that is missing. Without the App, the message starts with `GitHub is not set up` and names `GITHUB_APP_ID`. When the App is not installed on the repository, it is `the GitHub App is not installed on <owner>/<repo>`. Both messages link to this section. The other refusals are listed in [Troubleshooting](docs/operations/troubleshooting.md#a-job-from-github-is-refused).
+To check the setup, commit and push a change to a repository the App is installed on, and enqueue a job from it: a job runs only from a commit that GitHub has. The Settings → Access page shows the App's state, and **Check** runs the check again. A refused job names the step that is missing: when no App is added, the message says so and points to Settings → Access; when the App is not installed on the repository, it is `the GitHub App is not installed on <owner>/<repo>`. Both messages link to this section. The other refusals are listed in [Troubleshooting](docs/operations/troubleshooting.md).
 
 ### Git credentials for other hosts
 
@@ -199,7 +185,7 @@ A dataset is a Git repository of its own, with a `dataset.yaml` at its root. Not
 
 To make a dataset readable and listed, install the App on its repository, with **Only select repositories** (see [GitHub App](#github-app)). Whoever can install the App on a repository decides which datasets the server reads.
 
-**Public registries (optional).** A registry is a public repository with one file per public dataset or adapter. `CAIRNML_DATASET_REGISTRY` names one, and `CAIRNML_DATASET_REGISTRIES` lists more. A registry lists public datasets and adapters only: an entry with `source: repo` is ignored, because a dataset of our own lives in its own repository.
+**Public registries (optional).** A registry is a public repository with one file per public dataset or adapter. An admin adds one in the web app (New dataset → Web dataset, Registries), where it is stored with the others; nothing is set in `deploy/.env`. A registry lists public datasets and adapters only: an entry with `source: repo` is ignored, because a dataset of our own lives in its own repository.
 
 ## Settings reference
 
@@ -223,9 +209,7 @@ The settings a user may set are in `deploy/.env`, copied from [`deploy/.env.exam
 | `CAIRNML_COOKIE_SECURE` | `false` | Keep `false`: the first release serves plain HTTP only. See [Network and security](#network-and-security). |
 | `CAIRNML_PUBLIC_ORIGIN` | empty | A fixed address for the stack, with scheme and port, when clients should not use the address they typed. Empty for a LAN. See [Connect the clients](#connect-the-clients). |
 | `CAIRNML_TRUSTED_PROXIES` | `["127.0.0.0/8","::1/128","172.16.0.0/12"]` | The JSON list of proxies whose forwarded address headers the server believes. Headers from other addresses are ignored and logged. Add the range of a reverse proxy in front of the stack. See [Ports](#ports). |
-| `GITHUB_APP_ID` | empty | The GitHub App. See [GitHub App](#github-app). |
 | `GITHUB_API_URL` | `https://api.github.com` | The GitHub API the App uses. Change it only for GitHub Enterprise Server. |
-| `CAIRNML_DATASET_REGISTRY` | empty | A public dataset registry (public datasets and adapters only). See [Datasets](#datasets). |
 | `CAIRNML_WEB_DIR` | empty | A checkout of the web app to build instead of the pinned one. See `scripts/fetch-sources.sh`. |
 
 ## Compatibility

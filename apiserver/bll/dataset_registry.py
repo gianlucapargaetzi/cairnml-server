@@ -20,34 +20,13 @@ from apiserver.idp.github import GitHubApp, valid_repo
 
 ENTRY_DIR = "datasets"
 REPO_SOURCE = "repo"
-SEEDED_SETTING = "dataset_registry.seeded"
-CONFIG_SENDER = "config"
 log = logging.getLogger(__name__)
 
 
 def configured_registries() -> list:
     """The dataset registries of this server, in the order they were added. Each is a repository of owner/name, public
-    (read without the GitHub App) or one the App can read."""
-    _seed_from_config()
+    (read without the GitHub App) or one the App can read. Admins add and remove them in the UI; there is no setting."""
     return [registry.repository for registry in DatasetRegistry.objects().order_by("added")]
-
-
-def _seed_from_config() -> None:
-    """Imports the registries of the server config once, the first time the list is read. After that the database is
-    the only source: a registry removed in the UI stays removed, even if the config still names it."""
-    if Settings.get_by_key(SEEDED_SETTING, default=False):
-        return
-    from apiserver.config_repo import config
-
-    names = [config.get("apiserver.dataset_registry.repository", "") or ""]
-    names += list(config.get("apiserver.dataset_registry.repositories", []) or [])
-    for name in names:
-        # one value may hold several registries, separated by commas or spaces
-        for part in re.split(r"[,\s]+", name or ""):
-            repo = normalize_repository(part) if part else None
-            if repo:
-                add_registry(repo, added_by=CONFIG_SENDER)
-    Settings.set_or_add_value(SEEDED_SETTING, True)
 
 
 _GITHUB_HOSTS = ("github.com", "www.github.com")

@@ -111,7 +111,7 @@ The server checks a job from a GitHub repository when it is queued, and refuses 
 
 | Message | Cause and fix |
 |---|---|
-| `GitHub is not set up: ...` | The GitHub App is not configured. Set `GITHUB_APP_ID` in `deploy/.env`, copy the App's key, and run the setup again. The steps are in the README, section "GitHub App". |
+| `GitHub is not set up: ...` | No GitHub App is added for the server. An admin adds it in the web app, under Settings → Access → Set company GitHub App. The steps are in the README, section "GitHub App". |
 | `the GitHub App is not installed on <owner>/<repo>` | Install the App on that repository, with **Only select repositories**. |
 | `no commit is recorded for <owner>/<repo>: commit and push first` | Commit and push the code before you run the job. |
 | `commit not found on GitHub: push it first` | The commit is not on GitHub. Push it. |

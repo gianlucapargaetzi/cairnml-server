@@ -26,7 +26,7 @@ repository holds no state, so a `git clean` or a new clone does not touch it.
 | `data/cairnml/redis` | Short-lived state, such as the workers and queues |
 | `data/cairnml/elastic` | Events and metrics |
 | `data/cairnml/logs` | The server's logs |
-| `secrets` | The keys and passwords the stack uses, and the GitHub App key (`github-app.pem`) |
+| `secrets` | The keys and passwords the stack uses |
 
 The `.env` file in `deploy/` is not in that folder. It holds the admin's password and the storage root password, so it is
 part of every backup.
@@ -69,7 +69,6 @@ error, so check `docker compose ps` and the logs.
 
 **Earlier installs.** Three things changed in earlier versions, and the setup handles them on the first run:
 
-- The GitHub App key used to be kept in `deploy/secrets/github-app.pem`. The setup copies it to `CAIRNML_HOME/secrets/` once, and leaves the old copy in place. Delete the old copy once you have checked the new one.
 - The Keycloak admin password used to be kept in `CAIRNML_HOME/secrets/keycloak-admin-password`. The setup reads it once, as the previous password, and deletes it after a successful run.
 - Installs made before the Git credentials feature have no `git_credentials_key` secret, so adding a Git credential for a non-GitHub host fails with `the secret git_credentials_key is missing`. Run the setup once after the upgrade. It creates the key in `CAIRNML_HOME/secrets/cairnml/` with mode 600 and prints only its path. It removes no data, and the running server reads the key on each use, so no service is restarted for this. Keep the key with the backups: stored Git credentials cannot be read without it.
 - The CairnML admin's sign-in password is now separate from the Keycloak administrator's password (`CAIRNML_ADMIN_PASSWORD` in `deploy/.env`). The first run after the upgrade generates it, if it is missing, and sets the admin's CairnML password to it. Sign in to CairnML with that value; the Keycloak password does not change.

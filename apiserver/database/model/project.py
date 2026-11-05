@@ -1,4 +1,4 @@
-from mongoengine import StringField, DateTimeField, IntField, ListField, EmbeddedDocument, EmbeddedDocumentListField
+from mongoengine import StringField, DateTimeField, IntField, ListField, BooleanField, EmbeddedDocument, EmbeddedDocumentListField
 
 from apiserver.database import Database, strict
 from apiserver.database.fields import StrippedStringField, SafeSortedListField
@@ -77,5 +77,7 @@ class Project(AttributedDocument):
     path = ListField(StringField(required=True), exclude_by_default=True)
     visibility = StringField(choices=get_options(ProjectVisibility), default=ProjectVisibility.private)
     members = EmbeddedDocumentListField(ProjectMember, default=list)
+    agent_tokens_allowed = BooleanField(default=True)
+    """ Whether the agents that run this project's jobs may be given personal access tokens shared with it """
     queues = ListField(StringField(required=True), default=list)
     """ Ids of the queues allocated to this root project. Sub-projects use the queues of their root. """

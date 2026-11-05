@@ -17,6 +17,7 @@ from cryptography.fernet import Fernet, InvalidToken
 
 from apiserver.apierrors import errors
 from apiserver.database.model.git_credential import GitCredential
+from apiserver.database.model.user_access import UserAccess
 from apiserver.idp.audit import record as audit
 from apiserver.idp.secrets import SecretMissing, read_secret
 
@@ -98,7 +99,7 @@ def most_specific(entries: Iterable, path: str):
     return max(matches, key=lambda entry: len(entry.path), default=None)
 
 
-def _view(entry: GitCredential) -> dict:
+def _view(entry) -> dict:
     """What the API may say about a stored credential: never the secret."""
     return {
         "host": entry.host,
@@ -108,15 +109,29 @@ def _view(entry: GitCredential) -> dict:
     }
 
 
+# A company Git credential is a company-wide access of kind "token" (see database/model/user_access): one store for all
+# accesses. The owner field of such an entry is the company, so no user owns it.
+COMPANY_OWNER = "company"
+
+
+def _company_tokens(company: str, host: str = None):
+    query = dict(company=company, scope="company", kind="token")
+    if host is not None:
+        query["host"] = host
+    return UserAccess.objects(**query)
+
+
 def set_credential(company: str, host: str, path: str, username: str, secret: str, actor: str) -> dict:
     host, path = normalise_host(host), normalise_path(path)
     if not username or not secret:
         raise errors.bad_request.ValidationError("username and secret are required")
     encrypted = encrypt(secret, key_material())
     now = datetime.utcnow()
-    entry = GitCredential.objects(company=company, host=host, path=path).first()
+    entry = _company_tokens(company, host).filter(path=path).first()
     if entry is None:
-        entry = GitCredential(id=uuid.uuid4().hex, company=company, host=host, path=path, created=now)
+        entry = UserAccess(id=uuid.uuid4().hex, company=company, user=COMPANY_OWNER, scope="company", kind="token",
+                           host=host, path=path, created=now)
+    entry.label = f"{username}@{host}" + (f"/{path}" if path else "")
     entry.username = username
     entry.secret = encrypted
     entry.updated = now
@@ -127,23 +142,39 @@ def set_credential(company: str, host: str, path: str, username: str, secret: st
 
 def delete_credential(company: str, host: str, path: str, actor: str) -> int:
     host, path = normalise_host(host), normalise_path(path)
-    deleted = GitCredential.objects(company=company, host=host, path=path).delete()
+    deleted = _company_tokens(company, host).filter(path=path).delete()
     if deleted:
         audit(actor, "git_credential.deleted", company=company, host=host, path=path)
     return deleted
 
 
 def list_credentials(company: str) -> list:
-    return [_view(entry) for entry in GitCredential.objects(company=company).order_by("host", "path")]
+    return [_view(entry) for entry in _company_tokens(company).order_by("host", "path")]
 
 
-def find_credential(company: str, repository: str) -> Optional[GitCredential]:
-    """The stored credential that applies to a repository URL, or None."""
+def find_credential(company: str, repository: str):
+    """The company's stored credential that applies to a repository URL, or None."""
     host, path = host_and_path(repository)
-    return most_specific(GitCredential.objects(company=company, host=host), path)
+    return most_specific(_company_tokens(company, host), path)
 
 
-def secret_of(entry: GitCredential) -> str:
+def migrate_from_git_credentials() -> int:
+    """Moves the credentials of the old store (the GitCredential collection) into the access store, once. The secret is
+    already encrypted with the same key, so it moves as it is. Safe to run again: nothing is moved twice."""
+    moved = 0
+    now = datetime.utcnow()
+    for old in GitCredential.objects():
+        if not _company_tokens(old.company, old.host).filter(path=old.path).first():
+            UserAccess(id=old.id, company=old.company, user=COMPANY_OWNER, scope="company", kind="token",
+                       label=f"{old.username}@{old.host}" + (f"/{old.path}" if old.path else ""),
+                       host=old.host, path=old.path, username=old.username, secret=old.secret,
+                       created=old.created or now, updated=old.updated or now).save()
+            moved += 1
+        old.delete()
+    return moved
+
+
+def secret_of(entry) -> str:
     """The decrypted secret, for an answer to devices.git_token only."""
     try:
         return decrypt(entry.secret, key_material())

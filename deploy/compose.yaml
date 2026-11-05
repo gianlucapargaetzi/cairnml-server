@@ -207,12 +207,7 @@ services:
       CAIRNML__apiserver__idp__public_origin: ${CAIRNML_PUBLIC_ORIGIN:-}
       # The proxies whose X-Forwarded-* headers the server believes: loopback and the Docker network by default.
       CAIRNML__apiserver__idp__trusted_proxies: '${CAIRNML_TRUSTED_PROXIES:-["127.0.0.0/8","::1/128","172.16.0.0/12"]}'
-      CAIRNML__apiserver__idp__github_app_id: ${GITHUB_APP_ID:-}
       CAIRNML__apiserver__idp__github_api_url: ${GITHUB_API_URL:-https://api.github.com}
-      # The public dataset registries, e.g. CAIRNML_DATASET_REGISTRY=acme/public-datasets in deploy/.env. They list public
-      # datasets and adapters only; a dataset of our own lives in its own repository, found through the GitHub App.
-      CAIRNML__apiserver__dataset_registry__repository: ${CAIRNML_DATASET_REGISTRY:-}
-      CAIRNML__apiserver__dataset_registry__repositories: ${CAIRNML_DATASET_REGISTRIES:-[]}
       CAIRNML__services__async_urls_delete__enabled: "true"
       # Object storage: internal address for the server's own calls. The public address that presigned URLs name is the
       # address the client used (port 9000); CAIRNML_STORAGE_PUBLIC_URL overrides it.
@@ -222,7 +217,7 @@ services:
       CAIRNML__apiserver__storage__access_key: ${CAIRNML_S3_ACCESS_KEY:-cairnml-server}
     volumes:
       - ${CAIRNML_HOME:-${HOME}/.local/share/cairnml}/data/cairnml/logs:/var/log/cairnml
-      # Read-only: token_secret, session_secret, idp_directory_secret, github_app_key, git_credentials_key.
+      # Read-only: token_secret, session_secret, idp_directory_secret, git_credentials_key.
       - ${CAIRNML_HOME:-${HOME}/.local/share/cairnml}/secrets/cairnml:/run/secrets-dir:ro
     healthcheck:
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:${CAIRNML_API_PORT:-8008}/debug.ping', timeout=4)"]

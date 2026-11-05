@@ -47,6 +47,11 @@ class AppSequence:
         check_no_legacy_settings()
         self._configure()
         self._init_dbs()
+        # the company's Git credentials moved from their own collection into the access store: once, at start
+        from apiserver.idp.git_credentials import migrate_from_git_credentials
+        moved = migrate_from_git_credentials()
+        if moved:
+            log.info("moved %d company Git credential(s) into the access store", moved)
         github_status.start_check_in_background()
         self._load_services()
         self._start_worker()

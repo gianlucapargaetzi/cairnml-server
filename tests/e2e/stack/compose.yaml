@@ -155,7 +155,6 @@ services:
       # How long a job token lasts (one hour in production). A test may lower it, for its own run (set_job_token_ttl).
       CAIRNML__apiserver__idp__job_token_ttl_sec: ${E2E_JOB_TOKEN_TTL_SEC:-3600}
       CAIRNML__apiserver__auth__cookies__secure: "false"
-      CAIRNML__apiserver__idp__github_app_id: ""
       CAIRNML__apiserver__idp__github_api_url: https://api.github.com
       CAIRNML__services__async_urls_delete__enabled: "true"
       CAIRNML__apiserver__storage__endpoint: http://127.0.0.1:${E2E_STORAGE_PORT}
