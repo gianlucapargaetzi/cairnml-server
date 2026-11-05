@@ -9,14 +9,17 @@ The functions that take plain dicts or plain values do no GitHub or database wor
 
 import uuid
 from datetime import datetime
+from typing import Optional
 
 from apiserver.apierrors import errors
+from apiserver.bll import access
 from apiserver.bll import dataset_cache
 from apiserver.bll import dataset_registry as registry_bll
 from apiserver.bll import user_access
 from apiserver.bll.dataset_registry import canonical_url, list_entries
 from apiserver.config_repo import config
 from apiserver.database.model.dataset import VISIBILITIES, Dataset
+from apiserver.database.model.project import Project
 from apiserver.database.model.user_access import UserAccess
 from apiserver.idp import git_credentials as store
 from apiserver.idp.github import GitHubApp, GitHubError, PublicReader, TokenReader, public_repository
@@ -147,6 +150,29 @@ def _decide(company: str, user: str, project, url: str, repo: str, name: str) ->
     return entry, _reader(entry, secrets[credential]), state, message
 
 
+def _share_type(dataset: Dataset) -> Optional[str]:
+    """The resource type of the dataset's shares. A registry entry has none: it inherits from its registry."""
+    if dataset.kind == "registry_entry":
+        return None
+    return "registry" if dataset.kind == "registry" else "dataset"
+
+
+def _root_owner(company: str, root: str) -> str:
+    """The owner of a root project: the granter of the shares that its allocations give (R20)."""
+    return Project.objects(company=company, id=root).only("user").first().user
+
+
+def _set_public_share(company: str, actor: str, dataset: Dataset, public: bool) -> None:
+    """The public share follows the visibility Public, granted by the user who sets it."""
+    resource_type = _share_type(dataset)
+    if resource_type is None:
+        return
+    if public:
+        access.record_grant(company, actor, resource_type, dataset.id, "public")
+    else:
+        access.remove_grant(company, resource_type, dataset.id, "public")
+
+
 def _save(company: str, user: str, kind: str, repo: str, name: str, visibility: str, credential, state: str,
           message: str, now: datetime) -> Dataset:
     dataset = Dataset(
@@ -155,6 +181,7 @@ def _save(company: str, user: str, kind: str, repo: str, name: str, visibility: 
         last_checked=now,
     )
     dataset.save()
+    _set_public_share(company, user, dataset, visibility == "Public")
     return dataset
 
 
@@ -304,6 +331,13 @@ def set_visibility(company: str, user: str, dataset_id: str, visibility: str, pr
             if root is None:
                 raise errors.bad_request.ValidationError("no such project")
             roots.append(root)
+    _set_public_share(company, user, dataset, visibility == "Public")
+    resource_type = _share_type(dataset)
+    if resource_type is not None:
+        for root in set(dataset.projects or []) - set(roots):
+            access.remove_grant(company, resource_type, dataset.id, "projects", root)
+        for root in roots:
+            access.record_grant(company, _root_owner(company, root), resource_type, dataset.id, "projects", root)
     dataset.visibility = visibility
     dataset.projects = roots
     dataset.updated = datetime.utcnow()
@@ -340,6 +374,12 @@ def _change_allocation(company: str, user: str, dataset_id: str, project: str, i
                     "the credential that reads this dataset is not shared with this project; its owner must share it first")
             user_access.grant(company, credential.user, credential.id, root)
     # the project is recorded whatever the visibility, so a Public dataset shows in the project's list as well
+    resource_type = _share_type(dataset)
+    if resource_type is not None:
+        if add:
+            access.record_grant(company, _root_owner(company, root), resource_type, dataset.id, "projects", root)
+        else:
+            access.remove_grant(company, resource_type, dataset.id, "projects", root)
     dataset.projects = [p for p in dataset.projects if p != root] + ([root] if add else [])
     dataset.updated = datetime.utcnow()
     dataset.save()
@@ -359,4 +399,7 @@ def delete(company: str, user: str, dataset_id: str, is_admin: bool) -> None:
     dataset = _owned(company, dataset_id)
     if not can_manage(view(dataset), user, is_admin):
         raise errors.bad_request.ValidationError("only the owner of this dataset may remove it")
+    resource_type = _share_type(dataset)
+    if resource_type is not None:
+        access.drop_resource_shares(company, resource_type, dataset.id)
     dataset.delete()
