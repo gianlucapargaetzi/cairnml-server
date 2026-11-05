@@ -77,7 +77,10 @@ def _project_share_applies(company: str, share: Share, user: str, project_roots:
 
 def level_of(company: str, user: str, is_admin: bool, resource_type: str, resource_id: str,
              project_roots: Set[str]) -> Optional[str]:
-    """The highest level the user holds on the resource, or None when nothing gives them one."""
+    """The highest level the user holds on the resource, or None when nothing gives them one. A deactivated user holds
+    no level at all, whatever their ownership, role or share."""
+    if user and not is_active(user):
+        return None
     owner = _owner(company, resource_type, resource_id)
     if is_admin or (user and owner == user):
         return "collaborator"
@@ -118,6 +121,11 @@ def _roots_of(company: str, actor: str) -> Set[str]:
     return {project["id"] for project in my_projects(company, actor)}
 
 
+def _require_active(actor: str) -> None:
+    if not is_active(actor):
+        raise errors.forbidden.NoWritePermission("a deactivated user may not change sharing")
+
+
 def _require_sharing(company: str, actor: str, resource_type: str, resource_id: str) -> None:
     require(company, actor, _is_admin(company, actor), resource_type, resource_id, _roots_of(company, actor),
             "manage_sharing")
@@ -126,7 +134,8 @@ def _require_sharing(company: str, actor: str, resource_type: str, resource_id: 
 def share(company: str, actor: str, resource_type: str, resource_id: str, scope: str, project: str,
           level: str, user: str = "") -> Share:
     """Grants the resource at the level to a project, to everyone (public) or to one user (user scope, queues only).
-    The actor must hold manage_sharing on the resource."""
+    The actor must be active and hold manage_sharing on the resource."""
+    _require_active(actor)
     _require_sharing(company, actor, resource_type, resource_id)
     if scope == "projects" and root_project(company, project) != project:
         raise errors.bad_request.ValidationError("no such project")
@@ -145,7 +154,8 @@ def share(company: str, actor: str, resource_type: str, resource_id: str, scope:
 
 
 def unshare(company: str, actor: str, share_id: str) -> None:
-    """Removes a share. The actor must hold manage_sharing on the resource it gives."""
+    """Removes a share. The actor must be active and hold manage_sharing on the resource it gives."""
+    _require_active(actor)
     record = Share.objects(company=company, id=share_id).first()
     if record is None:
         raise errors.bad_request.ValidationError("no such share")

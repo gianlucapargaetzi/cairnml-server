@@ -219,10 +219,11 @@ def test_a_grant_stops_when_the_granting_owner_leaves_the_project(company):
 
 
 def test_a_grant_stops_when_the_granting_owner_is_deactivated(company):
+    granter = f"granter-{uuid4().hex[:8]}"
     make_queue(company)
-    make_root(company, members=[("member1", ProjectRole.read), ("owner2", ProjectRole.read)])
-    make_user("owner2", company, disabled=True)
-    make_share(company, "queue", "q1", "projects", "read", project="root1", granted_by="owner2")
+    make_root(company, members=[("member1", ProjectRole.read), (granter, ProjectRole.read)])
+    make_user(granter, company, disabled=True)
+    make_share(company, "queue", "q1", "projects", "read", project="root1", granted_by=granter)
     assert access.level_of(company, "member1", False, "queue", "q1", {"root1"}) is None
 
 
@@ -369,3 +370,48 @@ def test_the_owner_unshares_and_the_level_is_gone(company):
     share = make_share(company, "queue", "q1", "public", "read")
     access.unshare(company, "owner1", share.id)
     assert access.level_of(company, "stranger", False, "queue", "q1", set()) is None
+
+
+# --- a deactivated user holds no level, and may not change sharing
+
+
+def test_an_inactive_owner_gets_no_level(company):
+    owner = f"owner-{uuid4().hex[:8]}"
+    make_queue(company, owner=owner)
+    make_user(owner, company, disabled=True)
+    assert access.level_of(company, owner, False, "queue", "q1", set()) is None
+
+
+def test_an_inactive_admin_gets_no_level(company):
+    admin = f"admin-{uuid4().hex[:8]}"
+    make_queue(company)
+    make_user(admin, company, role=Role.admin, disabled=True)
+    assert access.level_of(company, admin, True, "queue", "q1", set()) is None
+
+
+def test_an_inactive_user_with_a_public_share_gets_no_level(company):
+    make_queue(company)
+    make_share(company, "queue", "q1", "public", "read")
+    stranger = f"stranger-{uuid4().hex[:8]}"
+    make_user(stranger, company, disabled=True)
+    assert access.level_of(company, stranger, False, "queue", "q1", set()) is None
+
+
+def test_an_inactive_user_with_a_user_share_gets_no_level(company):
+    make_queue(company)
+    grantee = f"grantee-{uuid4().hex[:8]}"
+    make_share(company, "queue", "q1", "user", "read", user=grantee)
+    make_user(grantee, company, disabled=True)
+    assert access.level_of(company, grantee, False, "queue", "q1", set()) is None
+
+
+def test_an_inactive_actor_cannot_share_or_unshare(company):
+    owner = f"owner-{uuid4().hex[:8]}"
+    make_queue(company, owner=owner)
+    make_user(owner, company, disabled=True)
+    share = make_share(company, "queue", "q1", "public", "read", granted_by=owner)
+    with pytest.raises(errors.forbidden.NoWritePermission):
+        access.share(company, owner, "queue", "q1", "public", "", "read")
+    with pytest.raises(errors.forbidden.NoWritePermission):
+        access.unshare(company, owner, share.id)
+    assert Share.objects(company=company, id=share.id).count() == 1
