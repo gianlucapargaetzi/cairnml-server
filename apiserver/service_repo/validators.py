@@ -43,41 +43,59 @@ def validate_data(call: APICall, endpoint: Endpoint):
 
 
 # Agents hold the admin role of the person who enrolled them, so a leaked agent token would carry it too. An agent
-# never administers people, devices, projects or queue grants, so these calls are refused for agent tokens.
-AGENT_DENIED_ENDPOINTS = {
-    "devices.enroll",
-    "devices.revoke",
-    "devices.get_all",
-    "audit.get_all",
-    "projects.create",
-    "projects.update",
-    "projects.delete",
-    "projects.move",
-    "projects.add_member",
-    "projects.remove_member",
-    "projects.update_member_role",
-    "projects.set_visibility",
-    "projects.transfer_ownership",
-    "projects.add_queues",
-    "projects.remove_queue",
-    "queues.create",
-    "queues.update",
-    "queues.delete",
-    "queues.get_users",
-    "queues.add_user",
-    "queues.remove_user",
-}
+# may therefore call only the endpoints the cairnml-agent calls (tests/e2e_support/agent_calls.txt lists them with
+# their source locations). Every other endpoint, including people, devices, projects, queue administration, storage,
+# credentials and datasets, is refused for agent tokens.
+AGENT_ALLOWED_ENDPOINTS = frozenset({
+    "async.result",
+    "auth.login",
+    "devices.exchange",
+    "devices.git_token",
+    "devices.idp_settings",
+    "devices.job_token",
+    "events.add_batch",
+    "projects.get_all",
+    "queues.add_task",
+    "queues.get_all",
+    "queues.get_by_id",
+    "queues.get_default",
+    "queues.get_next_task",
+    "queues.move_task_to_front",
+    "tasks.clone",
+    "tasks.completed",
+    "tasks.dequeue",
+    "tasks.edit",
+    "tasks.edit_hyper_params",
+    "tasks.enqueue",
+    "tasks.failed",
+    "tasks.get_all",
+    "tasks.get_by_id",
+    "tasks.get_hyper_params",
+    "tasks.ping",
+    "tasks.set_requirements",
+    "tasks.started",
+    "tasks.stopped",
+    "tasks.update",
+    "workers.cluster_report",
+    "workers.cluster_unregister",
+    "workers.get_all",
+    "workers.get_runtime_properties",
+    "workers.register",
+    "workers.set_runtime_properties",
+    "workers.status_report",
+    "workers.unregister",
+})
 
 
-def _agent_denied(endpoint) -> bool:
-    return endpoint.name in AGENT_DENIED_ENDPOINTS or endpoint.name.startswith("users.")
+def _agent_refused(endpoint) -> bool:
+    return endpoint.name not in AGENT_ALLOWED_ENDPOINTS or endpoint.name.startswith("users.")
 
 
 def validate_role(endpoint, call):
     try:
         if endpoint.authorize and not endpoint.allows(call.identity.role):
             raise errors.forbidden.RoleNotAllowed(role=call.identity.role, allowed=endpoint.allow_roles)
-        if getattr(call.auth, "token_kind", None) == "agent" and _agent_denied(endpoint):
+        if getattr(call.auth, "token_kind", None) == "agent" and _agent_refused(endpoint):
             raise errors.forbidden.NoWritePermission(f"agents cannot call {endpoint.name}")
     except MissingIdentity:
         pass
