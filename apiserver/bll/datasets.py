@@ -19,6 +19,7 @@ from apiserver.bll.dataset_registry import canonical_url, list_entries
 from apiserver.config_repo import config
 from apiserver.database.model.dataset import VISIBILITIES, Dataset
 from apiserver.database.model.project import Project
+from apiserver.database.model.share import Share
 from apiserver.database.model.user_access import UserAccess
 from apiserver.idp import git_credentials as store
 from apiserver.idp.github import GitHubApp, GitHubError, PublicReader, TokenReader, public_repository
@@ -310,6 +311,18 @@ def _shared_projects(dataset: Dataset) -> list:
     return sorted(access.shared_project_ids(dataset.company, resource_type, dataset.id))
 
 
+def _project_shares_of(dataset: Dataset) -> list:
+    """The project shares of the dataset from its share records: the level, the share id and whether it is inherited
+    from a run, for each root project it is shared with."""
+    resource_type = _share_type(dataset)
+    if resource_type is None:
+        return []
+    shares = Share.objects(company=dataset.company, resource_type=resource_type, resource_id=dataset.id,
+                           scope="projects").order_by("created")
+    return [{"project": share.project, "level": share.level, "share_id": share.id, "inherited": bool(share.inherited)}
+            for share in shares]
+
+
 def view(dataset: Dataset) -> dict:
     """What the API returns for a dataset: never a secret, only the id of the credential that reads it."""
     return {
@@ -320,6 +333,7 @@ def view(dataset: Dataset) -> dict:
         "owner": dataset.owner,
         "visibility": dataset.visibility,
         "projects": _shared_projects(dataset),
+        "project_shares": _project_shares_of(dataset),
         "credential": dataset.credential,
         "state": dataset.state,
         "state_message": dataset.state_message or "",

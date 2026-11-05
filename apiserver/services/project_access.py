@@ -15,6 +15,7 @@ from apiserver.apimodels.project_access import (
     UpdateMemberRoleRequest,
 )
 from apiserver.bll.access import (
+    project_shares,
     queue_ids_allocated,
     record_grant,
     refuse_inactive,
@@ -213,9 +214,10 @@ def get_queues(call: APICall, company_id: str, request: GetQueuesRequest):
         # a deactivated owner or member, or an allocation whose granter is no longer a member, gives no queue (R25)
         applies = queue_ids_allocated(company_id, call.identity.user, {root_id})
         allocated = [queue_id for queue_id in allocated if queue_id in applies]
+    shares = project_shares(company_id, "queue", root_id, allocated)
     call.result.data = {
         "queues": [
-            {"id": q.id, "name": q.name}
+            {"id": q.id, "name": q.name, "level": shares[q.id].level, "share_id": shares[q.id].id}
             for q in _queue_summaries(company_id, allocated)
         ]
     }

@@ -141,6 +141,13 @@ def shared_project_ids(company: str, resource_type: str, resource_id: str) -> Se
     return {share.project for share in shares}
 
 
+def project_shares(company: str, resource_type: str, project: str, resource_ids: list) -> dict:
+    """The project's share record of each resource, keyed by the resource id: its own level, id and inherited flag."""
+    shares = Share.objects(company=company, resource_type=resource_type, scope="projects", project=project,
+                           resource_id__in=list(resource_ids))
+    return {share.resource_id: share for share in shares}
+
+
 def resource_ids_shared_with(company: str, resource_type: str, project: str) -> list:
     """The resources shared with a root project, in the order they were shared, whether or not the share applies today."""
     shares = Share.objects(company=company, resource_type=resource_type, scope="projects", project=project).order_by(

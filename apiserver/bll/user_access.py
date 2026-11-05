@@ -319,7 +319,7 @@ def project_grants(company: str, actor: str, project_id: str) -> list:
     if root is None or not is_member(company, root, actor):
         raise errors.bad_request.ValidationError("no such project")
     result = []
-    for entry, _share in _project_grants_of(company, root):
+    for entry, share in _project_grants_of(company, root):
         owner = User.objects(id=entry.user).only("name").first()
         result.append({
             "id": entry.id,
@@ -332,6 +332,9 @@ def project_grants(company: str, actor: str, project_id: str) -> list:
             "owner_name": owner.name if owner else entry.user,
             "owner_active": is_active(entry.user),
             "owner_is_member": is_member(company, root, entry.user),
+            "level": share.level,
+            "share_id": share.id,
+            "inherited": bool(share.inherited),
         })
     return result
 
