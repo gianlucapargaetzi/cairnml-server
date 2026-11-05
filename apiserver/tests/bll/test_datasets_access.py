@@ -45,3 +45,91 @@ class TestCanManage:
 
     def test_another_user_may_not_manage(self):
         assert not bll.can_manage(dataset(), OTHER, False)
+
+
+# --- Adding, against the database. GitHub is replaced by fakes.
+
+from types import SimpleNamespace
+
+import pytest
+
+from apiserver.apierrors import errors
+from apiserver.database.model.dataset import Dataset
+from apiserver.tests.db import ensure_db
+
+ensure_db()
+COMPANY = "c-datasets-test"
+
+
+@pytest.fixture(autouse=True)
+def clean_rows():
+    Dataset.objects(company=COMPANY).delete()
+    yield
+    Dataset.objects(company=COMPANY).delete()
+
+
+def access(entry_id: str) -> SimpleNamespace:
+    return SimpleNamespace(id=entry_id, kind="token", api_url=None, app_id=None)
+
+
+@pytest.fixture
+def github(monkeypatch):
+    """Fakes for the GitHub reads: which repositories are public, and which access can read which repository."""
+    state = SimpleNamespace(public=set(), readable={}, candidates=[], registry_entries=[])
+    monkeypatch.setattr(bll, "_public", lambda repo: repo in state.public)
+    monkeypatch.setattr(bll, "_candidates", lambda company, user, root, url: [(a, f"secret-{a.id}") for a in state.candidates])
+    monkeypatch.setattr(bll, "_reader", lambda entry, secret: SimpleNamespace(name=entry.id))
+    monkeypatch.setattr(bll, "_can_read", lambda reader, repo: reader.name in state.readable.get(repo, ()))
+    monkeypatch.setattr(bll, "list_entries", lambda app, registry: state.registry_entries)
+    return state
+
+
+def test_a_public_repository_is_added_without_a_credential(github):
+    github.public = {"acme/cars"}
+    github.candidates = [access("a1")]
+    result = bll.add_repo(COMPANY, "u1", "https://github.com/acme/cars")
+    assert result["credential"] is None
+    assert result["state"] == "ok"
+    assert result["owner"] == "u1"
+
+
+def test_a_private_repository_takes_the_first_candidate_that_can_read_it(github):
+    github.candidates = [access("a1"), access("a2")]
+    github.readable = {"acme/private": {"a2"}}
+    result = bll.add_repo(COMPANY, "u1", "https://github.com/acme/private")
+    assert result["credential"] == "a2"
+    assert result["state"] == "ok"
+
+
+def test_a_private_repository_no_candidate_reads_is_still_added_with_no_access(github):
+    github.candidates = [access("a1")]
+    result = bll.add_repo(COMPANY, "u1", "https://github.com/acme/private")
+    assert result["credential"] is None
+    assert result["state"] == "no_access"
+    assert result["state_message"] == "no access to dataset private"
+    assert Dataset.objects(company=COMPANY, ref="acme/private").count() == 1
+
+
+def test_a_repository_already_added_is_refused(github):
+    github.public = {"acme/cars"}
+    bll.add_repo(COMPANY, "u1", "https://github.com/acme/cars")
+    with pytest.raises(errors.bad_request.ValidationError):
+        bll.add_repo(COMPANY, "u2", "https://github.com/acme/cars")
+
+
+def test_a_public_registry_adds_every_entry_as_a_dataset(github):
+    github.public = {"acme/registry"}
+    github.registry_entries = [{"name": "cars", "source": "web", "link": "x"},
+                               {"name": "coco", "source": "huggingface", "link": "y"}]
+    bll.add_registry(COMPANY, "u1", "https://github.com/acme/registry", visibility="Public")
+    entries = Dataset.objects(company=COMPANY, kind="registry_entry").order_by("name")
+    assert [e.name for e in entries] == ["cars", "coco"]
+    assert all(e.visibility == "Public" and e.credential is None for e in entries)
+
+
+def test_a_private_registry_nobody_can_read_is_saved_with_no_entries(github):
+    github.candidates = [access("a1")]
+    github.registry_entries = [{"name": "cars", "source": "web", "link": "x"}]
+    result = bll.add_registry(COMPANY, "u1", "https://github.com/acme/secret-registry")
+    assert result["state"] == "no_access"
+    assert Dataset.objects(company=COMPANY, kind="registry_entry").count() == 0

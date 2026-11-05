@@ -8,7 +8,7 @@ from apiserver.database import Database, strict
 from apiserver.database.model import DbModelMixin
 
 VISIBILITIES = ("user", "projects", "Public")
-KINDS = ("repo", "registry")
+KINDS = ("repo", "registry", "registry_entry")
 STATES = ("ok", "no_access")
 
 
