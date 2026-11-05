@@ -5,8 +5,8 @@ from apiserver.apierrors import errors
 from apiserver.bll import dataset_cache
 from apiserver.bll import dataset_details as bll
 from apiserver.bll import dataset_registry as registry_bll
+from apiserver.idp import github_check
 from apiserver.idp.github import GitHubError
-from apiserver.idp.github_check import build_from_config
 from apiserver.service_repo import APICall, endpoint
 
 
@@ -19,9 +19,7 @@ def list_datasets(call: APICall, _company: str, _request):
 @endpoint("datasets.get_details")
 def get_details(call: APICall, _company: str, _request):
     request = call.data or {}
-    app = build_from_config()
-    if app is None:
-        raise errors.bad_request.ValidationError("GitHub is not configured on this server")
+    app = github_check.reader()  # the App when there is one; public datasets and registries need none
     try:
         call.result.data = bll.details(
             app,

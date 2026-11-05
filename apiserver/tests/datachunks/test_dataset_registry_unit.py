@@ -87,3 +87,22 @@ class TestNormalizeRepository(TestCase):
 
     def test_the_canonical_address_is_the_https_one(self):
         self.assertEqual(bll.canonical_url("acme/public-datasets"), "https://github.com/acme/public-datasets")
+
+
+class TestPublicReader(TestCase):
+    """Without a GitHub App the server still reads public repositories, and refuses private ones."""
+
+    def test_a_public_repository_is_read_without_a_token(self):
+        from apiserver.idp.github import PublicReader, _ANONYMOUS
+
+        reader = PublicReader("https://api.github.com")
+        reader._is_public = lambda repo: True
+        self.assertEqual(reader._read_headers("acme/public-datasets"), _ANONYMOUS)
+
+    def test_a_private_repository_is_refused_as_not_accessible(self):
+        from apiserver.idp.github import PublicReader, RepoNotAccessible
+
+        reader = PublicReader("https://api.github.com")
+        reader._is_public = lambda repo: False
+        with self.assertRaises(RepoNotAccessible):
+            reader._read_headers("acme/private-datasets")

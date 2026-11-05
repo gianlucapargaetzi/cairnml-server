@@ -8,9 +8,8 @@ from apiserver.apimodels.dataset_registry import RegistryRequest
 from apiserver.bll import dataset_registry as bll
 from apiserver.database.model.auth import Role
 from apiserver.idp.audit import client_address, record as audit
+from apiserver.idp import github_check
 from apiserver.idp.github import GitHubError
-from apiserver.idp.github_check import build_from_config
-from apiserver.idp.secrets import SecretMissing
 from apiserver.service_repo import APICall, endpoint
 
 log = logging.getLogger(__name__)
@@ -20,15 +19,11 @@ _MANAGE_ROLES = (Role.admin, Role.root)
 @endpoint("dataset_registry.get_all")
 def get_all(call: APICall, _company: str, _request):
     # The registries are shared by the server, so the list is the same for every company. A registry that cannot be read
-    # (for example a private one the GitHub App is not installed on) is left out, and the others are still listed.
-    try:
-        app = build_from_config()
-    except SecretMissing:
-        # No key on this server: nothing can be read. The GitHub App status says why (github.status).
-        log.warning("the GitHub App key is missing; the dataset registries are not read", exc_info=True)
-        app = None
+    # (for example a private one the GitHub App is not installed on, or no App at all) is left out, and the others are
+    # still listed. Public registries need no GitHub App.
+    app = github_check.reader()
     registries = bll.configured_registries()
-    if app is None or not registries:
+    if not registries:
         call.result.data = {"datasets": []}
         return
     datasets, seen = [], set()

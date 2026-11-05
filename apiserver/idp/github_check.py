@@ -92,3 +92,17 @@ def build_from_config():
         return None
     entry, key = found
     return GitHubApp(entry.app_id, key, entry.api_url or config.get("apiserver.idp.github_api_url"))
+
+
+def reader():
+    """What the Datasets pages read through: the server's GitHub App when there is one, otherwise a reader of public
+    repositories (no App needed). Private repositories then fail with GitHubError, as they cannot be reached."""
+    from apiserver.config_repo import config
+    from apiserver.idp.github import PublicReader
+    from apiserver.idp.secrets import SecretMissing
+
+    try:
+        app = build_from_config()
+    except SecretMissing:
+        app = None
+    return app or PublicReader(config.get("apiserver.idp.github_api_url"))
