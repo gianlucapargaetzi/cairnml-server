@@ -27,7 +27,14 @@ from apiserver.apimodels.queues import (
     MoveTaskToQueueRequest,
     UserRequest,
 )
-from apiserver.bll.access import drop_resource_shares, record_grant, refuse_inactive, remove_grant
+from apiserver.bll.access import (
+    drop_resource_shares,
+    find_share,
+    record_grant,
+    refuse_inactive,
+    remove_grant,
+    shared_project_ids,
+)
 from apiserver.bll.model import Metadata
 from apiserver.bll.queue import QueueBLL
 from apiserver.bll.queue.queue_access import QueueAccessBLL
@@ -102,7 +109,7 @@ def _hidden_query(data: dict) -> Q:
 def get_projects(call: APICall, company_id, request: QueueRequest):
     """ Root projects the queue is allocated to. Admins see all of them, others only the ones they own or are in """
     QueueAccessBLL.assert_can_use(call.identity, company_id, request.queue)
-    query = Q(company=company_id) & Q(parent=None) & Q(queues=request.queue)
+    query = Q(company=company_id) & Q(parent=None) & Q(id__in=list(shared_project_ids(company_id, "queue", request.queue)))
     if not QueueAccessBLL.is_admin(call.identity):
         query &= QueueAccessBLL.visible_root_query(call.identity)
     projects = Project.objects(query).only("id", "name")
@@ -523,7 +530,7 @@ def add_user(call: APICall, company_id: str, request: UserRequest):
     if not User.objects(id=request.user, company=company_id).only("id").first():
         raise errors.bad_request.InvalidUserId(id=request.user)
 
-    if Queue.objects(company=company_id, id=request.queue, users__user=request.user).only("id").first():
+    if find_share(company_id, "queue", request.queue, "user", user=request.user):
         return UpdateResponse(updated=0)
 
     Queue.objects(company=company_id, id=request.queue).update_one(
@@ -542,8 +549,8 @@ def add_user(call: APICall, company_id: str, request: UserRequest):
 def remove_user(call: APICall, company_id: str, request: UserRequest):
     QueueAccessBLL.assert_can_manage(call.identity, company_id, request.queue)
     refuse_inactive(call.identity.user)
-    queue = _get_queue_or_fail(company_id, request.queue)
-    if not any(u.user == request.user for u in queue.users):
+    _get_queue_or_fail(company_id, request.queue)
+    if find_share(company_id, "queue", request.queue, "user", user=request.user) is None:
         raise errors.bad_request.InvalidUserId(id=request.user)
 
     Queue.objects(company=company_id, id=request.queue).update_one(

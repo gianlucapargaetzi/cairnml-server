@@ -11,6 +11,7 @@ from apiserver.bll.organization import OrgBLL, Tags
 from apiserver.database.model.auth import Role
 from apiserver.database.model.project import Project, ProjectMember, ProjectRole, ProjectVisibility
 from apiserver.database.model.queue import Entry, Queue
+from apiserver.database.model.share import Share
 from apiserver.database.model.task.task import Task, TaskType
 from apiserver.service_repo.auth import Identity
 from apiserver.utilities.partial_version import PartialVersion
@@ -68,6 +69,8 @@ def test_peek_task_reports_a_hidden_head_task_as_empty(company):
         id="q1", company=company, name="queue-one", created=datetime.utcnow(), public=True,
         entries=[Entry(task="task1", added=datetime.utcnow())],
     ).save()
+    Share(id=uuid4().hex, company=company, resource_type="queue", resource_id="q1", scope="public", level="read",
+          granted_by="", created=datetime.utcnow()).save()
     result = queues_svc.peek_task(
         FakeCall(identity(company, "stranger")), company, QueueRequest(queue="q1")
     )
@@ -81,6 +84,8 @@ def test_peek_task_reports_the_head_task_to_a_member(company):
         id="q1", company=company, name="queue-one", created=datetime.utcnow(), public=True,
         entries=[Entry(task="task1", added=datetime.utcnow())],
     ).save()
+    Share(id=uuid4().hex, company=company, resource_type="queue", resource_id="q1", scope="public", level="read",
+          granted_by="", created=datetime.utcnow()).save()
     result = queues_svc.peek_task(
         FakeCall(identity(company, "u2")), company, QueueRequest(queue="q1")
     )

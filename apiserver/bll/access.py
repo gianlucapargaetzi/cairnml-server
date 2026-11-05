@@ -14,7 +14,7 @@ import uuid
 from datetime import datetime
 from typing import Optional, Set
 
-from mongoengine import NotUniqueError
+from mongoengine import NotUniqueError, Q
 from mongoengine import ValidationError as ModelValidationError
 
 from apiserver.apierrors import errors
@@ -62,7 +62,7 @@ def _owner(company: str, resource_type: str, resource_id: str) -> Optional[str]:
     return record.owner if record else None
 
 
-def _project_share_applies(company: str, share: Share, user: str, project_roots: Set[str]) -> bool:
+def _project_share_applies(company: str, share: Share, user: str, project_roots: Set[str], check_active: bool) -> bool:
     if share.project not in project_roots:
         return False
     return grant_applies(
@@ -70,16 +70,31 @@ def _project_share_applies(company: str, share: Share, user: str, project_roots:
         project_root=share.project,
         owner_is_member=is_member(company, share.project, share.granted_by),
         user_is_member=is_member(company, share.project, user),
-        owner_active=is_active(share.granted_by),
-        user_active=is_active(user),
+        owner_active=is_active(share.granted_by) if check_active else True,
+        user_active=is_active(user) if check_active else True,
     )
 
 
+def _share_level(company: str, share: Share, user: str, project_roots: Set[str], include_projects: bool,
+                 check_active: bool) -> Optional[str]:
+    """The level one share gives the user, or None when it gives them none."""
+    if share.scope == "public":
+        return "read"
+    if share.scope == "user":
+        return "read" if user and share.user == user else None
+    if not include_projects:
+        return None
+    return share.level if _project_share_applies(company, share, user, project_roots, check_active) else None
+
+
 def level_of(company: str, user: str, is_admin: bool, resource_type: str, resource_id: str,
-             project_roots: Set[str]) -> Optional[str]:
-    """The highest level the user holds on the resource, or None when nothing gives them one. A deactivated user holds
-    no level at all, whatever their ownership, role or share."""
-    if user and not is_active(user):
+             project_roots: Set[str], include_projects: bool = True, check_active: bool = True) -> Optional[str]:
+    """The highest level the user holds on the resource, or None when nothing gives them one. With check_active a
+    deactivated user holds no level at all, whatever their ownership, role or share. include_projects=False leaves out
+    the project shares: a queue allocated to a project does not count, as for an agent that serves a queue.
+    check_active=False is for the queue readers, which keep the refusals they had before this module: a deactivated
+    user keeps the level their ownership or share gives them, and the writers refuse the change."""
+    if check_active and user and not is_active(user):
         return None
     owner = _owner(company, resource_type, resource_id)
     if is_admin or (user and owner == user):
@@ -87,15 +102,42 @@ def level_of(company: str, user: str, is_admin: bool, resource_type: str, resour
     best = None
     shares = Share.objects(company=company, resource_type=resource_type, resource_id=resource_id)
     for share in shares:
-        if share.scope == "public":
-            level = "read"
-        elif share.scope == "user":
-            level = "read" if user and share.user == user else None
-        else:
-            level = share.level if _project_share_applies(company, share, user, project_roots) else None
+        level = _share_level(company, share, user, project_roots, include_projects, check_active)
         if level is not None and (best is None or RANK[level] > RANK[best]):
             best = level
     return best
+
+
+def queue_ids_held(company: str, user: str, project_roots: Set[str], include_projects: bool = True,
+                   check_active: bool = True) -> Set[str]:
+    """The queues the user holds a level on without being an admin: the ones they own, public ones, the ones granted to
+    them, and with include_projects the ones allocated to a root project that applies to them (see level_of)."""
+    if not user or (check_active and not is_active(user)):
+        return set()
+    held = set(Queue.objects(company=company, created_by=user).scalar("id"))
+    scopes = Q(scope="public") | Q(scope="user", user=user)
+    if include_projects:
+        scopes |= Q(scope="projects", project__in=list(project_roots))
+    for share in Share.objects(Q(company=company, resource_type="queue") & scopes):
+        if share.resource_id not in held and _share_level(company, share, user, project_roots, include_projects,
+                                                          check_active):
+            held.add(share.resource_id)
+    return held
+
+
+def queue_ids_allocated(company: str, user: str, project_roots: Set[str], check_active: bool = True) -> Set[str]:
+    """The queues allocated to a root project in project_roots, for which the allocation applies (see level_of)."""
+    if not user or not project_roots:
+        return set()
+    shares = Share.objects(company=company, resource_type="queue", scope="projects", project__in=list(project_roots))
+    return {share.resource_id for share in shares
+            if _share_level(company, share, user, project_roots, True, check_active)}
+
+
+def shared_project_ids(company: str, resource_type: str, resource_id: str) -> Set[str]:
+    """The root projects a resource is shared with, whether or not the share applies today."""
+    shares = Share.objects(company=company, resource_type=resource_type, resource_id=resource_id, scope="projects")
+    return {share.project for share in shares}
 
 
 def require(company: str, user: str, is_admin: bool, resource_type: str, resource_id: str,

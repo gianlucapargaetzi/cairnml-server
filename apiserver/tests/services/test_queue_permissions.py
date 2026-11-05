@@ -24,6 +24,7 @@ from apiserver.bll.queue.queue_access import QueueAccessBLL
 from apiserver.database.model.auth import Role, User
 from apiserver.database.model.project import Project, ProjectMember, ProjectRole, ProjectVisibility
 from apiserver.database.model.queue import Entry, Queue, QueueUser
+from apiserver.database.model.share import Share
 from apiserver.database.model.task.task import Execution, Task, TaskStatus
 from apiserver.service_repo.auth import Identity
 from apiserver.services import project_access as project_svc
@@ -63,6 +64,14 @@ class UpdateCall(FakeCall):
         self.data_model_for_partial_update = data
 
 
+def share_of(company, resource_type, resource_id, scope, granted_by, project="", user=""):
+    """ The share record the writers keep next to each old field """
+    Share(
+        id=uuid4().hex, company=company, resource_type=resource_type, resource_id=resource_id, scope=scope,
+        project=project, user=user, level="read", granted_by=granted_by, created=datetime.utcnow(),
+    ).save()
+
+
 def make_queue(company, name=None, public=False, users=(), system_tags=None, created_by=None):
     queue = Queue(
         id=uuid4().hex, company=company, name=name or f"q-{uuid4().hex[:6]}", created=datetime.utcnow(),
@@ -70,6 +79,10 @@ def make_queue(company, name=None, public=False, users=(), system_tags=None, cre
         users=[QueueUser(user=u, added=datetime.utcnow(), added_by="admin") for u in users],
     )
     queue.save()
+    if public:
+        share_of(company, "queue", queue.id, "public", created_by or "")
+    for user in users:
+        share_of(company, "queue", queue.id, "user", "admin", user=user)
     return queue
 
 
@@ -81,6 +94,8 @@ def make_root(company, owner="owner", members=(), queues=(), id_=None):
         queues=list(queues),
     )
     project.save()
+    for queue_id in queues:
+        share_of(company, "queue", queue_id, "projects", owner, project=project.id)
     return project
 
 
@@ -604,7 +619,7 @@ def make_queued_task(company, queue, owner, task_id):
 
 def test_dequeue_of_a_task_in_a_queue_the_caller_can_no_longer_use_is_refused(company):
     queue = make_queue(company, created_by="owner", users=["u2"])
-    Queue.objects(id=queue.id).update(set__users=[])
+    Share.objects(company=company, resource_type="queue", resource_id=queue.id, scope="user", user="u2").delete()
     make_queued_task(company, queue, "u2", "task-refused")
     with pytest.raises(errors.bad_request.InvalidQueueId):
         tasks_svc.dequeue(FakeCall(identity(company, "u2")), company, DequeueRequest(task="task-refused"))
