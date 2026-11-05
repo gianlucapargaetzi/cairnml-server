@@ -27,6 +27,7 @@ from apiserver.apimodels.queues import (
     MoveTaskToQueueRequest,
     UserRequest,
 )
+from apiserver.bll.access import drop_resource_shares, record_grant, remove_grant
 from apiserver.bll.model import Metadata
 from apiserver.bll.queue import QueueBLL
 from apiserver.bll.queue.queue_access import QueueAccessBLL
@@ -175,6 +176,8 @@ def update(call: APICall, company_id, request: UpdateRequest):
     data = call.data_model_for_partial_update
     conform_tag_fields(call, data, validate=True)
     escape_metadata(data)
+    if "public" in data:
+        _set_public_share(company_id, call.identity.user, request.queue, bool(data["public"]))
     updated, fields = queue_bll.update(
         company_id=company_id, queue_id=request.queue, **data
     )
@@ -192,7 +195,16 @@ def delete(call: APICall, company_id, request: DeleteRequest):
         force=request.force,
     )
     QueueAccessBLL.remove_from_allocations([request.queue])
+    drop_resource_shares(company_id, "queue", request.queue)
     call.result.data = {"deleted": 1}
+
+
+def _set_public_share(company_id: str, actor: str, queue_id: str, public: bool) -> None:
+    """The public share follows the public flag, granted by the user who sets it"""
+    if public:
+        record_grant(company_id, actor, "queue", queue_id, "public")
+    else:
+        remove_grant(company_id, "queue", queue_id, "public")
 
 
 def update_added_task_properties(queue: str, task: str, update_execution_queue: bool):
@@ -510,6 +522,7 @@ def add_user(call: APICall, company_id: str, request: UserRequest):
     if Queue.objects(company=company_id, id=request.queue, users__user=request.user).only("id").first():
         return UpdateResponse(updated=0)
 
+    record_grant(company_id, call.identity.user, "queue", request.queue, "user", user=request.user)
     Queue.objects(company=company_id, id=request.queue).update_one(
         push__users=QueueUser(
             user=request.user,
@@ -527,6 +540,7 @@ def remove_user(call: APICall, company_id: str, request: UserRequest):
     if not any(u.user == request.user for u in queue.users):
         raise errors.bad_request.InvalidUserId(id=request.user)
 
+    remove_grant(company_id, "queue", request.queue, "user", user=request.user)
     Queue.objects(company=company_id, id=request.queue).update_one(
         pull__users__user=request.user
     )

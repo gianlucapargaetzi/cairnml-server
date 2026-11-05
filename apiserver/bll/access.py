@@ -131,18 +131,12 @@ def _require_sharing(company: str, actor: str, resource_type: str, resource_id: 
             "manage_sharing")
 
 
-def share(company: str, actor: str, resource_type: str, resource_id: str, scope: str, project: str,
-          level: str, user: str = "") -> Share:
-    """Grants the resource at the level to a project, to everyone (public) or to one user (user scope, queues only).
-    The actor must be active and hold manage_sharing on the resource."""
-    _require_active(actor)
-    _require_sharing(company, actor, resource_type, resource_id)
-    if scope == "projects" and root_project(company, project) != project:
-        raise errors.bad_request.ValidationError("no such project")
+def _create(company: str, granted_by: str, resource_type: str, resource_id: str, scope: str, project: str,
+            level: str, user: str) -> Share:
     record = Share(
         id=uuid.uuid4().hex, company=company, resource_type=resource_type, resource_id=resource_id, scope=scope,
         project=project if scope == "projects" else "", user=user if scope == "user" else "", level=level,
-        granted_by=actor, created=datetime.utcnow(),
+        granted_by=granted_by, created=datetime.utcnow(),
     )
     try:
         record.save()
@@ -153,6 +147,17 @@ def share(company: str, actor: str, resource_type: str, resource_id: str, scope:
     return record
 
 
+def share(company: str, actor: str, resource_type: str, resource_id: str, scope: str, project: str,
+          level: str, user: str = "") -> Share:
+    """Grants the resource at the level to a project, to everyone (public) or to one user (user scope, queues only).
+    The actor must be active and hold manage_sharing on the resource."""
+    _require_active(actor)
+    _require_sharing(company, actor, resource_type, resource_id)
+    if scope == "projects" and root_project(company, project) != project:
+        raise errors.bad_request.ValidationError("no such project")
+    return _create(company, actor, resource_type, resource_id, scope, project, level, user)
+
+
 def unshare(company: str, actor: str, share_id: str) -> None:
     """Removes a share. The actor must be active and hold manage_sharing on the resource it gives."""
     _require_active(actor)
@@ -161,3 +166,35 @@ def unshare(company: str, actor: str, share_id: str) -> None:
         raise errors.bad_request.ValidationError("no such share")
     _require_sharing(company, actor, record.resource_type, record.resource_id)
     record.delete()
+
+
+# --- Writers' path. A writer that changes an old field calls these in the same operation, after its own check of the
+# --- right to make the change. They do not check manage_sharing, because the granter is not always the actor: an
+# --- allocation of a queue or a dataset to a project is granted by the owner of the project (R20), and the owner of a
+# --- project may allocate what they only use. Both are idempotent.
+
+def find_share(company: str, resource_type: str, resource_id: str, scope: str, project: str = "",
+               user: str = "") -> Optional[Share]:
+    return Share.objects(company=company, resource_type=resource_type, resource_id=resource_id, scope=scope,
+                         project=project, user=user).first()
+
+
+def record_grant(company: str, granted_by: str, resource_type: str, resource_id: str, scope: str, project: str = "",
+                 user: str = "", level: str = "read") -> Share:
+    """The share of a grant the old field has just gained. An existing share of the same grant is kept as it is."""
+    existing = find_share(company, resource_type, resource_id, scope, project, user)
+    if existing is not None:
+        return existing
+    return _create(company, granted_by, resource_type, resource_id, scope, project, level, user)
+
+
+def remove_grant(company: str, resource_type: str, resource_id: str, scope: str, project: str = "",
+                 user: str = "") -> None:
+    """The share of a grant the old field has just lost. Nothing happens when there is none."""
+    Share.objects(company=company, resource_type=resource_type, resource_id=resource_id, scope=scope,
+                  project=project, user=user).delete()
+
+
+def drop_resource_shares(company: str, resource_type: str, resource_id: str) -> None:
+    """Every share of a resource that has been deleted."""
+    Share.objects(company=company, resource_type=resource_type, resource_id=resource_id).delete()

@@ -14,6 +14,7 @@ from apiserver.apimodels.project_access import (
     TransferOwnershipRequest,
     UpdateMemberRoleRequest,
 )
+from apiserver.bll.access import record_grant, remove_grant
 from apiserver.bll.project.access import ProjectAccessBLL
 from apiserver.bll.queue.queue_access import QueueAccessBLL
 from apiserver.database.model.auth import User
@@ -177,8 +178,16 @@ def transfer_ownership(call: APICall, company_id: str, request: TransferOwnershi
     root.user = request.new_owner
     # The new owner may allocate only the queues they may use without admin rights; the others are dropped
     assignable = QueueAccessBLL.assignable_queue_ids(company_id, request.new_owner)
-    root.queues = [queue_id for queue_id in root.queues if queue_id in assignable]
+    kept = [queue_id for queue_id in root.queues if queue_id in assignable]
+    dropped = [queue_id for queue_id in root.queues if queue_id not in assignable]
+    root.queues = kept
     root.save()
+    # the allocations are granted by the owner of the project, so the kept ones now come from the new owner
+    for queue_id in dropped:
+        remove_grant(company_id, "queue", queue_id, "projects", root_id)
+    for queue_id in kept:
+        remove_grant(company_id, "queue", queue_id, "projects", root_id)
+        record_grant(company_id, request.new_owner, "queue", queue_id, "projects", root_id)
 
     return UpdateResponse(updated=1)
 
@@ -237,6 +246,8 @@ def add_queues(call: APICall, company_id: str, request: AddQueuesRequest):
     if not request.queues:
         return UpdateResponse(updated=0)
 
+    for queue_id in request.queues:
+        record_grant(company_id, root.user, "queue", queue_id, "projects", root_id)
     Project.objects(id=root_id, company=company_id).update_one(
         push_all__queues=list(request.queues)
     )
@@ -252,6 +263,7 @@ def remove_queue(call: APICall, company_id: str, request: RemoveQueueRequest):
     if request.queue not in root.queues:
         raise errors.bad_request.InvalidQueueId(id=request.queue)
 
+    remove_grant(company_id, "queue", request.queue, "projects", root_id)
     Project.objects(id=root_id, company=company_id).update_one(
         pull__queues=request.queue
     )

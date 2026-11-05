@@ -19,6 +19,7 @@ from typing import Iterable, Set
 from mongoengine import Q
 
 from apiserver.apierrors import errors
+from apiserver.bll.access import remove_grant
 from apiserver.database.model.auth import Role
 from apiserver.database.model.project import Project
 from apiserver.database.model.queue import Queue
@@ -158,6 +159,8 @@ class QueueAccessBLL:
     @staticmethod
     def remove_user_allocations(company_id: str, user_id: str, queue_id: str) -> None:
         """ Take a queue out of the allocations of the root projects the user owns (the cascade of a removed grant) """
+        for root in Project.objects(company=company_id, parent=None, user=user_id, queues=queue_id).only("id"):
+            remove_grant(company_id, "queue", queue_id, "projects", root.id)
         Project.objects(
             company=company_id, parent=None, user=user_id, queues=queue_id
         ).update(pull__queues=queue_id)
