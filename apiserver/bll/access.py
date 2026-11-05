@@ -21,8 +21,10 @@ from apiserver.apierrors import errors
 from apiserver.bll.user_access import grant_applies, is_active, is_member, my_projects, root_project
 from apiserver.database.model.auth import Role, User
 from apiserver.database.model.dataset import Dataset
+from apiserver.database.model.project import Project
 from apiserver.database.model.queue import Queue
 from apiserver.database.model.share import LEVELS, RESOURCE_TYPES, Share
+from apiserver.database.model.task.task import Task
 from apiserver.database.model.user_access import UserAccess
 
 ADMIN_ROLES = (Role.admin, Role.root)
@@ -268,3 +270,50 @@ def drop_resource_shares(company: str, resource_type: str, resource_id: str, *, 
     """Every share of a resource that has been deleted."""
     refuse_inactive(actor)
     Share.objects(company=company, resource_type=resource_type, resource_id=resource_id).delete()
+
+
+# --- Notices of inherited datasets. A finished run shares the datasets it used with its project (bll/dataset_inheritance);
+# --- the user who ran the run sees each such share as a notice, while they still have use on the project.
+
+def _entitled_to_notice(company: str, user: str, share: Share, project_roots: Set[str]) -> bool:
+    """Whether the user is entitled to the notice of an inherited dataset share: they ran the run it was made for, and the
+    share still gives them use on the project (the user is an active member of it, see level_of)."""
+    if share.resource_type != "dataset" or share.scope != "projects" or not share.inherited or not share.run_id:
+        return False
+    run = Task.objects(company=company, id=share.run_id).only("user").first()
+    if run is None or run.user != user:
+        return False
+    level = _share_level(company, share, user, project_roots, True, True)
+    return allows(level, "use", "dataset")
+
+
+def notices(company: str, user: str) -> list:
+    """The notices of inherited datasets the user has not dismissed, newest first."""
+    if not user or not is_active(user):
+        return []
+    roots = _roots_of(company, user)
+    shares = Share.objects(company=company, resource_type="dataset", scope="projects", inherited=True,
+                           dismissed_by__ne=user).order_by("-created")
+    found = []
+    for share in shares:
+        if not _entitled_to_notice(company, user, share, roots):
+            continue
+        dataset = Dataset.objects(company=company, id=share.resource_id).only("name").first()
+        project = Project.objects(company=company, id=share.project).only("name").first()
+        found.append({
+            "id": share.id,
+            "run_id": share.run_id,
+            "dataset": dataset.name if dataset else "",
+            "project": project.name if project else "",
+            "created": share.created.isoformat() if share.created else None,
+        })
+    return found
+
+
+def dismiss_notice(company: str, user: str, share_id: str) -> None:
+    """Records the user's dismissal of a notice they are entitled to. A notice they may not see is not found, and a
+    repeated dismissal changes nothing."""
+    share = Share.objects(company=company, id=share_id).first()
+    if share is None or not _entitled_to_notice(company, user, share, _roots_of(company, user)):
+        raise errors.bad_request.ValidationError("no such dataset")
+    share.update(add_to_set__dismissed_by=user)

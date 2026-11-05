@@ -2,7 +2,7 @@
 only), or to everyone (public, read only). A share with an empty project and an empty user is a public share.
 See docs/superpowers/specs/2026-11-05-access-model-design.md."""
 
-from mongoengine import BooleanField, DateTimeField, Document, StringField, ValidationError
+from mongoengine import BooleanField, DateTimeField, Document, ListField, StringField, ValidationError
 
 from apiserver.database import Database, strict
 from apiserver.database.model import DbModelMixin
@@ -55,6 +55,8 @@ class Share(DbModelMixin, Document):
     granted_by = StringField(required=True)
     inherited = BooleanField(default=False)
     run_id = StringField()
+    dismissed_by = ListField(StringField(), default=list)
+    """ the users who dismissed the notice of an inherited share (see bll/access.notices) """
     created = DateTimeField()
 
     def clean(self):
