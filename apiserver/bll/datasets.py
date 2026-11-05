@@ -156,6 +156,31 @@ def _share_type(dataset: Dataset) -> Optional[str]:
     return "registry" if dataset.kind == "registry" else "dataset"
 
 
+def _project_roots(company: str, user: str) -> set:
+    """The root projects the user owns or is a member of: the ones a project share may name for them."""
+    return {project["id"] for project in user_access.my_projects(company, user)}
+
+
+def _record_visible(company: str, user: str, is_admin: bool, dataset: Dataset, roots: set) -> bool:
+    """True when the user holds a level on the stored record through the share records (bll/access). A registry entry has
+    no share of its own: it is visible when its registry is. With no registry listing it, its owner and admins see it."""
+    if dataset.kind == "registry_entry":
+        registry = Dataset.objects(company=company, kind="registry",
+                                   ref__iexact=dataset.ref.rsplit("/", 1)[0]).first()
+        if registry is not None:
+            return _record_visible(company, user, is_admin, registry, roots)
+        return user_access.is_active(user) and (is_admin or dataset.owner == user)
+    resource_type = "registry" if dataset.kind == "registry" else "dataset"
+    level = access.level_of(company, user, is_admin, resource_type, dataset.id, roots)
+    return access.allows(level, "use", resource_type)
+
+
+def can_see(company: str, user: str, is_admin: bool, dataset_id: str) -> bool:
+    """True when the user may see the stored dataset, registry or registry entry with this id."""
+    record = Dataset.objects(company=company, id=dataset_id).first()
+    return record is not None and _record_visible(company, user, is_admin, record, _project_roots(company, user))
+
+
 def _root_owner(company: str, root: str) -> str:
     """The owner of a root project: the granter of the shares that its allocations give (R20)."""
     return Project.objects(company=company, id=root).only("user").first().user
@@ -267,14 +292,15 @@ def _owned(company: str, dataset_id: str) -> Dataset:
 def _visible_rows(company: str, user: str, is_admin: bool) -> list:
     """The datasets the user may see, from the stored records and the repositories the App finds. Each has its state for
     this viewer."""
-    user_projects = {project["id"] for project in user_access.my_projects(company, user)}
-    stored = [view(dataset) for dataset in Dataset.objects(company=company)]
+    roots = _project_roots(company, user)
+    records = list(Dataset.objects(company=company))
+    stored = [view(dataset) for dataset in records]
     credential_ids = {
         entry.id for entry in UserAccess.objects(company=company, id__in=[d["credential"] for d in stored if d["credential"]])
     }
     rows = []
-    for dataset in stored:
-        if visible_to(dataset, user, user_projects, is_admin):
+    for record, dataset in zip(records, stored):
+        if _record_visible(company, user, is_admin, record, roots):
             state, message = credential_state(dataset, credential_ids)
             rows.append({**dataset, "state": state, "state_message": message})
     known = {row["ref"].lower() for row in rows}
@@ -354,9 +380,8 @@ def _change_allocation(company: str, user: str, dataset_id: str, project: str, i
         raise errors.bad_request.ValidationError("no such project")
     if not user_access.is_member(company, root, user):
         raise errors.bad_request.ValidationError("you are not a member of this project")
-    user_projects = {p["id"] for p in user_access.my_projects(company, user)}
     current = view(dataset)
-    if not visible_to(current, user, user_projects, is_admin):
+    if not _record_visible(company, user, is_admin, dataset, _project_roots(company, user)):
         raise errors.bad_request.ValidationError("no such dataset of yours")
     if add and dataset.visibility == "user":
         if not can_manage(current, user, is_admin):
@@ -368,7 +393,7 @@ def _change_allocation(company: str, user: str, dataset_id: str, project: str, i
         credential = UserAccess.objects(company=company, id=dataset.credential).first()
         if credential is None:
             raise errors.bad_request.ValidationError("the credential of this dataset no longer exists")
-        if root not in (credential.granted_projects or []):
+        if root not in access.shared_project_ids(company, "credential", credential.id):
             if credential.user != user and not is_admin:
                 raise errors.bad_request.ValidationError(
                     "the credential that reads this dataset is not shared with this project; its owner must share it first")

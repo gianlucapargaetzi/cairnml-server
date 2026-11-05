@@ -5,7 +5,6 @@ bll/datasets for who may do what."""
 from apiserver.apierrors import errors
 from apiserver.bll import dataset_details as bll
 from apiserver.bll import datasets as access_bll
-from apiserver.bll import user_access
 from apiserver.database.model.auth import Role
 from apiserver.idp import github_check
 from apiserver.idp.github import GitHubError
@@ -65,8 +64,7 @@ def _visible_of(call: APICall, company: str, rows: list) -> list:
     the caller may not see is not revealed. No records: nothing to check, and nothing is returned."""
     if not rows:
         return []
-    user_projects = {project["id"] for project in user_access.my_projects(company, call.identity.user)}
-    shown = [row for row in rows if access_bll.visible_to(row, call.identity.user, user_projects, _is_admin(call))]
+    shown = [row for row in rows if access_bll.can_see(company, call.identity.user, _is_admin(call), row["id"])]
     if not shown:
         raise errors.bad_request.ValidationError("no such dataset")
     return shown

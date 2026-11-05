@@ -10,6 +10,8 @@ import pytest
 from apiserver.apierrors import errors
 from apiserver.bll import dataset_credentials as bll
 from apiserver.database.model.dataset import Dataset
+from apiserver.database.model.project import Project, ProjectMember, ProjectRole
+from apiserver.database.model.share import Share
 from apiserver.idp import public_origin
 from apiserver.tests.db import ensure_db
 
@@ -29,6 +31,8 @@ def company():
 def clean_rows(company):
     yield
     Dataset.objects(company=company).delete()
+    Share.objects(company=company).delete()
+    Project.objects(company=company).delete()
 
 
 @pytest.fixture
@@ -50,10 +54,20 @@ def sts(monkeypatch):
 
 
 def add_dataset(company, owner=OWNER, visibility="user", projects=None, kind="repo", ref="acme/cars"):
-    Dataset(
+    """A dataset with its old fields and the share records the writers keep beside them (Public, and one project share
+    for each allocated project)."""
+    record = Dataset(
         id=f"d-{uuid4().hex[:8]}", company=company, kind=kind, ref=ref, name=ref.split("/")[-1], owner=owner,
         visibility=visibility, projects=projects or [], created=datetime.utcnow(),
-    ).save()
+    )
+    record.save()
+    resource_type = "registry" if kind == "registry" else "dataset"
+    if visibility == "Public":
+        Share(id=uuid4().hex, company=company, resource_type=resource_type, resource_id=record.id, scope="public",
+              level="read", granted_by=owner, created=datetime.utcnow()).save()
+    for root in projects or []:
+        Share(id=uuid4().hex, company=company, resource_type=resource_type, resource_id=record.id, scope="projects",
+              project=root, level="read", granted_by=owner, created=datetime.utcnow()).save()
 
 
 def issued_policy(sts) -> dict:
@@ -162,6 +176,9 @@ class TestDatasetCredentials:
         sts.assume_role.assert_not_called()
 
     def test_a_project_member_reads_a_dataset_allocated_to_the_project(self, company, sts, monkeypatch):
+        Project(id="p1", company=company, user=OWNER, name="p1", basename="p1", created=datetime.utcnow(),
+                members=[ProjectMember(user=OTHER, role=ProjectRole.read, added=datetime.utcnow(), added_by=OWNER)]
+                ).save()
         add_dataset(company, owner=OWNER, visibility="projects", projects=["p1"])
         monkeypatch.setattr(bll.user_access, "my_projects", lambda company, user: [{"id": "p1"}])
 

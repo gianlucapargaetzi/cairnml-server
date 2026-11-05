@@ -119,12 +119,10 @@ def _authorize(company: str, user: str, repository: str, level: str, is_admin: b
         if level == "read" or taken:
             raise errors.bad_request.ValidationError("no such dataset")
         return prefix_of(company, repository)
-    as_dict = {"owner": dataset.owner, "visibility": dataset.visibility, "projects": dataset.projects}
     if level == "read":
-        user_projects = {project["id"] for project in user_access.my_projects(company, user)}
-        if not datasets_bll.visible_to(as_dict, user, user_projects, is_admin):
+        if not datasets_bll.can_see(company, user, is_admin, dataset.id):
             raise errors.bad_request.ValidationError("no such dataset")
-    elif not datasets_bll.can_manage(as_dict, user, is_admin):
+    elif not datasets_bll.can_manage({"owner": dataset.owner}, user, is_admin):
         raise errors.forbidden.NoWritePermission("only the owner or an admin may write to a dataset")
     return prefix_of(company, dataset.ref)
 

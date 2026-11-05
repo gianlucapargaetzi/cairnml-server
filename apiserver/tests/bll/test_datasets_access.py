@@ -172,11 +172,19 @@ def projects():
 
 
 def add_private_dataset(owner: str, visibility: str = "user", projects=None, credential=None) -> str:
+    """A dataset with its old fields and the share records the writers keep beside them (Public, and one project share
+    for each allocated project, granted by the owner of the project)."""
     dataset = Dataset(id=f"d-{owner}-{visibility}", company=COMPANY, kind="repo", ref=f"acme/{owner}-{visibility}",
                       name=f"{owner}-{visibility}", owner=owner, visibility=visibility, projects=projects or [],
                       credential=credential, created=datetime.utcnow(), updated=datetime.utcnow(),
                       last_checked=datetime.utcnow())
     dataset.save()
+    if visibility == "Public":
+        Share(id=uuid4().hex, company=COMPANY, resource_type="dataset", resource_id=dataset.id, scope="public",
+              level="read", granted_by=owner, created=datetime.utcnow()).save()
+    for root in projects or []:
+        Share(id=uuid4().hex, company=COMPANY, resource_type="dataset", resource_id=dataset.id, scope="projects",
+              project=root, level="read", granted_by="u1", created=datetime.utcnow()).save()
     return dataset.id
 
 
