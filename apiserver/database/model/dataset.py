@@ -34,6 +34,10 @@ class Dataset(DbModelMixin, Document):
     """ root projects the dataset is allocated to; used when visibility is 'projects' """
     credential = StringField()
     """ the UserAccess that reads it; empty when the repository is public """
+    source = StringField(default="")
+    """ for a registry entry: how its data is read (the entry's source field) """
+    link = StringField(default="")
+    """ for a registry entry: where its data is (the entry's link field) """
     state = StringField(default="ok", choices=STATES)
     state_message = StringField(default="")
     created = DateTimeField()

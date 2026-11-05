@@ -147,9 +147,15 @@ def _save(company: str, user: str, kind: str, repo: str, name: str, visibility: 
     return dataset
 
 
+def _check_visibility(visibility: str) -> None:
+    if visibility not in VISIBILITIES:
+        raise errors.bad_request.ValidationError("the visibility is user, projects or Public")
+
+
 def add_repo(company: str, user: str, url: str, visibility: str = "user", project: str = None) -> dict:
     """Adds a repository as a dataset. A public one needs no credential. A private one takes the first candidate
     that can read it. It is added either way: with no access, its state and message say so."""
+    _check_visibility(visibility)
     repo = _parse_repo(url)
     if _exists(company, "repo", repo):
         raise errors.bad_request.ValidationError(f"{repo} is already added")
@@ -164,6 +170,7 @@ def add_registry(company: str, user: str, url: str, visibility: str = "user", pr
     """Adds a registry, and every dataset listed in it. The registry is checked like a repository. Each entry is saved as a
     dataset of its own, with the registry's visibility and the credential that read the registry. With no access, the
     registry is saved with no entries, and its state says so."""
+    _check_visibility(visibility)
     repo = _parse_repo(url)
     if _exists(company, "registry", repo):
         raise errors.bad_request.ValidationError(f"the registry {repo} is already added")
@@ -182,7 +189,10 @@ def add_registry(company: str, user: str, url: str, visibility: str = "user", pr
     for item in listed:
         entry_ref = f"{repo}/{item['name']}"
         if not _exists(company, "registry_entry", entry_ref):
-            _save(company, user, "registry_entry", entry_ref, item["name"], visibility, credential, OK, "", now)
+            saved = _save(company, user, "registry_entry", entry_ref, item["name"], visibility, credential, OK, "", now)
+            saved.source = item.get("source", "")
+            saved.link = item.get("link", "")
+            saved.save()
     return view(registry)
 
 
@@ -199,6 +209,9 @@ def view(dataset: Dataset) -> dict:
         "credential": dataset.credential,
         "state": dataset.state,
         "state_message": dataset.state_message or "",
+        "source": dataset.source or "",
+        "link": dataset.link or "",
+        "added": dataset.created.isoformat() if dataset.created else None,
         "last_checked": dataset.last_checked.isoformat() if dataset.last_checked else None,
     }
 
@@ -247,7 +260,8 @@ def _legacy_row(legacy: dict) -> dict:
     return {
         "id": f"registry:{repo.lower()}", "kind": "registry", "ref": repo, "name": repo.split("/", 1)[1],
         "owner": legacy["added_by"], "visibility": "Public", "projects": [], "credential": None,
-        "state": OK, "state_message": "", "last_checked": None,
+        "state": OK, "state_message": "", "source": "", "link": "",
+        "added": legacy["added"].isoformat() if legacy.get("added") else None, "last_checked": None,
     }
 
 
@@ -256,7 +270,7 @@ def _app_row(repo: str, app: UserAccess) -> dict:
     return {
         "id": f"app:{repo.lower()}", "kind": "repo", "ref": repo, "name": repo.split("/", 1)[1], "owner": app.user,
         "visibility": "Public", "projects": [], "credential": app.id, "state": OK, "state_message": "",
-        "last_checked": None,
+        "source": "", "link": "", "added": None, "last_checked": None,
     }
 
 
@@ -303,6 +317,17 @@ def _change_allocation(company: str, user: str, dataset_id: str, project: str, i
         if not can_manage(current, user, is_admin):
             raise errors.bad_request.ValidationError("only the owner of this dataset may share it with a project")
         dataset.visibility = "projects"
+    if add and dataset.credential:
+        # the project uses the dataset's credential, so it must be shared with the project: the owner of the credential
+        # shares it here, anyone else needs the owner to share it first
+        credential = UserAccess.objects(company=company, id=dataset.credential).first()
+        if credential is None:
+            raise errors.bad_request.ValidationError("the credential of this dataset no longer exists")
+        if root not in (credential.granted_projects or []):
+            if credential.user != user and not is_admin:
+                raise errors.bad_request.ValidationError(
+                    "the credential that reads this dataset is not shared with this project; its owner must share it first")
+            user_access.grant(company, credential.user, credential.id, root)
     if dataset.visibility == "projects":
         dataset.projects = [p for p in dataset.projects if p != root] + ([root] if add else [])
         dataset.updated = datetime.utcnow()

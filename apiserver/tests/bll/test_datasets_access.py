@@ -236,3 +236,23 @@ def test_app_discovered_repositories_belong_to_the_owner_of_the_app_credential(p
         assert found and found[0]["owner"] == "admin1" and found[0]["visibility"] == "Public"
     finally:
         app.delete()
+
+
+def add_access(access_id: str, owner: str) -> None:
+    UserAccess.objects(company=COMPANY, id=access_id).delete()
+    UserAccess(id=access_id, company=COMPANY, user=owner, kind="token", label=access_id, host="github.com", path="",
+               secret="x", scope="user", created=datetime.utcnow(), granted_projects=[]).save()
+
+
+def test_sharing_a_dataset_shares_its_credential_when_the_owner_of_the_credential_does_it(projects):
+    add_access("cred-u1", "u1")
+    dataset_id = add_private_dataset("u1", "Public", credential="cred-u1")
+    bll.allocate(COMPANY, "u1", dataset_id, "p-team", False)
+    assert "p-team" in UserAccess.objects(company=COMPANY, id="cred-u1").first().granted_projects
+
+
+def test_another_member_cannot_share_a_dataset_whose_credential_is_not_shared_with_the_project(projects):
+    add_access("cred-u1", "u1")
+    dataset_id = add_private_dataset("u1", "Public", credential="cred-u1")
+    with pytest.raises(errors.bad_request.ValidationError):
+        bll.allocate(COMPANY, "u2", dataset_id, "p-team", False)
