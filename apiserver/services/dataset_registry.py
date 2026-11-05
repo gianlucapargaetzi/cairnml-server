@@ -57,8 +57,11 @@ def get_registries(call: APICall, company: str, _request):
     dataset's own delete (datasets.delete), or dataset_registry.remove for the older ones."""
     rows = [row for row in access_bll.list_visible(company, call.identity.user, _is_admin(call))
             if row["kind"] == "registry"]
-    registries = [{"repository": row["ref"], "url": f"https://github.com/{row['ref']}", "added": row["added"],
-                   "added_by": row["owner"]} for row in rows]
+    # the id is the dataset's, so its owner can remove it (datasets.delete); an older registry has none and only an admin
+    # removes it (dataset_registry.remove)
+    registries = [{"id": None if row["id"].startswith("registry:") else row["id"], "repository": row["ref"],
+                   "url": f"https://github.com/{row['ref']}", "added": row["added"], "added_by": row["owner"]}
+                  for row in rows]
     seen = {row["repository"].lower() for row in registries}
     for legacy in bll.list_registries():
         if legacy["repository"].lower() not in seen:
