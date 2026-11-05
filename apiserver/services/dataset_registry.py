@@ -42,12 +42,14 @@ def get_registries(call: APICall, company: str, _request):
 
 @endpoint("dataset_registry.add", response_data_model=UpdateResponse, request_data_model=RegistryRequest)
 def add(call: APICall, company: str, request: RegistryRequest):
-    """Any user may add a registry: it is kept as a dataset owned by them, public to the company. Its entries are added
-    with it. A registry that cannot be read is refused with the reason."""
+    """Any user may add a registry: it is kept as a dataset owned by them, with the visibility the request gives (user
+    when none is given, as for a dataset: Datasets spec 4a). Its entries are added with it, with the same visibility.
+    A registry that cannot be read is refused with the reason."""
     repository = bll.normalize_repository(request.repository)
     if repository is None:
         raise errors.bad_request.ValidationError(
             "a registry must be a GitHub repository: https://github.com/owner/name.git or git@github.com:owner/name.git")
-    access_bll.add_registry(company, call.identity.user, f"https://github.com/{repository}", visibility="Public")
+    access_bll.add_registry(company, call.identity.user, f"https://github.com/{repository}",
+                            visibility=request.visibility or "user")
     audit(call.identity.user, "dataset_registry.add", ip=client_address(call), repository=repository)
     call.result.data_model = UpdateResponse(updated=1)
