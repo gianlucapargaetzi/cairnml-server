@@ -8,6 +8,7 @@ from mongoengine.base import UPDATE_OPERATORS
 
 from apiserver.apierrors import errors
 from apiserver.bll import webhooks
+from apiserver.bll.dataset_inheritance import publish_run_datasets
 from apiserver.bll.project.access import ProjectAccessBLL
 from apiserver.bll.util import update_project_time
 from apiserver.config_repo import config
@@ -21,6 +22,10 @@ from apiserver.utilities.attrs import typed_attrs
 valid_statuses = get_options(TaskStatus)
 deleted_prefix = "__DELETED__"
 task_running_statuses = [TaskStatus.queued, TaskStatus.in_progress]
+publishing_statuses = (TaskStatus.completed, TaskStatus.failed)
+""" a run that finishes with one of these publishes its datasets to its project; a stopped run does not """
+
+log = config.logger(__file__)
 
 
 @typed_attrs
@@ -82,6 +87,8 @@ class ChangeStatusRequest(object):
 
         update_project_time(project_id)
         webhooks.notify_status_change(self.task, self.new_status, now)
+        if self.new_status in publishing_statuses:
+            _publish_datasets(self.task)
 
         def is_mongo_operator(field: str) -> bool:
             head, _, tail = field.partition("__")
@@ -107,6 +114,14 @@ class ChangeStatusRequest(object):
                 current_status=current_status,
                 new_status=self.new_status,
             )
+
+
+def _publish_datasets(task) -> None:
+    """Shares the datasets of a finished run with its project. Never raises: sharing must not fail a run."""
+    try:
+        publish_run_datasets(task)
+    except Exception:
+        log.exception(f"sharing the datasets of task {task.id} failed")
 
 
 def validate_status_change(current_status, new_status):

@@ -180,11 +180,11 @@ def _require_sharing(company: str, actor: str, resource_type: str, resource_id: 
 
 
 def _create(company: str, granted_by: str, resource_type: str, resource_id: str, scope: str, project: str,
-            level: str, user: str) -> Share:
+            level: str, user: str, *, inherited: bool = False, run_id: Optional[str] = None) -> Share:
     record = Share(
         id=uuid.uuid4().hex, company=company, resource_type=resource_type, resource_id=resource_id, scope=scope,
         project=project if scope == "projects" else "", user=user if scope == "user" else "", level=level,
-        granted_by=granted_by, created=datetime.utcnow(),
+        granted_by=granted_by, created=datetime.utcnow(), inherited=inherited, run_id=run_id,
     )
     try:
         record.save()
@@ -243,14 +243,17 @@ def refuse_inactive(actor: str) -> None:
 
 
 def record_grant(company: str, granted_by: str, resource_type: str, resource_id: str, scope: str, project: str = "",
-                 user: str = "", level: str = "read", *, actor: str) -> Share:
+                 user: str = "", level: str = "read", *, actor: str, inherited: bool = False,
+                 run_id: Optional[str] = None) -> Share:
     """The share of a grant the old field has just gained, written for the actor who changed the field. An existing
-    share of the same grant is kept as it is."""
+    share of the same grant is kept as it is. inherited and run_id mark a share the server made because a run used
+    the resource (bll/dataset_inheritance)."""
     refuse_inactive(actor)
     existing = find_share(company, resource_type, resource_id, scope, project, user)
     if existing is not None:
         return existing
-    return _create(company, granted_by, resource_type, resource_id, scope, project, level, user)
+    return _create(company, granted_by, resource_type, resource_id, scope, project, level, user,
+                   inherited=inherited, run_id=run_id)
 
 
 def remove_grant(company: str, resource_type: str, resource_id: str, scope: str, project: str = "",
