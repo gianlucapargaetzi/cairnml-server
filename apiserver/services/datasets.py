@@ -6,6 +6,7 @@ from apiserver.apierrors import errors
 from apiserver.bll import dataset_cache
 from apiserver.bll import dataset_details as bll
 from apiserver.bll import datasets as access_bll
+from apiserver.bll import user_access
 from apiserver.bll import dataset_registry as registry_bll
 from apiserver.database.model.auth import Role
 from apiserver.idp import github_check
@@ -67,9 +68,22 @@ def delete(call: APICall, company: str, _request):
     call.result.data = {"deleted": True}
 
 
+def _refuse_unless_visible(call: APICall, company: str, repository) -> None:
+    """A repository that a kept record says is a dataset is shown only to those the record's visibility allows. The
+    refusal reads as a missing dataset, so that the existence of a dataset the caller may not see is not revealed."""
+    dataset = access_bll.kept_for_repository(company, bll.repository_of(repository))
+    if dataset is None:
+        return
+    user_projects = {project["id"] for project in user_access.my_projects(company, call.identity.user)}
+    if not access_bll.visible_to(access_bll.view(dataset), call.identity.user, user_projects, _is_admin(call)):
+        raise errors.bad_request.ValidationError("no such dataset")
+
+
 @endpoint("datasets.get_details")
-def get_details(call: APICall, _company: str, _request):
+def get_details(call: APICall, company: str, _request):
     request = call.data or {}
+    if not request.get("registry_name"):
+        _refuse_unless_visible(call, company, request.get("repository"))
     app = github_check.reader()  # the App when there is one; public datasets and registries need none
     try:
         call.result.data = bll.details(

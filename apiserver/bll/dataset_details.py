@@ -90,13 +90,18 @@ def registry_details(app: GitHubApp, registries: list, name: str) -> dict:
     raise errors.bad_request.ValidationError(f"no dataset {name} in the registries of this server")
 
 
-def details(app: GitHubApp, *, repository: Optional[str], registries: list, registry_name: Optional[str],
-            commit: Optional[str]) -> dict:
-    if registry_name:
-        return registry_details(app, registries, registry_name)
+def repository_of(repository: Optional[str]) -> str:
+    """owner/name of a github.com URL, or of an owner/name given as it is. Refused for anything else."""
     repo = repo_of(repository or "")
     if not repo and re.fullmatch(r"[\w.-]+/[\w.-]+", repository or ""):
         repo = repository
     if not repo:
         raise errors.bad_request.ValidationError("the repository must be a github.com repository or owner/name")
-    return own_details(app, repo, commit)
+    return repo
+
+
+def details(app: GitHubApp, *, repository: Optional[str], registries: list, registry_name: Optional[str],
+            commit: Optional[str]) -> dict:
+    if registry_name:
+        return registry_details(app, registries, registry_name)
+    return own_details(app, repository_of(repository), commit)
