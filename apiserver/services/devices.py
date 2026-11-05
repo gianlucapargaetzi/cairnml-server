@@ -268,6 +268,10 @@ def git_token(call: APICall, company, request: GitTokenRequest):
         if kept is not None:
             # a registry is read as it is: it holds no dataset.yaml, so its layout is not checked (a dataset's is)
             granted = None
+            if kept.kind == "registry" and task is not None and not _registry_shared_with_job(company, task, kept):
+                reason = f"the dataset registry {kept.name} is no longer shared with this project"
+                audit(actor, "git_token.refused", ip=client_address(call), company=company, device=claims.get("device"), task=request.task, reason=reason)
+                raise errors.bad_request.ValidationError(reason)
             if kept.credential and task is not None:
                 granted = _granted_token(company, task, actor, request.task, client_address(call), repo,
                                          dataset=kept.kind == "repo", credential=kept.credential)
@@ -361,6 +365,16 @@ AGENT_NOTICE = (
     "Projects that run jobs on this agent can give them the accesses shared with those projects: GitHub Apps, and "
     "personal tokens unless a project has turned them off. Enrol this agent only on a machine you trust with them."
 )
+
+
+def _registry_shared_with_job(company: str, task, registry) -> bool:
+    """Whether the task's project may read the registry now (R57): its share on the registry, for the user who queued the
+    job. A task queued before this was recorded is not shared with anyone."""
+    root = user_access.root_project(company, task.project) if task.project else None
+    enqueuer = task.execution.enqueued_by if task.execution else None
+    if not root or not enqueuer:
+        return False
+    return user_access.registry_shared_for_job(company, enqueuer, root, registry.id)
 
 
 def _granted_token(company: str, task, actor: str, task_id: str, ip, repo: str, dataset: bool = False,

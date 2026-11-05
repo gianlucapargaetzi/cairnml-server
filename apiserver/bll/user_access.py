@@ -369,6 +369,17 @@ def _shared_use(company: str, user: str, share: Share, root: str) -> bool:
     return access.allows(access._share_level(company, share, user, {root}, True, True), "use", "credential")
 
 
+def registry_shared_for_job(company: str, enqueuer: str, root: str, registry_id: str) -> bool:
+    """Whether a job of the root project may read through the registry: the registry's own share (bll/access) must give
+    the user who queued the job the use level on it, with the granter and the user still active members of the root
+    project. A registry no longer shared with the project gives its job nothing, whatever the credential's share."""
+    if not root or not is_active(enqueuer) or not is_member(company, root, enqueuer):
+        return False
+    access = _access()
+    level = access.level_of(company, enqueuer, False, "registry", registry_id, {root})
+    return access.allows(level, "use", "registry")
+
+
 def _own_use(company: str, user: str, entry: UserAccess) -> bool:
     """Whether the user may use their own credential now: its owner is a collaborator, unless the user is deactivated."""
     access = _access()
