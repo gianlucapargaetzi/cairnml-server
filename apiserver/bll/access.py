@@ -213,12 +213,6 @@ def remove_grant(company: str, resource_type: str, resource_id: str, scope: str,
                   project=project, user=user).delete()
 
 
-def drop_legacy_registry_shares(registry_id: str, *, actor: str) -> None:
-    """The shares of a registry of the dataset_registry collection, which is server-wide: every company's share of it."""
-    _refuse_inactive(actor)
-    Share.objects(resource_type="registry", resource_id=registry_id, scope="public").delete()
-
-
 def drop_resource_shares(company: str, resource_type: str, resource_id: str, *, actor: str) -> None:
     """Every share of a resource that has been deleted."""
     _refuse_inactive(actor)

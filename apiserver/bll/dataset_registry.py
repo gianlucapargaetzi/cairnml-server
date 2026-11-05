@@ -14,7 +14,6 @@ from urllib.parse import urlsplit
 
 from mongoengine.errors import NotUniqueError
 
-from apiserver.bll import access
 from apiserver.database.model.dataset_registry import DatasetRegistry
 from apiserver.database.model.settings import Settings
 from apiserver.idp.github import GitHubApp, valid_repo
@@ -107,14 +106,9 @@ def add_registry(repository: str, added_by: str) -> bool:
     return True
 
 
-def remove_registry(repository: str, actor: str) -> bool:
-    """Removes a registry from the list, and the public shares that the migration gave it in every company. False when it
-    was not listed."""
-    registry_id = repository.lower()
-    removed = DatasetRegistry.objects(id=registry_id).delete() > 0
-    if removed:
-        access.drop_legacy_registry_shares(registry_id, actor=actor)
-    return removed
+def remove_registry(repository: str) -> bool:
+    """Removes a registry from the list. False when it was not listed."""
+    return DatasetRegistry.objects(id=repository.lower()).delete() > 0
 
 
 def _entry_field(text: str, field: str) -> Optional[str]:

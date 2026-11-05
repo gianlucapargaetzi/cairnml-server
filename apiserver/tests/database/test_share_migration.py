@@ -184,31 +184,3 @@ def test_a_legacy_registry_is_public_in_every_company_once(company):
         DatasetRegistry.objects(id=registry_id).delete()
         Queue.objects(id=queue_id).delete()
         backend["company"].delete_one({"_id": company})
-
-
-def test_removing_a_legacy_registry_removes_its_public_share_in_every_company(company):
-    from apiserver.bll import dataset_registry as registry_bll
-
-    registry_id = f"owner/legacy-{uuid4().hex[:8]}"
-    other_company = f"c-{uuid4().hex[:8]}"
-    keep_id = f"owner/keep-{uuid4().hex[:8]}"
-    backend = _backend_db()
-    DatasetRegistry(id=registry_id, repository=registry_id, added=NOW, added_by="admin").save()
-    DatasetRegistry(id=keep_id, repository=keep_id, added=NOW, added_by="admin").save()
-    backend["company"].insert_many([{"_id": company}, {"_id": other_company}])
-    try:
-        load_migration().migrate_backend(backend)
-        assert {company, other_company} <= {s.company for s in Share.objects(resource_id=registry_id)}
-        kept_before = Share.objects(resource_id=keep_id).count()
-        assert kept_before >= 2
-
-        assert registry_bll.remove_registry(registry_id, actor="admin") is True
-
-        assert DatasetRegistry.objects(id=registry_id).first() is None
-        assert Share.objects(resource_id=registry_id).count() == 0
-        assert Share.objects(resource_id=keep_id).count() == kept_before
-        assert registry_bll.remove_registry(registry_id, actor="admin") is False
-    finally:
-        Share.objects(resource_id__in=[registry_id, keep_id]).delete()
-        DatasetRegistry.objects(id__in=[registry_id, keep_id]).delete()
-        backend["company"].delete_many({"_id": {"$in": [company, other_company]}})
