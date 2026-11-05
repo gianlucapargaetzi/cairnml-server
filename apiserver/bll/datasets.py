@@ -328,10 +328,10 @@ def _change_allocation(company: str, user: str, dataset_id: str, project: str, i
                 raise errors.bad_request.ValidationError(
                     "the credential that reads this dataset is not shared with this project; its owner must share it first")
             user_access.grant(company, credential.user, credential.id, root)
-    if dataset.visibility == "projects":
-        dataset.projects = [p for p in dataset.projects if p != root] + ([root] if add else [])
-        dataset.updated = datetime.utcnow()
-        dataset.save()
+    # the project is recorded whatever the visibility, so a Public dataset shows in the project's list as well
+    dataset.projects = [p for p in dataset.projects if p != root] + ([root] if add else [])
+    dataset.updated = datetime.utcnow()
+    dataset.save()
     return view(dataset)
 
 
