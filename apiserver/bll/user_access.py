@@ -18,6 +18,7 @@ from apiserver.config_repo import config
 from apiserver.database.model.auth import User
 from apiserver.database.model.git_credential import GitCredential
 from apiserver.database.model.project import Project
+from apiserver.database.model.share import Share
 from apiserver.database.model.user_access import UserAccess
 from apiserver.idp import git_credentials as store
 from apiserver.idp.audit import record as audit
@@ -34,6 +35,11 @@ def _label(text: str) -> str:
     if not value or len(value) > MAX_LABEL:
         raise errors.bad_request.ValidationError(f"a name is needed, up to {MAX_LABEL} characters")
     return value
+
+
+def _granted_to(entry: UserAccess) -> list:
+    """The root projects the access is shared with, from its share records (whether or not the share applies today)."""
+    return sorted(_access().shared_project_ids(entry.company, "credential", entry.id))
 
 
 def _view(entry: UserAccess) -> dict:
@@ -149,7 +155,7 @@ def _row(entry: UserAccess, owner_name: str, can_edit: bool, source: str = "acce
         "state": entry.last_state or "unchecked",
         "message": entry.last_message or "",
         "last_checked": entry.last_checked.isoformat() if entry.last_checked else None,
-        "granted_projects": list(entry.granted_projects or []),
+        "granted_projects": _granted_to(entry),
         "can_edit": can_edit,
         "app_id": entry.app_id,
     }
@@ -316,7 +322,7 @@ def project_grants(company: str, actor: str, project_id: str) -> list:
     if root is None or not is_member(company, root, actor):
         raise errors.bad_request.ValidationError("no such project")
     result = []
-    for entry in UserAccess.objects(company=company, granted_projects=root).order_by("created"):
+    for entry, _share in _project_grants_of(company, root):
         owner = User.objects(id=entry.user).only("name").first()
         result.append({
             "id": entry.id,
@@ -340,27 +346,52 @@ def my_projects(company: str, user: str) -> list:
     return [{"id": project.id, "name": project.name} for project in projects]
 
 
+def _project_grants_of(company: str, root: str) -> list:
+    """The accesses that a share of a credential names for the root project, as (entry, share) pairs in the order the
+    accesses were added. The share records are the source: the old field is not read."""
+    shares = {share.resource_id: share
+              for share in Share.objects(company=company, resource_type="credential", scope="projects", project=root)}
+    if not shares:
+        return []
+    entries = UserAccess.objects(company=company, id__in=list(shares)).order_by("created")
+    return [(entry, shares[entry.id]) for entry in entries]
+
+
+def _shared_use(company: str, user: str, share: Share, root: str) -> bool:
+    """Whether a project share lets the user use the credential now. bll/access decides it: the share applies while its
+    granter and the user are active members of the root project, and a share gives use at read."""
+    access = _access()
+    return access.allows(access._share_level(company, share, user, {root}, True, True), "use", "credential")
+
+
+def _own_use(company: str, user: str, entry: UserAccess) -> bool:
+    """Whether the user may use their own credential now: its owner is a collaborator, unless the user is deactivated."""
+    access = _access()
+    return access.allows(access.level_of(company, user, False, "credential", entry.id, set()), "use", "credential")
+
+
 def usable_for(company: str, user: str, host: str, path: str, project: Optional[str] = None) -> list:
     """The accesses the user may use for a repository on this host and path, as (entry, secret) pairs.
 
     Their own: every app, and every token whose host matches and whose path prefix covers the repository. Shared with
-    the project: the accesses granted to the project's root, while their owner is still a member and active, and the
-    user is still a member and active. A disabled user has none."""
+    the project: the accesses a share gives to the project's root, while the granter and the user are still members and
+    active. A disabled user has none."""
     if not user or not is_active(user):
         return []
     found = []
     for entry in UserAccess.objects(company=company, user=user, scope="user").order_by("created"):
         if entry.kind == "token" and (entry.host != host or not store.covers(entry.path, path)):
             continue
-        found.append(entry)
+        if _own_use(company, user, entry):
+            found.append(entry)
     root = root_project(company, project) if project else None
     if root:
-        user_is_member = is_member(company, root, user)
-        for entry in UserAccess.objects(company=company, granted_projects=root, user__ne=user).order_by("created"):
+        for entry, share in _project_grants_of(company, root):
+            if entry.user == user:
+                continue
             if entry.kind == "token" and (entry.host != host or not store.covers(entry.path, path)):
                 continue
-            if grant_applies(root, root, is_member(company, root, entry.user), user_is_member,
-                             is_active(entry.user), is_active(user)):
+            if _shared_use(company, user, share, root):
                 found.append(entry)
     pairs = []
     for entry in found:
@@ -378,11 +409,10 @@ def granted_for_job(company: str, enqueuer: str, root: str, host: str, path: str
     if not root or not is_active(enqueuer) or not is_member(company, root, enqueuer):
         return []
     pairs = []
-    for entry in UserAccess.objects(company=company, granted_projects=root).order_by("created"):
+    for entry, share in _project_grants_of(company, root):
         if entry.kind == "token" and (entry.host != host or not store.covers(entry.path, path)):
             continue
-        if not grant_applies(root, root, is_member(company, root, entry.user), True,
-                             is_active(entry.user), True):
+        if not _shared_use(company, enqueuer, share, root):
             continue
         try:
             pairs.append((entry, _secret(entry)))
