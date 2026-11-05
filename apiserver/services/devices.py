@@ -26,6 +26,7 @@ from apiserver.idp.audit import client_address, record as audit
 from apiserver.idp.checks import AccessDenied, check_device, check_job_issue
 from apiserver.idp.github import GitHubApp, GitHubError, RepoNotAccessible, TokenReader
 from apiserver.bll import user_access
+from apiserver.database.model.dataset import Dataset
 from apiserver.bll.dataset_registry import canonical_url
 from apiserver.idp.github_check import build_from_config, public_repo, repo_of
 from apiserver.idp.keys import load_public_key
@@ -259,6 +260,17 @@ def git_token(call: APICall, company, request: GitTokenRequest):
         public = _public_answer(repo, actor, company, claims, request.task, call)
         if public is not None:
             return public
+        # a dataset kept by the environment names the credential that reads it: the job uses that credential, shared with
+        # its project, or it is refused with the reason (bll/datasets)
+        kept = Dataset.objects(company=company, kind="repo", ref__iexact=repo).first()
+        if kept is not None and kept.credential:
+            granted = _granted_token(company, task, actor, request.task, client_address(call), repo, dataset=True,
+                                     credential=kept.credential) if task is not None else None
+            if granted is None:
+                reason = "the credential of this dataset is not shared with this project"
+                audit(actor, "git_token.refused", ip=client_address(call), company=company, device=claims.get("device"), task=request.task, reason=reason)
+                raise errors.bad_request.ValidationError(reason)
+            return granted
         # the accesses shared with the task's project come first, as for the task's own repository. The layout is
         # checked with the same access that reads the repository.
         if task is not None:
@@ -345,7 +357,8 @@ AGENT_NOTICE = (
 )
 
 
-def _granted_token(company: str, task, actor: str, task_id: str, ip, repo: str, dataset: bool = False):
+def _granted_token(company: str, task, actor: str, task_id: str, ip, repo: str, dataset: bool = False,
+                   credential: str = None):
     """A token for the repository from the accesses shared with the task's project, or None. The job is the project's:
     the access comes from its grants, while its owner is a member and active, and the user who queued the task is a
     member and active. The agent's owner's own accesses are never used here.
@@ -361,6 +374,8 @@ def _granted_token(company: str, task, actor: str, task_id: str, ip, repo: str, 
         # a task queued before this was recorded: nothing is granted, rather than guessing who queued it
         return None
     for entry, secret in user_access.granted_for_job(company, enqueuer, root, host, path):
+        if credential and entry.id != credential:
+            continue  # a dataset names the one credential that reads it: no other access is used
         if entry.kind == "app":
             app = GitHubApp(entry.app_id, secret, entry.api_url or config.get("apiserver.idp.github_api_url"))
             try:
