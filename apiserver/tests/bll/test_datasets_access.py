@@ -56,7 +56,6 @@ from uuid import uuid4
 import pytest
 
 from apiserver.apierrors import errors
-from apiserver.bll import dataset_registry as registry_bll
 from apiserver.database.model.dataset import Dataset
 from apiserver.tests.db import ensure_db
 
@@ -70,11 +69,10 @@ def _remove_rows():
 
 
 @pytest.fixture(autouse=True)
-def clean_rows(monkeypatch):
-    """Every test has a company of its own rows: nothing is left by an earlier test, and the server-wide list of the
-    older registries is empty, so the listing shows only this company's rows."""
+def clean_rows():
+    """Every test has a company of its own rows: nothing is left by an earlier test, so the listing shows only this
+    company's rows."""
     _remove_rows()
-    monkeypatch.setattr(registry_bll, "list_registries", lambda: [])
     yield
     _remove_rows()
 

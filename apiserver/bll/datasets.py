@@ -14,7 +14,6 @@ from typing import Optional
 from apiserver.apierrors import errors
 from apiserver.bll import access
 from apiserver.bll import dataset_cache
-from apiserver.bll import dataset_registry as registry_bll
 from apiserver.bll import user_access
 from apiserver.bll.dataset_registry import canonical_url, list_entries
 from apiserver.config_repo import config
@@ -266,8 +265,8 @@ def _owned(company: str, dataset_id: str) -> Dataset:
 
 
 def _visible_rows(company: str, user: str, is_admin: bool) -> list:
-    """The datasets the user may see, from the stored records, the registries added before this was kept, and the
-    repositories the App finds. Each has its state for this viewer."""
+    """The datasets the user may see, from the stored records and the repositories the App finds. Each has its state for
+    this viewer."""
     user_projects = {project["id"] for project in user_access.my_projects(company, user)}
     stored = [view(dataset) for dataset in Dataset.objects(company=company)]
     credential_ids = {
@@ -279,11 +278,6 @@ def _visible_rows(company: str, user: str, is_admin: bool) -> list:
             state, message = credential_state(dataset, credential_ids)
             rows.append({**dataset, "state": state, "state_message": message})
     known = {row["ref"].lower() for row in rows}
-    for legacy in registry_bll.list_registries():
-        if legacy["repository"].lower() in known:
-            continue
-        rows.append(_legacy_row(legacy))
-        known.add(legacy["repository"].lower())
     app = UserAccess.objects(company=company, scope="company", kind="app").order_by("created").first()
     if app is not None:
         for entry in dataset_cache.cached_list()["datasets"]:
@@ -292,17 +286,6 @@ def _visible_rows(company: str, user: str, is_admin: bool) -> list:
             rows.append(_app_row(entry["repository"], app))
             known.add(entry["repository"].lower())
     return rows
-
-
-def _legacy_row(legacy: dict) -> dict:
-    """A registry added before datasets were kept: public, owned by the user who added it."""
-    repo = legacy["repository"]
-    return {
-        "id": f"registry:{repo.lower()}", "kind": "registry", "ref": repo, "name": repo.split("/", 1)[1],
-        "owner": legacy["added_by"], "visibility": "Public", "projects": [], "credential": None,
-        "state": OK, "state_message": "", "source": "", "link": "",
-        "added": legacy["added"].isoformat() if legacy.get("added") else None, "last_checked": None,
-    }
 
 
 def _app_row(repo: str, app: UserAccess) -> dict:

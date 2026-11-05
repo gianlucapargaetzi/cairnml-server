@@ -28,7 +28,6 @@ SENSITIVE = [
     "datasets.unallocate",
     "datasets.add",
     "dataset_registry.add",
-    "dataset_registry.remove",
     "devices.get_all",
     "devices.revoke",
     "devices.enroll",

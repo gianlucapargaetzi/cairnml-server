@@ -112,7 +112,7 @@ def description_of(app: GitHubApp, repo: str, head: str):
 
 
 def dataset_entry(app: GitHubApp, repo: str) -> dict:
-    """The list entry of one installed repository that is a dataset: the fields datasets.list shows.
+    """The list entry of one installed repository that is a dataset: the fields the Datasets list shows.
 
     Raises NotADataset when dataset.yaml is missing at its root, GitHubUnreadable when GitHub cannot be read now, and a
     validation error when the footprint does not hold. See bll/dataset_cache for what a refresh does with each.

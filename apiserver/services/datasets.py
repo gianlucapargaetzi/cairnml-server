@@ -3,11 +3,9 @@ details of one dataset (from its repository or from the registry), and adding, s
 bll/datasets for who may do what."""
 
 from apiserver.apierrors import errors
-from apiserver.bll import dataset_cache
 from apiserver.bll import dataset_details as bll
 from apiserver.bll import datasets as access_bll
 from apiserver.bll import user_access
-from apiserver.bll import dataset_registry as registry_bll
 from apiserver.database.model.auth import Role
 from apiserver.idp import github_check
 from apiserver.idp.github import GitHubError
@@ -16,12 +14,6 @@ from apiserver.service_repo import APICall, endpoint
 
 def _is_admin(call: APICall) -> bool:
     return call.identity.role in (Role.admin, Role.root)
-
-
-@endpoint("datasets.list")
-def list_datasets(call: APICall, _company: str, _request):
-    # The cached list (bll/dataset_cache): it never calls GitHub here. refreshed_at is the last full rebuild.
-    call.result.data = dataset_cache.cached_list()
 
 
 @endpoint("datasets.visible")
@@ -68,31 +60,35 @@ def delete(call: APICall, company: str, _request):
     call.result.data = {"deleted": True}
 
 
-def _refuse_unless_visible(call: APICall, company: str, rows: list) -> None:
-    """Refuses unless one of the kept records is visible to the caller. The refusal reads as a missing dataset, so
-    that the existence of a dataset the caller may not see is not revealed. No records: nothing to check."""
+def _visible_of(call: APICall, company: str, rows: list) -> list:
+    """The kept records the caller may see. Refuses when none is, as a missing dataset, so that the existence of a dataset
+    the caller may not see is not revealed. No records: nothing to check, and nothing is returned."""
     if not rows:
-        return
+        return []
     user_projects = {project["id"] for project in user_access.my_projects(company, call.identity.user)}
-    if not any(access_bll.visible_to(row, call.identity.user, user_projects, _is_admin(call)) for row in rows):
+    shown = [row for row in rows if access_bll.visible_to(row, call.identity.user, user_projects, _is_admin(call))]
+    if not shown:
         raise errors.bad_request.ValidationError("no such dataset")
+    return shown
 
 
 @endpoint("datasets.get_details")
 def get_details(call: APICall, company: str, _request):
     request = call.data or {}
+    registries = []  # the registries that list the named entry, which the caller may see
     if request.get("registry_name"):
         entries = access_bll.registry_entries_named(company, request["registry_name"])
-        _refuse_unless_visible(call, company, [access_bll.view(entry) for entry in entries])
+        shown = _visible_of(call, company, [access_bll.view(entry) for entry in entries])
+        registries = list(dict.fromkeys(row["ref"].rsplit("/", 1)[0] for row in shown))
     else:
         dataset = access_bll.kept_for_repository(company, bll.repository_of(request.get("repository")))
-        _refuse_unless_visible(call, company, [access_bll.view(dataset)] if dataset is not None else [])
+        _visible_of(call, company, [access_bll.view(dataset)] if dataset is not None else [])
     app = github_check.reader()  # the App when there is one; public datasets and registries need none
     try:
         call.result.data = bll.details(
             app,
             repository=request.get("repository"),
-            registries=registry_bll.configured_registries(),
+            registries=registries,
             registry_name=request.get("registry_name"),
             commit=request.get("commit"),
         )

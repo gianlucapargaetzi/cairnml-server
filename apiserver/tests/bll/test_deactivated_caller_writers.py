@@ -1,5 +1,7 @@
 # apiserver/tests/bll/test_deactivated_caller_writers.py
-"""A deactivated caller changes nothing: neither the old field nor the share, whichever writer they call."""
+"""A deactivated caller changes nothing: neither the old field nor the share, whichever writer they call. And a
+deactivated owner or grantee gets no queue access: the readers in bll/queue/queue_access.py see what bll/access.py
+gives an active user only."""
 from datetime import datetime
 from types import SimpleNamespace
 from uuid import uuid4
@@ -9,6 +11,7 @@ import pytest
 from apiserver.apierrors import errors
 from apiserver.apimodels.queues import UpdateRequest, UserRequest
 from apiserver.bll import user_access
+from apiserver.bll.queue.queue_access import QueueAccessBLL
 from apiserver.bll.queue.queue_bll import QueueBLL
 from apiserver.database.model.auth import Role, User
 from apiserver.database.model.dataset import Dataset
@@ -63,7 +66,7 @@ def share_count(company, resource_type, resource_id, scope):
 def test_a_deactivated_owner_cannot_grant_a_queue_to_a_user(gone):
     queue = QueueBLL.create(gone, name="queue gone", created_by="gone")
     deactivate(gone)
-    with pytest.raises(errors.forbidden.NoWritePermission):
+    with pytest.raises(errors.bad_request.InvalidQueueId):
         svc.add_user(call(gone), gone, UserRequest(queue=queue.id, user="u2"))
     assert Queue.objects(company=gone, id=queue.id).get().users == []
     assert share_count(gone, "queue", queue.id, "user") == 0
@@ -73,7 +76,7 @@ def test_a_deactivated_owner_cannot_take_back_a_queue_grant(gone):
     queue = QueueBLL.create(gone, name="queue gone", created_by="gone")
     svc.add_user(call(gone), gone, UserRequest(queue=queue.id, user="u2"))
     deactivate(gone)
-    with pytest.raises(errors.forbidden.NoWritePermission):
+    with pytest.raises(errors.bad_request.InvalidQueueId):
         svc.remove_user(call(gone), gone, UserRequest(queue=queue.id, user="u2"))
     assert [u.user for u in Queue.objects(company=gone, id=queue.id).get().users] == ["u2"]
     assert share_count(gone, "queue", queue.id, "user") == 1
@@ -82,7 +85,7 @@ def test_a_deactivated_owner_cannot_take_back_a_queue_grant(gone):
 def test_a_deactivated_owner_cannot_make_a_queue_public(gone):
     queue = QueueBLL.create(gone, name="queue gone", created_by="gone")
     deactivate(gone)
-    with pytest.raises(errors.forbidden.NoWritePermission):
+    with pytest.raises(errors.bad_request.InvalidQueueId):
         svc.update(call(gone, {"public": True}), gone, UpdateRequest(queue=queue.id))
     assert Queue.objects(company=gone, id=queue.id).get().public is False
     assert share_count(gone, "queue", queue.id, "public") == 0
@@ -108,3 +111,34 @@ def test_a_deactivated_owner_cannot_grant_a_credential_to_a_project(gone):
         user_access.grant(gone, "gone", "acc1", "root1")
     assert UserAccess.objects(company=gone, id="acc1").get().granted_projects == []
     assert share_count(gone, "credential", "acc1", "projects") == 0
+
+
+def ident(company, user):
+    return Identity(user=user, company=company, role=Role.user)
+
+
+def test_a_deactivated_owner_has_no_queue_access(gone):
+    queue = QueueBLL.create(gone, name="queue gone", created_by="gone")
+    assert queue.id in QueueAccessBLL.usable_queue_ids(ident(gone, "gone"), gone)
+    deactivate(gone)
+    assert queue.id not in QueueAccessBLL.usable_queue_ids(ident(gone, "gone"), gone)
+    with pytest.raises(errors.bad_request.InvalidQueueId):
+        QueueAccessBLL.assert_can_use(ident(gone, "gone"), gone, queue.id)
+    with pytest.raises(errors.bad_request.InvalidQueueId):
+        QueueAccessBLL.assert_can_manage(ident(gone, "gone"), gone, queue.id)
+    with pytest.raises(errors.bad_request.InvalidQueueId):
+        QueueAccessBLL.assert_can_serve(ident(gone, "gone"), gone, [queue.id])
+
+
+def test_a_deactivated_grantee_has_no_queue_access(gone):
+    queue = QueueBLL.create(gone, name="queue gone", created_by="gone")
+    svc.add_user(call(gone), gone, UserRequest(queue=queue.id, user="u2"))
+    QueueAccessBLL.assert_can_use(ident(gone, "u2"), gone, queue.id)
+    deactivate(gone, user="u2")
+    try:
+        assert queue.id not in QueueAccessBLL.usable_queue_ids(ident(gone, "u2"), gone)
+        with pytest.raises(errors.bad_request.InvalidQueueId):
+            QueueAccessBLL.assert_can_use(ident(gone, "u2"), gone, queue.id)
+    finally:
+        # is_active looks the user up by id alone, so the flag must not outlive this test
+        User.objects(id="u2", company=gone).update(set__idp_disabled=False)

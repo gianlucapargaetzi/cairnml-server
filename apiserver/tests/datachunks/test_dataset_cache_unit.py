@@ -1,16 +1,14 @@
-"""The cached dataset list: what datasets.list reads, the hourly rebuild, the refresh on a job token, and what a failure
+"""The cached dataset list: what the Datasets list reads, the hourly rebuild, the refresh on a job token, and what a failure
 keeps. The GitHub App is the fake from dataset_fakes; the snapshot is kept in the test database and the locks in Redis.
 No test reaches the network.
 """
 
 from datetime import datetime, timedelta, timezone
-from types import SimpleNamespace
 from unittest import TestCase, mock
 
 from apiserver.bll import dataset_cache as bll
 from apiserver.database.model.settings import Settings
 from apiserver.idp.github import GitHubError
-from apiserver.services import datasets as service
 from apiserver.tests.datachunks.dataset_fakes import DVC, FakeGitHub, good_files
 from apiserver.tests.db import ensure_db
 from cairnml.datasets import footprint as fp
@@ -53,15 +51,14 @@ class TestListReadsTheSnapshot(CacheTestCase):
     def test_an_empty_cache_lists_nothing_and_has_no_refresh_time(self):
         self.assertEqual(bll.cached_list(), {"datasets": [], "refreshed_at": None})
 
-    def test_the_endpoint_answers_from_the_snapshot_and_makes_no_github_call(self):
+    def test_the_cached_list_is_read_from_the_snapshot_and_makes_no_github_call(self):
         self.assertTrue(bll.refresh_if_due(self.github))
-        call = SimpleNamespace(result=SimpleNamespace(data=None))
         with mock.patch("apiserver.idp.github.GitHubApp._send", side_effect=AssertionError("GitHub was called")), \
                 mock.patch("apiserver.idp.github_check.build_from_config", side_effect=AssertionError("app built")):
-            service.list_datasets(call, "company", None)
-        self.assertEqual([d["repository"] for d in call.result.data["datasets"]], [COARS, OTHER])
-        self.assertEqual(call.result.data["refreshed_at"], bll.read_snapshot()["refreshed_at"])
-        self.assertIn("checked_at", call.result.data["datasets"][0])
+            data = bll.cached_list()
+        self.assertEqual([d["repository"] for d in data["datasets"]], [COARS, OTHER])
+        self.assertEqual(data["refreshed_at"], bll.read_snapshot()["refreshed_at"])
+        self.assertIn("checked_at", data["datasets"][0])
 
 
 class TestHourlyRebuild(CacheTestCase):

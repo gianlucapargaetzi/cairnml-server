@@ -59,12 +59,12 @@ class QueueAccessBLL:
     @staticmethod
     def allocated_queue_ids(identity: Identity) -> Set[str]:
         """ Queues allocated to root projects the user owns or is a member of """
-        return queue_ids_allocated(identity.company, identity.user, QueueAccessBLL._roots(identity), check_active=False)
+        return queue_ids_allocated(identity.company, identity.user, QueueAccessBLL._roots(identity))
 
     @staticmethod
     def usable_query(identity: Identity) -> Q:
         """ Queues the user may see and use, without the admin exception """
-        held = queue_ids_held(identity.company, identity.user, QueueAccessBLL._roots(identity), check_active=False)
+        held = queue_ids_held(identity.company, identity.user, QueueAccessBLL._roots(identity))
         return Q(id__in=list(held))
 
     @staticmethod
@@ -89,8 +89,7 @@ class QueueAccessBLL:
         """
         if QueueAccessBLL.is_admin(identity):
             return
-        level = level_of(company_id, identity.user, False, "queue", queue_id, QueueAccessBLL._roots(identity),
-                         check_active=False)
+        level = level_of(company_id, identity.user, False, "queue", queue_id, QueueAccessBLL._roots(identity))
         if not allows(level, "use", "queue"):
             raise errors.bad_request.InvalidQueueId(id=queue_id)
 
@@ -101,8 +100,7 @@ class QueueAccessBLL:
         """
         if QueueAccessBLL.is_admin(identity):
             return
-        level = level_of(company_id, identity.user, False, "queue", queue_id, QueueAccessBLL._roots(identity),
-                         check_active=False)
+        level = level_of(company_id, identity.user, False, "queue", queue_id, QueueAccessBLL._roots(identity))
         if level is None:
             raise errors.bad_request.InvalidQueueId(id=queue_id)
         # the owner holds the collaborator level, the one that manages a queue
@@ -127,8 +125,7 @@ class QueueAccessBLL:
             queue_id
             for queue_id in queue_ids
             if allows(
-                level_of(company_id, identity.user, False, "queue", queue_id, set(), include_projects=False,
-                         check_active=False),
+                level_of(company_id, identity.user, False, "queue", queue_id, set(), include_projects=False),
                 "use",
                 "queue",
             )
@@ -140,7 +137,7 @@ class QueueAccessBLL:
     @staticmethod
     def assignable_queue_ids(company_id: str, user_id: str) -> Set[str]:
         """ What a project owner may allocate: public, granted and owned queues, without admin rights """
-        return queue_ids_held(company_id, user_id, set(), include_projects=False, check_active=False)
+        return queue_ids_held(company_id, user_id, set(), include_projects=False)
 
     @staticmethod
     def remove_from_allocations(queue_ids: Iterable[str]) -> None:

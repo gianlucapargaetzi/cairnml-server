@@ -8,14 +8,10 @@ ignored here, with a logged warning, if an old registry still has one.
 
 import logging
 import re
-from datetime import datetime
 from typing import Optional
 from urllib.parse import urlsplit
 
-from mongoengine.errors import NotUniqueError
-
-from apiserver.database.model.dataset_registry import DatasetRegistry
-from apiserver.database.model.settings import Settings
+from apiserver.database.model.dataset import Dataset
 from apiserver.idp.github import GitHubApp, valid_repo
 
 ENTRY_DIR = "datasets"
@@ -24,9 +20,15 @@ log = logging.getLogger(__name__)
 
 
 def configured_registries() -> list:
-    """The dataset registries of this server, in the order they were added. Each is a repository of owner/name, public
-    (read without the GitHub App) or one the App can read. Admins add and remove them in the UI; there is no setting."""
-    return [registry.repository for registry in DatasetRegistry.objects().order_by("added")]
+    """The dataset registries of this server, in the order they were added: the repositories of the registry records
+    kept as datasets (bll/datasets), of every company, each once. Each is a repository of owner/name, public (read
+    without the GitHub App) or one the App can read."""
+    seen, repositories = set(), []
+    for record in Dataset.objects(kind="registry").order_by("created").only("ref"):
+        if record.ref.lower() not in seen:
+            seen.add(record.ref.lower())
+            repositories.append(record.ref)
+    return repositories
 
 
 _GITHUB_HOSTS = ("github.com", "www.github.com")
@@ -77,38 +79,6 @@ def normalize_repository(text: str) -> Optional[str]:
 def canonical_url(repository: str) -> str:
     """The https address of a repository named owner/name."""
     return f"https://github.com/{repository}"
-
-
-def list_registries() -> list:
-    return [
-        {
-            "repository": registry.repository,
-            "url": registry.url or canonical_url(registry.repository),
-            "added": registry.added,
-            "added_by": registry.added_by,
-        }
-        for registry in DatasetRegistry.objects().order_by("added")
-    ]
-
-
-def add_registry(repository: str, added_by: str) -> bool:
-    """Adds a registry given as owner/name. False when it is already listed (compared in lower case)."""
-    try:
-        DatasetRegistry(
-            id=repository.lower(),
-            repository=repository,
-            url=canonical_url(repository),
-            added=datetime.utcnow(),
-            added_by=added_by,
-        ).save(force_insert=True)
-    except NotUniqueError:
-        return False
-    return True
-
-
-def remove_registry(repository: str) -> bool:
-    """Removes a registry from the list. False when it was not listed."""
-    return DatasetRegistry.objects(id=repository.lower()).delete() > 0
 
 
 def _entry_field(text: str, field: str) -> Optional[str]:

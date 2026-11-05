@@ -92,8 +92,7 @@ def level_of(company: str, user: str, is_admin: bool, resource_type: str, resour
     """The highest level the user holds on the resource, or None when nothing gives them one. With check_active a
     deactivated user holds no level at all, whatever their ownership, role or share. include_projects=False leaves out
     the project shares: a queue allocated to a project does not count, as for an agent that serves a queue.
-    check_active=False is for the queue readers, which keep the refusals they had before this module: a deactivated
-    user keeps the level their ownership or share gives them, and the writers refuse the change."""
+    check_active=False leaves the activity check out; no reader uses it, since a deactivated user holds no level."""
     if check_active and user and not is_active(user):
         return None
     owner = _owner(company, resource_type, resource_id)

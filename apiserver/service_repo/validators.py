@@ -107,7 +107,6 @@ AGENT_SENSITIVE_ENDPOINTS = frozenset({
     "datasets.unallocate",
     "datasets.add",
     "dataset_registry.add",
-    "dataset_registry.remove",
 })
 AGENT_SENSITIVE_PREFIXES = ("storage.", "user_access.", "users.")
 
