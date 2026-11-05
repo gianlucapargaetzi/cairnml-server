@@ -91,6 +91,6 @@ def remove(call: APICall, _company: str, request: RegistryRequest):
     if repository is None:
         raise errors.bad_request.ValidationError(
             "a registry must be a GitHub repository: https://github.com/owner/name.git or git@github.com:owner/name.git")
-    removed = bll.remove_registry(repository)
+    removed = bll.remove_registry(repository, actor=call.identity.user)
     audit(call.identity.user, "dataset_registry.remove", ip=client_address(call), repository=repository, removed=removed)
     call.result.data_model = UpdateResponse(updated=int(removed))
