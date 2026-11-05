@@ -139,6 +139,13 @@ def shared_project_ids(company: str, resource_type: str, resource_id: str) -> Se
     return {share.project for share in shares}
 
 
+def resource_ids_shared_with(company: str, resource_type: str, project: str) -> list:
+    """The resources shared with a root project, in the order they were shared, whether or not the share applies today."""
+    shares = Share.objects(company=company, resource_type=resource_type, scope="projects", project=project).order_by(
+        "created")
+    return [share.resource_id for share in shares]
+
+
 def require(company: str, user: str, is_admin: bool, resource_type: str, resource_id: str,
             project_roots: Set[str], action: str) -> None:
     """Raises when the user may not perform the action: not-found when they hold no level at all, and forbidden when

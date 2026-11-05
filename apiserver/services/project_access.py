@@ -14,7 +14,13 @@ from apiserver.apimodels.project_access import (
     TransferOwnershipRequest,
     UpdateMemberRoleRequest,
 )
-from apiserver.bll.access import record_grant, refuse_inactive, remove_grant
+from apiserver.bll.access import (
+    queue_ids_allocated,
+    record_grant,
+    refuse_inactive,
+    remove_grant,
+    resource_ids_shared_with,
+)
 from apiserver.bll.datasets import regrant_project_shares
 from apiserver.bll.project.access import ProjectAccessBLL
 from apiserver.bll.queue.queue_access import QueueAccessBLL
@@ -201,11 +207,16 @@ def get_queues(call: APICall, company_id: str, request: GetQueuesRequest):
     root_id = _resolve_root_id(call, request.project)
     ProjectAccessBLL.assert_can(call.identity, request.project, "read")
 
-    root = _load_root(company_id, root_id)
+    _load_root(company_id, root_id)
+    allocated = resource_ids_shared_with(company_id, "queue", root_id)
+    if not QueueAccessBLL.is_admin(call.identity):
+        # a deactivated owner or member, or an allocation whose granter is no longer a member, gives no queue (R25)
+        applies = queue_ids_allocated(company_id, call.identity.user, {root_id})
+        allocated = [queue_id for queue_id in allocated if queue_id in applies]
     call.result.data = {
         "queues": [
             {"id": q.id, "name": q.name}
-            for q in _queue_summaries(company_id, root.queues)
+            for q in _queue_summaries(company_id, allocated)
         ]
     }
 
@@ -237,7 +248,7 @@ def add_queues(call: APICall, company_id: str, request: AddQueuesRequest):
     if len(set(request.queues)) != len(request.queues):
         raise errors.bad_request.ValidationError("a queue is listed more than once")
 
-    already = set(root.queues)
+    already = set(resource_ids_shared_with(company_id, "queue", root_id))
     if already.intersection(request.queues):
         raise errors.bad_request.ValidationError(
             "a queue is already allocated to the project"
@@ -266,7 +277,7 @@ def remove_queue(call: APICall, company_id: str, request: RemoveQueueRequest):
     root = _load_root(company_id, root_id)
     _assert_owner(call, root)
 
-    if request.queue not in root.queues:
+    if request.queue not in resource_ids_shared_with(company_id, "queue", root_id):
         raise errors.bad_request.InvalidQueueId(id=request.queue)
 
     Project.objects(id=root_id, company=company_id).update_one(
