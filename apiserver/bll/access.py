@@ -22,7 +22,7 @@ from apiserver.bll.user_access import grant_applies, is_active, is_member, my_pr
 from apiserver.database.model.auth import Role, User
 from apiserver.database.model.dataset import Dataset
 from apiserver.database.model.queue import Queue
-from apiserver.database.model.share import LEVELS, Share
+from apiserver.database.model.share import LEVELS, RESOURCE_TYPES, Share
 from apiserver.database.model.user_access import UserAccess
 
 ADMIN_ROLES = (Role.admin, Role.root)
@@ -145,6 +145,15 @@ def _create(company: str, granted_by: str, resource_type: str, resource_id: str,
     except NotUniqueError:
         raise errors.bad_request.ValidationError("the resource is already shared that way") from None
     return record
+
+
+def list_shares(company: str, actor: str, resource_type: str, resource_id: str) -> list:
+    """The shares of a resource, for an actor who may manage its sharing."""
+    if resource_type not in RESOURCE_TYPES:
+        raise errors.bad_request.ValidationError("no such resource type")
+    _require_active(actor)
+    _require_sharing(company, actor, resource_type, resource_id)
+    return list(Share.objects(company=company, resource_type=resource_type, resource_id=resource_id))
 
 
 def share(company: str, actor: str, resource_type: str, resource_id: str, scope: str, project: str,
