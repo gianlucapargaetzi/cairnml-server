@@ -51,21 +51,32 @@ class TestCanManage:
 
 from types import SimpleNamespace
 
+from uuid import uuid4
+
 import pytest
 
 from apiserver.apierrors import errors
+from apiserver.bll import dataset_registry as registry_bll
 from apiserver.database.model.dataset import Dataset
 from apiserver.tests.db import ensure_db
 
 ensure_db()
-COMPANY = "c-datasets-test"
+COMPANY = f"c-datasets-test-{uuid4().hex[:8]}"
+
+
+def _remove_rows():
+    for model in (Dataset, Project, UserAccess, Share):
+        model.objects(company=COMPANY).delete()
 
 
 @pytest.fixture(autouse=True)
-def clean_rows():
-    Dataset.objects(company=COMPANY).delete()
+def clean_rows(monkeypatch):
+    """Every test has a company of its own rows: nothing is left by an earlier test, and the server-wide list of the
+    older registries is empty, so the listing shows only this company's rows."""
+    _remove_rows()
+    monkeypatch.setattr(registry_bll, "list_registries", lambda: [])
     yield
-    Dataset.objects(company=COMPANY).delete()
+    _remove_rows()
 
 
 def access(entry_id: str) -> SimpleNamespace:
@@ -140,6 +151,7 @@ def test_a_private_registry_nobody_can_read_is_saved_with_no_entries(github):
 from datetime import datetime
 
 from apiserver.database.model.project import Project, ProjectMember, ProjectRole
+from apiserver.database.model.share import Share
 from apiserver.database.model.user_access import UserAccess
 
 

@@ -1,5 +1,6 @@
 import importlib.util
 import logging
+from types import SimpleNamespace
 from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
@@ -30,7 +31,17 @@ def load_migration():
 
 @pytest.fixture
 def company():
-    return f"c-{uuid4().hex[:8]}"
+    """A company of its own for the test. Its rows are removed before and after, so no other test sees them."""
+    name = f"c-{uuid4().hex[:8]}"
+    _remove_rows(name)
+    yield name
+    _remove_rows(name)
+
+
+def _remove_rows(name):
+    for model in (Share, Dataset, UserAccess, Queue, Project):
+        model.objects(company=name).delete()
+    _backend_db()["company"].delete_many({"_id": name})
 
 
 def build_legacy_grants(company):
@@ -107,7 +118,7 @@ def test_each_existing_grant_becomes_one_share(company):
     build_legacy_grants(company)
     assert shares_of(company) == []
 
-    load_migration().migrate_backend(_backend_db())
+    load_migration().migrate_backend(_isolated_db())
 
     assert shares_of(company) == EXPECTED
     for share in Share.objects(company=company):
@@ -118,15 +129,15 @@ def test_running_the_migration_twice_creates_no_duplicates(company):
     build_legacy_grants(company)
     migration = load_migration()
 
-    migration.migrate_backend(_backend_db())
-    migration.migrate_backend(_backend_db())
+    migration.migrate_backend(_isolated_db())
+    migration.migrate_backend(_isolated_db())
 
     assert shares_of(company) == EXPECTED
 
 
 def test_the_old_fields_are_kept(company):
     build_legacy_grants(company)
-    load_migration().migrate_backend(_backend_db())
+    load_migration().migrate_backend(_isolated_db())
 
     queue = Queue.objects(company=company, id="q-granted").get()
     assert [u.user for u in queue.users] == ["alice"]
@@ -142,6 +153,23 @@ def _backend_db():
     return get_db(Database.backend)
 
 
+class _WithoutLegacyRegistries:
+    """The database as the tests of grants see it: the server-wide dataset_registry collection is empty here, because
+    rows that another test or an installation left there would give every company a registry share."""
+
+    def __init__(self, db):
+        self._db = db
+
+    def __getitem__(self, name):
+        if name == "dataset_registry":
+            return SimpleNamespace(find=lambda *args, **kwargs: [])
+        return self._db[name]
+
+
+def _isolated_db():
+    return _WithoutLegacyRegistries(_backend_db())
+
+
 def test_a_project_without_an_owner_writes_no_share_and_warns(company, caplog):
     orphan = Project(id="p-orphan", company=company, name="orphan", basename="orphan", created=NOW,
                      queues=["q-orphan"])
@@ -151,7 +179,7 @@ def test_a_project_without_an_owner_writes_no_share_and_warns(company, caplog):
             owner="dataset-owner", visibility="projects", projects=["p-orphan"]).save()
 
     with caplog.at_level(logging.WARNING):
-        load_migration().migrate_backend(_backend_db())
+        load_migration().migrate_backend(_isolated_db())
 
     assert shares_of(company) == []
     warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
