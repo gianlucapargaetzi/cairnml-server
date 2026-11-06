@@ -13,6 +13,10 @@ from apiserver.apierrors import errors
 # Services a job may call. Everything else (models, queues, users, devices, admin) is refused.
 JOB_SERVICES = ("tasks", "events", "datachunks")
 
+# Endpoints of other services a job may use, only for its own task: the job's agent asks for the repository's token
+# for its task (devices.git_token checks the task named in the request against the job's token).
+JOB_OWN_TASK_ENDPOINTS = {"devices.git_token"}
+
 # Model actions a job may take, only on models linked to its own task (the model's task is the job's task).
 # Listing all models, and any action not here, is refused.
 JOB_MODEL_ACTIONS = {
@@ -82,7 +86,7 @@ def validate_job_scope(endpoint, call) -> None:
         return
 
     service = endpoint.name.partition(".")[0]
-    if service not in JOB_SERVICES:
+    if service not in JOB_SERVICES and endpoint.name not in JOB_OWN_TASK_ENDPOINTS:
         raise errors.forbidden.NoWritePermission(
             reason="a job may only use its own task, events and artifacts"
         )
