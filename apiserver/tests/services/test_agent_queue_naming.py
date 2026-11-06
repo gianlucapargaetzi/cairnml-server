@@ -5,6 +5,9 @@ from uuid import uuid4
 
 from apiserver.database.model.queue import Queue
 from apiserver.services import devices
+from apiserver.tests.db import ensure_db
+
+ensure_db()
 
 
 def test_the_queue_id_is_the_machine_name_and_a_short_hash_of_the_owner():
