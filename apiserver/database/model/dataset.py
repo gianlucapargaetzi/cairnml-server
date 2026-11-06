@@ -27,6 +27,9 @@ class Dataset(DbModelMixin, Document):
     """ owner/name of the repository, or of the registry repository """
     name = StringField(required=True)
     """ the name shown: the repository name, or the registry name """
+    reference = StringField(default="")
+    """ the name a run uses to name this dataset, unique in the company: the repository name, or <registry>/<name> for an
+    entry of a registry. Empty for a dataset kept before references existed """
     owner = StringField(required=True)
     """ the user who added it: the only one who may change its visibility, allocate it or delete it """
     visibility = StringField(default="user", choices=VISIBILITIES)

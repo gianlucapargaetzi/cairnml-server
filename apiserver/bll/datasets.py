@@ -8,6 +8,7 @@ The functions that take plain dicts or plain values do no GitHub or database wor
 """
 
 import json
+import re
 import uuid
 from datetime import datetime
 from typing import Optional
@@ -87,6 +88,23 @@ def _candidates(company: str, user: str, project_root, repo_url: str) -> list:
     The order is the order they are tried in."""
     host, path = store.host_and_path(canonical_url(repo_url))
     return user_access.usable_for(company, user, host, path, project_root)
+
+
+_ID_RE = re.compile(r"^[0-9a-f]{32}$")
+
+
+def resolve(company: str, reference: str) -> Optional[Dataset]:
+    """The stored dataset a reference names: its id, its name (names are unique in the company), or the address of its
+    repository (a URL, or owner/name with github.com). None when there is none. Who may see it is checked by the caller."""
+    ref = (reference or "").strip()
+    if not ref:
+        return None
+    if _ID_RE.match(ref):
+        return Dataset.objects(company=company, id=ref).first()
+    if "github.com" in ref.lower():
+        repo = repo_of(ref)
+        return kept_for_repository(company, repo) if repo else None
+    return Dataset.objects(company=company, reference=ref).first()
 
 
 def kept_for_repository(company: str, repo: str):
@@ -262,13 +280,31 @@ def _set_public_share(company: str, actor: str, dataset: Dataset, public: bool) 
         access.remove_grant(company, resource_type, dataset.id, "public", actor=actor)
 
 
+def reference_of(kind: str, ref: str, name: str) -> str:
+    """The name a run uses for a dataset: the repository name, or <registry>/<name> for an entry of a registry (whose ref
+    is <owner>/<registry>/<name>)."""
+    if kind == "registry_entry":
+        return f"{ref.split('/')[1]}/{name}"
+    return name
+
+
+def _check_reference(company: str, reference: str) -> None:
+    """Refuses a reference another dataset of the company already holds: a name must resolve to one dataset."""
+    taken = Dataset.objects(company=company, reference=reference).first()
+    if taken is not None:
+        raise errors.bad_request.ValidationError(
+            f"the name {reference} is already used by {taken.ref}: a dataset name must be unique in the company")
+
+
 def _save(company: str, user: str, kind: str, repo: str, name: str, visibility: str, credential, state: str,
           message: str, now: datetime) -> Dataset:
     if visibility == "Public" and kind != "registry_entry":
         access.refuse_inactive(user)
+    reference = reference_of(kind, repo, name)
+    _check_reference(company, reference)
     dataset = Dataset(
-        id=uuid.uuid4().hex, company=company, kind=kind, ref=repo, name=name, owner=user, visibility=visibility,
-        credential=credential, state=state, state_message=message, created=now, updated=now,
+        id=uuid.uuid4().hex, company=company, kind=kind, ref=repo, name=name, reference=reference, owner=user,
+        visibility=visibility, credential=credential, state=state, state_message=message, created=now, updated=now,
         last_checked=now,
     )
     dataset.save()
@@ -462,6 +498,10 @@ def _sync_entries(company: str, registry: Dataset, listed: list, now: datetime) 
                 Dataset.objects(company=company, kind="registry_entry", ref__istartswith=f"{registry.ref}/")}
     counts = {"added": 0, "updated": 0, "removed": 0}
     listed_refs = set()
+    # every new entry's name must be free before any is stored: a collision refuses the whole registry
+    for item in listed:
+        if f"{registry.ref}/{item['name']}".lower() not in existing:
+            _check_reference(company, reference_of("registry_entry", f"{registry.ref}/{item['name']}", item["name"]))
     for item in listed:
         ref = f"{registry.ref}/{item['name']}"
         listed_refs.add(ref.lower())
@@ -471,8 +511,9 @@ def _sync_entries(company: str, registry: Dataset, listed: list, now: datetime) 
         record = existing.get(ref.lower())
         if record is None:
             Dataset(id=uuid.uuid4().hex, company=company, kind="registry_entry", ref=ref, name=item["name"],
-                    owner=registry.owner, visibility=registry.visibility, created=now, updated=now, last_checked=now,
-                    read_at=now, **content).save()
+                    reference=reference_of("registry_entry", ref, item["name"]), owner=registry.owner,
+                    visibility=registry.visibility, created=now, updated=now, last_checked=now, read_at=now,
+                    **content).save()
             counts["added"] += 1
             continue
         changed = any(getattr(record, key) != value for key, value in content.items())
@@ -582,6 +623,7 @@ def view(dataset: Dataset) -> dict:
         "kind": dataset.kind,
         "ref": dataset.ref,
         "name": dataset.name,
+        "reference": dataset.reference or "",
         "owner": dataset.owner,
         "visibility": dataset.visibility,
         "projects": _shared_projects(dataset),

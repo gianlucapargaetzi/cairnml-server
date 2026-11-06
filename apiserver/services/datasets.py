@@ -7,7 +7,9 @@ from apiserver.bll import access
 from apiserver.bll import dataset_details as bll
 from apiserver.bll import datasets as access_bll
 from apiserver.database.model.auth import Role
+from apiserver.bll import user_access
 from apiserver.database.model.dataset import Dataset
+from apiserver.database.model.task.task import Task
 from apiserver.database.model.device import DeviceKind
 from apiserver.idp import github_check
 from apiserver.idp.audit import client_address, record as audit
@@ -37,6 +39,29 @@ def add(call: APICall, company: str, _request):
     call.result.data = {"dataset": access_bll.add_repo(
         company, call.identity.user, data.get("url", ""), visibility=data.get("visibility") or "user",
         credential=data.get("credential") or None)}
+
+
+def _may_read(call: APICall, company: str, dataset) -> bool:
+    """Whether the caller may use the dataset. A person: the share rules (can_see). A job: the one who queued its task must
+    see the dataset, or its project holds it (the same rule as the job's token, bll/datasets.job_can_read)."""
+    job_task = getattr(call.auth, "job_task", None) if call.auth is not None else None
+    if not job_task:
+        return access_bll.can_see(company, call.identity.user, _is_admin(call), dataset.id)
+    task = Task.objects(company=company, id=job_task).first()
+    enqueuer = task.execution.enqueued_by if task is not None and task.execution else None
+    root = user_access.root_project(company, task.project) if task is not None and task.project else None
+    return access_bll.job_can_read(company, enqueuer, root, dataset)
+
+
+@endpoint("datasets.resolve")
+def resolve(call: APICall, company: str, _request):
+    """The dataset a reference names: its id, its name, or the address of its repository. A dataset the caller may not see
+    is refused as missing, the same as one that does not exist. A job may call this for its own task only."""
+    reference = (call.data or {}).get("ref", "")
+    dataset = access_bll.resolve(company, reference)
+    if dataset is None or not _may_read(call, company, dataset):
+        raise errors.bad_request.ValidationError(f"no such dataset: {reference}")
+    call.result.data = {"dataset": access_bll.view(dataset)}
 
 
 @endpoint("datasets.set_credential")
