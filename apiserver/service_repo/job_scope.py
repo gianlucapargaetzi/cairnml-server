@@ -15,7 +15,7 @@ JOB_SERVICES = ("tasks", "events", "datachunks")
 
 # Endpoints of other services a job may use, only for its own task: the job's agent asks for the repository's token
 # for its task (devices.git_token checks the task named in the request against the job's token).
-JOB_OWN_TASK_ENDPOINTS = {"devices.git_token", "datasets.resolve"}
+JOB_OWN_TASK_ENDPOINTS = {"devices.git_token", "datasets.resolve", "datasets.clone"}
 
 # Model actions a job may take, only on models linked to its own task (the model's task is the job's task).
 # Listing all models, and any action not here, is refused.

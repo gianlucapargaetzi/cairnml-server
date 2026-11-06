@@ -64,6 +64,57 @@ def resolve(call: APICall, company: str, _request):
     call.result.data = {"dataset": access_bll.view(dataset)}
 
 
+@endpoint("datasets.clone")
+def clone(call: APICall, company: str, _request):
+    """What a client needs to clone a repository dataset: its address, the commit to clone (the head when none is named),
+    and a read token made with the dataset's credential (none for a public repository). Refused as missing when the caller
+    may not see the dataset. A local copy keeps working after access ends; the server refuses its changes."""
+    data = call.data or {}
+    dataset = access_bll.resolve(company, data.get("ref", ""))
+    if dataset is None or not _may_read(call, company, dataset):
+        raise errors.bad_request.ValidationError(f"no such dataset: {data.get('ref', '')}")
+    if dataset.kind != "repo":
+        raise errors.bad_request.ValidationError("only a repository dataset is cloned: read a registry entry with get")
+    repo = dataset.ref
+    public = public_repo(repo)
+    token = None
+    expires_at = None
+    if not public:
+        job_task = getattr(call.auth, "job_task", None) if call.auth is not None else None
+        try:
+            if job_task:
+                entry, secret = access_bll.job_credential(company, dataset, repo)
+                answer = _app_read_token(entry, secret, repo)
+            else:
+                answer = access_bll.token_for_person(company, call.identity.user, dataset, repo, False, READ_PERMISSIONS)
+        except errors.bad_request.ValidationError:
+            raise
+        token, expires_at = answer["token"], answer["expires_at"]
+    call.result.data = {
+        "repository": f"https://github.com/{repo}.git",
+        "dataset": access_bll.view(dataset),
+        "commit": data.get("commit") or None,
+        "token": token,
+        "expires_at": expires_at,
+        "username": "x-access-token" if token else None,
+    }
+
+
+def _app_read_token(entry, secret: str, repo: str) -> dict:
+    """A read token of a GitHub App for one repository (the App is the dataset's credential)."""
+    from apiserver.idp.github import GitHubApp, GitHubError, RepoNotAccessible
+    from apiserver.config_repo import config
+
+    app = GitHubApp(entry.app_id, secret, entry.api_url or config.get("apiserver.idp.github_api_url"))
+    try:
+        token = app.installation_token(repo, READ_PERMISSIONS)
+    except RepoNotAccessible:
+        raise errors.bad_request.ValidationError(f"the GitHub App {entry.label} is not installed on {repo}") from None
+    except GitHubError as exc:
+        raise errors.bad_request.ValidationError(f"GitHub did not issue a token for {repo} ({exc})") from None
+    return {"token": token.token, "expires_at": token.expires_at.isoformat()}
+
+
 @endpoint("datasets.set_credential")
 def set_credential(call: APICall, company: str, _request):
     data = call.data or {}
