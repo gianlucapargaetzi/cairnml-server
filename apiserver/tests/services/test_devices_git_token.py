@@ -73,7 +73,7 @@ def test_a_public_task_repository_gets_a_successful_answer_with_no_token(monkeyp
 
     response = devices.git_token(job_token, None, GitTokenRequest(task="t1"))
 
-    assert response == {"token": None, "expires_at": None, "username": None}
+    assert response == {"token": None, "expires_at": None, "username": None, "url": "https://github.com/acme/proj"}
     assert github.token_requests == []
 
 

@@ -316,24 +316,31 @@ def git_token(call: APICall, company, request: GitTokenRequest):
     repo = repo_of(repository)
     if repo is None:
         return _stored_token(company, actor, request.task, repository, client_address(call))
-    public = _public_answer(repo, actor, company, claims, request.task, call)
-    if public is not None:
-        return public
-    # the accesses shared with the task's project come first: the project decides, not the agent's owner
+    # the accesses shared with the task's project come first: the project decides, not the agent's owner. Then a public
+    # repository, cloned without a token. Every answer names the https address the job clones from.
     granted = _granted_token(company, task, actor, request.task, client_address(call), repo)
     if granted is not None:
-        return granted
+        return _with_url(granted, repo)
+    public = _public_answer(repo, actor, company, claims, request.task, call)
+    if public is not None:
+        return _with_url(public, repo)
     # GitHub: the App when it is set up and installed on the repository, else the Git credentials stored for it.
     if app is not None:
         try:
-            return _github_token(app, repo, actor, request.task, client_address(call), company)
+            return _with_url(_github_token(app, repo, actor, request.task, client_address(call), company), repo)
         except RepoNotAccessible:
             pass
     if store.find_credential(company, repository) is not None:
-        return _stored_token(company, actor, request.task, repository, client_address(call))
+        return _with_url(_stored_token(company, actor, request.task, repository, client_address(call)), repo)
     if app is None:
         raise errors.bad_request.ValidationError("GitHub is not configured")
     raise errors.bad_request.ValidationError(f"the GitHub App is not installed on {repo}")
+
+
+def _with_url(answer: dict, repo: str) -> dict:
+    """The answer with the https address of the repository. The job clones from it: with its token when the answer has
+    one, anonymously when it has none (a public repository)."""
+    return {**answer, "url": canonical_url(repo)}
 
 
 def _refresh_dataset_entry(app, repo: str) -> None:
