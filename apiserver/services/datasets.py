@@ -77,23 +77,22 @@ def _visible_of(call: APICall, company: str, rows: list) -> list:
 @endpoint("datasets.get_details")
 def get_details(call: APICall, company: str, _request):
     request = call.data or {}
-    registries = []  # the registries that list the named entry, which the caller may see
     if request.get("registry_name"):
-        entries = access_bll.registry_entries_named(company, request["registry_name"])
+        # a registry's entry is shown from the entry stored when its registry was added or refreshed: no GitHub call
+        name = request["registry_name"]
+        entries = access_bll.registry_entries_named(company, name)
+        if not entries:
+            raise errors.bad_request.ValidationError(f"no dataset {name} in the registries of this server")
         shown = _visible_of(call, company, [access_bll.view(entry) for entry in entries])
-        registries = list(dict.fromkeys(row["ref"].rsplit("/", 1)[0] for row in shown))
-    else:
-        dataset = access_bll.kept_for_repository(company, bll.repository_of(request.get("repository")))
-        _visible_of(call, company, [access_bll.view(dataset)] if dataset is not None else [])
-    app = github_check.reader()  # the App when there is one; public datasets and registries need none
+        entry = next(entry for entry in entries if entry.id == shown[0]["id"])
+        call.result.data = bll.details(None, repository=None, registry_entry=entry, commit=None)
+        return
+    repo = bll.repository_of(request.get("repository"))
+    dataset = access_bll.kept_for_repository(company, repo)
+    _visible_of(call, company, [access_bll.view(dataset)] if dataset is not None else [])
+    app = github_check.reader()  # the App when there is one; public repositories need none
     try:
-        call.result.data = bll.details(
-            app,
-            repository=request.get("repository"),
-            registries=registries,
-            registry_name=request.get("registry_name"),
-            commit=request.get("commit"),
-        )
+        call.result.data = bll.details(app, repository=repo, registry_entry=None, commit=request.get("commit"))
     except GitHubError as exc:
         raise errors.bad_request.ValidationError(f"GitHub request failed ({exc})") from None
 

@@ -36,6 +36,11 @@ class Dataset(DbModelMixin, Document):
     """ for a registry entry: how its data is read (the entry's source field) """
     link = StringField(default="")
     """ for a registry entry: where its data is (the entry's link field) """
+    metadata = StringField(default="")
+    """ for a registry entry: its metadata file as JSON text, read with the registry (empty when there is no file). Kept
+    as text because label names are arbitrary keys, which Mongo does not take as field names """
+    read_at = DateTimeField()
+    """ when the registry (or, for an entry, the registry read that stored it) was last read from GitHub """
     state = StringField(default="ok", choices=STATES)
     state_message = StringField(default="")
     created = DateTimeField()

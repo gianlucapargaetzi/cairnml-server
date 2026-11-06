@@ -7,6 +7,7 @@ its state says so. See docs/superpowers/specs/2026-11-05-datasets-access-design.
 The functions that take plain dicts or plain values do no GitHub or database work, so they can be tested without either.
 """
 
+import json
 import uuid
 from datetime import datetime
 from typing import Optional
@@ -15,7 +16,7 @@ from apiserver.apierrors import errors
 from apiserver.bll import access
 from apiserver.bll import dataset_cache
 from apiserver.bll import user_access
-from apiserver.bll.dataset_registry import canonical_url, list_entries
+from apiserver.bll.dataset_registry import canonical_url, list_entries, read_metadata
 from apiserver.config_repo import config
 from apiserver.database.model.auth import User
 from apiserver.database.model.dataset import VISIBILITIES, Dataset
@@ -96,8 +97,8 @@ def kept_for_repository(company: str, repo: str):
 
 
 def registry_entries_named(company: str, name: str) -> list:
-    """The kept registry entries with this name, from every registry: their refs end with /<name>."""
-    return list(Dataset.objects(company=company, kind="registry_entry", ref__endswith=f"/{name}"))
+    """The kept registry entries with this name, from every registry, the first added first (refs end with /<name>)."""
+    return list(Dataset.objects(company=company, kind="registry_entry", ref__endswith=f"/{name}").order_by("created"))
 
 
 def _exists(company: str, kind: str, ref: str) -> bool:
@@ -295,10 +296,65 @@ def add_repo(company: str, user: str, url: str, visibility: str = "user", projec
     return view(dataset)
 
 
+def _read_registry(reader, repo: str) -> list:
+    """The entries of the registry, each with its metadata: the one read of GitHub that stores them (when the registry is
+    added and when it is refreshed). A GitHub error refuses the read with its reason; a metadata file that is not JSON
+    refuses it too (bll/dataset_registry.read_metadata)."""
+    try:
+        listed = list_entries(app=reader, registry=repo)
+        for item in listed:
+            item["metadata"] = read_metadata(reader, repo, item["name"])
+    except GitHubError as exc:
+        raise errors.bad_request.ValidationError(f"the registry {repo} could not be read ({exc})") from None
+    return listed
+
+
+def _dump(metadata: Optional[dict]) -> str:
+    return json.dumps(metadata, sort_keys=True) if metadata is not None else ""
+
+
+def _sync_entries(company: str, registry: Dataset, listed: list, now: datetime) -> dict:
+    """Brings the stored entries of the registry in line with what it lists: a new entry is added, one whose data changed
+    is updated, and one the registry no longer lists is removed. Each entry takes the registry's credential and
+    visibility. Returns the counts added, updated and removed."""
+    existing = {record.ref.lower(): record for record in
+                Dataset.objects(company=company, kind="registry_entry", ref__istartswith=f"{registry.ref}/")}
+    counts = {"added": 0, "updated": 0, "removed": 0}
+    listed_refs = set()
+    for item in listed:
+        ref = f"{registry.ref}/{item['name']}"
+        listed_refs.add(ref.lower())
+        content = {"source": item.get("source") or "", "link": item.get("link") or "",
+                   "metadata": _dump(item.get("metadata")), "credential": registry.credential,
+                   "state": OK, "state_message": ""}
+        record = existing.get(ref.lower())
+        if record is None:
+            Dataset(id=uuid.uuid4().hex, company=company, kind="registry_entry", ref=ref, name=item["name"],
+                    owner=registry.owner, visibility=registry.visibility, created=now, updated=now, last_checked=now,
+                    read_at=now, **content).save()
+            counts["added"] += 1
+            continue
+        changed = any(getattr(record, key) != value for key, value in content.items())
+        for key, value in content.items():
+            setattr(record, key, value)
+        record.read_at = now
+        record.last_checked = now
+        if changed:
+            record.updated = now
+            counts["updated"] += 1
+        record.save()
+    for ref, record in existing.items():
+        if ref not in listed_refs:
+            record.delete()
+            counts["removed"] += 1
+    return counts
+
+
 def add_registry(company: str, user: str, url: str, visibility: str = "user", project: str = None) -> dict:
-    """Adds a registry, and every dataset listed in it. The registry is checked like a repository. Each entry is saved as a
-    dataset of its own, with the registry's visibility and the credential that read the registry. With no access, the
-    registry is saved with no entries, and its state says so."""
+    """Adds a registry, and every dataset listed in it. The registry is checked like a repository, and read once, here:
+    each entry is stored as a dataset of its own, with its metadata, the registry's visibility and the credential that
+    read the registry. A registry that cannot be read is refused with the reason and nothing is written. With no access,
+    the registry is saved with no entries, and its state says so."""
     _check_visibility(visibility)
     repo = _parse_repo(url)
     if _exists(company, "registry", repo):
@@ -309,20 +365,53 @@ def add_registry(company: str, user: str, url: str, visibility: str = "user", pr
     if reader is None:
         registry = _save(company, user, "registry", repo, name, visibility, None, state, message, now)
         return view(registry)
-    try:
-        listed = list_entries(app=reader, registry=repo)
-    except GitHubError:
-        raise errors.bad_request.ValidationError(f"the registry {repo} could not be read") from None
+    listed = _read_registry(reader, repo)
     credential = entry.id if entry else None
     registry = _save(company, user, "registry", repo, name, visibility, credential, OK, "", now)
-    for item in listed:
-        entry_ref = f"{repo}/{item['name']}"
-        if not _exists(company, "registry_entry", entry_ref):
-            saved = _save(company, user, "registry_entry", entry_ref, item["name"], visibility, credential, OK, "", now)
-            saved.source = item.get("source", "")
-            saved.link = item.get("link", "")
-            saved.save()
+    registry.read_at = now
+    registry.save()
+    _sync_entries(company, registry, listed, now)
     return view(registry)
+
+
+def _refresh_access(company: str, user: str, registry: Dataset) -> tuple:
+    """(credential entry or None, reader or None, message) for a refresh: the credential that read the registry when it
+    still reads it, otherwise what adding the registry would use, with the refreshing user's own accesses."""
+    stored = UserAccess.objects(company=company, id=registry.credential).first() if registry.credential else None
+    if stored is not None:
+        try:
+            reader = _reader(stored, store.decrypt(stored.secret, store.key_material()))
+        except store.CredentialUnreadable:
+            reader = None
+        if reader is not None and _can_read(reader, registry.ref):
+            return stored, reader, ""
+    entry, reader, _state, message = _decide(company, user, None, canonical_url(registry.ref), registry.ref,
+                                             registry.name)
+    return entry, reader, message
+
+
+def refresh_registry(company: str, user: str, dataset_id: str, is_admin: bool) -> dict:
+    """Reads the registry again from GitHub and brings its stored entries in line with it (_sync_entries). Only the owner
+    and admins may: refreshing needs the manage_sharing level of the registry. A GitHub error refuses the refresh with its
+    reason, and the stored data stays as it was. Returns the counts added, updated and removed."""
+    access.refuse_inactive(user)
+    registry = Dataset.objects(company=company, id=dataset_id).first()
+    if registry is None or registry.kind != "registry":
+        raise errors.bad_request.ValidationError("no such registry")
+    require_action(company, user, is_admin, registry, "manage_sharing")
+    entry, reader, message = _refresh_access(company, user, registry)
+    if reader is None:
+        raise errors.bad_request.ValidationError(message)
+    listed = _read_registry(reader, registry.ref)
+    now = datetime.utcnow()
+    registry.credential = entry.id if entry else None
+    registry.state = OK
+    registry.state_message = ""
+    registry.read_at = now
+    registry.last_checked = now
+    registry.updated = now
+    registry.save()
+    return _sync_entries(company, registry, listed, now)
 
 
 def _shared_projects(dataset: Dataset) -> list:

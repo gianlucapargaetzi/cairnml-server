@@ -6,29 +6,37 @@ the GitHub App's installations (see :mod:`apiserver.bll.dataset_access`). An ent
 ignored here, with a logged warning, if an old registry still has one.
 """
 
+import json
 import logging
 import re
 from typing import Optional
 from urllib.parse import urlsplit
 
+from apiserver.apierrors import errors
 from apiserver.database.model.dataset import Dataset
 from apiserver.idp.github import GitHubApp, valid_repo
 
 ENTRY_DIR = "datasets"
+REGISTRY_METADATA_DIR = "metadata"
 REPO_SOURCE = "repo"
 log = logging.getLogger(__name__)
 
 
-def configured_registries() -> list:
-    """The dataset registries of this server, in the order they were added: the repositories of the registry records
-    kept as datasets (bll/datasets), of every company, each once. Each is a repository of owner/name, public (read
-    without the GitHub App) or one the App can read."""
-    seen, repositories = set(), []
-    for record in Dataset.objects(kind="registry").order_by("created").only("ref"):
+def stored_registries() -> list:
+    """The registry records of this server, in the order they were added, each repository once: those of every company.
+    Read from the database only. A registry's state says whether its entries were read."""
+    seen, records = set(), []
+    for record in Dataset.objects(kind="registry").order_by("created"):
         if record.ref.lower() not in seen:
             seen.add(record.ref.lower())
-            repositories.append(record.ref)
-    return repositories
+            records.append(record)
+    return records
+
+
+def stored_entries(registry: str) -> list:
+    """The stored entries of a registry (its registry_entry records), in the order they were added. Read from the
+    database only: the entries are read from GitHub when the registry is added or refreshed."""
+    return list(Dataset.objects(kind="registry_entry", ref__istartswith=f"{registry}/").order_by("created"))
 
 
 _GITHUB_HOSTS = ("github.com", "www.github.com")
@@ -84,6 +92,30 @@ def canonical_url(repository: str) -> str:
 def _entry_field(text: str, field: str) -> Optional[str]:
     match = re.search(rf"^{field}:\s*(\S+)\s*$", text, re.M)
     return match.group(1) if match else None
+
+
+def parse_metadata(raw: Optional[bytes], file_name: str) -> Optional[dict]:
+    """The fields the Datasets page shows from a metadata file (a dataset's manifest, or a registry entry's metadata):
+    modalities, labels, splits and samples. None when there is no file."""
+    if raw is None:
+        return None
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        raise errors.bad_request.ValidationError(f"{file_name} is not valid JSON") from None
+    return {
+        "modalities": data.get("modalities") or {},
+        "labels": data.get("labels") or {},
+        "splits": data.get("splits") or {},
+        "samples": data.get("samples"),
+    }
+
+
+def read_metadata(app: GitHubApp, registry: str, name: str) -> Optional[dict]:
+    """The metadata of one entry of the registry, from its metadata/<name>.json. None when the file is absent. A GitHub
+    error propagates; a file that is not JSON is refused with the file's name."""
+    file_name = f"{REGISTRY_METADATA_DIR}/{name}.json"
+    return parse_metadata(app.read_file(registry, file_name), file_name)
 
 
 def list_entries(*, app: GitHubApp, registry: str) -> list:

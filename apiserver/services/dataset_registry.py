@@ -53,3 +53,15 @@ def add(call: APICall, company: str, request: RegistryRequest):
                             visibility=request.visibility or "user")
     audit(call.identity.user, "dataset_registry.add", ip=client_address(call), repository=repository)
     call.result.data_model = UpdateResponse(updated=1)
+
+
+@endpoint("dataset_registry.refresh")
+def refresh(call: APICall, company: str, _request):
+    """Reads the registry again from GitHub: its entries are added, updated or removed to match it. The owner and admins
+    may. A GitHub error refuses the refresh with its reason, and the stored entries stay as they were. Returns the counts
+    added, updated and removed."""
+    data = call.data or {}
+    counts = access_bll.refresh_registry(company, call.identity.user, data.get("id", ""), _is_admin(call))
+    audit(call.identity.user, "dataset_registry.refresh", ip=client_address(call), registry=data.get("id", ""),
+          **counts)
+    call.result.data = counts

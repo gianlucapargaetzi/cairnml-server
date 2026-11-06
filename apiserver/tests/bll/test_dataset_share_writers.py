@@ -27,6 +27,7 @@ def public_github(monkeypatch):
     """The repository is public, so no credential or network is needed to add it"""
     monkeypatch.setattr(datasets, "_public", lambda repo: True)
     monkeypatch.setattr(datasets, "list_entries", lambda app, registry: [])
+    monkeypatch.setattr(datasets, "read_metadata", lambda app, registry, name: None)
 
 
 def make_user(company, user_id):

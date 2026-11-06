@@ -36,6 +36,7 @@ def github(monkeypatch):
     state = SimpleNamespace(entries=[])
     monkeypatch.setattr(datasets, "_public", lambda repo: True)
     monkeypatch.setattr(datasets, "list_entries", lambda app, registry: state.entries)
+    monkeypatch.setattr(datasets, "read_metadata", lambda app, registry, name: None)
     return state
 
 

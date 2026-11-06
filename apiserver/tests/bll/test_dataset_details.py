@@ -1,4 +1,5 @@
 import json
+from types import SimpleNamespace
 from unittest import TestCase
 
 from apiserver.apierrors import errors
@@ -60,46 +61,28 @@ class TestDatasetDetails(TestCase):
         with self.assertRaises(errors.bad_request.ValidationError):
             bll.own_details(app, "acme/greenhouse", None)
 
-    def test_a_registry_dataset_reads_its_metadata_file(self):
-        original = bll.registry_bll.list_entries
-        bll.registry_bll.list_entries = lambda app, registry: [
-            {"name": "cifar10", "source": "huggingface", "link": "hf://datasets/uoft-cs/cifar10"}]
-        try:
-            app = FakeApp(files={("head-sha", "metadata/cifar10.json"): json.dumps(
-                {"modalities": {"image": "image"}, "labels": {"class": "class"}, "splits": {"train": 50000}}).encode()})
-            details = bll.registry_details(app, ["acme/registry"], "cifar10")
-        finally:
-            bll.registry_bll.list_entries = original
+    def test_a_registry_entry_shows_its_stored_metadata_and_reads_nothing(self):
+        entry = SimpleNamespace(name="cifar10", ref="acme/registry/cifar10", source="huggingface",
+                                link="hf://datasets/uoft-cs/cifar10",
+                                metadata=json.dumps({"modalities": {"image": "image"}, "labels": {"class": "class"},
+                                                     "splits": {"train": 50000}, "samples": None}))
+        details = bll.details(None, repository=None, registry_entry=entry, commit=None)
         self.assertEqual(details["kind"], "registry")
+        self.assertEqual(details["registry"], "acme/registry")
         self.assertEqual(details["source"], "huggingface")
         self.assertEqual(details["metadata"]["splits"], {"train": 50000})
         self.assertEqual(details["commits"], [])
 
+    def test_a_registry_entry_without_metadata_shows_none(self):
+        entry = SimpleNamespace(name="cars", ref="acme/registry/cars", source="web", link="https://example.org/cars",
+                                metadata="")
+        self.assertIsNone(bll.registry_details(entry)["metadata"])
+
     def test_owner_and_name_are_accepted_as_well(self):
         app = FakeApp(files={("head-sha", "DATASET.md"): b"text"})
-        details = bll.details(app, repository="acme/greenhouse", registries=[], registry_name=None, commit=None)
+        details = bll.details(app, repository="acme/greenhouse", registry_entry=None, commit=None)
         self.assertEqual(details["repository"], "acme/greenhouse")
-
-    def test_a_dataset_is_found_in_a_later_registry_when_the_first_lacks_it(self):
-        from apiserver.idp.github import GitHubError
-        original = bll.registry_bll.list_entries
-
-        def entries(app, registry):
-            if registry == "acme/private":
-                raise GitHubError("not accessible")
-            if registry == "acme/public":
-                return [{"name": "cars", "source": "web", "link": "https://example.org/cars"}]
-            return []
-
-        bll.registry_bll.list_entries = entries
-        try:
-            app = FakeApp(files={("head-sha", "metadata/cars.json"): json.dumps(
-                {"modalities": {"image": "image"}, "labels": {}, "splits": {"train": 3}}).encode()})
-            details = bll.registry_details(app, ["acme/private", "acme/public"], "cars")
-        finally:
-            bll.registry_bll.list_entries = original
-        self.assertEqual(details["link"], "https://example.org/cars")
 
     def test_a_repository_must_be_on_github(self):
         with self.assertRaises(errors.bad_request.ValidationError):
-            bll.details(FakeApp(), repository="https://example.org/x/y", registries=[], registry_name=None, commit=None)
+            bll.details(FakeApp(), repository="https://example.org/x/y", registry_entry=None, commit=None)

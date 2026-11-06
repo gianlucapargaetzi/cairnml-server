@@ -85,6 +85,7 @@ def github(monkeypatch):
     monkeypatch.setattr(bll, "_reader", lambda entry, secret: SimpleNamespace(name=entry.id))
     monkeypatch.setattr(bll, "_can_read", lambda reader, repo: reader.name in state.readable.get(repo, ()))
     monkeypatch.setattr(bll, "list_entries", lambda app, registry: state.registry_entries)
+    monkeypatch.setattr(bll, "read_metadata", lambda app, registry, name: None)
     return state
 
 
