@@ -268,7 +268,7 @@ def enqueue_task(
                 force=True,
                 user_id=identity.user,
             ).execute()
-            return 0, {"status": TaskStatus.failed}
+            return 0, {"status": TaskStatus.failed, "updated": 0}
     if not update_execution_queue:
         if not (
             task.status == TaskStatus.queued and task.execution and task.execution.queue
