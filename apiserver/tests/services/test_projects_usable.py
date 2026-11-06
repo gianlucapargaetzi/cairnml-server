@@ -108,6 +108,7 @@ def _keys(value):
 def test_the_owner_sees_every_usable_dataset_and_credential(company, world):
     data = usable(company, OWNER, world.root)
 
+    assert data["can_manage"] is True
     assert {d["id"] for d in data["datasets"]} == {world.shared, world.public}
     assert [c["id"] for c in data["credentials"]] == [world.credential]
 
@@ -116,13 +117,32 @@ def test_a_sub_project_resolves_to_its_root(company, world):
     assert usable(company, OWNER, world.sub) == usable(company, OWNER, world.root)
 
 
-def test_a_plain_member_is_refused(company, world):
+def test_a_plain_member_reads_the_lists_but_manages_nothing(company, world):
+    data = usable(company, MEMBER, world.root)
+
+    assert data["can_manage"] is False
+    assert {d["id"] for d in data["datasets"]} == {world.shared, world.public}
+    assert [c["id"] for c in data["credentials"]] == [world.credential]
+    assert all(d["removable"] is False for d in data["datasets"])
+    assert all(c["removable"] is False for c in data["credentials"])
+
+
+def test_a_non_member_is_refused(company, world):
+    # a private project is hidden from a non-member: the same answer as an unknown project
+    with pytest.raises(errors.bad_request.InvalidProjectId):
+        usable(company, "outsider", world.root)
+
+
+def test_a_non_member_is_refused_on_a_public_project(company, world):
+    Project.objects(id=world.root).update_one(set__visibility=ProjectVisibility.public)
+
     with pytest.raises(errors.forbidden.NoWritePermission):
-        usable(company, MEMBER, world.root)
+        usable(company, "outsider", world.root)
 
 
 def test_a_collaborator_sees_the_usable_items_and_can_remove_a_project_share(company, world):
     data = usable(company, COLLABORATOR, world.root)
+    assert data["can_manage"] is True
     shared = next(d for d in data["datasets"] if d["id"] == world.shared)
     assert shared["scope"] == "project" and shared["removable"] is True and shared["share_id"]
 

@@ -28,6 +28,7 @@ from apiserver.bll import user_access
 from apiserver.bll.datasets import regrant_project_shares, usable_datasets
 from apiserver.bll.project.access import ProjectAccessBLL
 from apiserver.bll.queue.queue_access import QueueAccessBLL
+from apiserver.bll.access import ADMIN_ROLES
 from apiserver.database.model.auth import User
 from apiserver.database.model.queue import Queue
 from apiserver.database.model.project import Project, ProjectMember, ProjectRole, ProjectVisibility
@@ -291,15 +292,19 @@ def remove_queue(call: APICall, company_id: str, request: RemoveQueueRequest):
 
 @endpoint("projects.usable")
 def usable(call: APICall, company_id: str, request: UsableRequest):
-    """What the project can use: the datasets that are Public or shared with it, and the credentials shared with it. The
-    owner and the collaborators of the project only. No secret is returned."""
+    """What the project can use: the datasets that are Public or shared with it, and the credentials shared with it. Read
+    for the members of the project; only its owner, its collaborators and company admins may change its shares (the
+    removable flags and can_manage). No secret is returned."""
     root_id = _resolve_root_id(call, request.project)
-    ProjectAccessBLL.assert_can(call.identity, request.project, "admin")
+    ProjectAccessBLL.assert_can(call.identity, request.project, "read")
+    # a public project is readable by anyone, but its lists are for its members (and admins) only
+    if call.identity.role not in ADMIN_ROLES and not user_access.is_member(company_id, root_id, call.identity.user):
+        raise errors.forbidden.NoWritePermission("only the members of the project may see what it can use")
     _load_root(company_id, root_id)
 
-    # the owner, a collaborator or a company admin: the ones who may manage the project's shares
     can_manage = ProjectAccessBLL.get_role(call.identity, request.project) in ("owner", ProjectRole.collaborator, "admin")
     call.result.data = {
+        "can_manage": can_manage,
         "datasets": usable_datasets(company_id, call.identity.user, root_id, can_manage),
         "credentials": user_access.usable_credentials(company_id, call.identity.user, root_id, can_manage),
     }
