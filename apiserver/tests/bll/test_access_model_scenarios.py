@@ -126,16 +126,19 @@ class AgentCall:
 
 def test_agent_job_with_queue_only_rights(company, monkeypatch):
     monkeypatch.setattr(QueueMetrics, "log_queue_metrics_to_es", lambda self, company_id, queues: 0)
-    # the owner is an admin, yet the agent carries the user role only: the queue is served on the owner's queue right
+    # the owner is an admin, yet the agent carries the user role only: the agent serves its own queue, made for its owner
+    from apiserver.database.model.device import Device, DeviceKind
+
     make_user(company, "owner", role=Role.admin)
     queue = Queue(id=uuid4().hex, company=company, name=f"q-{uuid4().hex[:6]}", created=datetime.utcnow(),
-                  public=False, system_tags=[], created_by="someone-else")
+                  public=False, system_tags=[], created_by="owner")
     queue.save()
-    Share(id=uuid4().hex, company=company, resource_type="queue", resource_id=queue.id, scope="user", project="",
-          user="owner", level="read", granted_by="someone-else", created=datetime.utcnow()).save()
+    device = Device(id=f"dev_{uuid4().hex}", user="owner", company=company, kind=DeviceKind.agent, name="gpu-box",
+                    public_key="x", created=datetime.utcnow(), queue=queue.id)
+    device.save()
     agent = Identity(user="owner", company=company, role=Role.user)
 
-    QueueAccessBLL.assert_can_serve(agent, company, [queue.id])
+    QueueAccessBLL.assert_can_serve(agent, company, [queue.id], device_id=device.id)
 
     now = datetime.utcnow()
     Task(id="job-1", company=company, user="owner", name="job", type="training", created=now,

@@ -31,3 +31,5 @@ class Device(DbModelMixin, Document):
     last_used = DateTimeField()
     revoked = BooleanField(default=False)
     """ A revoked device is refused on its next request """
+    queue = StringField(default="")
+    """ An agent's own queue, made when it was enrolled (named after its machine). The agent serves this queue only """

@@ -119,24 +119,22 @@ def visible_ids(company, ident):
 
 # --- creation and admin rights --------------------------------------------
 
-def test_a_non_admin_creates_a_queue_and_becomes_its_owner(company):
-    call = FakeCall(identity(company, "u1"))
-    svc.create(call, company, CreateRequest(name="user-queue"))
+def test_a_queue_is_made_for_its_owner_and_is_not_public(company):
+    make_queue(company, name="user-queue", created_by="u1")
     queue = Queue.objects(company=company, name="user-queue").first()
     assert queue.created_by == "u1"
     assert queue.public is False
-    assert call.result.data == {"id": queue.id}
 
 
 def test_a_non_admin_creates_a_public_queue_as_its_owner(company):
-    svc.create(FakeCall(identity(company, "u1")), company, CreateRequest(name="user-public", public=True))
+    make_queue(company, name="user-public", public=True, created_by="u1")
     queue = Queue.objects(company=company, name="user-public").first()
     assert queue.public is True
     assert queue.created_by == "u1"
 
 
 def test_an_admin_creating_a_queue_becomes_its_owner_too(company):
-    svc.create(FakeCall(identity(company, "a1", Role.admin)), company, CreateRequest(name="admin-queue"))
+    make_queue(company, name="admin-queue", created_by="a1")
     assert Queue.objects(company=company, name="admin-queue").first().created_by == "a1"
 
 
@@ -146,9 +144,8 @@ def test_an_admin_is_allowed_to_manage_queues(company):
     assert not QueueAccessBLL.is_admin(identity(company, "u1"))
 
 
-def test_an_admin_creates_a_public_queue(company):
-    call = FakeCall(identity(company, "a1", Role.admin))
-    svc.create(call, company, CreateRequest(name="public-queue", public=True))
+def test_an_admin_made_public_queue_is_public(company):
+    make_queue(company, name="public-queue", public=True, created_by="a1")
     queue = Queue.objects(company=company, name="public-queue").first()
     assert queue.public is True
 
@@ -156,7 +153,7 @@ def test_an_admin_creates_a_public_queue(company):
 # --- ownership -------------------------------------------------------------
 
 def test_the_owner_sees_their_queue_with_its_owner(company):
-    svc.create(FakeCall(identity(company, "owner")), company, CreateRequest(name="owned-queue"))
+    make_queue(company, name="owned-queue", created_by="owner")
     queue = Queue.objects(company=company, name="owned-queue").first()
     call = FakeCall(identity(company, "owner"))
     svc.get_by_id(call, company, GetByIdRequest(queue=queue.id))
@@ -165,7 +162,7 @@ def test_the_owner_sees_their_queue_with_its_owner(company):
 
 def test_the_queue_output_reports_its_owner_or_null_before_ownership(company):
     legacy = make_queue(company, name="legacy-queue", public=True)
-    svc.create(FakeCall(identity(company, "owner")), company, CreateRequest(name="owned-queue"))
+    make_queue(company, name="owned-queue", created_by="owner")
     owned = Queue.objects(company=company, name="owned-queue").first()
 
     listing = FakeCall(identity(company, "a1", Role.admin))
@@ -179,12 +176,13 @@ def test_the_queue_output_reports_its_owner_or_null_before_ownership(company):
     assert single.result.data["queue"]["created_by"] is None
 
 
-def test_the_owner_updates_and_deletes_their_queue(company):
+def test_the_owner_changes_only_the_visibility_and_cannot_delete_the_queue(company):
     queue = make_queue(company, created_by="owner")
-    svc.update(UpdateCall(identity(company, "owner"), tags=["mine"]), company, UpdateRequest(queue=queue.id, tags=["mine"]))
-    assert Queue.objects(id=queue.id).first().tags == ["mine"]
-    svc.delete(FakeCall(identity(company, "owner")), company, DeleteRequest(queue=queue.id))
-    assert Queue.objects(id=queue.id).first() is None
+    svc.update(UpdateCall(identity(company, "owner"), public=True), company, UpdateRequest(queue=queue.id, public=True))
+    assert Queue.objects(id=queue.id).first().public is True
+    with pytest.raises(errors.bad_request.ValidationError, match="not deleted by hand"):
+        svc.delete(FakeCall(identity(company, "owner")), company, DeleteRequest(queue=queue.id))
+    assert Queue.objects(id=queue.id).first() is not None
 
 
 def test_the_owner_manages_grants_and_metadata(company):
@@ -269,8 +267,8 @@ def test_admins_see_and_manage_every_queue(company):
     queue = make_queue(company, created_by="owner")
     admin = identity(company, "a1", Role.admin)
     assert queue.id in visible_ids(company, admin)
-    svc.update(UpdateCall(admin, tags=["by-admin"]), company, UpdateRequest(queue=queue.id, tags=["by-admin"]))
-    assert Queue.objects(id=queue.id).first().tags == ["by-admin"]
+    svc.update(UpdateCall(admin, public=True), company, UpdateRequest(queue=queue.id, public=True))
+    assert Queue.objects(id=queue.id).first().public is True
 
 
 def test_public_queues_stay_visible_to_everyone(company):
@@ -428,11 +426,12 @@ def test_removing_a_grant_removes_the_allocations_of_projects_the_user_owns(comp
     assert allocated_queues(other_root) == [queue.id]
 
 
-def test_deleting_a_queue_removes_it_from_every_allocation(company):
+def test_a_queue_is_not_deleted_by_hand_even_by_an_admin(company):
     queue = make_queue(company, public=True)
     root = make_root(company, owner="owner", queues=[queue.id])
-    svc.delete(FakeCall(identity(company, "admin", Role.admin)), company, DeleteRequest(queue=queue.id))
-    assert allocated_queues(root) == []
+    with pytest.raises(errors.bad_request.ValidationError, match="not deleted by hand"):
+        svc.delete(FakeCall(identity(company, "admin", Role.admin)), company, DeleteRequest(queue=queue.id))
+    assert allocated_queues(root) == [queue.id]
 
 
 def test_transfer_drops_allocations_the_new_owner_may_not_allocate(company):
@@ -495,18 +494,37 @@ def test_enqueueing_into_a_queue_the_user_may_not_see_is_refused(company, monkey
 
 # --- agents serving a queue ------------------------------------------------
 
-def test_an_agent_may_serve_only_the_queues_its_user_owns_or_is_granted(company):
+def test_an_agent_serves_only_its_own_queue(company):
+    """An agent is enrolled with its machine's queue, made for its enroller. It serves that queue and no other: not a
+    public one, not one its owner holds a grant on, not another user's."""
     make_user(company, "u1")
-    owned = make_queue(company, created_by="u1")
+    own = make_queue(company, created_by="u1")
     granted = make_queue(company, created_by="owner", users=["u1"])
-    other = make_queue(company, created_by="owner")
     public = make_queue(company, public=True)
+    device = make_agent(company, "u1", own.id)
     user = identity(company, "u1")
 
-    QueueAccessBLL.assert_can_serve(user, company, [owned.id, granted.id])
-    QueueAccessBLL.assert_can_serve(user, company, [owned.id, public.id])
+    QueueAccessBLL.assert_can_serve(user, company, [own.id], device_id=device.id)
+    for refused in (granted.id, public.id):
+        with pytest.raises(errors.bad_request.InvalidQueueId):
+            QueueAccessBLL.assert_can_serve(user, company, [refused], device_id=device.id)
+
+
+def test_an_agent_serves_nothing_once_its_device_is_revoked(company):
+    make_user(company, "u1")
+    own = make_queue(company, created_by="u1")
+    device = make_agent(company, "u1", own.id, revoked=True)
     with pytest.raises(errors.bad_request.InvalidQueueId):
-        QueueAccessBLL.assert_can_serve(user, company, [owned.id, other.id])
+        QueueAccessBLL.assert_can_serve(identity(company, "u1"), company, [own.id], device_id=device.id)
+
+
+def make_agent(company, owner, queue_id, revoked=False):
+    from apiserver.database.model.device import Device, DeviceKind
+
+    device = Device(id=f"dev_{uuid4().hex}", user=owner, company=company, kind=DeviceKind.agent, name="gpu-box",
+                    public_key="x", created=datetime.utcnow(), revoked=revoked, queue=queue_id)
+    device.save()
+    return device
 
 
 def test_an_admin_agent_gets_no_queue_by_the_admin_role(company):

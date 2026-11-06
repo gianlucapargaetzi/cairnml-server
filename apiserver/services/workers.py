@@ -88,6 +88,7 @@ def register(call: APICall, company_id, request: RegisterRequest):
         system_tags=request.system_tags,
         resources=request.resources,
         identity=call.identity,
+        device_id=getattr(call.auth, "device_id", None),
     )
 
 
@@ -108,6 +109,7 @@ def status_report(call: APICall, company_id, request: StatusReportRequest):
         tags=request.tags,
         system_tags=request.system_tags,
         identity=call.identity,
+        device_id=getattr(call.auth, "device_id", None),
     )
 
 

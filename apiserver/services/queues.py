@@ -157,6 +157,9 @@ def get_all(call: APICall, company: str, request: GetAllRequest):
 
 @endpoint("queues.create", min_version="2.4")
 def create(call: APICall, company_id, request: CreateRequest):
+    # a queue is made by enrolling the agent of a machine (devices.enroll), named after the machine
+    raise errors.bad_request.ValidationError(
+        "queues are not created by hand: enrol the agent of the machine, which makes its queue")
     tags, system_tags = conform_tags(
         call, request.tags, request.system_tags, validate=True
     )
@@ -181,6 +184,9 @@ def create(call: APICall, company_id, request: CreateRequest):
 def update(call: APICall, company_id, request: UpdateRequest):
     QueueAccessBLL.assert_can_manage(call.identity, company_id, request.queue)
     data = call.data_model_for_partial_update
+    other = sorted(key for key in data if key not in ("queue", "public"))
+    if other:
+        raise errors.bad_request.ValidationError(f"only the visibility of a queue can be changed, not {', '.join(other)}")
     if "public" in data:
         refuse_inactive(call.identity.user)
     conform_tag_fields(call, data, validate=True)
@@ -197,6 +203,8 @@ def update(call: APICall, company_id, request: UpdateRequest):
 @endpoint("queues.delete", min_version="2.4")
 def delete(call: APICall, company_id, request: DeleteRequest):
     QueueAccessBLL.assert_can_manage(call.identity, company_id, request.queue)
+    # a queue goes with its agent: revoking the agent removes nothing here, and queues are not deleted by hand
+    raise errors.bad_request.ValidationError("queues are not deleted by hand: revoke the agent of the machine instead")
     refuse_inactive(call.identity.user)
     queue_bll.delete(
         company_id=company_id,

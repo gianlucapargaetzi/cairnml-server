@@ -63,6 +63,7 @@ class WorkerBLL:
         system_tags: Sequence[str] = None,
         resources: Resources = None,
         identity: Identity = None,
+        device_id: str = None,
     ) -> WorkerEntry:
         """
         Register a worker
@@ -98,7 +99,7 @@ class WorkerBLL:
                 invalid = set(queues).difference(q.id for q in queue_objs)
                 raise bad_request.InvalidQueueId(ids=invalid)
             if queues:
-                QueueAccessBLL.assert_can_serve(identity, company_id, queues)
+                QueueAccessBLL.assert_can_serve(identity, company_id, queues, device_id=device_id)
 
             if resources and queues:
                 Queue.objects(queues_query).update(resources=resources.to_struct())
@@ -145,6 +146,7 @@ class WorkerBLL:
         tags: Sequence[str] = None,
         system_tags: Sequence[str] = None,
         identity: Identity = None,
+        device_id: str = None,
     ) -> None:
         """
         Write worker status report
@@ -162,7 +164,7 @@ class WorkerBLL:
         if report.queue:
             served.add(report.queue)
         if served:
-            QueueAccessBLL.assert_can_serve(identity, company_id, served)
+            QueueAccessBLL.assert_can_serve(identity, company_id, served, device_id=device_id)
 
         entry = self._get_worker(company_id, user_id, report.worker)
 

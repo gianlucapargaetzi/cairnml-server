@@ -13,6 +13,7 @@ from apiserver.apimodels.project_access import AddQueuesRequest, RemoveQueueRequ
 from apiserver.apimodels.queues import CreateRequest, DeleteRequest, QueueRequest, UpdateRequest, UserRequest
 from apiserver.bll.access import resource_ids_shared_with
 from apiserver.bll.queue.queue_access import QueueAccessBLL
+from apiserver.database.model.share import Share
 from apiserver.apierrors import errors
 from apiserver.database.model.auth import Role, User
 from apiserver.database.model.project import Project, ProjectMember, ProjectRole, ProjectVisibility
@@ -78,9 +79,14 @@ def world(company):
     root.save()
 
     def create(name, public=False):
-        call = FakeCall(identity(company, OWNER))
-        svc.create(call, company, CreateRequest(name=name, public=public))
-        return Queue.objects(company=company, name=name).first().id
+        # made as enrolment makes an agent's queue: owned by the enroller, the visibility set afterwards
+        queue = Queue(id=uuid4().hex, company=company, name=name, created=datetime.utcnow(), public=public,
+                      created_by=OWNER)
+        queue.save()
+        if public:  # the share record the visibility writer keeps for a public queue
+            Share(id=uuid4().hex, company=company, resource_type="queue", resource_id=queue.id, scope="public",
+                  granted_by=OWNER, level="read", created=datetime.utcnow()).save()
+        return queue.id
 
     queues = {
         "own": create("own"),
@@ -245,11 +251,12 @@ def test_removing_a_user_who_has_no_grant_is_refused(world):
 
 # --- who serves -----------------------------------------------------------------------------------------------------
 
+# Without an agent's device a caller serves only the queues it owns. Public queues, grants and allocations serve no one else.
 SERVE_TABLE = [
     (OWNER, "own", True), (OWNER, "private", True), (OWNER, "allocated", True), (OWNER, "legacy", False),
-    (GRANTEE, "granted", True), (GRANTEE, "public", True), (GRANTEE, "allocated", False), (GRANTEE, "own", False),
-    (MEMBER, "allocated", False), (MEMBER, "public", True), (MEMBER, "granted", False),
-    (STRANGER, "public", True), (STRANGER, "own", False),
+    (GRANTEE, "granted", False), (GRANTEE, "public", False), (GRANTEE, "allocated", False), (GRANTEE, "own", False),
+    (MEMBER, "allocated", False), (MEMBER, "public", False), (MEMBER, "granted", False),
+    (STRANGER, "public", False), (STRANGER, "own", False),
 ]
 
 
@@ -263,17 +270,31 @@ def test_who_may_have_an_agent_serve_each_queue(world, user, queue, allowed):
         assert result == refusal(errors.bad_request.InvalidQueueId(ids=[queue_id]))
 
 
-def test_an_admin_agent_serves_only_what_its_owner_holds(world):
-    """The agent of a company admin has the user role: the admin role gives it no queue (only public ones here)."""
+def test_an_admin_serves_nothing_by_the_admin_role(world):
+    """The admin role gives no queue: an admin serves only the queues the admin owns (none here)."""
     q, c = world.queues, world.company
-    result = outcome(lambda: QueueAccessBLL.assert_can_serve(identity(c, ADMIN, Role.user), c, list(q.values())))
-    assert result == refusal(errors.bad_request.InvalidQueueId(ids=sorted(q[k] for k in q if k not in ("public",))))
+    result = outcome(lambda: QueueAccessBLL.assert_can_serve(identity(c, ADMIN, Role.admin), c, list(q.values())))
+    assert result == refusal(errors.bad_request.InvalidQueueId(ids=sorted(q.values())))
+
+
+def test_an_agent_serves_its_own_queue_and_no_other(world):
+    """An agent is enrolled with one queue, made for its enroller: it serves that queue only."""
+    from apiserver.database.model.device import Device, DeviceKind
+
+    q, c = world.queues, world.company
+    device = Device(id=f"dev_{uuid4().hex}", user=OWNER, company=c, kind=DeviceKind.agent, name="gpu-box",
+                    public_key="x", created=datetime.utcnow(), queue=q["own"])
+    device.save()
+    QueueAccessBLL.assert_can_serve(identity(c, OWNER), c, [q["own"]], device_id=device.id)
+    result = outcome(lambda: QueueAccessBLL.assert_can_serve(identity(c, OWNER), c, [q["allocated"]],
+                                                             device_id=device.id))
+    assert result == refusal(errors.bad_request.InvalidQueueId(ids=[q["allocated"]]))
 
 
 def test_serving_reports_only_the_queues_the_user_may_not_serve(world):
     q, c = world.queues, world.company
     result = outcome(lambda: QueueAccessBLL.assert_can_serve(identity(c, STRANGER), c, [q["public"], q["own"]]))
-    assert result == refusal(errors.bad_request.InvalidQueueId(ids=[q["own"]]))
+    assert result == refusal(errors.bad_request.InvalidQueueId(ids=sorted([q["public"], q["own"]])))
 
 
 def test_serving_without_a_known_caller_is_refused(world):

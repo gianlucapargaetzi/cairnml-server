@@ -30,7 +30,7 @@ from apiserver.bll.access import (
     shared_project_ids,
 )
 from apiserver.bll.user_access import my_projects
-from apiserver.database.model.auth import Role
+from apiserver.database.model.auth import Role, User
 from apiserver.database.model.project import Project
 from apiserver.database.model.queue import Queue
 from apiserver.database.model.task.task import Task
@@ -130,27 +130,35 @@ class QueueAccessBLL:
             QueueAccessBLL.require_action(identity, company_id, queue_id, "change_content")
 
     @staticmethod
-    def assert_can_serve(identity: Identity, company_id: str, queue_ids: Iterable[str]) -> None:
+    def assert_can_serve(identity: Identity, company_id: str, queue_ids: Iterable[str], device_id: str = None) -> None:
         """
-        An agent serves a queue at the level its owner holds on it (bll/access.level_of), and serving needs use. The
-        agent's identity is its owner with the user role, so an admin's agent gets no queue by the admin role alone.
-        A deactivated owner holds no level, so the agent serves nothing. A public queue is served by any company user.
-        An allocation to a project does not count.
-        :raise errors.bad_request.InvalidQueueId: for the queues the user may not serve
+        An agent serves only its own queue: the one made when it was enrolled, owned by the user who enrolled it. Any other
+        queue is refused, also a public one and one the owner holds a grant on. An agent whose device is revoked, or whose
+        queue is gone, serves nothing.
+
+        Without an agent's device, the caller may serve only the queues it owns.
+        :raise errors.bad_request.InvalidQueueId: for the queues the caller may not serve
         """
         if identity is None:
             raise errors.forbidden.NoWritePermission("the caller is not known")
         queue_ids = set(queue_ids)
-        allowed = {
-            queue_id
-            for queue_id in queue_ids
-            if allows(
-                level_of(company_id, identity.user, False, "queue", queue_id, set(), include_projects=False),
-                "use",
-                "queue",
-            )
-        }
-        invalid = queue_ids - allowed
+        if device_id:
+            from apiserver.database.model.device import Device, DeviceKind
+
+            device = Device.objects(id=device_id, company=company_id).first()
+            owner_disabled = User.objects(id=device.user, idp_disabled=True).first() is not None if device else False
+            if device is None or device.kind != DeviceKind.agent or device.revoked or not device.queue or owner_disabled:
+                raise errors.bad_request.InvalidQueueId(ids=sorted(queue_ids))
+            own = Queue.objects(id=device.queue, company=company_id, created_by=device.user).first()
+            invalid = queue_ids - ({own.id} if own is not None else set())
+        else:
+            owned = {
+                queue.id
+                for queue in Queue.objects(company=company_id, id__in=list(queue_ids), created_by=identity.user)
+            }
+            if User.objects(id=identity.user, idp_disabled=True).first() is not None:
+                owned = set()  # a deactivated user serves nothing, not even their own queues (R25)
+            invalid = queue_ids - owned
         if invalid:
             raise errors.bad_request.InvalidQueueId(ids=sorted(invalid))
 

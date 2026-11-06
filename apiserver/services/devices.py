@@ -1,8 +1,10 @@
 """Devices (laptops and agents) enrol with their IdP sign-in and their public key, then exchange
 a signed assertion for short-lived access tokens. Ported from the mlops server's enrol and exchange."""
 
+import hashlib
 import jwt
 import logging
+import re
 import uuid
 from datetime import datetime
 
@@ -20,6 +22,7 @@ from apiserver.bll.dataset_access import verify_dataset
 from apiserver.config_repo import config
 from apiserver.database.model.auth import Role, User
 from apiserver.database.model.device import Device, DeviceKind
+from apiserver.database.model.queue import Queue
 from apiserver.database.model.task.task import Task
 from apiserver.idp.assertion import AssertionInvalid, unverified_issuer, verify_assertion
 from apiserver.idp.audit import client_address, record as audit
@@ -73,10 +76,34 @@ def _device_views(devices) -> list:
     return [_device_view(d, owners.get(d.user)) for d in devices]
 
 
+def agent_queue_id(owner: str, machine: str, length: int = 6) -> str:
+    """The id of an agent's queue: the machine's name, then a short hash of its owner and the name. The same owner and
+    machine always get the same queue, and two owners with machines of one name get different queues."""
+    slug = re.sub(r"[^a-z0-9]+", "-", machine.lower()).strip("-")[:40] or "machine"
+    digest = hashlib.sha256(f"{owner}:{machine}".encode("utf-8")).hexdigest()
+    return f"{slug}-{digest[:length]}"
+
+
+def _agent_queue(company: str, owner: str, machine: str, now: datetime) -> Queue:
+    """The agent's own queue: the one its owner has for this machine (reused when the machine is enrolled again), or a new
+    one, unpublished, owned by the owner. A hash taken by someone else's queue is lengthened."""
+    for length in range(6, 13):
+        queue_id = agent_queue_id(owner, machine, length)
+        existing = Queue.objects(id=queue_id).first()
+        if existing is None:
+            return Queue(id=queue_id, company=company, name=queue_id, display_name=machine, created=now,
+                         created_by=owner, public=False)
+        if existing.company == company and existing.created_by == owner:
+            return existing
+    raise errors.bad_request.ValidationError(f"no queue id is free for the machine {machine}")
+
+
 @endpoint("devices.enroll", min_version="2.8", request_data_model=EnrollRequest)
 def enroll(call: APICall, _company, request: EnrollRequest):
     if request.kind not in (DeviceKind.client, DeviceKind.agent):
         raise errors.bad_request.InvalidId("kind must be client or agent")
+    if request.kind == DeviceKind.agent and not (request.name or "").strip():
+        raise errors.bad_request.ValidationError("an agent is enrolled with the name of its machine")
     try:
         load_public_key(request.public_key)
     except ValueError:
@@ -92,6 +119,14 @@ def enroll(call: APICall, _company, request: EnrollRequest):
     if user.idp_disabled:
         raise errors.forbidden.RoleNotAllowed("user is disabled")
 
+    now = datetime.utcnow()
+    queue_id = ""
+    if request.kind == DeviceKind.agent:
+        # the agent serves its own queue, named after its machine, and nothing else (bll/queue/queue_access)
+        queue = _agent_queue(user.company, user.id, request.name.strip(), now)
+        if Queue.objects(id=queue.id).first() is None:
+            queue.save()
+        queue_id = queue.id
     device = Device(
         id=f"dev_{uuid.uuid4().hex}",
         user=user.id,
@@ -99,13 +134,15 @@ def enroll(call: APICall, _company, request: EnrollRequest):
         kind=request.kind,
         name=request.name or "",
         public_key=request.public_key,
-        created=datetime.utcnow(),
+        created=now,
         revoked=False,
+        queue=queue_id,
     )
     device.save()
     audit(user.id, "device.enrolled", ip=client_address(call), company=user.company, device=device.id, kind=device.kind)
     result = {"id": device.id, "kind": device.kind}
     if device.kind == DeviceKind.agent:
+        result["queue"] = queue_id
         result["notice"] = AGENT_NOTICE
     return result
 

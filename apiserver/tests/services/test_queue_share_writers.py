@@ -187,12 +187,13 @@ def test_a_public_queue_created_public_has_a_public_share(company):
     assert_consistent(company, queue.id)
 
 
-def test_deleting_a_queue_removes_its_shares(company, setup):
+def test_a_queue_is_not_deleted_by_hand_and_keeps_its_shares(company, setup):
     svc.add_user(FakeCall(identity(company, "owner1")), company, UserRequest(queue="q1", user="u2"))
     project_svc.add_queues(FakeCall(identity(company, "owner1")), company,
                            AddQueuesRequest(project="root1", queues=["q1"]))
-    svc.delete(FakeCall(identity(company, "owner1")), company, DeleteRequest(queue="q1", force=True))
-    assert Share.objects(company=company, resource_type="queue", resource_id="q1").count() == 0
+    with pytest.raises(errors.bad_request.ValidationError, match="not deleted by hand"):
+        svc.delete(FakeCall(identity(company, "owner1")), company, DeleteRequest(queue="q1", force=True))
+    assert Share.objects(company=company, resource_type="queue", resource_id="q1").count() > 0
 
 
 def test_transferring_a_project_regrants_its_queues_from_the_new_owner(company, setup):

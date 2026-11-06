@@ -55,29 +55,53 @@ def serve(company, owner, queue_ids, role=Role.user):
     QueueAccessBLL.assert_can_serve(Identity(user=owner, company=company, role=role), company, queue_ids)
 
 
-# --- serving: the owner's level decides ----------------------------------------------------------------------------
+# --- serving: an agent serves its own queue only -------------------------------------------------------------------
 
-def test_an_agent_serves_a_queue_its_owner_holds_read_on(company):
+def agent_device(company, owner, queue_id):
+    from apiserver.database.model.device import Device, DeviceKind
+
+    device = Device(id=f"dev_{uuid4().hex}", user=owner, company=company, kind=DeviceKind.agent, name="gpu-box",
+                    public_key="x", created=datetime.utcnow(), queue=queue_id)
+    device.save()
+    return device
+
+
+def serve_as_agent(company, device, queue_ids):
+    QueueAccessBLL.assert_can_serve(Identity(user=device.user, company=company, role=Role.user), company, queue_ids,
+                                    device_id=device.id)
+
+
+def test_an_agent_serves_its_own_queue(company):
     make_user(company, "owner")
-    queue = make_queue(company, created_by="someone-else")
-    grant(company, queue, "owner", level="read")
-    serve(company, "owner", [queue.id])
+    queue = make_queue(company, created_by="owner")
+    serve_as_agent(company, agent_device(company, "owner", queue.id), [queue.id])
 
 
-def test_an_agent_of_a_user_with_nothing_on_the_queue_is_refused(company):
+def test_an_agent_is_refused_a_queue_its_owner_only_holds_a_grant_on(company):
     make_user(company, "owner")
-    queue = make_queue(company, created_by="someone-else")
+    own = make_queue(company, created_by="owner")
+    granted = make_queue(company, created_by="someone-else")
+    grant(company, granted, "owner", level="read")
+    device = agent_device(company, "owner", own.id)
     with pytest.raises(errors.bad_request.InvalidQueueId):
-        serve(company, "owner", [queue.id])
+        serve_as_agent(company, device, [granted.id])
 
 
-def test_a_public_queue_is_served_by_any_agent_of_a_company_user(company):
+def test_a_public_queue_is_not_served_by_another_users_agent(company):
     make_user(company, "stranger")
-    queue = make_queue(company, created_by="someone-else", public=True)
-    Share(id=uuid4().hex, company=company, resource_type="queue", resource_id=queue.id, scope="public", project="",
-          user="", level="read", granted_by=queue.created_by, created=datetime.utcnow()).save()
-    serve(company, "stranger", [queue.id])
+    own = make_queue(company, created_by="stranger")
+    public = make_queue(company, created_by="someone-else", public=True)
+    device = agent_device(company, "stranger", own.id)
+    with pytest.raises(errors.bad_request.InvalidQueueId):
+        serve_as_agent(company, device, [public.id])
 
+
+def test_a_deactivated_owners_agent_serves_nothing(company):
+    make_user(company, "owner", idp_disabled=True)
+    queue = make_queue(company, created_by="owner")
+    device = agent_device(company, "owner", queue.id)
+    with pytest.raises(errors.bad_request.InvalidQueueId):
+        serve_as_agent(company, device, [queue.id])
 
 def test_an_admin_role_does_not_let_an_agent_serve_a_queue_it_holds_nothing_on(company):
     """The agent of a company admin acts with the user role: the admin role alone gives it no queue."""

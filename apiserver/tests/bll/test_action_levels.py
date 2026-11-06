@@ -154,10 +154,11 @@ class TestQueueLevels:
                                RemoveTaskRequest(queue=queue.id, task="theirs-6"))
         assert entries(queue) == []
 
-    def test_collaborator_changes_the_settings(self, company, queue):
-        queues_svc.update(UpdateCall(identity(company, "u-col"), tags=["by-collab"]), company,
-                          UpdateRequest(queue=queue.id, tags=["by-collab"]))
-        assert Queue.objects(id=queue.id).first().tags == ["by-collab"]
+    def test_collaborator_may_not_change_the_settings_of_a_queue(self, company, queue):
+        """A queue's only setting that changes is its visibility, and only its owner may change it."""
+        with pytest.raises(errors.bad_request.ValidationError, match="only the visibility"):
+            queues_svc.update(UpdateCall(identity(company, "u-col"), tags=["by-collab"]), company,
+                              UpdateRequest(queue=queue.id, tags=["by-collab"]))
 
     @pytest.mark.parametrize("user", ["u-read", "u-rw"])
     def test_read_and_read_write_cannot_change_the_settings(self, company, queue, user):
