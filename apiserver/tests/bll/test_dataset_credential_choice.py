@@ -150,3 +150,27 @@ def test_a_public_dataset_needs_no_credential(company, github, monkeypatch):
     monkeypatch.setattr(bll, "_public", lambda repo: True)
     added = bll.add_repo(company, "u1", f"https://github.com/{REPO}")
     assert added["credential"] is None and added["state"] == "ok"
+
+
+def test_the_owner_registering_their_repository_again_with_a_credential_sets_it(company, github):
+    token_id = credential(company, "tok-u1")
+    first = bll.add_repo(company, "u1", f"https://github.com/{REPO}")
+    assert first["credential"] is None and first["state"] == "no_access"
+    again = bll.add_repo(company, "u1", f"https://github.com/{REPO}", credential=token_id)
+    assert again["credential"] == token_id and again["state"] == "ok"
+    assert Dataset.objects(company=company, ref=REPO).count() == 1
+
+
+def test_registering_again_without_a_credential_is_refused(company, github, monkeypatch):
+    monkeypatch.setattr(bll, "_public", lambda repo: False)
+    bll.add_repo(company, "u1", f"https://github.com/{REPO}")
+    with pytest.raises(errors.bad_request.ValidationError, match="already added"):
+        bll.add_repo(company, "u1", f"https://github.com/{REPO}")
+
+
+def test_another_owner_cannot_register_an_added_repository(company, github, monkeypatch):
+    token_id = credential(company, "tok-u2", user="u2")
+    monkeypatch.setattr(bll, "_public", lambda repo: False)
+    bll.add_repo(company, "u1", f"https://github.com/{REPO}")
+    with pytest.raises(errors.bad_request.ValidationError, match="already added by u1"):
+        bll.add_repo(company, "u2", f"https://github.com/{REPO}", credential=token_id)

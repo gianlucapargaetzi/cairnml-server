@@ -386,7 +386,12 @@ def add_repo(company: str, user: str, url: str, visibility: str = "user", creden
     _check_visibility(visibility)
     repo = _parse_repo(url)
     if _exists(company, "repo", repo):
-        raise errors.bad_request.ValidationError(f"{repo} is already added")
+        existing = Dataset.objects(company=company, kind="repo", ref__iexact=repo).first()
+        if existing.owner != user or not credential:
+            raise errors.bad_request.ValidationError(
+                f"{repo} is already added" + ("" if existing.owner == user else f" by {existing.owner}"))
+        # the owner registers their own repository again, with a credential: the credential is set on the record
+        return set_credential(company, user, url, credential, is_admin=False)
     name = repo.split("/", 1)[1]
     if credential:
         entry, _secret = _credential_entry(company, user, credential, repo)
