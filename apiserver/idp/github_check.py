@@ -18,8 +18,13 @@ def repo_of(repository: str):
     """'owner/name' for a github.com repository URL, or None for anything else."""
     if not repository:
         return None
-    parts = urlsplit(repository if "://" in repository else f"https://{repository}")
-    if parts.netloc.lower() not in ("github.com", "www.github.com"):
+    value = repository.strip()
+    if "://" not in value and ":" in value.split("/", 1)[0]:
+        # git@host:owner/name, the form git prints for SSH
+        host_part, _, rest = value.partition(":")
+        value = f"https://{host_part.rsplit('@', 1)[-1]}/{rest.lstrip('/')}"
+    parts = urlsplit(value if "://" in value else f"https://{value}")
+    if parts.netloc.rsplit("@", 1)[-1].lower() not in ("github.com", "www.github.com"):
         return None
     path = parts.path.strip("/")
     if path.endswith(".git"):
