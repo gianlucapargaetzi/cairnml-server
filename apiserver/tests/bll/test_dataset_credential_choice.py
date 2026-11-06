@@ -58,7 +58,7 @@ def github(monkeypatch):
     return app
 
 
-def credential(company, entry_id, user="u1", kind="token", scope="user", secret="ghp_token"):
+def credential(company, entry_id, user="u1", kind="app", scope="user", secret="pem"):
     UserAccess(id=entry_id, company=company, user=user, kind=kind, label=f"label {entry_id}", scope=scope,
                host="github.com", path="", app_id="7" if kind == "app" else None,
                secret=store.encrypt(secret, store.key_material()), created=datetime.utcnow()).save()
@@ -100,12 +100,11 @@ def test_the_dataset_is_read_with_its_own_github_app_for_read_and_write(company,
     assert github.requests == [(REPO, READ), (REPO, WRITE)]
 
 
-def test_a_personal_token_reads_but_cannot_write(company, github):
-    token_id = credential(company, "tok-u1")
+def test_a_personal_token_is_refused_as_a_credential(company, github):
+    token_id = credential(company, "tok-u1", kind="token")
     dataset(company, "u1", token_id)
-    assert ask(company, person("u1"), "read")["token"] == "ghp_token"
-    with pytest.raises(errors.bad_request.ValidationError, match="cannot write"):
-        ask(company, person("u1"), "read_write")
+    with pytest.raises(errors.bad_request.ValidationError, match="personal token"):
+        ask(company, person("u1"), "read")
 
 
 def test_the_companys_app_is_used_when_it_is_the_dataset_credential(company, github):

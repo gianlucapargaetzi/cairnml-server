@@ -188,14 +188,13 @@ def test_a_job_of_a_member_uses_the_credential_granted_to_its_project(company, s
     assert user_access.granted_for_job(company, "u2", "root1", "gitlab.example", "acme/proj") == []
 
 
-def test_a_task_of_the_project_gets_the_granted_token(company, setup):
+def test_a_task_of_the_project_gets_no_personal_token_even_when_it_is_granted(company, setup):
+    """A personal token is never used for code either: GitHub is reached through a GitHub App only."""
     assert granted_token(company, "u2") is None
 
     user_access.grant(company, "u1", "acc1", "root1")
 
-    answer = granted_token(company, "u2")
-    assert answer["token"] == "ghp_secret"
-    assert answer["username"] == "x-access-token"
+    assert granted_token(company, "u2") is None
     assert granted_token(company, "stranger") is None
     assert granted_token(company, None) is None
 
@@ -237,7 +236,7 @@ def test_a_share_record_alone_gives_the_use_of_the_credential(company, setup):
 
     assert usable_by(company, "u2", "root1") == ["acc1"]
     assert job_uses(company, "u2", "root1") == ["acc1"]
-    assert granted_token(company, "u2")["token"] == "ghp_secret"
+    assert granted_token(company, "u2") is None
     assert [g["id"] for g in user_access.project_grants(company, "u2", "root1")] == ["acc1"]
     assert user_access.credentials_for(company, "u1", False)[0]["granted_projects"] == ["root1"]
 

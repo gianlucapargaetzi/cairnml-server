@@ -317,6 +317,12 @@ def _check_visibility(visibility: str) -> None:
         raise errors.bad_request.ValidationError("the visibility is user, projects or Public")
 
 
+APP_ONLY_MESSAGE = (
+    "personal access tokens are no longer used for GitHub: add a GitHub App (your own, or the company's), and install it "
+    "on the repository"
+)
+
+
 # --- The credential a repository dataset is read with. The dataset stores the choice: no credential means the
 # repository is public, and a private one with no credential cannot be read.
 
@@ -335,15 +341,11 @@ def _credential_entry(company: str, user: str, credential: str, repo: str) -> tu
             f"the credential {entry.label} is not yours: choose one of your own credentials, or the company's")
     if entry.scope != "company" and not user_access.is_active(user):
         raise errors.bad_request.ValidationError("your account is disabled: its credentials cannot be used")
+    if entry.kind != "app":
+        raise errors.bad_request.ValidationError(f"{entry.label} is a personal token: {APP_ONLY_MESSAGE}")
     secret = store.decrypt(entry.secret, store.key_material())
-    if entry.kind == "token":
-        host, path = store.host_and_path(canonical_url(_github_url(repo)))
-        if entry.host != host or not store.covers(entry.path, path):
-            raise errors.bad_request.ValidationError(f"the token {entry.label} does not cover {repo}")
     if not _can_read(_reader(entry, secret), repo):
-        if entry.kind == "app":
-            raise errors.bad_request.ValidationError(f"the GitHub App {entry.label} is not installed on {repo}")
-        raise errors.bad_request.ValidationError(f"the token {entry.label} cannot read {repo}")
+        raise errors.bad_request.ValidationError(f"the GitHub App {entry.label} is not installed on {repo}")
     return entry, secret
 
 
@@ -362,25 +364,19 @@ def token_for_person(company: str, user: str, dataset: Dataset, repo: str, write
             f"the credential of {repo} belongs to someone else, so it cannot be used for you")
     if entry.scope != "company" and not user_access.is_active(user):
         raise errors.bad_request.ValidationError("your account is disabled: its credentials cannot be used")
+    if entry.kind != "app":
+        raise errors.bad_request.ValidationError(f"{entry.label} is a personal token: {APP_ONLY_MESSAGE}")
     secret = store.decrypt(entry.secret, store.key_material())
-    if entry.kind == "app":
-        app = GitHubApp(entry.app_id, secret, entry.api_url or _api_url())
-        try:
-            token = app.installation_token(repo, permissions)
-        except RepoNotAccessible:
-            suffix = " with write access to its contents" if write else ""
-            raise errors.bad_request.ValidationError(
-                f"the GitHub App {entry.label} is not installed on {repo}{suffix}") from None
-        except GitHubError as exc:
-            raise errors.bad_request.ValidationError(f"GitHub did not issue a token for {repo} ({exc})") from None
-        return {"token": token.token, "expires_at": token.expires_at.isoformat(), "username": "x-access-token"}
-    if write:
+    app = GitHubApp(entry.app_id, secret, entry.api_url or _api_url())
+    try:
+        token = app.installation_token(repo, permissions)
+    except RepoNotAccessible:
+        suffix = " with write access to its contents" if write else ""
         raise errors.bad_request.ValidationError(
-            f"the credential {entry.label} is a personal token, which cannot write to {repo}: use a GitHub App")
-    host, path = store.host_and_path(canonical_url(_github_url(repo)))
-    if entry.host != host or not store.covers(entry.path, path):
-        raise errors.bad_request.ValidationError(f"the token {entry.label} does not cover {repo}")
-    return {"token": secret, "expires_at": None, "username": "x-access-token"}
+            f"the GitHub App {entry.label} is not installed on {repo}{suffix}") from None
+    except GitHubError as exc:
+        raise errors.bad_request.ValidationError(f"GitHub did not issue a token for {repo} ({exc})") from None
+    return {"token": token.token, "expires_at": token.expires_at.isoformat(), "username": "x-access-token"}
 
 
 def job_can_read(company: str, enqueuer: Optional[str], task_root: Optional[str], dataset: Dataset) -> bool:
@@ -407,10 +403,8 @@ def job_credential(company: str, dataset: Dataset, repo: str) -> tuple:
             f"the credential of {repo} belongs to someone else than its owner, so jobs cannot use it")
     if entry.scope != "company" and not user_access.is_active(entry.user):
         raise errors.bad_request.ValidationError(f"the owner of the credential of {repo} is disabled")
-    if entry.kind == "token":
-        host, path = store.host_and_path(canonical_url(_github_url(repo)))
-        if entry.host != host or not store.covers(entry.path, path):
-            raise errors.bad_request.ValidationError(f"the token {entry.label} does not cover {repo}")
+    if entry.kind != "app":
+        raise errors.bad_request.ValidationError(f"{entry.label} is a personal token: {APP_ONLY_MESSAGE}")
     return entry, store.decrypt(entry.secret, store.key_material())
 
 

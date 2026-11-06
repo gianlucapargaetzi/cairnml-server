@@ -78,8 +78,9 @@ def access(entry_id: str) -> SimpleNamespace:
 
 def make_access(entry_id: str, user: str = OWNER, scope: str = "user") -> None:
     """A stored token of the user (or the company's), with a secret that the fake decrypts to itself."""
-    UserAccess(id=entry_id, company=COMPANY, user=user, kind="token", label=f"label {entry_id}", scope=scope,
-               host="github.com", path="", secret=f"secret-{entry_id}", created=datetime.utcnow()).save()
+    UserAccess(id=entry_id, company=COMPANY, user=user, kind="app", app_id="1", api_url=None,
+               label=f"label {entry_id}", scope=scope, host="github.com", path="", secret=f"secret-{entry_id}",
+               created=datetime.utcnow()).save()
 
 
 @pytest.fixture
@@ -116,7 +117,7 @@ def test_a_private_repository_is_read_with_the_credential_it_is_added_with(githu
 
 def test_a_credential_that_cannot_read_the_repository_is_refused(github):
     make_access("a1")
-    with pytest.raises(errors.bad_request.ValidationError, match="cannot read"):
+    with pytest.raises(errors.bad_request.ValidationError, match="not installed"):
         bll.add_repo(COMPANY, "u1", "https://github.com/acme/private", credential="a1")
     assert Dataset.objects(company=COMPANY, ref="acme/private").count() == 0
 

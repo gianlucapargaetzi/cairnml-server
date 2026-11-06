@@ -388,12 +388,6 @@ def _dataset_token(company: str, kept, repo: str, actor: str, task_id: str, ip, 
             audit(actor, "git_token.issued", ip=ip, company=company, task=task_id, repo=repo,
                   via="dataset_credential", access=entry.id, owner=entry.user)
             return {"token": token.token, "expires_at": token.expires_at.isoformat(), "username": "x-access-token"}
-        if layout:
-            _check_layout(TokenReader(secret, config.get("apiserver.idp.github_api_url")), repo, actor, company, task_id, ip)
-        audit(actor, "git_token.issued", ip=ip, company=company, task=task_id, repo=repo,
-              via="dataset_credential_token", access=entry.id, owner=entry.user)
-        return {"token": secret, "expires_at": None, "username": "x-access-token",
-                "warning": f"a personal token of {entry.user} is in use: it reaches everything that token reaches"}
     except errors.bad_request.ValidationError as refused:
         audit(actor, "git_token.refused", ip=ip, company=company, device=claims.get("device"), task=task_id, reason=str(refused))
         raise
@@ -422,11 +416,6 @@ def _granted_token(company: str, task, actor: str, task_id: str, ip, repo: str):
             audit(actor, "git_token.issued", ip=ip, company=company, task=task_id, repo=repo,
                   via="project_access", access=entry.id, owner=entry.user, project=root)
             return {"token": token.token, "expires_at": token.expires_at.isoformat(), "username": "x-access-token"}
-        if user_access.project_agent_tokens_allowed(company, root):
-            audit(actor, "git_token.issued", ip=ip, company=company, task=task_id, repo=repo,
-                  via="project_access_token", access=entry.id, owner=entry.user, project=root)
-            return {"token": secret, "expires_at": None, "username": "x-access-token",
-                    "warning": f"a personal token of {entry.user} is in use: it reaches everything that token reaches"}
     return None
 
 

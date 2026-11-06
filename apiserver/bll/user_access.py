@@ -83,6 +83,11 @@ def add_token(company: str, user: str, label: str, host: str, path: str, token: 
     if not value:
         raise errors.bad_request.ValidationError("the token is empty")
     host = store.normalise_host(host or "github.com")
+    if host == "github.com":
+        # GitHub is reached through a GitHub App only: a personal token is no longer accepted
+        raise errors.bad_request.ValidationError(
+            "personal access tokens are no longer accepted for GitHub: add a GitHub App (your own, or the company's), "
+            "and install it on the repository")
     path = store.normalise_path(path or "")
     now = datetime.utcnow()
     entry = UserAccess(
