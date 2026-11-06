@@ -477,3 +477,31 @@ def set_agent_tokens_allowed(company: str, actor: str, project_id: str, allowed:
     Project.objects(company=company, id=root).update_one(set__agent_tokens_allowed=bool(allowed))
     audit(actor, "project.agent_tokens", company=company, project=root, allowed=bool(allowed))
     return {"project": root, "agent_tokens_allowed": bool(allowed)}
+
+
+def usable_credentials(company: str, caller: str, root: str, can_manage: bool) -> list:
+    """The accesses shared with a root project that the project may use now: the grants whose granter and the caller are
+    active members of the project (the same test as granted_for_job). Each row says who owns it and what it is valid for,
+    in its host, path and label; the secret is never read. Removable when can_manage."""
+    rows = []
+    owners = {}
+    for entry, share in _project_grants_of(company, root):
+        if not _shared_use(company, caller, share, root):
+            continue
+        if entry.user not in owners:
+            owner = User.objects(id=entry.user).only("name").first()
+            owners[entry.user] = owner.name if owner else entry.user
+        rows.append({
+            "id": entry.id,
+            "name": entry.label,
+            "host": entry.host,
+            "path": entry.path or "",
+            "owner": entry.user,
+            "owner_name": owners[entry.user],
+            "scope": "project",
+            "removable": bool(can_manage),
+            "level": share.level,
+            "inherited": bool(share.inherited),
+            "share_id": share.id,
+        })
+    return rows

@@ -303,6 +303,19 @@ def drop_resource_shares(company: str, resource_type: str, resource_id: str, *, 
     Share.objects(company=company, resource_type=resource_type, resource_id=resource_id).delete()
 
 
+def revoke_member_shares(company: str, project: str, member: str, *, actor: str) -> None:
+    """The shares a removed member of a root project granted to it: of every resource type, inherited or not. The shares
+    other people granted stay. A dataset share goes with its inherited credential share, as in unshare."""
+    refuse_inactive(actor)
+    # imported here: bll/dataset_inheritance reads this module
+    from apiserver.bll import dataset_inheritance
+    records = list(Share.objects(company=company, scope="projects", project=project, granted_by=member))
+    for record in records:
+        record.delete()
+        if record.resource_type == "dataset":
+            dataset_inheritance.release_credential_of_revoked(company, record)
+
+
 # --- Notices of inherited datasets. A finished run shares the datasets it used with its project (bll/dataset_inheritance);
 # --- the user who ran the run sees each such share as a notice, while they still have use on the project.
 

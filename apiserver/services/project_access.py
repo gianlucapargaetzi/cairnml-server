@@ -13,6 +13,7 @@ from apiserver.apimodels.project_access import (
     SetVisibilityRequest,
     TransferOwnershipRequest,
     UpdateMemberRoleRequest,
+    UsableRequest,
 )
 from apiserver.bll.access import (
     project_shares,
@@ -21,8 +22,10 @@ from apiserver.bll.access import (
     refuse_inactive,
     remove_grant,
     resource_ids_shared_with,
+    revoke_member_shares,
 )
-from apiserver.bll.datasets import regrant_project_shares
+from apiserver.bll import user_access
+from apiserver.bll.datasets import regrant_project_shares, usable_datasets
 from apiserver.bll.project.access import ProjectAccessBLL
 from apiserver.bll.queue.queue_access import QueueAccessBLL
 from apiserver.database.model.auth import User
@@ -136,6 +139,7 @@ def update_member_role(call: APICall, company_id: str, request: UpdateMemberRole
 
 @endpoint("projects.remove_member", response_data_model=UpdateResponse)
 def remove_member(call: APICall, company_id: str, request: RemoveMemberRequest):
+    refuse_inactive(call.identity.user)
     root_id = _resolve_root_id(call, request.project)
     ProjectAccessBLL.assert_can(call.identity, request.project, "admin")
 
@@ -143,6 +147,8 @@ def remove_member(call: APICall, company_id: str, request: RemoveMemberRequest):
     Project.objects(id=root_id, company=company_id).update_one(
         pull__members__user=request.user
     )
+    # what the member shared with the project goes with them (R19)
+    revoke_member_shares(company_id, root_id, request.user, actor=call.identity.user)
 
     return UpdateResponse(updated=1)
 
@@ -282,3 +288,18 @@ def remove_queue(call: APICall, company_id: str, request: RemoveQueueRequest):
     remove_grant(company_id, "queue", request.queue, "projects", root_id, actor=call.identity.user)
     return UpdateResponse(updated=1)
 
+
+@endpoint("projects.usable")
+def usable(call: APICall, company_id: str, request: UsableRequest):
+    """What the project can use: the datasets that are Public or shared with it, and the credentials shared with it. The
+    owner and the collaborators of the project only. No secret is returned."""
+    root_id = _resolve_root_id(call, request.project)
+    ProjectAccessBLL.assert_can(call.identity, request.project, "admin")
+    _load_root(company_id, root_id)
+
+    # the owner, a collaborator or a company admin: the ones who may manage the project's shares
+    can_manage = ProjectAccessBLL.get_role(call.identity, request.project) in ("owner", ProjectRole.collaborator, "admin")
+    call.result.data = {
+        "datasets": usable_datasets(company_id, call.identity.user, root_id, can_manage),
+        "credentials": user_access.usable_credentials(company_id, call.identity.user, root_id, can_manage),
+    }

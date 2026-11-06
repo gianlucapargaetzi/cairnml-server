@@ -616,3 +616,52 @@ def delete(company: str, user: str, dataset_id: str, is_admin: bool) -> None:
     dataset.delete()
     if resource_type is not None:
         access.drop_resource_shares(company, resource_type, dataset.id, actor=user)
+
+
+def _names(company: str, user_ids: set) -> dict:
+    """The names of the users, by id; an id with no user maps to itself."""
+    names = {user.id: user.name for user in User.objects(company=company, id__in=list(user_ids)).only("id", "name")}
+    return {user_id: names.get(user_id, user_id) for user_id in user_ids}
+
+
+def usable_datasets(company: str, caller: str, root: str, can_manage: bool) -> list:
+    """The repositories a root project can use, for its owner and collaborators: every Public one, and those shared with
+    the project whose share applies (bll/access._share_level: the granter and the caller are active members). Registries
+    and registry entries are not listed. A public dataset is not removable from the project; a project share is, when
+    can_manage. No secret is read here."""
+    roots = {root}
+    rows = []
+    public_ids = set()
+    for dataset in Dataset.objects(company=company, kind="repo", visibility="Public").order_by("created"):
+        public_ids.add(dataset.id)
+        rows.append({"dataset": dataset, "scope": "public", "removable": False, "level": "read", "inherited": False,
+                     "share_id": None})
+    shares = Share.objects(company=company, resource_type="dataset", scope="projects", project=root).order_by("created")
+    for share in shares:
+        if share.resource_id in public_ids:
+            continue
+        level = access._share_level(company, share, caller, roots, True, True)
+        if level is None:
+            continue
+        dataset = Dataset.objects(company=company, id=share.resource_id, kind="repo").first()
+        if dataset is None:
+            continue
+        rows.append({"dataset": dataset, "scope": "project", "removable": bool(can_manage), "level": level,
+                     "inherited": bool(share.inherited), "share_id": share.id})
+    owners = _names(company, {row["dataset"].owner for row in rows})
+    return [
+        {
+            "id": row["dataset"].id,
+            "name": row["dataset"].name,
+            "owner": row["dataset"].owner,
+            "owner_name": owners[row["dataset"].owner],
+            "visibility": row["dataset"].visibility,
+            "scope": row["scope"],
+            "removable": row["removable"],
+            "level": row["level"],
+            "inherited": row["inherited"],
+            "share_id": row["share_id"],
+            "repository": row["dataset"].ref,
+        }
+        for row in rows
+    ]
