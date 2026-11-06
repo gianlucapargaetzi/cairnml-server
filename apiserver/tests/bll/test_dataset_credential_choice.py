@@ -18,7 +18,7 @@ from apiserver.tests.db import ensure_db
 
 ensure_db()
 READ = {"contents": "read"}
-WRITE = {"contents": "write"}
+WRITE = {"contents": "write", "workflows": "write"}
 REPO = "acme/cars"
 
 

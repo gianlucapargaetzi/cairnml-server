@@ -159,7 +159,7 @@ def test_agent_job_with_queue_only_rights(company, monkeypatch):
 # --- 2. a read user downloads a dataset and cannot write it -------------------------------------------------------------
 
 READ = {"contents": "read"}
-WRITE = {"contents": "write"}
+WRITE = {"contents": "write", "workflows": "write"}
 
 
 class FakeGitHubApp:

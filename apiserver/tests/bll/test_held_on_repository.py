@@ -128,5 +128,5 @@ def test_the_owner_of_a_new_dataset_gets_a_write_token_after_it_is_added(company
     answer = ask(company, person("owner1"), "https://github.com/owner/cars.git", "read_write")
 
     assert answer["token"] == "tok-write"
-    assert github.requests == [("owner/cars", {"contents": "write"})]
+    assert github.requests == [("owner/cars", {"contents": "write", "workflows": "write"})]
     assert bll.held_on_repository(company, "owner1", False, "owner/cars") == ("collaborator", "dataset")

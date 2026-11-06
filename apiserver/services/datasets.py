@@ -116,7 +116,8 @@ def get_details(call: APICall, company: str, _request):
 # GitHub App's installation for that one repository.
 GIT_TOKEN_ACTIONS = {"read": "use", "read_write": "change_content"}
 READ_PERMISSIONS = {"contents": "read"}
-WRITE_PERMISSIONS = {"contents": "write"}
+# a push to a dataset repository also writes its workflow file (.github/workflows), which needs the workflows permission
+WRITE_PERMISSIONS = {"contents": "write", "workflows": "write"}
 
 
 def _refuse_token(call: APICall, company: str, user: str, repo: str, level: str, reason: str):

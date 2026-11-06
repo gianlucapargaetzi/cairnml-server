@@ -14,7 +14,7 @@ from apiserver.services import datasets
 
 REPO_URL = "https://github.com/acme/cars"
 READ = {"contents": "read"}
-WRITE = {"contents": "write"}
+WRITE = {"contents": "write", "workflows": "write"}
 
 
 class FakeApp:
