@@ -65,28 +65,44 @@ def _address_blocked(address: str, networks: tuple) -> bool:
 
 
 def _probe_url(repository: str) -> Optional[tuple]:
-    """(name, port, scheme, path, Host header) of the discovery request for an HTTP(S) repository URL, or None."""
-    if "://" not in repository and ":" in repository.split("/", 1)[0]:
-        # the scp-like form git@host:path (an SSH address): the same repository on the same host, asked over HTTPS
-        user_host, _, path = repository.partition(":")
-        repository = f"https://{user_host.rsplit('@', 1)[-1]}/{path.lstrip('/')}"
-    parts = urlsplit(repository if "://" in repository else f"https://{repository}")
-    if parts.scheme not in ("http", "https"):
+    """(name, port, scheme, path, Host header) of the discovery request for a repository given in any usual form:
+    https://, http://, ssh://, git@host:path (scp-like), host/path, or owner/name (GitHub). The same repository gives the
+    same request whichever form it is written in. None when the value names no host and path."""
+    value = (repository or "").strip()
+    if not value:
         return None
-    host = parts.netloc.rsplit("@", 1)[-1]
-    path = parts.path.strip("/")
-    if not host or not path:
-        return None
+    if "://" in value:
+        parts = urlsplit(value)
+        if parts.scheme not in ("http", "https", "ssh", "git"):
+            return None
+        host = parts.netloc.rsplit("@", 1)[-1]
+        path = parts.path
+    elif ":" in value.split("/", 1)[0]:
+        # git@host:path, the form git prints for SSH
+        host_part, _, path = value.partition(":")
+        host = host_part.rsplit("@", 1)[-1]
+    elif "." in value.split("/", 1)[0]:
+        # host/path, without a scheme
+        host, _, path = value.partition("/")
+    else:
+        # owner/name: GitHub
+        host, path = "github.com", value
+    path = path.strip("/")
     if path.endswith(".git"):
         path = path[:-4]
-    try:
-        port = parts.port
-    except ValueError:
+    scheme = "http" if value.lower().startswith("http://") else "https"
+    name = host.lower()
+    port = 80 if scheme == "http" else 443
+    if ":" in name:
+        name, _, port_text = name.partition(":")
+        try:
+            port = int(port_text)
+        except ValueError:
+            return None
+    if not name or not path or path.count("/") != 1 and name == "github.com":
         return None
-    name = (parts.hostname or "").lower()
-    if not name:
-        return None
-    return name, port or (443 if parts.scheme == "https" else 80), parts.scheme, path, host
+    default = 80 if scheme == "http" else 443
+    return name, port, scheme, path, name if port == default else f"{name}:{port}"
 
 
 def check_address(name: str, port: int) -> str:

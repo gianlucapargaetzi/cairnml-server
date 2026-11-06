@@ -5,7 +5,7 @@ import requests
 
 from apiserver.apierrors import errors
 from apiserver.idp import repo_visibility
-from apiserver.idp.repo_visibility import check_readable, is_private
+from apiserver.idp.repo_visibility import _probe_url, check_readable, is_private
 
 PUBLIC = "93.184.216.34"  # a public address (example.com), used with the resolver mocked
 GIT_ADVERTISEMENT = "application/x-git-upload-pack-advertisement"
@@ -176,6 +176,22 @@ class TestIsPrivate(TestCase):
         with fetching(response(200)) as fetch:
             self.assertIsNone(is_private("ssh://gitlab.example.org/team/proj"))
         fetch.assert_not_called()
+
+    def test_every_form_of_a_github_repository_is_asked_the_same_way(self):
+        forms = [
+            "git@github.com:gianlucapargaetzi/cairnml-examples.git",
+            "ssh://git@github.com/gianlucapargaetzi/cairnml-examples.git",
+            "https://github.com/gianlucapargaetzi/cairnml-examples",
+            "https://github.com/gianlucapargaetzi/cairnml-examples.git",
+            "http://github.com/gianlucapargaetzi/cairnml-examples",
+            "github.com/gianlucapargaetzi/cairnml-examples",
+            "gianlucapargaetzi/cairnml-examples",
+        ]
+        for form in forms:
+            with self.subTest(form=form), fetching(response(200)) as fetch:
+                self.assertFalse(is_private(form))
+                fetch.assert_called_once()
+                self.assertEqual(_probe_url(form)[::3], ("github.com", "gianlucapargaetzi/cairnml-examples"))
 
     def test_an_ssh_address_of_a_public_repository_is_asked_over_https(self):
         with fetching(response(200)) as fetch:
