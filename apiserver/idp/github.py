@@ -253,6 +253,17 @@ class GitHubApp:
             raise GitHubError(f"branch lookup failed: {commit.status_code}")
         return branch, commit.json()["sha"]
 
+    def repository_visible(self, repo: str) -> bool:
+        """Whether this reader can see the repository, empty or not. The repository lookup is used, because an empty
+        repository has no branch to look up. False when GitHub hides it (not found, or forbidden); GitHubError when
+        GitHub cannot answer."""
+        response = self._send("GET", f"{self._api}/repos/{repo}", headers=self._read_headers(repo))
+        if response.status_code in (403, 404):
+            return False
+        if response.status_code != 200:
+            raise GitHubError(f"repository lookup failed: {response.status_code}")
+        return True
+
     def read_file(self, repo: str, path: str, ref: str = None):
         """The bytes of a file at a ref (the default branch if None), or None when there is no such file."""
         headers = dict(self._read_headers(repo), Accept="application/vnd.github.raw+json")

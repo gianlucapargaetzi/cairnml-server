@@ -75,10 +75,9 @@ def _reader(entry, secret: str):
 
 
 def _can_read(reader, repo: str) -> bool:
-    """True when the reader can see the repository's default branch. A GitHub error means no."""
+    """True when the reader can see the repository, empty or not. A GitHub error means no."""
     try:
-        reader.default_branch_head(repo)
-        return True
+        return reader.repository_visible(repo)
     except GitHubError:
         return False
 
