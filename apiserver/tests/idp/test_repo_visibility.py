@@ -174,9 +174,13 @@ class TestIsPrivate(TestCase):
 
     def test_urls_that_are_not_http_are_not_asked(self):
         with fetching(response(200)) as fetch:
-            self.assertIsNone(is_private("git@gitlab.example.org:team/proj.git"))
             self.assertIsNone(is_private("ssh://gitlab.example.org/team/proj"))
         fetch.assert_not_called()
+
+    def test_an_ssh_address_of_a_public_repository_is_asked_over_https(self):
+        with fetching(response(200)) as fetch:
+            self.assertFalse(is_private("git@github.com:gianlucapargaetzi/cairnml-examples.git"))
+        fetch.assert_called_once()
 
     def test_user_information_in_the_url_is_not_sent_to_the_host(self):
         with resolving(PUBLIC), fetching(response(200)) as fetch:

@@ -67,7 +67,9 @@ def _address_blocked(address: str, networks: tuple) -> bool:
 def _probe_url(repository: str) -> Optional[tuple]:
     """(name, port, scheme, path, Host header) of the discovery request for an HTTP(S) repository URL, or None."""
     if "://" not in repository and ":" in repository.split("/", 1)[0]:
-        return None  # the scp-like form git@host:path, which is an SSH address
+        # the scp-like form git@host:path (an SSH address): the same repository on the same host, asked over HTTPS
+        user_host, _, path = repository.partition(":")
+        repository = f"https://{user_host.rsplit('@', 1)[-1]}/{path.lstrip('/')}"
     parts = urlsplit(repository if "://" in repository else f"https://{repository}")
     if parts.scheme not in ("http", "https"):
         return None
