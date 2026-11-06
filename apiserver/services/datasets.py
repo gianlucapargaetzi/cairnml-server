@@ -104,7 +104,11 @@ def get_details(call: APICall, company: str, _request):
     repo = bll.repository_of(request.get("repository"))
     dataset = access_bll.kept_for_repository(company, repo)
     _visible_of(call, company, [access_bll.view(dataset)] if dataset is not None else [])
-    app = github_check.reader()  # the App when there is one; public repositories need none
+    if dataset is not None and dataset.kind == "repo":
+        # a dataset of ours is read with the credential it holds, and no other
+        app = access_bll.reader_for_dataset(company, dataset, repo)
+    else:
+        app = github_check.reader()  # the App when there is one; public repositories need none
     try:
         call.result.data = bll.details(app, repository=repo, registry_entry=None, commit=request.get("commit"))
     except GitHubError as exc:

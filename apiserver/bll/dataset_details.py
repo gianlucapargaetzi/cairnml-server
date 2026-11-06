@@ -22,10 +22,31 @@ DESCRIPTION_FILE = "DATASET.md"
 MAX_COMMITS = 60
 
 
+def empty_details(repository: str) -> dict:
+    """A dataset of our own whose repository has no commit yet: visible, with nothing in it to show."""
+    return {
+        "kind": "own",
+        "name": repository.split("/", 1)[1],
+        "repository": repository,
+        "link": f"https://github.com/{repository}",
+        "revision": None,
+        "branch": None,
+        "metadata": None,
+        "description": None,
+        "commits": [],
+    }
+
+
 def own_details(app: GitHubApp, repository: str, commit: Optional[str]) -> dict:
-    """A dataset of our own. commit selects a revision; the default is the head of the default branch."""
+    """A dataset of our own. commit selects a revision; the default is the head of the default branch. A repository with
+    no commit yet is shown as empty (an empty repository has no branch to read)."""
     try:
-        branch, head = app.default_branch_head(repository)
+        try:
+            branch, head = app.default_branch_head(repository)
+        except GitHubError:
+            if commit is None and app.repository_visible(repository):
+                return empty_details(repository)
+            raise
         revision = commit or head
         if commit and not app.commit_exists(repository, commit):
             raise errors.bad_request.ValidationError(f"no commit {commit} in {repository}")

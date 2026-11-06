@@ -378,6 +378,15 @@ def job_credential(company: str, dataset: Dataset, repo: str) -> tuple:
     return entry, store.decrypt(entry.secret, store.key_material())
 
 
+def reader_for_dataset(company: str, dataset: Dataset, repo: str):
+    """The reader that shows a dataset's details: through the credential the dataset holds (see job_credential). A dataset
+    with no credential is read as a public repository, which needs none; a private one then cannot be read."""
+    if not dataset.credential:
+        return PublicReader(_api_url())
+    entry, secret = job_credential(company, dataset, repo)
+    return _reader(entry, secret)
+
+
 def add_repo(company: str, user: str, url: str, visibility: str = "user", credential: str = None) -> dict:
     """Adds a repository as a dataset, read with the credential given (an access id of the user's, or the company's).
     With no credential it is public: a private one is added with no access, and its message says what to add. A

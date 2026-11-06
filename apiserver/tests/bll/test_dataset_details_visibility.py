@@ -55,8 +55,11 @@ class FakeCall:
 
 @pytest.fixture
 def app(monkeypatch):
+    """The reader of a dataset of ours is the one its credential makes (bll/datasets.reader_for_dataset); the fake stands in
+    for it, so the visibility rules are what these tests check."""
     fake = FakeApp()
     monkeypatch.setattr(github_check, "reader", lambda: fake)
+    monkeypatch.setattr(svc.access_bll, "reader_for_dataset", lambda company, dataset, repo: fake)
     return fake
 
 
