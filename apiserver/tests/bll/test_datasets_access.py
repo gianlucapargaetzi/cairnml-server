@@ -76,10 +76,18 @@ def access(entry_id: str) -> SimpleNamespace:
     return SimpleNamespace(id=entry_id, kind="token", api_url=None, app_id=None)
 
 
+def make_access(entry_id: str, user: str = OWNER, scope: str = "user") -> None:
+    """A stored token of the user (or the company's), with a secret that the fake decrypts to itself."""
+    UserAccess(id=entry_id, company=COMPANY, user=user, kind="token", label=f"label {entry_id}", scope=scope,
+               host="github.com", path="", secret=f"secret-{entry_id}", created=datetime.utcnow()).save()
+
+
 @pytest.fixture
 def github(monkeypatch):
     """Fakes for the GitHub reads: which repositories are public, and which access can read which repository."""
     state = SimpleNamespace(public=set(), readable={}, candidates=[], registry_entries=[])
+    monkeypatch.setattr(bll.store, "key_material", lambda: "test-key")
+    monkeypatch.setattr(bll.store, "decrypt", lambda token, material: token)
     monkeypatch.setattr(bll, "_public", lambda repo: repo in state.public)
     monkeypatch.setattr(bll, "_candidates", lambda company, user, root, url: [(a, f"secret-{a.id}") for a in state.candidates])
     monkeypatch.setattr(bll, "_reader", lambda entry, secret: SimpleNamespace(name=entry.id))
@@ -98,21 +106,41 @@ def test_a_public_repository_is_added_without_a_credential(github):
     assert result["owner"] == "u1"
 
 
-def test_a_private_repository_takes_the_first_candidate_that_can_read_it(github):
-    github.candidates = [access("a1"), access("a2")]
-    github.readable = {"acme/private": {"a2"}}
-    result = bll.add_repo(COMPANY, "u1", "https://github.com/acme/private")
-    assert result["credential"] == "a2"
+def test_a_private_repository_is_read_with_the_credential_it_is_added_with(github):
+    make_access("a1")
+    github.readable = {"acme/private": {"a1"}}
+    result = bll.add_repo(COMPANY, "u1", "https://github.com/acme/private", credential="a1")
+    assert result["credential"] == "a1"
     assert result["state"] == "ok"
 
 
-def test_a_private_repository_no_candidate_reads_is_still_added_with_no_access(github):
-    github.candidates = [access("a1")]
+def test_a_credential_that_cannot_read_the_repository_is_refused(github):
+    make_access("a1")
+    with pytest.raises(errors.bad_request.ValidationError, match="cannot read"):
+        bll.add_repo(COMPANY, "u1", "https://github.com/acme/private", credential="a1")
+    assert Dataset.objects(company=COMPANY, ref="acme/private").count() == 0
+
+
+def test_a_private_repository_with_no_credential_is_added_with_no_access_and_says_what_to_add(github):
     result = bll.add_repo(COMPANY, "u1", "https://github.com/acme/private")
     assert result["credential"] is None
     assert result["state"] == "no_access"
-    assert result["state_message"] == "no access to dataset private"
+    assert "add-credential" in result["state_message"]
     assert Dataset.objects(company=COMPANY, ref="acme/private").count() == 1
+
+
+def test_another_users_credential_cannot_be_chosen(github):
+    make_access("a1", user=OTHER)
+    github.readable = {"acme/private": {"a1"}}
+    with pytest.raises(errors.bad_request.ValidationError, match="not yours"):
+        bll.add_repo(COMPANY, "u1", "https://github.com/acme/private", credential="a1")
+
+
+def test_the_companys_credential_can_be_chosen_by_any_user(github):
+    make_access("c1", user="admin1", scope="company")
+    github.readable = {"acme/private": {"c1"}}
+    result = bll.add_repo(COMPANY, "u1", "https://github.com/acme/private", credential="c1")
+    assert result["credential"] == "c1" and result["state"] == "ok"
 
 
 def test_a_repository_already_added_is_refused(github):

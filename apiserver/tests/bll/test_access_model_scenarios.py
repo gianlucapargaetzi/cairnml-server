@@ -24,6 +24,7 @@ from apiserver.database.model.dataset import Dataset
 from apiserver.database.model.project import Project, ProjectMember, ProjectRole
 from apiserver.database.model.queue import Entry, Queue
 from apiserver.database.model.share import Share
+from apiserver.idp import git_credentials as store
 from apiserver.database.model.task.task import Execution, ParamsItem, Task, TaskStatus
 from apiserver.database.model.user_access import UserAccess
 from apiserver.service_repo.auth import Identity
@@ -186,7 +187,14 @@ def test_read_user_downloads_dataset_and_cannot_write(company, monkeypatch):
     make_user(company, "owner1")
     make_user(company, "reader")
     make_root(company, "root1", "owner1", members=[("reader", ProjectRole.read)])
-    dataset = make_dataset(company, "owner1", "acme/cars")
+    # the dataset is read with the company's GitHub App, the credential it was added with: a reader may use it, but not
+    # the owner's own credential
+    monkeypatch.setattr(store, "key_material", lambda: "test-key-material")
+    credential = make_credential(company, "admin1", kind="app")
+    credential.scope = "company"
+    credential.secret = store.encrypt("pem", store.key_material())
+    credential.save()
+    dataset = make_dataset(company, "owner1", "acme/cars", credential=credential.id)
     project_share(company, "dataset", dataset.id, "root1", "read", "owner1")
 
     # the download: a read-only token for the dataset repository, from the datasets.git_token path
@@ -194,7 +202,7 @@ def test_read_user_downloads_dataset_and_cannot_write(company, monkeypatch):
     monkeypatch.setattr(datasets_svc, "audit", lambda *args, **kwargs: None)
     monkeypatch.setattr(datasets_svc, "client_address", lambda call: "127.0.0.1")
     monkeypatch.setattr(datasets_svc, "public_repo", lambda repo: False)
-    monkeypatch.setattr(datasets_svc, "build_from_config", lambda: github)
+    monkeypatch.setattr(datasets, "GitHubApp", lambda app_id, key, api: github)
     monkeypatch.setattr(datasets_svc.access_bll, "held_on_repository",
                         lambda company_, user, is_admin, repo: ("read", "dataset"))
     answer = datasets_svc.git_token(person_call("reader"), company, None)
@@ -298,6 +306,8 @@ def test_registry_shared_with_project(company, monkeypatch):
     make_user(company, "jobuser")
     make_root(company, "root1", "owner1", members=[("jobuser", ProjectRole.read)])
     entry = make_credential(company, "owner1", kind="app")
+    entry.secret = entry.id  # decrypted to itself by the fake above
+    entry.save()
     registry = make_dataset(company, "owner1", REGISTRY_REF, credential=entry.id, kind="registry")
     access.share(company, "owner1", "credential", entry.id, "projects", "root1", "read")
     datasets.set_visibility(company, "owner1", registry.id, "projects", ["root1"], False)
@@ -305,7 +315,8 @@ def test_registry_shared_with_project(company, monkeypatch):
     task.execution = Execution(enqueued_by="jobuser")
     task.save()
 
-    monkeypatch.setattr(user_access, "_secret", lambda e: f"s-{e.id}")
+    monkeypatch.setattr(store, "key_material", lambda: "test-key-material")
+    monkeypatch.setattr(store, "decrypt", lambda token, material: f"s-{token}")
     monkeypatch.setattr(devices, "GitHubApp", FakeApp)
     monkeypatch.setattr(devices, "audit", lambda *args, **kwargs: None)
     monkeypatch.setattr(devices, "client_address", lambda call: "127.0.0.1")

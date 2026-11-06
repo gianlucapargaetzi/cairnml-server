@@ -7,6 +7,7 @@ from apiserver.bll import access
 from apiserver.bll import dataset_details as bll
 from apiserver.bll import datasets as access_bll
 from apiserver.database.model.auth import Role
+from apiserver.database.model.dataset import Dataset
 from apiserver.database.model.device import DeviceKind
 from apiserver.idp import github_check
 from apiserver.idp.audit import client_address, record as audit
@@ -28,10 +29,23 @@ def visible(call: APICall, company: str, _request):
 @endpoint("datasets.add")
 def add(call: APICall, company: str, _request):
     data = call.data or {}
-    add_one = access_bll.add_registry if data.get("kind") == "registry" else access_bll.add_repo
-    call.result.data = {"dataset": add_one(
+    if data.get("kind") == "registry":
+        call.result.data = {"dataset": access_bll.add_registry(
+            company, call.identity.user, data.get("url", ""), visibility=data.get("visibility") or "user",
+            project=data.get("project") or None)}
+        return
+    call.result.data = {"dataset": access_bll.add_repo(
         company, call.identity.user, data.get("url", ""), visibility=data.get("visibility") or "user",
-        project=data.get("project") or None)}
+        credential=data.get("credential") or None)}
+
+
+@endpoint("datasets.set_credential")
+def set_credential(call: APICall, company: str, _request):
+    data = call.data or {}
+    call.result.data = {"dataset": access_bll.set_credential(
+        company, call.identity.user, data.get("repository", ""), data.get("credential") or None, _is_admin(call))}
+    audit(call.identity.user, "dataset.credential_set", ip=client_address(call), company=company,
+          repo=data.get("repository", ""), credential=data.get("credential") or "")
 
 
 @endpoint("datasets.set_visibility")
@@ -144,6 +158,17 @@ def git_token(call: APICall, company: str, _request):
             # cloned without a token, as a public repository always is
             audit(user, "git_token.public", ip=client_address(call), company=company, repo=repo, level=level)
             return {"token": None, "expires_at": None, "username": None}
+    dataset = Dataset.objects(company=company, kind="repo", ref__iexact=repo).first()
+    if dataset is not None:
+        # a dataset is read with the credential it was added with, and no other (see bll/datasets.token_for_person)
+        try:
+            answer = access_bll.token_for_person(
+                company, user, dataset, repo, write, WRITE_PERMISSIONS if write else READ_PERMISSIONS)
+        except errors.bad_request.ValidationError as refused:
+            _refuse_token(call, company, user, repo, level, str(refused))
+        audit(user, "git_token.issued", ip=client_address(call), company=company, repo=repo, level=level)
+        return answer
+    # a repository the company's App finds with no record of its own: read with the company's App, as its list shows
     app = build_from_config()
     if app is None:
         _refuse_token(call, company, user, repo, level, "GitHub is not configured")

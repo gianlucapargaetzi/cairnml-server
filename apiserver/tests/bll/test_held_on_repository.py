@@ -112,10 +112,18 @@ def test_a_person_gets_no_write_token_for_an_app_discovered_repository_with_no_r
 
 
 def test_the_owner_of_a_new_dataset_gets_a_write_token_after_it_is_added(company, monkeypatch, github):
-    """The create sequence: the repository is added (owner = the caller, visibility user), then the owner asks for a
-    read_write token. The add is not checked against GitHub here: the repository is private and no access reads it."""
+    """The create sequence: the repository is added (owner = the caller, visibility user) with the owner's GitHub App
+    as its credential, then the owner asks for a read_write token, which the App makes. GitHub is faked: the App
+    reads the repository."""
+    monkeypatch.setattr(store, "key_material", lambda: "test-key-material")
+    credential = f"app-{company}"
+    UserAccess(id=credential, company=company, user="owner1", kind="app", label="Owner App", scope="user",
+               app_id="7", api_url=None, secret=store.encrypt("pem", store.key_material()),
+               created=datetime.utcnow()).save()
+    monkeypatch.setattr(bll, "GitHubApp", lambda app_id, key, api: github)
+    monkeypatch.setattr(bll, "_can_read", lambda reader, repo: True)
     monkeypatch.setattr(bll, "_public", lambda repo: False)
-    added = bll.add_repo(company, "owner1", "https://github.com/owner/cars.git", visibility="user")
+    added = bll.add_repo(company, "owner1", "https://github.com/owner/cars.git", visibility="user", credential=credential)
     assert added["owner"] == "owner1" and added["visibility"] == "user"
     answer = ask(company, person("owner1"), "https://github.com/owner/cars.git", "read_write")
 

@@ -172,14 +172,3 @@ class FakeApp:
         return SimpleNamespace(token=f"tok-{self.secret}", expires_at=datetime(2030, 1, 1))
 
 
-def test_a_job_reads_a_registry_with_the_registry_credential_shared_with_its_project(monkeypatch):
-    pairs = [(SimpleNamespace(id=entry_id, kind="app", app_id="1", api_url=None, user="u1"), f"s{entry_id}")
-             for entry_id in ("A", "B")]
-    monkeypatch.setattr(devices, "GitHubApp", FakeApp)
-    monkeypatch.setattr(devices, "audit", lambda *args, **kwargs: None)
-    monkeypatch.setattr(devices.user_access, "root_project", lambda company, project: "p-team")
-    monkeypatch.setattr(devices.user_access, "granted_for_job", lambda *args: pairs)
-    task = SimpleNamespace(project="p-team", execution=SimpleNamespace(enqueued_by="u2"))
-    result = devices._granted_token("c1", task, "agent", "task1", None, "acme/registry", dataset=False,
-                                    credential="B")
-    assert result["token"] == "tok-sB"

@@ -24,7 +24,7 @@ from apiserver.database.model.project import Project
 from apiserver.database.model.share import Share
 from apiserver.database.model.user_access import UserAccess
 from apiserver.idp import git_credentials as store
-from apiserver.idp.github import GitHubApp, GitHubError, PublicReader, TokenReader, public_repository
+from apiserver.idp.github import GitHubApp, GitHubError, PublicReader, RepoNotAccessible, TokenReader, public_repository
 from apiserver.idp.github_check import repo_of
 
 NO_ACCESS = "no_access"
@@ -282,17 +282,145 @@ def _check_visibility(visibility: str) -> None:
         raise errors.bad_request.ValidationError("the visibility is user, projects or Public")
 
 
-def add_repo(company: str, user: str, url: str, visibility: str = "user", project: str = None) -> dict:
-    """Adds a repository as a dataset. A public one needs no credential. A private one takes the first candidate
-    that can read it. It is added either way: with no access, its state and message say so."""
+# --- The credential a repository dataset is read with. The dataset stores the choice: no credential means the
+# repository is public, and a private one with no credential cannot be read.
+
+def _github_url(repo: str) -> str:
+    return f"https://github.com/{repo}"
+
+
+def _credential_entry(company: str, user: str, credential: str, repo: str) -> tuple:
+    """(entry, secret) of a credential the user may choose for a dataset: their own, or the company's. It must be able to
+    read the repository, or the choice is refused with the reason."""
+    entry = UserAccess.objects(company=company, id=credential).first()
+    if entry is None:
+        raise errors.bad_request.ValidationError(f"no such credential: {credential}")
+    if entry.scope != "company" and entry.user != user:
+        raise errors.bad_request.ValidationError(
+            f"the credential {entry.label} is not yours: choose one of your own credentials, or the company's")
+    if entry.scope != "company" and not user_access.is_active(user):
+        raise errors.bad_request.ValidationError("your account is disabled: its credentials cannot be used")
+    secret = store.decrypt(entry.secret, store.key_material())
+    if entry.kind == "token":
+        host, path = store.host_and_path(canonical_url(_github_url(repo)))
+        if entry.host != host or not store.covers(entry.path, path):
+            raise errors.bad_request.ValidationError(f"the token {entry.label} does not cover {repo}")
+    if not _can_read(_reader(entry, secret), repo):
+        if entry.kind == "app":
+            raise errors.bad_request.ValidationError(f"the GitHub App {entry.label} is not installed on {repo}")
+        raise errors.bad_request.ValidationError(f"the token {entry.label} cannot read {repo}")
+    return entry, secret
+
+
+def token_for_person(company: str, user: str, dataset: Dataset, repo: str, write: bool, permissions: dict) -> dict:
+    """The GitHub token a person's machine gets for a dataset repository: made with the credential the dataset is read
+    with. A public dataset has no credential and needs no token (the caller answers that before this). A personal token
+    reads only, because it cannot be limited to one repository. Refused with the reason otherwise."""
+    if not dataset.credential:
+        raise errors.bad_request.ValidationError(
+            f"{repo} has no credential, so it is not readable here: its owner adds one with cairnml dataset add-credential")
+    entry = UserAccess.objects(company=company, id=dataset.credential).first()
+    if entry is None:
+        raise errors.bad_request.ValidationError(f"the credential of {repo} no longer exists: its owner must add one")
+    if entry.scope != "company" and entry.user != user:
+        raise errors.bad_request.ValidationError(
+            f"the credential of {repo} belongs to someone else, so it cannot be used for you")
+    if entry.scope != "company" and not user_access.is_active(user):
+        raise errors.bad_request.ValidationError("your account is disabled: its credentials cannot be used")
+    secret = store.decrypt(entry.secret, store.key_material())
+    if entry.kind == "app":
+        app = GitHubApp(entry.app_id, secret, entry.api_url or _api_url())
+        try:
+            token = app.installation_token(repo, permissions)
+        except RepoNotAccessible:
+            suffix = " with write access to its contents" if write else ""
+            raise errors.bad_request.ValidationError(
+                f"the GitHub App {entry.label} is not installed on {repo}{suffix}") from None
+        except GitHubError as exc:
+            raise errors.bad_request.ValidationError(f"GitHub did not issue a token for {repo} ({exc})") from None
+        return {"token": token.token, "expires_at": token.expires_at.isoformat(), "username": "x-access-token"}
+    if write:
+        raise errors.bad_request.ValidationError(
+            f"the credential {entry.label} is a personal token, which cannot write to {repo}: use a GitHub App")
+    host, path = store.host_and_path(canonical_url(_github_url(repo)))
+    if entry.host != host or not store.covers(entry.path, path):
+        raise errors.bad_request.ValidationError(f"the token {entry.label} does not cover {repo}")
+    return {"token": secret, "expires_at": None, "username": "x-access-token"}
+
+
+def job_can_read(company: str, enqueuer: Optional[str], task_root: Optional[str], dataset: Dataset) -> bool:
+    """Whether a job may read a stored dataset or registry: the one who queued it must see it (through its share or its
+    own), or the job's project must hold it by an allocation. Project grants on credentials do not apply to datasets."""
+    if not enqueuer or not user_access.is_active(enqueuer):
+        return False
+    roots = _project_roots(company, enqueuer) | ({task_root} if task_root else set())
+    return _record_visible(company, enqueuer, False, dataset, roots)
+
+
+def job_credential(company: str, dataset: Dataset, repo: str) -> tuple:
+    """(entry, secret) of the credential a job reads a dataset with: the one the dataset holds, and no other. It must
+    still exist, be the company's or belong to the dataset's owner, and be able to read the repository's files for a job
+    (a personal token only when its owner is the dataset's owner). Refused with the reason otherwise."""
+    if not dataset.credential:
+        raise errors.bad_request.ValidationError(
+            f"{repo} has no credential, so jobs cannot read it: its owner adds one with cairnml dataset add-credential")
+    entry = UserAccess.objects(company=company, id=dataset.credential).first()
+    if entry is None:
+        raise errors.bad_request.ValidationError(f"the credential of {repo} no longer exists: its owner must add one")
+    if entry.scope != "company" and entry.user != dataset.owner:
+        raise errors.bad_request.ValidationError(
+            f"the credential of {repo} belongs to someone else than its owner, so jobs cannot use it")
+    if entry.scope != "company" and not user_access.is_active(entry.user):
+        raise errors.bad_request.ValidationError(f"the owner of the credential of {repo} is disabled")
+    if entry.kind == "token":
+        host, path = store.host_and_path(canonical_url(_github_url(repo)))
+        if entry.host != host or not store.covers(entry.path, path):
+            raise errors.bad_request.ValidationError(f"the token {entry.label} does not cover {repo}")
+    return entry, store.decrypt(entry.secret, store.key_material())
+
+
+def add_repo(company: str, user: str, url: str, visibility: str = "user", credential: str = None) -> dict:
+    """Adds a repository as a dataset, read with the credential given (an access id of the user's, or the company's).
+    With no credential it is public: a private one is added with no access, and its message says what to add. A
+    credential that cannot read the repository is refused."""
     _check_visibility(visibility)
     repo = _parse_repo(url)
     if _exists(company, "repo", repo):
         raise errors.bad_request.ValidationError(f"{repo} is already added")
     name = repo.split("/", 1)[1]
-    entry, _reader_used, state, message = _decide(company, user, project, url, repo, name)
-    dataset = _save(company, user, "repo", repo, name, visibility, entry.id if entry else None, state, message,
-                    datetime.utcnow())
+    if credential:
+        entry, _secret = _credential_entry(company, user, credential, repo)
+        credential_id, state, message = entry.id, OK, ""
+    elif _public(repo):
+        credential_id, state, message = None, OK, ""
+    else:
+        credential_id, state, message = None, NO_ACCESS, (
+            f"{repo} is private and has no credential: add one with cairnml dataset add-credential")
+    dataset = _save(company, user, "repo", repo, name, visibility, credential_id, state, message, datetime.utcnow())
+    return view(dataset)
+
+
+def set_credential(company: str, user: str, repository: str, credential: Optional[str], is_admin: bool) -> dict:
+    """Sets the credential a repository dataset is read with, or clears it (the dataset is then public). Only its owner
+    or an admin may change it, and the credential must be usable as in add_repo."""
+    repo = _parse_repo(repository)
+    dataset = Dataset.objects(company=company, kind="repo", ref__iexact=repo).first()
+    if dataset is None:
+        raise errors.bad_request.ValidationError(f"{repo} is not a dataset here: add it with cairnml dataset remote add")
+    if dataset.owner != user and not is_admin:
+        raise errors.forbidden.NoWritePermission("only the owner of this dataset or an admin may change its credential")
+    if credential:
+        entry, _secret = _credential_entry(company, user, credential, repo)
+        dataset.credential, dataset.state, dataset.state_message = entry.id, OK, ""
+    else:
+        dataset.credential = None
+        if _public(repo):
+            dataset.state, dataset.state_message = OK, ""
+        else:
+            dataset.state = NO_ACCESS
+            dataset.state_message = f"{repo} is private and has no credential: add one with cairnml dataset add-credential"
+    dataset.updated = datetime.utcnow()
+    dataset.save()
     return view(dataset)
 
 

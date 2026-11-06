@@ -262,32 +262,21 @@ def git_token(call: APICall, company, request: GitTokenRequest):
         public = _public_answer(repo, actor, company, claims, request.task, call)
         if public is not None:
             return public
-        # a dataset kept by the environment names the credential that reads it: the job uses that credential, shared with
-        # its project, or it is refused with the reason (bll/datasets)
+        # a dataset kept by the environment (or a registry) is read with the credential it holds, and no other. A job
+        # reads it when the one who queued it may see it, or its project holds it by an allocation. Project grants on
+        # credentials are not used for datasets: they are for code.
         kept = datasets_bll.kept_for_repository(company, repo)
         if kept is not None:
-            # a registry is read as it is: it holds no dataset.yaml, so its layout is not checked (a dataset's is)
-            granted = None
-            if kept.kind == "registry" and task is not None and not _registry_shared_with_job(company, task, kept):
-                reason = f"the dataset registry {kept.name} is no longer shared with this project"
+            root = user_access.root_project(company, task.project) if task is not None and task.project else None
+            enqueuer = getattr(getattr(task, "execution", None), "enqueued_by", None)
+            if task is None or not datasets_bll.job_can_read(company, enqueuer, root, kept):
+                reason = f"no access to {kept.kind} {kept.name} for this job"
                 audit(actor, "git_token.refused", ip=client_address(call), company=company, device=claims.get("device"), task=request.task, reason=reason)
                 raise errors.bad_request.ValidationError(reason)
-            if kept.credential and task is not None:
-                granted = _granted_token(company, task, actor, request.task, client_address(call), repo,
-                                         dataset=kept.kind == "repo", credential=kept.credential)
-            if granted is None:
-                reason = (f"the credential of {kept.name} is not shared with this project" if kept.credential
-                          else f"no access to {kept.kind} {kept.name}")
-                audit(actor, "git_token.refused", ip=client_address(call), company=company, device=claims.get("device"), task=request.task, reason=reason)
-                raise errors.bad_request.ValidationError(reason)
-            return granted
-        # the accesses shared with the task's project come first, as for the task's own repository. The layout is
-        # checked with the same access that reads the repository.
-        if task is not None:
-            granted = _granted_token(company, task, actor, request.task, client_address(call), repo, dataset=True)
-            if granted is not None:
-                return granted
-        # an App-discovered repository with no record is read only by a user who can read it on GitHub (R70)
+            return _dataset_token(company, kept, repo, actor, request.task, client_address(call), claims,
+                                  layout=kept.kind == "repo")
+        # a repository the company's App finds with no record of its own is read with the company's App, as the list shows.
+        # An App-discovered repository is read only by a user who can read it on GitHub (R70).
         try:
             queued_by = getattr(getattr(task, "execution", None), "enqueued_by", None)
             datasets_bll.require_app_read_for_job(company, queued_by, repo)
@@ -381,24 +370,40 @@ AGENT_NOTICE = (
 )
 
 
-def _registry_shared_with_job(company: str, task, registry) -> bool:
-    """Whether the task's project may read the registry now (R57): its share on the registry, for the user who queued the
-    job. A task queued before this was recorded is not shared with anyone."""
-    root = user_access.root_project(company, task.project) if task.project else None
-    enqueuer = task.execution.enqueued_by if task.execution else None
-    if not root or not enqueuer:
-        return False
-    return user_access.registry_shared_for_job(company, enqueuer, root, registry.id)
+def _dataset_token(company: str, kept, repo: str, actor: str, task_id: str, ip, claims: dict, layout: bool) -> dict:
+    """The token a job gets for a stored dataset or registry: made with the credential the dataset holds (see
+    bll/datasets.job_credential). A dataset's layout is checked with that same access. Refused with the reason, audited."""
+    try:
+        entry, secret = datasets_bll.job_credential(company, kept, repo)
+        if entry.kind == "app":
+            app = GitHubApp(entry.app_id, secret, entry.api_url or config.get("apiserver.idp.github_api_url"))
+            try:
+                token = app.installation_token(repo)
+            except RepoNotAccessible:
+                raise errors.bad_request.ValidationError(f"the GitHub App {entry.label} is not installed on {repo}") from None
+            except GitHubError as exc:
+                raise errors.bad_request.ValidationError(f"GitHub did not issue a token for {repo} ({exc})") from None
+            if layout:
+                _check_layout(app, repo, actor, company, task_id, ip)
+            audit(actor, "git_token.issued", ip=ip, company=company, task=task_id, repo=repo,
+                  via="dataset_credential", access=entry.id, owner=entry.user)
+            return {"token": token.token, "expires_at": token.expires_at.isoformat(), "username": "x-access-token"}
+        if layout:
+            _check_layout(TokenReader(secret, config.get("apiserver.idp.github_api_url")), repo, actor, company, task_id, ip)
+        audit(actor, "git_token.issued", ip=ip, company=company, task=task_id, repo=repo,
+              via="dataset_credential_token", access=entry.id, owner=entry.user)
+        return {"token": secret, "expires_at": None, "username": "x-access-token",
+                "warning": f"a personal token of {entry.user} is in use: it reaches everything that token reaches"}
+    except errors.bad_request.ValidationError as refused:
+        audit(actor, "git_token.refused", ip=ip, company=company, device=claims.get("device"), task=task_id, reason=str(refused))
+        raise
 
 
-def _granted_token(company: str, task, actor: str, task_id: str, ip, repo: str, dataset: bool = False,
-                   credential: str = None):
-    """A token for the repository from the accesses shared with the task's project, or None. The job is the project's:
+def _granted_token(company: str, task, actor: str, task_id: str, ip, repo: str):
+    """A token for a code repository from the accesses shared with the task's project, or None. The job is the project's:
     the access comes from its grants, while its owner is a member and active, and the user who queued the task is a
-    member and active. The agent's owner's own accesses are never used here.
-
-    For a dataset, the layout is checked with the same granted access that will read it: a repository that is not a
-    valid dataset is refused with the reason, as it is with the company's App."""
+    member and active. The agent's owner's own accesses are never used here. Datasets do not come through here: they are
+    read with their own credential (see _dataset_token)."""
     root = user_access.root_project(company, task.project) if task.project else None
     if root is None:
         return None
@@ -408,23 +413,16 @@ def _granted_token(company: str, task, actor: str, task_id: str, ip, repo: str, 
         # a task queued before this was recorded: nothing is granted, rather than guessing who queued it
         return None
     for entry, secret in user_access.granted_for_job(company, enqueuer, root, host, path):
-        if credential and entry.id != credential:
-            continue  # a dataset names the one credential that reads it: no other access is used
         if entry.kind == "app":
             app = GitHubApp(entry.app_id, secret, entry.api_url or config.get("apiserver.idp.github_api_url"))
             try:
                 token = app.installation_token(repo)
             except (RepoNotAccessible, GitHubError):
                 continue
-            if dataset:
-                _check_layout(app, repo, actor, company, task_id, ip)
             audit(actor, "git_token.issued", ip=ip, company=company, task=task_id, repo=repo,
                   via="project_access", access=entry.id, owner=entry.user, project=root)
             return {"token": token.token, "expires_at": token.expires_at.isoformat(), "username": "x-access-token"}
         if user_access.project_agent_tokens_allowed(company, root):
-            if dataset:
-                _check_layout(TokenReader(secret, config.get("apiserver.idp.github_api_url")), repo, actor, company,
-                              task_id, ip)
             audit(actor, "git_token.issued", ip=ip, company=company, task=task_id, repo=repo,
                   via="project_access_token", access=entry.id, owner=entry.user, project=root)
             return {"token": secret, "expires_at": None, "username": "x-access-token",
