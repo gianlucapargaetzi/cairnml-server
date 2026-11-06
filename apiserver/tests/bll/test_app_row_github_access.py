@@ -182,7 +182,6 @@ def job_token(monkeypatch, company, enqueuer):
     monkeypatch.setattr(devices, "_bearer", lambda call: "bearer")
     monkeypatch.setattr(devices, "Task", SimpleNamespace(objects=lambda **_kw: SimpleNamespace(first=lambda: task)))
     monkeypatch.setattr(devices, "public_repo", lambda repo: False)
-    monkeypatch.setattr(devices, "_granted_token", lambda *args, **kwargs: None)
     monkeypatch.setattr(devices, "verify_dataset", lambda app, repo: None)
     monkeypatch.setattr(devices, "_refresh_dataset_entry", lambda app, repo: None)
     monkeypatch.setattr(devices, "audit", lambda *args, **kwargs: None)
