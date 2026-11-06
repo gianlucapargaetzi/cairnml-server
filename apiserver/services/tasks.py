@@ -8,6 +8,8 @@ from mongoengine import EmbeddedDocument, Q
 from mongoengine.queryset.transform import COMPARISON_OPERATORS
 from pymongo import UpdateOne
 
+from types import SimpleNamespace
+
 from apiserver.apierrors import errors
 from apiserver.apierrors.errors.bad_request import InvalidTaskId
 from apiserver.apimodels.base import (
@@ -267,6 +269,8 @@ def set_task_status_from_call(
         force=force,
         user_id=identity.user,
     ).execute(**set_fields)
+
+DATASETS_SECTION = "Datasets"
 
 
 @endpoint("tasks.get_by_id", request_data_model=TaskRequest)
@@ -951,16 +955,20 @@ def get_hyper_params(call: APICall, company_id, request: GetHyperParamsRequest):
 @endpoint("tasks.edit_hyper_params", request_data_model=EditHyperParamsRequest)
 def edit_hyper_params(call: APICall, company_id, request: EditHyperParamsRequest):
     _assert_tasks_access(company_id, call.identity, [request.task], "write")
-    call.result.data = {
-        "updated": HyperParams.edit_params(
-            company_id,
-            identity=call.identity,
-            task_id=request.task,
-            hyperparams=request.hyperparams,
-            replace_hyperparams=request.replace_hyperparams,
-            force=request.force,
-        )
-    }
+    updated = HyperParams.edit_params(
+        company_id,
+        identity=call.identity,
+        task_id=request.task,
+        hyperparams=request.hyperparams,
+        replace_hyperparams=request.replace_hyperparams,
+        force=request.force,
+    )
+    call.result.data = {"updated": updated}
+    # a run that records a dataset it uses shares that dataset with its project now, not when the run finishes
+    if any(getattr(item, "section", None) == DATASETS_SECTION for item in request.hyperparams or []):
+        from apiserver.bll.task.utils import _publish_datasets
+
+        _publish_datasets(SimpleNamespace(company=company_id, id=request.task))
 
 
 @endpoint("tasks.delete_hyper_params", request_data_model=DeleteHyperParamsRequest)
