@@ -65,6 +65,31 @@ def set_credential(company: str, user: str, repository: str, credential: Optiona
     return view(record)
 
 
+def add(company: str, user: str, repository: str, credential: Optional[str]) -> dict:
+    """Lists a repository before any run has used it, owned by the caller, with the GitHub App it is read with (none for a
+    public repository). A repository the caller already owns is given the credential instead of being refused. The App must
+    be the user's own or the company's, and must be able to read the repository."""
+    from apiserver.idp.github_check import repo_of
+
+    repo = repo_of(repository or "")
+    if repo is None:
+        raise errors.bad_request.ValidationError("a repository is on GitHub: https://github.com/owner/name")
+    existing = CodeRepository.objects(company=company, ref__iexact=repo).first()
+    if existing is not None:
+        if existing.owner != user or not credential:
+            raise errors.bad_request.ValidationError(
+                f"{repo} is already listed" + ("" if existing.owner == user else f" by {existing.owner}"))
+        return set_credential(company, user, repository, credential, is_admin=False)
+    entry_id = None
+    if credential:
+        entry, _secret = datasets_bll._credential_entry(company, user, credential, repo)
+        entry_id = entry.id
+    record = ensure(company, repo, user, datetime.utcnow())
+    record.credential = entry_id
+    record.save()
+    return view(record)
+
+
 def credential_for_job(company: str, record: CodeRepository, repo: str):
     """(entry, secret) of the App a job reads the repository with: the one attached to it. Its owner's own App, or the
     company's. Refused with the reason when none is attached, or it may not be used for this repository."""

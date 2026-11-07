@@ -72,3 +72,25 @@ def test_a_job_reads_a_private_repository_only_with_the_app_attached(company):
     record.save()
     entry, secret = bll.credential_for_job(company, record, REPO)
     assert entry.id == "app-u1" and secret == "pem"
+
+
+def test_a_repository_can_be_listed_before_any_run_uses_it(company):
+    app(company, "app-u1", "u1")
+    view = bll.add(company, "u1", f"https://github.com/{REPO}", "app-u1")
+    assert view["ref"] == REPO and view["owner"] == "u1" and view["credential"] == "app-u1"
+
+
+def test_a_public_repository_is_listed_without_an_app(company):
+    assert bll.add(company, "u1", f"https://github.com/{REPO}", None)["credential"] is None
+
+
+def test_listing_a_repository_of_someone_else_is_refused(company):
+    bll.ensure(company, REPO, "u1", datetime.utcnow())
+    with pytest.raises(errors.bad_request.ValidationError, match="already listed by u1"):
+        bll.add(company, "u2", f"https://github.com/{REPO}", None)
+
+
+def test_listing_again_with_an_app_attaches_it_for_the_owner(company):
+    bll.add(company, "u1", f"https://github.com/{REPO}", None)
+    app(company, "app-u1", "u1")
+    assert bll.add(company, "u1", f"https://github.com/{REPO}", "app-u1")["credential"] == "app-u1"

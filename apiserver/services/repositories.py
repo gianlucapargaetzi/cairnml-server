@@ -16,6 +16,16 @@ def get_all(call: APICall, company: str, _request):
     call.result.data = {"repositories": bll.list_for(company, call.identity.user, _is_admin(call))}
 
 
+@endpoint("repositories.add")
+def add(call: APICall, company: str, _request):
+    data = call.data or {}
+    credential = data.get("credential") or None
+    repository = bll.add(company, call.identity.user, data.get("repository", ""), credential)
+    audit(call.identity.user, "repository.added", ip=client_address(call), company=company,
+          repo=data.get("repository", ""), credential=credential or "")
+    call.result.data = {"repository": repository}
+
+
 @endpoint("repositories.set_credential")
 def set_credential(call: APICall, company: str, _request):
     data = call.data or {}
