@@ -277,8 +277,8 @@ def test_app_discovered_repositories_belong_to_the_owner_of_the_app_credential(p
         rows = bll.list_visible(COMPANY, "admin1", False)
         found = [r for r in rows if r["ref"] == "acme/found"]
         assert found and found[0]["owner"] == "admin1" and found[0]["visibility"] == "Public"
-        # u3 has no GitHub token that reads the repository, so the App's repository is not named to u3 (R70)
-        assert [r for r in bll.list_visible(COMPANY, "u3", False) if r["ref"] == "acme/found"] == []
+        # the company's App is the company's shared read access: u3 sees it too, with nothing more asked
+        assert [r["ref"] for r in bll.list_visible(COMPANY, "u3", False) if r["ref"] == "acme/found"] == ["acme/found"]
     finally:
         app.delete()
 

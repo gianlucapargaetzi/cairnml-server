@@ -313,14 +313,8 @@ def git_token(call: APICall, company, request: GitTokenRequest):
                 raise errors.bad_request.ValidationError(reason)
             return _dataset_token(company, kept, repo, actor, request.task, client_address(call), claims,
                                   layout=kept.kind == "repo")
-        # a repository the company's App finds with no record of its own is read with the company's App, as the list shows.
-        # An App-discovered repository is read only by a user who can read it on GitHub (R70).
-        try:
-            queued_by = getattr(getattr(task, "execution", None), "enqueued_by", None)
-            datasets_bll.require_app_read_for_job(company, queued_by, repo)
-        except datasets_bll.NoGitHubRead as refused:
-            audit(actor, "git_token.refused", ip=client_address(call), company=company, device=claims.get("device"), task=request.task, reason=str(refused))
-            raise errors.bad_request.ValidationError(str(refused)) from None
+        # a repository the company's App finds with no record of its own is read with the company's App, as the list shows:
+        # it is the company's shared read access, so no more is asked of the user who queued the job.
         if app is None:
             raise errors.bad_request.ValidationError("GitHub is not configured")
         try:

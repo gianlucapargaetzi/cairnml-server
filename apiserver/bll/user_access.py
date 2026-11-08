@@ -21,7 +21,7 @@ from apiserver.database.model.share import Share
 from apiserver.database.model.user_access import UserAccess
 from apiserver.idp import git_credentials as store
 from apiserver.idp.audit import record as audit
-from apiserver.idp.github import GitHubApp, GitHubError, GitHubRefused, repository_readable_with
+from apiserver.idp.github import GitHubApp, GitHubError, GitHubRefused
 
 log = logging.getLogger(__name__)
 APP_ID_RE = re.compile(r"^\d{1,12}$")
@@ -245,29 +245,6 @@ def token_works(token: str, api_url: Optional[str] = None) -> bool:
     except requests.RequestException:
         return False
     return response.status_code == 200
-
-
-def github_read_on(company: str, user: str, repo: str) -> bool:
-    """Whether the user's own GitHub token reads the repository on GitHub (R70). Only the user's own tokens for GitHub
-    count, and only those whose path prefix covers the repository. No token, a deactivated user, or a GitHub that cannot
-    answer means no. Nothing is kept: each call asks GitHub again."""
-    if not is_active(user):
-        return False
-    api = config.get("apiserver.idp.github_api_url")
-    for entry in UserAccess.objects(company=company, user=user, scope="user", kind="token").order_by("created"):
-        if entry.host not in GITHUB_HOSTS or not store.covers(entry.path, repo.lower()):
-            continue
-        try:
-            secret = _secret(entry)
-        except store.CredentialUnreadable:
-            log.warning("the GitHub token %s cannot be read with the current key", entry.id)
-            continue
-        try:
-            if repository_readable_with(api, secret, repo):
-                return True
-        except GitHubError:
-            log.warning("GitHub could not say whether the token %s reads %s", entry.id, repo)
-    return False
 
 
 def _secret(entry: UserAccess) -> str:
