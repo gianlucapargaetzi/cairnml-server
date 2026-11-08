@@ -129,7 +129,7 @@ class TestIsPrivate(TestCase):
         with mock.patch.object(repo_visibility.requests, "Session", FakeSession):
             repo_visibility._fetch(PUBLIC, "https", 443, "team/proj", "gitlab.example.org", "gitlab.example.org")
         self.assertIs(seen["trust_env"], False)
-        self.assertEqual(seen["url"], f"https://{PUBLIC}:443/team/proj/info/refs?service=git-upload-pack")
+        self.assertEqual(seen["url"], f"https://{PUBLIC}:443/team/proj.git/info/refs?service=git-upload-pack")
         self.assertEqual(seen["kwargs"]["headers"], {"Host": "gitlab.example.org"})
         self.assertIs(seen["kwargs"]["allow_redirects"], False)
         self.assertEqual(seen["adapter"]._name, "gitlab.example.org")

@@ -237,7 +237,12 @@ def resolve(source: CodeRepository, binding: Optional[RepositoryBinding], now: O
     if reach:
         label, why = _company_reach(source)
     else:
-        label, why = ("company access", None) if _github_app() is not None or source.host != "github.com" else (None, "no company access")
+        if source.host == "github.com":
+            label, why = ("Company Github App", None) if _github_app() is not None else (None, "no company GitHub App is set up")
+        else:
+            stored = store.find_credential(source.company, f"https://{source.host}/{source.path}")
+            label, why = ((f"the Git credential stored for {stored.host}", None) if stored is not None
+                          else (None, f"no Git credential is stored for {source.host}"))
     if label:
         return Resolution(COMPANY, None, f"Auto-Authenticated via {label}. Assigning credentials is recommended", public)
     if public is None:

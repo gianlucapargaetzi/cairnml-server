@@ -263,3 +263,12 @@ def test_the_requirement_lists_each_repository_of_a_project_once_with_its_tasks(
         assert repo_access.requirement(world.company, "stranger", [f"t0-{world.company}"], False) == []
     finally:
         Task.objects(company=world.company).delete()
+
+
+def test_another_host_is_reached_by_the_company_only_with_a_stored_credential(world):
+    binding = bll.discover(world.company, "https://git.example.org/team/app.git", "owner", world.project)
+    source = CodeRepository.objects(id=binding.source).first()
+    world.probe.private = True
+    assert bll.resolve(source, binding, reach=False).state == bll.UNREACHABLE
+    world.monkeypatch.setattr(bll.store, "find_credential", lambda company, repository: SimpleNamespace(host="git.example.org"))
+    assert bll.resolve(source, binding, reach=False).state == bll.COMPANY
