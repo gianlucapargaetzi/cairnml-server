@@ -114,9 +114,9 @@ def test_unassigned_public_private_and_company_reached_repositories(world):
     assert bll.resolve(source, binding).state == bll.UNREACHABLE
     with pytest.raises(errors.bad_request.ValidationError, match="private"):
         bll.token_for_job(source, binding)
-    world.monkeypatch.setattr(bll, "_company_reach", lambda src: ("company GitHub App", None))
+    world.monkeypatch.setattr(bll, "_company_reach", lambda src: ("Company Github App", None))
     resolution = bll.resolve(source, binding)
-    assert resolution.state == bll.COMPANY and "Auto-Authenticated via company GitHub App" in resolution.message
+    assert resolution.state == bll.COMPANY and "Auto-Authenticated via Company Github App" in resolution.message
 
 
 def test_an_assigned_credential_is_the_only_one_used(world):
@@ -131,7 +131,7 @@ def test_an_assigned_credential_is_the_only_one_used(world):
     UserAccess.objects(id="app-1").delete()
     gone = bll.resolve(source, binding)
     assert gone.state == bll.UNREACHABLE and "no longer exists" in gone.message
-    world.monkeypatch.setattr(bll, "_company_reach", lambda src: ("company GitHub App", None))
+    world.monkeypatch.setattr(bll, "_company_reach", lambda src: ("Company Github App", None))
     assert bll.resolve(source, binding).state == bll.UNREACHABLE  # no fallback
 
 
@@ -246,3 +246,20 @@ def test_the_badge_does_not_make_a_binding(world):
     recorded = repo_access.resolve_one(world.company, URL, "owner", world.project, False, record=True)
     assert recorded["binding"] and recorded["can_assign"] is True
     assert repo_access.resolve_one(world.company, URL, "owner", world.project, False)["binding"] == recorded["binding"]
+
+
+def test_the_requirement_lists_each_repository_of_a_project_once_with_its_tasks(world):
+    from apiserver.bll import repo_access
+    from apiserver.database.model.task.task import Script, Task
+
+    for index, address in enumerate((URL, URL + ".git", "git@github.com:Acme/Proj.git")):
+        Task(id=f"t{index}-{world.company}", company=world.company, user="owner", project=world.project, name="task", type="training",
+             script=Script(repository=address), created=datetime.utcnow(), last_update=datetime.utcnow()).save()
+    try:
+        rows = repo_access.requirement(world.company, "owner", [f"t{i}-{world.company}" for i in range(3)], False)
+        assert len(rows) == 1 and len(rows[0]["tasks"]) == 3
+        assert rows[0]["state"] == bll.ANONYMOUS and rows[0]["ask"] is True and rows[0]["can_assign"] is True
+        assert rows[0]["anonymous"] is True
+        assert repo_access.requirement(world.company, "stranger", [f"t0-{world.company}"], False) == []
+    finally:
+        Task.objects(company=world.company).delete()

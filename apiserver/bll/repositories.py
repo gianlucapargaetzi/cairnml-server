@@ -208,7 +208,7 @@ def _company_reach(source: CodeRepository):
             return None, "no company GitHub App is set up"
         try:
             app.installation_token(source.path)
-            return "company GitHub App", None
+            return "Company Github App", None
         except RepoNotAccessible:
             return None, "the company GitHub App is not installed on this repository"
         except GitHubError:
