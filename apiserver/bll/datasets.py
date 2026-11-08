@@ -101,9 +101,9 @@ def resolve(company: str, reference: str) -> Optional[Dataset]:
         return None
     if _ID_RE.match(ref):
         return Dataset.objects(company=company, id=ref).first()
-    if "github.com" in ref.lower():
-        repo = repo_of(ref)
-        return kept_for_repository(company, repo) if repo else None
+    repo = repo_of(ref)  # reads the host of the address: a name that merely contains "github.com" is not one
+    if repo:
+        return kept_for_repository(company, repo)
     return Dataset.objects(company=company, reference=ref).first()
 
 
