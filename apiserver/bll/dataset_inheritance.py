@@ -15,15 +15,21 @@ user's project roots, and the use action) is skipped, and so is its credential: 
 not read.
 """
 
+import logging
+import re
+from datetime import datetime
 from typing import List, Optional, Set
 
-from apiserver.bll import access, user_access
+from apiserver.bll import access, repositories, user_access
 from apiserver.database.model.auth import User
 from apiserver.database.model.dataset import Dataset
 from apiserver.database.model.project import Project
 from apiserver.database.model.share import Share
 from apiserver.database.model.task.task import Task
 from apiserver.database.model.user_access import UserAccess
+from apiserver.idp import repo_address
+
+log = logging.getLogger(__name__)
 
 SECTION = "Datasets"
 """ The parameter section the SDK records the datasets of a run under (cairnml/datasets/_shared.py) """
@@ -41,6 +47,32 @@ def _recorded_repos(company: str, task_id: str) -> Set[str]:
         if alias and key in REPO_KEYS and item.value:
             repos.add(item.value)
     return repos
+
+
+def _address_of(value: str) -> str:
+    """The address a recorded repository names: ``owner/name`` is a GitHub repository."""
+    return f"https://github.com/{value}" if re.fullmatch(r"[\w.-]+/[\w.-]+", value) else value
+
+
+def _create_missing(company: str, address: str, owner: str, root: str, run: Task) -> Optional[Share]:
+    """A GitHub repository a run used that no dataset keeps yet becomes a dataset of the project's owner, shared with the
+    project (inherited). The owner is who owns the project, not who ran it: a run never makes a dataset of its own user in
+    someone else's project. Another dataset already holding the name leaves it as it is."""
+    from apiserver.bll import datasets as datasets_bll
+
+    parsed = repo_address.parse(address)
+    if parsed is None or not parsed.is_github:
+        return None
+    if Dataset.objects(company=company, kind="repo", ref__iexact=parsed.path).first() is not None:
+        return None
+    try:
+        dataset = datasets_bll._save(company, owner, "repo", parsed.path, parsed.path.split("/")[-1], "user", None,
+                                     "ok", "", datetime.utcnow())
+    except Exception:
+        log.warning("the dataset %s could not be created for project %s", parsed.path, root, exc_info=True)
+        return None
+    return access.record_grant(company, owner, "dataset", dataset.id, "projects", root, level="read", actor=run.user,
+                               inherited=True, run_id=run.id)
 
 
 def _datasets_of(company: str, task_id: str) -> List[Dataset]:
@@ -110,6 +142,13 @@ def publish_run_datasets(task) -> List[Share]:
         return []
 
     created = []
+    for repo in sorted(_recorded_repos(run.company, run.id)):
+        address = _address_of(repo)
+        # the repository is recorded for the project like code is (bll/repositories), and kept as a dataset when none is
+        repositories.discover_quietly(run.company, address, run.user, run.project)
+        made = _create_missing(run.company, address, owner, root, run)
+        if made is not None:
+            created.append(made)
     for dataset in _datasets_of(run.company, run.id):
         if not _run_user_can_use(run.company, run.user, dataset.id):
             continue

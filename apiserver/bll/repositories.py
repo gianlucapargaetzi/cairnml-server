@@ -253,10 +253,11 @@ def resolve(source: CodeRepository, binding: Optional[RepositoryBinding], now: O
     return Resolution(UNREACHABLE, None, f"The repository is private and no credential is assigned ({why}).", False)
 
 
-def token_for_job(source: CodeRepository, binding: Optional[RepositoryBinding]) -> dict:
+def token_for_job(source: CodeRepository, binding: Optional[RepositoryBinding],
+                  resolution: Optional["Resolution"] = None) -> dict:
     """The answer devices.git_token gives for the repository of a job: ``token`` None when it is cloned without one.
     Refused with the reason when it cannot be read."""
-    resolution = resolve(source, binding)
+    resolution = resolution or resolve(source, binding)
     url = f"https://{source.host}/{source.path}"
     if resolution.state in (NONE_NEEDED, ANONYMOUS, UNKNOWN):
         return {"token": None, "expires_at": None, "username": None, "url": url}

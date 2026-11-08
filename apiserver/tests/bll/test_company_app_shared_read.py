@@ -122,7 +122,7 @@ def test_the_owner_of_the_app_holds_a_collaborator_level(company, app):
 
 def job_token(monkeypatch, company, enqueuer):
     """A job of the task run by `enqueuer`, asking for the App-discovered repository."""
-    task = SimpleNamespace(project=None, execution=SimpleNamespace(enqueued_by=enqueuer))
+    task = SimpleNamespace(project=None, user=enqueuer, execution=SimpleNamespace(enqueued_by=enqueuer))
     monkeypatch.setattr(devices.Token, "decode", staticmethod(lambda _token: {"kind": "job", "task": "task1", "device": "dev1"}))
     monkeypatch.setattr(devices, "_bearer", lambda call: "bearer")
     monkeypatch.setattr(devices, "Task", SimpleNamespace(objects=lambda **_kw: SimpleNamespace(first=lambda: task)))
@@ -132,6 +132,9 @@ def job_token(monkeypatch, company, enqueuer):
     monkeypatch.setattr(devices, "audit", lambda *args, **kwargs: None)
     fake = FakeApp()
     monkeypatch.setattr(devices, "build_from_config", lambda: fake)
+    # the repository is read as the binding says: nothing is assigned and it is private, so the company App reads it
+    monkeypatch.setattr(devices.repositories_bll, "is_private", lambda address: True)
+    monkeypatch.setattr(devices.repositories_bll, "_github_app", lambda: fake)
     call = SimpleNamespace(data={}, real_ip="127.0.0.1", get_header=lambda h, d=None: d, HEADER_REAL_IP="X-Real-IP")
     request = SimpleNamespace(task="task1", repository=f"https://github.com/{REPO}")
     return lambda: devices.git_token(call, company, request), fake
@@ -141,5 +144,11 @@ def job_token(monkeypatch, company, enqueuer):
 def test_the_job_of_any_user_gets_a_read_token(company, monkeypatch, user):
     run, fake = job_token(monkeypatch, company, user)
 
-    assert run()["token"] == "tok-read"
-    assert fake.requests == [(REPO, {"contents": "read"})]
+    try:
+        assert run()["token"] == "tok-read"
+        assert fake.requests and all(request == (REPO, {"contents": "read"}) for request in fake.requests)
+    finally:
+        from apiserver.database.model.code_repository import CodeRepository, RepositoryBinding
+
+        CodeRepository.objects(company=company).delete()
+        RepositoryBinding.objects(company=company).delete()

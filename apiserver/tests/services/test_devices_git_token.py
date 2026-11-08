@@ -95,123 +95,72 @@ def test_a_repository_cloned_without_a_credential_gets_a_successful_answer_with_
     assert devices.git_token(job_token, None, GitTokenRequest(task="t1")) == answer
 
 
-# A dataset: a repository the job asks for by its URL, in the request.
+# A dataset: a repository the job asks for by its URL, in the request. It is read as the project's binding says, like code.
 
 def dataset_request(repository="https://github.com/acme/cars"):
     return GitTokenRequest(task="t1", repository=repository)
 
 
-def test_a_job_token_is_issued_for_any_installed_repository_with_a_dataset_yaml(monkeypatch, job_token):
+class Client:
+    """The App client of a resolution: verify_dataset is faked, so only its use is recorded."""
+
+
+def bind_dataset(monkeypatch, answer=None, refuse=None, client=None, verify=None, refreshed=None):
+    source = SimpleNamespace(host="github.com", path="acme/cars")
+    binding = SimpleNamespace(credential=None)
     monkeypatch.setattr(devices, "Task", SimpleNamespace(objects=FakeTasks(task())))
-    github = FakeGitHub({"acme/cars": good_files()})
-    use_github(monkeypatch, github)
+    monkeypatch.setattr(devices.repositories_bll, "discover", lambda company, repository, user, project: binding)
+    monkeypatch.setattr(devices.repositories_bll, "source_of", lambda b: source)
+    monkeypatch.setattr(devices.repositories_bll, "resolve", lambda src, b: SimpleNamespace(state="assigned"))
 
-    response = devices.git_token(job_token, None, dataset_request())
+    def token_for_job(src, b, resolution=None):
+        if refuse:
+            raise errors.bad_request.ValidationError(refuse)
+        return answer
 
-    assert response["token"] == "token-for-acme/cars"
-    assert response["username"] == "x-access-token"
-    assert github.token_requests == ["acme/cars"]
-
-
-def test_a_job_token_is_refused_for_an_installed_repository_without_dataset_yaml_with_a_clear_message(
-        monkeypatch, job_token):
-    monkeypatch.setattr(devices, "Task", SimpleNamespace(objects=FakeTasks(task())))
-    files = good_files()
-    files["dataset.yaml"] = None
-    github = FakeGitHub({"acme/notes": files})
-    use_github(monkeypatch, github)
-
-    with pytest.raises(errors.bad_request.ValidationError) as ctx:
-        devices.git_token(job_token, None, dataset_request("https://github.com/acme/notes"))
-
-    assert "acme/notes is not a CairnML dataset: dataset.yaml is missing on its default branch" in ctx.value.msg
-    assert github.token_requests == []
+    monkeypatch.setattr(devices.repositories_bll, "token_for_job", token_for_job)
+    monkeypatch.setattr(devices.repositories_bll, "github_client", lambda resolution, src: client)
+    monkeypatch.setattr(devices, "verify_dataset", verify or (lambda app, repo: None))
+    monkeypatch.setattr(devices, "_refresh_dataset_entry", lambda app, repo: (refreshed if refreshed is not None else []).append(repo))
 
 
-def test_a_job_token_is_refused_for_an_installed_repository_whose_footprint_does_not_hold(monkeypatch, job_token):
-    monkeypatch.setattr(devices, "Task", SimpleNamespace(objects=FakeTasks(task())))
-    github = FakeGitHub({"acme/cars": good_files(dvc=DVC.replace("2048", "4096"))})
-    use_github(monkeypatch, github)
+TOKEN = {"token": "t", "expires_at": "later", "username": "x-access-token", "url": "https://github.com/acme/cars"}
 
-    with pytest.raises(errors.bad_request.ValidationError) as ctx:
+
+def test_a_dataset_is_read_with_the_projects_binding_and_its_layout_is_checked(monkeypatch, job_token):
+    checked, refreshed = [], []
+    bind_dataset(monkeypatch, TOKEN, client=Client(), verify=lambda app, repo: checked.append(repo), refreshed=refreshed)
+
+    assert devices.git_token(job_token, None, dataset_request())["token"] == "t"
+    assert checked == ["acme/cars"] and refreshed == ["acme/cars"]
+
+
+def test_a_dataset_that_is_not_a_cairnml_dataset_is_refused_with_the_reason(monkeypatch, job_token):
+    def verify(app, repo):
+        raise errors.bad_request.ValidationError("acme/cars is not a CairnML dataset: dataset.yaml is missing")
+
+    bind_dataset(monkeypatch, TOKEN, client=Client(), verify=verify)
+    with pytest.raises(errors.bad_request.ValidationError, match="not a CairnML dataset"):
         devices.git_token(job_token, None, dataset_request())
 
-    assert "footprint" in str(ctx.value)
-    assert github.token_requests == []
 
-
-def test_a_repository_the_app_is_not_installed_on_gets_no_token(monkeypatch, job_token):
-    monkeypatch.setattr(devices, "Task", SimpleNamespace(objects=FakeTasks(task())))
-    use_github(monkeypatch, FakeGitHub({}))
-
-    with pytest.raises(errors.bad_request.ValidationError) as ctx:
+def test_a_dataset_the_binding_cannot_read_is_refused_with_the_reason(monkeypatch, job_token):
+    bind_dataset(monkeypatch, refuse="github.com/acme/cars: The repository is private and no credential is assigned")
+    with pytest.raises(errors.bad_request.ValidationError, match="no credential is assigned"):
         devices.git_token(job_token, None, dataset_request())
 
-    assert "the GitHub App is not installed on acme/cars" in str(ctx.value)
+
+def test_a_dataset_cloned_without_a_credential_gets_no_token_and_no_layout_check(monkeypatch, job_token):
+    checked = []
+    answer = {"token": None, "expires_at": None, "username": None, "url": "https://github.com/acme/cars"}
+    bind_dataset(monkeypatch, answer, client=None, verify=lambda app, repo: checked.append(repo))
+
+    assert devices.git_token(job_token, None, dataset_request()) == answer
+    assert checked == []
 
 
-def test_a_public_repository_as_a_dataset_gets_no_token_and_the_app_is_not_asked(monkeypatch, job_token):
-    monkeypatch.setattr(devices, "Task", SimpleNamespace(objects=FakeTasks(task())))
-    github = FakeGitHub({"acme/open-data": good_files()})
-    use_github(monkeypatch, github, public={"acme/open-data"})
-
-    response = devices.git_token(job_token, None, dataset_request("https://github.com/acme/open-data"))
-
-    assert response["token"] is None
-    assert github.token_requests == []
-    assert github.reads == []
-
-
-def test_a_public_dataset_without_the_app_needs_no_app_and_gets_no_token(monkeypatch, job_token):
-    monkeypatch.setattr(devices, "Task", SimpleNamespace(objects=FakeTasks(task())))
-    use_github(monkeypatch, None, public={"acme/open-data"})
-
-    response = devices.git_token(job_token, None, dataset_request("https://github.com/acme/open-data"))
-
-    assert response["token"] is None
-
-
-def test_without_the_app_a_private_dataset_is_refused_as_not_configured(monkeypatch, job_token):
-    monkeypatch.setattr(devices, "Task", SimpleNamespace(objects=FakeTasks(task())))
-    use_github(monkeypatch, None)
-
-    with pytest.raises(errors.bad_request.ValidationError) as ctx:
-        devices.git_token(job_token, None, dataset_request())
-
-    assert "GitHub is not configured" in str(ctx.value)
-
-
-def test_a_dataset_repository_that_is_not_on_github_is_refused(monkeypatch, job_token):
-    monkeypatch.setattr(devices, "Task", SimpleNamespace(objects=FakeTasks(task())))
-    use_github(monkeypatch, FakeGitHub({}))
-
-    with pytest.raises(errors.bad_request.ValidationError) as ctx:
-        devices.git_token(job_token, None, GitTokenRequest(task="t1", repository="https://gitlab.example.org/a/b"))
-
-    assert "the repository is not on GitHub" in str(ctx.value)
-
-
-def test_a_job_token_for_a_dataset_refreshes_its_entry_in_the_dataset_list(monkeypatch, job_token):
-    monkeypatch.setattr(devices, "Task", SimpleNamespace(objects=FakeTasks(task())))
-    use_github(monkeypatch, FakeGitHub({"acme/cars": good_files()}))
-    refreshed = []
-    monkeypatch.setattr(devices.dataset_cache, "refresh_repository", lambda app, repo: refreshed.append(repo))
-
-    response = devices.git_token(job_token, None, dataset_request())
-
-    assert response["token"] == "token-for-acme/cars"
-    assert refreshed == ["acme/cars"]
-
-
-def test_a_failed_refresh_of_the_dataset_list_does_not_change_the_token_answer(monkeypatch, job_token):
-    monkeypatch.setattr(devices, "Task", SimpleNamespace(objects=FakeTasks(task())))
-    use_github(monkeypatch, FakeGitHub({"acme/cars": good_files()}))
-
-    def broken(app, repo):
-        raise RuntimeError("the cache is unreachable")
-
-    monkeypatch.setattr(devices.dataset_cache, "refresh_repository", broken)
-
-    response = devices.git_token(job_token, None, dataset_request())
-
-    assert response["token"] == "token-for-acme/cars"
+def test_an_address_that_is_not_a_hosted_repository_is_refused(monkeypatch, job_token):
+    bind_dataset(monkeypatch, TOKEN)
+    monkeypatch.setattr(devices.repositories_bll, "discover", lambda company, repository, user, project: None)
+    with pytest.raises(errors.bad_request.ValidationError, match="not a hosted git repository"):
+        devices.git_token(job_token, None, dataset_request("/home/me/data"))
