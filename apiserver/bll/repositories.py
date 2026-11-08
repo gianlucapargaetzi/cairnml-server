@@ -369,7 +369,11 @@ def set_credential(company: str, user: str, is_admin: bool, binding_id: str, cre
         _check_reads(entry, source)
         binding.credential, binding.none_needed = entry.id, False
     elif none_needed:
-        if anonymous(source, force=True) is not True:
+        answer = anonymous(source, force=True)
+        if answer is None:
+            raise errors.bad_request.ValidationError(
+                f"{source.host} could not be asked whether {source.path} can be cloned without a credential: try again in a moment")
+        if answer is not True:
             raise errors.bad_request.ValidationError(
                 f"{source.host}/{source.path} cannot be cloned without a credential, so None needed does not apply")
         binding.credential, binding.none_needed = None, True

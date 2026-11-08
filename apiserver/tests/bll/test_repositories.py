@@ -272,3 +272,10 @@ def test_another_host_is_reached_by_the_company_only_with_a_stored_credential(wo
     assert bll.resolve(source, binding, reach=False).state == bll.UNREACHABLE
     world.monkeypatch.setattr(bll.store, "find_credential", lambda company, repository: SimpleNamespace(host="git.example.org"))
     assert bll.resolve(source, binding, reach=False).state == bll.COMPANY
+
+
+def test_none_needed_is_not_refused_as_private_when_the_host_could_not_be_asked(world):
+    binding = discover(world)
+    world.probe.private = None
+    with pytest.raises(errors.bad_request.ValidationError, match="try again"):
+        bll.set_credential(world.company, "owner", False, binding.id, None, none_needed=True)
