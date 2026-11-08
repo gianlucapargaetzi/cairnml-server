@@ -42,6 +42,8 @@ services:
       KC_HOSTNAME_STRICT: "false"
     volumes:
       - ${CAIRNML_HOME:-${HOME}/.local/share/cairnml}/idp/realm-cairnml.json:/opt/keycloak/data/import/realm-cairnml.json:ro
+      # The CairnML sign-in page (logo). Mounted per theme: the base themes of the image stay in place.
+      - ./idp/themes/cairnml:/opt/keycloak/themes/cairnml:ro
       - ${CAIRNML_HOME:-${HOME}/.local/share/cairnml}/data/idp:/opt/keycloak/data/h2
     ports:
       # The admin console is also published on this machine's loopback address, at

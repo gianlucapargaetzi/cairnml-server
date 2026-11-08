@@ -3,6 +3,7 @@
 from apiserver.apierrors import errors
 from apiserver.apimodels.datachunks import (
     CommitRequest,
+    DatasetCredentialsRequest,
     DeleteRequest,
     PrepareDownloadRequest,
     PreparePartRequest,
@@ -12,6 +13,7 @@ from apiserver.bll import datachunks as bll
 from apiserver.bll.dataset_credentials import dataset_credentials
 from apiserver.bll.project.access import ProjectAccessBLL
 from apiserver.bll.task.utils import get_task_with_write_access
+from apiserver.database.model.auth import Role
 from apiserver.database.model.datachunk import Datachunk
 from apiserver.database.model.task.task import Task
 from apiserver.idp.tokens import read_claims
@@ -124,6 +126,12 @@ def delete(call: APICall, company: str, request: DeleteRequest):
     call.result.data = {"deleted": bll.delete(company=company, chunks=chunks)}
 
 
-@endpoint("datachunks.dataset_credentials")
-def get_dataset_credentials(call: APICall, company: str, _):
-    call.result.data = dataset_credentials()
+@endpoint("datachunks.dataset_credentials", min_version="2.40", request_data_model=DatasetCredentialsRequest)
+def get_dataset_credentials(call: APICall, company: str, request: DatasetCredentialsRequest):
+    call.result.data = dataset_credentials(
+        company=company,
+        user=call.identity.user,
+        repository=request.repository,
+        level=request.level,
+        is_admin=call.identity.role in (Role.admin, Role.root),
+    )

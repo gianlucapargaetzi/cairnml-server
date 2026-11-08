@@ -1,0 +1,100 @@
+/* Heebo, the CairnML UI font (the web app's copy in webapp-common/assets/fonts). Bundled, so the page needs no external host. */
+@font-face {
+  font-family: 'Heebo';
+  src: url('../fonts/Heebo-Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Heebo';
+  src: url('../fonts/Heebo-Medium.ttf') format('truetype');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Heebo';
+  src: url('../fonts/Heebo-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Heebo';
+  src: url('../fonts/Heebo-Light.ttf') format('truetype');
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Heebo';
+  src: url('../fonts/Heebo-Thin.ttf') format('truetype');
+  font-weight: 100;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  --pf-v5-global--FontFamily--sans-serif: 'Heebo', sans-serif;
+}
+body,
+.pf-v5-c-login,
+.pf-v5-c-form-control,
+.pf-v5-c-button,
+.pf-v5-c-form__label,
+#kc-page-title {
+  font-family: 'Heebo', sans-serif;
+}
+
+/* CairnML sign-in page. Colours are the CairnML primary palette (cairnml-web/src/app/webapp-common/styles/cairnml-palette.scss):
+   tone 40 #0060A7 for actions, tone 30 #004880 for hover and pressed, tone 50 #007AD1 for links. */
+
+/* The realm name text is replaced by the CairnML logo, the width of the sign-in card. The logo is the stacked dark-background
+   variant: the sign-in page background is dark grey in both colour schemes. */
+#kc-header-wrapper {
+  font-size: 0;
+  line-height: 0;
+  width: 540px;
+  max-width: 100%;
+  margin: 0 auto;
+  height: 255px;
+  margin-bottom: 8px;
+  background: url("../img/cairnml-logo-stacked-dark.svg") no-repeat center / contain;
+}
+
+.pf-v5-c-button.pf-m-primary {
+  background-color: #0060A7;
+  --pf-v5-c-button--m-primary--BackgroundColor: #0060A7;
+  --pf-v5-c-button--m-primary--hover--BackgroundColor: #004880;
+  --pf-v5-c-button--m-primary--active--BackgroundColor: #004880;
+  --pf-v5-c-button--m-primary--focus--BackgroundColor: #004880;
+}
+.pf-v5-c-button.pf-m-primary:hover,
+.pf-v5-c-button.pf-m-primary:focus,
+.pf-v5-c-button.pf-m-primary:active {
+  background-color: #004880;
+}
+
+.pf-v5-c-form-control:focus,
+.pf-v5-c-form-control:focus-within {
+  border-bottom-color: #0060A7;
+}
+
+a,
+.pf-v5-c-login__main-footer-band a {
+  color: #0060A7;
+}
+a:hover,
+.pf-v5-c-login__main-footer-band a:hover {
+  color: #004880;
+}
+
+/* Keycloak puts 64px above the header; the logo and card sit closer to the vertical centre of the window. */
+#kc-header {
+  margin-top: -17px;
+}

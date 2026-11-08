@@ -11,7 +11,8 @@ Who may see, use, manage and allocate a queue.
 - A grant lets the user use the queue and allocate it to the root projects they own. Only the owner of a root project
   changes its allocations, and the owner may allocate only the queues they may use without admin rights: public
   queues, queues they hold a grant on, and queues they own.
-- An agent may serve a queue only when it is public, its user owns it, holds a grant on it, or is an admin.
+- An agent serves a queue at the level its owner holds on it, and serving needs use: it is public, the owner owns it,
+  or the owner holds a grant on it. The agent's identity is never an admin, so the admin role gives it no queue.
 """
 
 from typing import Iterable, Set
@@ -19,27 +20,36 @@ from typing import Iterable, Set
 from mongoengine import Q
 
 from apiserver.apierrors import errors
-from apiserver.database.model.auth import Role
+from apiserver.bll.access import (
+    allows,
+    level_of,
+    require,
+    queue_ids_allocated,
+    queue_ids_held,
+    remove_grant,
+    shared_project_ids,
+)
+from apiserver.bll.user_access import my_projects
+from apiserver.database.model.auth import Role, User
 from apiserver.database.model.project import Project
 from apiserver.database.model.queue import Queue
+from apiserver.database.model.task.task import Task
 from apiserver.service_repo.auth import Identity
 
 _ADMIN_ROLES = (Role.admin, Role.root)
 
 
 class QueueAccessBLL:
+    """ Every decision reads the share records through bll/access.py; the queue's owner is its created_by. """
+
     @staticmethod
     def is_admin(identity: Identity) -> bool:
         return identity.role in _ADMIN_ROLES
 
     @staticmethod
-    def is_owner(identity: Identity, queue: Queue) -> bool:
-        return bool(queue.created_by) and queue.created_by == identity.user
-
-    @staticmethod
-    def can_manage(identity: Identity, queue: Queue) -> bool:
-        """ Admins and the owner of the queue may update, delete, manage grants and metadata """
-        return QueueAccessBLL.is_admin(identity) or QueueAccessBLL.is_owner(identity, queue)
+    def _roots(identity: Identity) -> Set[str]:
+        """ The root projects the user owns or is a member of (in any role) """
+        return {project["id"] for project in my_projects(identity.company, identity.user)}
 
     @staticmethod
     def visible_root_query(identity: Identity) -> Q:
@@ -53,18 +63,13 @@ class QueueAccessBLL:
     @staticmethod
     def allocated_queue_ids(identity: Identity) -> Set[str]:
         """ Queues allocated to root projects the user owns or is a member of """
-        roots = Project.objects(QueueAccessBLL.visible_root_query(identity)).only("queues")
-        return {queue_id for root in roots for queue_id in root.queues}
+        return queue_ids_allocated(identity.company, identity.user, QueueAccessBLL._roots(identity))
 
     @staticmethod
     def usable_query(identity: Identity) -> Q:
         """ Queues the user may see and use, without the admin exception """
-        return (
-            Q(public=True)
-            | Q(created_by=identity.user)
-            | Q(users__user=identity.user)
-            | Q(id__in=list(QueueAccessBLL.allocated_queue_ids(identity)))
-        )
+        held = queue_ids_held(identity.company, identity.user, QueueAccessBLL._roots(identity))
+        return Q(id__in=list(held))
 
     @staticmethod
     def visible_query(identity: Identity) -> Q:
@@ -88,13 +93,8 @@ class QueueAccessBLL:
         """
         if QueueAccessBLL.is_admin(identity):
             return
-        found = (
-            Queue.objects(company=company_id, id=queue_id)
-            .filter(QueueAccessBLL.usable_query(identity))
-            .only("id")
-            .first()
-        )
-        if not found:
+        level = level_of(company_id, identity.user, False, "queue", queue_id, QueueAccessBLL._roots(identity))
+        if not allows(level, "use", "queue"):
             raise errors.bad_request.InvalidQueueId(id=queue_id)
 
     @staticmethod
@@ -104,60 +104,72 @@ class QueueAccessBLL:
         """
         if QueueAccessBLL.is_admin(identity):
             return
-        queue = (
-            Queue.objects(company=company_id, id=queue_id)
-            .filter(QueueAccessBLL.visible_query(identity))
-            .only("id", "created_by")
-            .first()
-        )
-        if not queue:
+        level = level_of(company_id, identity.user, False, "queue", queue_id, QueueAccessBLL._roots(identity))
+        if level is None:
             raise errors.bad_request.InvalidQueueId(id=queue_id)
-        if not QueueAccessBLL.can_manage(identity, queue):
+        # the owner holds the collaborator level, the one that manages a queue
+        if not allows(level, "manage_sharing", "queue"):
             raise errors.forbidden.NoWritePermission(
                 "only the owner or a company admin can manage the queue"
             )
 
     @staticmethod
-    def assert_can_serve(identity: Identity, company_id: str, queue_ids: Iterable[str]) -> None:
+    def require_action(identity: Identity, company_id: str, queue_id: str, action: str) -> None:
+        """ The level check of bll/access for one action on the queue (ACTION_NEEDS) """
+        require(company_id, identity.user, QueueAccessBLL.is_admin(identity), "queue", queue_id,
+                QueueAccessBLL._roots(identity), action)
+
+    @staticmethod
+    def assert_can_change_tasks(identity: Identity, company_id: str, queue_id: str, task_ids: Iterable[str]) -> None:
         """
-        An agent may serve a queue only when it is public, the user owns it, holds a grant on it, or is an admin.
-        :raise errors.bad_request.InvalidQueueId: for the queues the user may not serve
+        Moving or removing a task that someone else queued needs read_write on the queue. The user's own tasks need
+        only the use level, which the caller has already checked.
+        """
+        others = Task.objects(company=company_id, id__in=list(task_ids), user__ne=identity.user).scalar("id")
+        if list(others):
+            QueueAccessBLL.require_action(identity, company_id, queue_id, "change_content")
+
+    @staticmethod
+    def assert_can_serve(identity: Identity, company_id: str, queue_ids: Iterable[str], device_id: str = None) -> None:
+        """
+        An agent serves only its own queue: the one made when it was enrolled, owned by the user who enrolled it. Any other
+        queue is refused, also a public one and one the owner holds a grant on. An agent whose device is revoked, or whose
+        queue is gone, serves nothing.
+
+        Without an agent's device, the caller may serve only the queues it owns.
+        :raise errors.bad_request.InvalidQueueId: for the queues the caller may not serve
         """
         if identity is None:
             raise errors.forbidden.NoWritePermission("the caller is not known")
-        if QueueAccessBLL.is_admin(identity):
-            return
         queue_ids = set(queue_ids)
-        allowed = set(
-            Queue.objects(
-                Q(company=company_id, id__in=list(queue_ids))
-                & (Q(public=True) | Q(created_by=identity.user) | Q(users__user=identity.user))
-            ).scalar("id")
-        )
-        invalid = queue_ids - allowed
+        if device_id:
+            from apiserver.database.model.device import Device, DeviceKind
+
+            device = Device.objects(id=device_id, company=company_id).first()
+            owner_disabled = User.objects(id=device.user, idp_disabled=True).first() is not None if device else False
+            if device is None or device.kind != DeviceKind.agent or device.revoked or not device.queue or owner_disabled:
+                raise errors.bad_request.InvalidQueueId(ids=sorted(queue_ids))
+            own = Queue.objects(id=device.queue, company=company_id, created_by=device.user).first()
+            invalid = queue_ids - ({own.id} if own is not None else set())
+        else:
+            owned = {
+                queue.id
+                for queue in Queue.objects(company=company_id, id__in=list(queue_ids), created_by=identity.user)
+            }
+            if User.objects(id=identity.user, idp_disabled=True).first() is not None:
+                owned = set()  # a deactivated user serves nothing, not even their own queues (R25)
+            invalid = queue_ids - owned
         if invalid:
             raise errors.bad_request.InvalidQueueId(ids=sorted(invalid))
 
     @staticmethod
     def assignable_queue_ids(company_id: str, user_id: str) -> Set[str]:
         """ What a project owner may allocate: public, granted and owned queues, without admin rights """
-        return set(
-            Queue.objects(
-                Q(company=company_id)
-                & (Q(public=True) | Q(users__user=user_id) | Q(created_by=user_id))
-            ).scalar("id")
-        )
+        return queue_ids_held(company_id, user_id, set(), include_projects=False)
 
     @staticmethod
-    def remove_from_allocations(queue_ids: Iterable[str]) -> None:
-        """ Take queues out of every project's allocations """
-        Project.objects(queues__in=list(queue_ids)).update(
-            pull_all__queues=list(queue_ids)
-        )
-
-    @staticmethod
-    def remove_user_allocations(company_id: str, user_id: str, queue_id: str) -> None:
+    def remove_user_allocations(company_id: str, user_id: str, queue_id: str, actor: str) -> None:
         """ Take a queue out of the allocations of the root projects the user owns (the cascade of a removed grant) """
-        Project.objects(
-            company=company_id, parent=None, user=user_id, queues=queue_id
-        ).update(pull__queues=queue_id)
+        owned = {root.id for root in Project.objects(company=company_id, parent=None, user=user_id).only("id")}
+        for root_id in sorted(shared_project_ids(company_id, "queue", queue_id) & owned):
+            remove_grant(company_id, "queue", queue_id, "projects", root_id, actor=actor)

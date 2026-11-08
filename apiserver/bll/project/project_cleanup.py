@@ -16,6 +16,7 @@ from apiserver.config_repo import config
 from apiserver.database.model import EntityVisibility
 from apiserver.database.model.model import Model
 from apiserver.database.model.project import Project
+from apiserver.database.model.share import Share
 from apiserver.database.model.task.task import Task, ArtifactModes, TaskType, TaskStatus
 from .project_bll import (
     ProjectBLL,
@@ -210,6 +211,8 @@ def delete_project(
 
     affected = {*project_ids, *(project.path or [])}
     res.deleted = Project.objects(id__in=project_ids).delete()
+    # the shares that the projects gave to queues, datasets and credentials
+    Share.objects(company=company, scope="projects", project__in=list(project_ids)).delete()
 
     return res, affected
 

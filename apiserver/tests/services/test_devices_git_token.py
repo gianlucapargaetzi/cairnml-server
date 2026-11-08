@@ -30,12 +30,15 @@ def job_token(monkeypatch):
     monkeypatch.setattr(devices, "audit", lambda *args, **kwargs: None)
     monkeypatch.setattr(devices, "build_from_config", lambda: FakeApp())
     monkeypatch.setattr(devices, "public_repo", lambda repo: False)
+    # these tests cover the layout check and the App; that the job's user reads the repository on GitHub (R70) is
+    # covered by bll/test_app_row_github_access
+    monkeypatch.setattr(devices.datasets_bll, "require_app_read_for_job", lambda company, user, repo: None)
     return SimpleNamespace(authorization="Bearer x", get_header=lambda header, default=None: default,
                            HEADER_REAL_IP="X-Real-IP", real_ip="127.0.0.1")
 
 
 def task(repository="https://github.com/acme/proj.git"):
-    return SimpleNamespace(id="t1", project=None, script=SimpleNamespace(repository=repository))
+    return SimpleNamespace(id="t1", user="owner", project=None, script=SimpleNamespace(repository=repository))
 
 
 def use_github(monkeypatch, github, public=()):
@@ -54,13 +57,30 @@ def test_a_job_token_for_a_deleted_task_gets_a_clear_bad_request(monkeypatch, jo
 
 
 def test_a_job_token_for_an_existing_task_gets_the_task_repository_token(monkeypatch, job_token):
+    """A private repository is read with the GitHub App attached to its record (made by this first use)."""
     monkeypatch.setattr(devices, "Task", SimpleNamespace(objects=FakeTasks(task())))
     monkeypatch.setattr(devices, "repo_of", lambda url: "acme/proj")
+    monkeypatch.setattr(devices.repositories_bll, "ensure", lambda company, repo, owner, now: SimpleNamespace(
+        credential="app-1"))
+    monkeypatch.setattr(devices.repositories_bll, "token_for_job", lambda company, record, repo: {
+        "token": "t", "expires_at": None, "username": "x-access-token"})
+    use_github(monkeypatch, FakeGitHub({}), public=())
 
     response = devices.git_token(job_token, None, GitTokenRequest(task="t1"))
 
     assert response["token"] == "t"
     assert response["username"] == "x-access-token"
+
+
+def test_a_private_repository_with_no_app_attached_is_refused_with_the_reason(monkeypatch, job_token):
+    monkeypatch.setattr(devices, "Task", SimpleNamespace(objects=FakeTasks(task())))
+    monkeypatch.setattr(devices, "repo_of", lambda url: "acme/proj")
+    monkeypatch.setattr(devices.repositories_bll, "ensure", lambda company, repo, owner, now: SimpleNamespace(
+        credential=None))
+    use_github(monkeypatch, FakeGitHub({}), public=())
+
+    with pytest.raises(errors.bad_request.ValidationError, match="no GitHub App attached"):
+        devices.git_token(job_token, None, GitTokenRequest(task="t1"))
 
 
 def test_a_public_task_repository_gets_a_successful_answer_with_no_token(monkeypatch, job_token):
@@ -70,7 +90,7 @@ def test_a_public_task_repository_gets_a_successful_answer_with_no_token(monkeyp
 
     response = devices.git_token(job_token, None, GitTokenRequest(task="t1"))
 
-    assert response == {"token": None, "expires_at": None, "username": None}
+    assert response == {"token": None, "expires_at": None, "username": None, "url": "https://github.com/acme/proj"}
     assert github.token_requests == []
 
 

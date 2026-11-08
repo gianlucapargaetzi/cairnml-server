@@ -43,3 +43,10 @@ class DeleteRequest(Base):
     task = StringField()
     kind = StringField()
     name = StringField()
+
+
+class DatasetCredentialsRequest(Base):
+    repository = StringField(required=True)
+    """ owner/name of the dataset repository on GitHub """
+    level = StringField(required=True)
+    """ read, or read_write (the owner or an admin only) """

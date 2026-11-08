@@ -1,4 +1,3 @@
-from datetime import datetime
 from typing import Union, Sequence
 
 from mongoengine import Q
@@ -27,14 +26,23 @@ from apiserver.apimodels.queues import (
     MoveTaskToQueueRequest,
     UserRequest,
 )
+from apiserver.bll.access import (
+    drop_resource_shares,
+    find_share,
+    record_grant,
+    refuse_inactive,
+    remove_grant,
+    shared_project_ids,
+)
 from apiserver.bll.model import Metadata
 from apiserver.bll.queue import QueueBLL
 from apiserver.bll.queue.queue_access import QueueAccessBLL
 from apiserver.bll.queue.queue_bll import MOVE_FIRST, MOVE_LAST
 from apiserver.bll.workers import WorkerBLL
 from apiserver.config_repo import config
-from apiserver.database.model.queue import Queue, QueueUser
 from apiserver.database.model.auth import User
+from apiserver.database.model.queue import Queue
+from apiserver.database.model.share import Share
 from apiserver.database.model.project import Project
 from apiserver.database.model.task.task import Task, TaskStatus
 from apiserver.service_repo import APICall, endpoint
@@ -101,7 +109,7 @@ def _hidden_query(data: dict) -> Q:
 def get_projects(call: APICall, company_id, request: QueueRequest):
     """ Root projects the queue is allocated to. Admins see all of them, others only the ones they own or are in """
     QueueAccessBLL.assert_can_use(call.identity, company_id, request.queue)
-    query = Q(company=company_id) & Q(parent=None) & Q(queues=request.queue)
+    query = Q(company=company_id) & Q(parent=None) & Q(id__in=list(shared_project_ids(company_id, "queue", request.queue)))
     if not QueueAccessBLL.is_admin(call.identity):
         query &= QueueAccessBLL.visible_root_query(call.identity)
     projects = Project.objects(query).only("id", "name")
@@ -149,6 +157,9 @@ def get_all(call: APICall, company: str, request: GetAllRequest):
 
 @endpoint("queues.create", min_version="2.4")
 def create(call: APICall, company_id, request: CreateRequest):
+    # a queue is made by enrolling the agent of a machine (devices.enroll), named after the machine
+    raise errors.bad_request.ValidationError(
+        "queues are not created by hand: enrol the agent of the machine, which makes its queue")
     tags, system_tags = conform_tags(
         call, request.tags, request.system_tags, validate=True
     )
@@ -173,11 +184,18 @@ def create(call: APICall, company_id, request: CreateRequest):
 def update(call: APICall, company_id, request: UpdateRequest):
     QueueAccessBLL.assert_can_manage(call.identity, company_id, request.queue)
     data = call.data_model_for_partial_update
+    other = sorted(key for key in data if key not in ("queue", "public"))
+    if other:
+        raise errors.bad_request.ValidationError(f"only the visibility of a queue can be changed, not {', '.join(other)}")
+    if "public" in data:
+        refuse_inactive(call.identity.user)
     conform_tag_fields(call, data, validate=True)
     escape_metadata(data)
     updated, fields = queue_bll.update(
         company_id=company_id, queue_id=request.queue, **data
     )
+    if "public" in data:
+        _set_public_share(company_id, call.identity.user, request.queue, bool(data["public"]))
     conform_queue_data(call, fields)
     call.result.data_model = UpdateResponse(updated=updated, fields=fields)
 
@@ -185,14 +203,25 @@ def update(call: APICall, company_id, request: UpdateRequest):
 @endpoint("queues.delete", min_version="2.4")
 def delete(call: APICall, company_id, request: DeleteRequest):
     QueueAccessBLL.assert_can_manage(call.identity, company_id, request.queue)
+    # a queue goes with its agent: revoking the agent removes nothing here, and queues are not deleted by hand
+    raise errors.bad_request.ValidationError("queues are not deleted by hand: revoke the agent of the machine instead")
+    refuse_inactive(call.identity.user)
     queue_bll.delete(
         company_id=company_id,
         user_id=call.identity.user,
         queue_id=request.queue,
         force=request.force,
     )
-    QueueAccessBLL.remove_from_allocations([request.queue])
+    drop_resource_shares(company_id, "queue", request.queue, actor=call.identity.user)
     call.result.data = {"deleted": 1}
+
+
+def _set_public_share(company_id: str, actor: str, queue_id: str, public: bool) -> None:
+    """The public share follows the public flag, granted by the user who sets it"""
+    if public:
+        record_grant(company_id, actor, "queue", queue_id, "public", actor=actor)
+    else:
+        remove_grant(company_id, "queue", queue_id, "public", actor=actor)
 
 
 def update_added_task_properties(queue: str, task: str, update_execution_queue: bool):
@@ -205,9 +234,12 @@ def update_added_task_properties(queue: str, task: str, update_execution_queue: 
 @endpoint("queues.move_task_to_queue")
 def move_task_to_queue(call: APICall, company_id, request: MoveTaskToQueueRequest):
     QueueAccessBLL.assert_can_use(call.identity, company_id, request.target_queue)
+    # the task leaves the source queue: the caller must use it, and someone else's task needs read_write there
+    QueueAccessBLL.assert_can_use(call.identity, company_id, request.queue)
     # queues aren't project-scoped, so this and the other by-task-id endpoints below need their
     # own check, the same "write" bar tasks.enqueue/dequeue already use for the same operations
     _assert_tasks_access(company_id, call.identity, [request.task], "write")
+    QueueAccessBLL.assert_can_change_tasks(call.identity, company_id, request.queue, [request.task])
     removed = queue_bll.remove_task(
         company_id=company_id,
         user_id=call.identity.user,
@@ -282,6 +314,7 @@ def get_next_task(call: APICall, company_id, request: GetNextTaskRequest):
 def remove_task(call: APICall, company_id, request: RemoveTaskRequest):
     QueueAccessBLL.assert_can_use(call.identity, company_id, request.queue)
     _assert_tasks_access(company_id, call.identity, [request.task], "write")
+    QueueAccessBLL.assert_can_change_tasks(call.identity, company_id, request.queue, [request.task])
     call.result.data = {
         "removed": queue_bll.remove_task(
             company_id=company_id,
@@ -296,6 +329,9 @@ def remove_task(call: APICall, company_id, request: RemoveTaskRequest):
 @endpoint("queues.clear_queue")
 def clear_queue(call: APICall, company_id, request: QueueRequest):
     QueueAccessBLL.assert_can_use(call.identity, company_id, request.queue)
+    queue = Queue.objects(company=company_id, id=request.queue).only("entries").first()
+    QueueAccessBLL.assert_can_change_tasks(
+        call.identity, company_id, request.queue, [entry.task for entry in queue.entries] if queue else [])
     call.result.data = {
         "removed_tasks": queue_bll.clear_queue(
             company_id=company_id,
@@ -313,6 +349,7 @@ def clear_queue(call: APICall, company_id, request: QueueRequest):
 def move_task_forward(call: APICall, company_id, request: MoveTaskRequest):
     QueueAccessBLL.assert_can_use(call.identity, company_id, request.queue)
     _assert_tasks_access(company_id, call.identity, [request.task], "write")
+    QueueAccessBLL.assert_can_change_tasks(call.identity, company_id, request.queue, [request.task])
     call.result.data_model = MoveTaskResponse(
         position=queue_bll.reposition_task(
             company_id=company_id,
@@ -331,6 +368,7 @@ def move_task_forward(call: APICall, company_id, request: MoveTaskRequest):
 def move_task_backward(call: APICall, company_id, request: MoveTaskRequest):
     QueueAccessBLL.assert_can_use(call.identity, company_id, request.queue)
     _assert_tasks_access(company_id, call.identity, [request.task], "write")
+    QueueAccessBLL.assert_can_change_tasks(call.identity, company_id, request.queue, [request.task])
     call.result.data_model = MoveTaskResponse(
         position=queue_bll.reposition_task(
             company_id=company_id,
@@ -349,6 +387,7 @@ def move_task_backward(call: APICall, company_id, request: MoveTaskRequest):
 def move_task_to_front(call: APICall, company_id, request: TaskRequest):
     QueueAccessBLL.assert_can_use(call.identity, company_id, request.queue)
     _assert_tasks_access(company_id, call.identity, [request.task], "write")
+    QueueAccessBLL.assert_can_change_tasks(call.identity, company_id, request.queue, [request.task])
     call.result.data_model = MoveTaskResponse(
         position=queue_bll.reposition_task(
             company_id=company_id,
@@ -367,6 +406,7 @@ def move_task_to_front(call: APICall, company_id, request: TaskRequest):
 def move_task_to_back(call: APICall, company_id, request: TaskRequest):
     QueueAccessBLL.assert_can_use(call.identity, company_id, request.queue)
     _assert_tasks_access(company_id, call.identity, [request.task], "write")
+    QueueAccessBLL.assert_can_change_tasks(call.identity, company_id, request.queue, [request.task])
     call.result.data_model = MoveTaskResponse(
         position=queue_bll.reposition_task(
             company_id=company_id,
@@ -482,7 +522,7 @@ def get_num_entries(call: APICall, company_id: str, request: QueueRequest):
 
 
 def _get_queue_or_fail(company_id: str, queue_id: str) -> Queue:
-    queue = Queue.objects(company=company_id, id=queue_id).only("id", "users").first()
+    queue = Queue.objects(company=company_id, id=queue_id).only("id").first()
     if not queue:
         raise errors.bad_request.InvalidQueueId(id=queue_id)
     return queue
@@ -491,11 +531,14 @@ def _get_queue_or_fail(company_id: str, queue_id: str) -> Queue:
 @endpoint("queues.get_users")
 def get_users(call: APICall, company_id: str, request: QueueRequest):
     QueueAccessBLL.assert_can_manage(call.identity, company_id, request.queue)
-    queue = _get_queue_or_fail(company_id, request.queue)
+    _get_queue_or_fail(company_id, request.queue)
+    # the users granted the queue are its user shares: added is the share's creation, added_by who granted it
+    shares = Share.objects(company=company_id, resource_type="queue", resource_id=request.queue, scope="user").order_by(
+        "created")
     call.result.data = {
         "users": [
-            {"user": u.user, "added": u.added, "added_by": u.added_by}
-            for u in queue.users
+            {"user": share.user, "added": share.created, "added_by": share.granted_by}
+            for share in shares
         ]
     }
 
@@ -503,33 +546,28 @@ def get_users(call: APICall, company_id: str, request: QueueRequest):
 @endpoint("queues.add_user", response_data_model=UpdateResponse)
 def add_user(call: APICall, company_id: str, request: UserRequest):
     QueueAccessBLL.assert_can_manage(call.identity, company_id, request.queue)
+    refuse_inactive(call.identity.user)
     _get_queue_or_fail(company_id, request.queue)
     if not User.objects(id=request.user, company=company_id).only("id").first():
         raise errors.bad_request.InvalidUserId(id=request.user)
 
-    if Queue.objects(company=company_id, id=request.queue, users__user=request.user).only("id").first():
+    if find_share(company_id, "queue", request.queue, "user", user=request.user):
         return UpdateResponse(updated=0)
 
-    Queue.objects(company=company_id, id=request.queue).update_one(
-        push__users=QueueUser(
-            user=request.user,
-            added=datetime.utcnow(),
-            added_by=call.identity.user,
-        )
-    )
+    record_grant(company_id, call.identity.user, "queue", request.queue, "user", user=request.user,
+                 actor=call.identity.user)
     return UpdateResponse(updated=1)
 
 
 @endpoint("queues.remove_user", response_data_model=UpdateResponse)
 def remove_user(call: APICall, company_id: str, request: UserRequest):
     QueueAccessBLL.assert_can_manage(call.identity, company_id, request.queue)
-    queue = _get_queue_or_fail(company_id, request.queue)
-    if not any(u.user == request.user for u in queue.users):
+    refuse_inactive(call.identity.user)
+    _get_queue_or_fail(company_id, request.queue)
+    if find_share(company_id, "queue", request.queue, "user", user=request.user) is None:
         raise errors.bad_request.InvalidUserId(id=request.user)
 
-    Queue.objects(company=company_id, id=request.queue).update_one(
-        pull__users__user=request.user
-    )
-    QueueAccessBLL.remove_user_allocations(company_id, request.user, request.queue)
+    remove_grant(company_id, "queue", request.queue, "user", user=request.user, actor=call.identity.user)
+    QueueAccessBLL.remove_user_allocations(company_id, request.user, request.queue, actor=call.identity.user)
     return UpdateResponse(updated=1)
 

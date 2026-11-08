@@ -1,8 +1,10 @@
 """Devices (laptops and agents) enrol with their IdP sign-in and their public key, then exchange
 a signed assertion for short-lived access tokens. Ported from the mlops server's enrol and exchange."""
 
+import hashlib
 import jwt
 import logging
+import re
 import uuid
 from datetime import datetime
 
@@ -16,16 +18,19 @@ from apiserver.apimodels.devices import (
     RevokeRequest,
 )
 from apiserver.bll import dataset_cache
+from apiserver.bll import repositories as repositories_bll
 from apiserver.bll.dataset_access import verify_dataset
 from apiserver.config_repo import config
 from apiserver.database.model.auth import Role, User
 from apiserver.database.model.device import Device, DeviceKind
+from apiserver.database.model.queue import Queue
 from apiserver.database.model.task.task import Task
 from apiserver.idp.assertion import AssertionInvalid, unverified_issuer, verify_assertion
 from apiserver.idp.audit import client_address, record as audit
 from apiserver.idp.checks import AccessDenied, check_device, check_job_issue
 from apiserver.idp.github import GitHubApp, GitHubError, RepoNotAccessible, TokenReader
 from apiserver.bll import user_access
+from apiserver.bll import datasets as datasets_bll
 from apiserver.bll.dataset_registry import canonical_url
 from apiserver.idp.github_check import build_from_config, public_repo, repo_of
 from apiserver.idp.keys import load_public_key
@@ -72,10 +77,34 @@ def _device_views(devices) -> list:
     return [_device_view(d, owners.get(d.user)) for d in devices]
 
 
+def agent_queue_id(owner: str, machine: str, length: int = 6) -> str:
+    """The id of an agent's queue: the machine's name, then a short hash of its owner and the name. The same owner and
+    machine always get the same queue, and two owners with machines of one name get different queues."""
+    slug = re.sub(r"[^a-z0-9]+", "-", machine.lower()).strip("-")[:40] or "machine"
+    digest = hashlib.sha256(f"{owner}:{machine}".encode("utf-8")).hexdigest()
+    return f"{slug}-{digest[:length]}"
+
+
+def _agent_queue(company: str, owner: str, machine: str, now: datetime) -> Queue:
+    """The agent's own queue: the one its owner has for this machine (reused when the machine is enrolled again), or a new
+    one, unpublished, owned by the owner. A hash taken by someone else's queue is lengthened."""
+    for length in range(6, 13):
+        queue_id = agent_queue_id(owner, machine, length)
+        existing = Queue.objects(id=queue_id).first()
+        if existing is None:
+            return Queue(id=queue_id, company=company, name=queue_id, display_name=machine, created=now,
+                         created_by=owner, public=False)
+        if existing.company == company and existing.created_by == owner:
+            return existing
+    raise errors.bad_request.ValidationError(f"no queue id is free for the machine {machine}")
+
+
 @endpoint("devices.enroll", min_version="2.8", request_data_model=EnrollRequest)
 def enroll(call: APICall, _company, request: EnrollRequest):
     if request.kind not in (DeviceKind.client, DeviceKind.agent):
         raise errors.bad_request.InvalidId("kind must be client or agent")
+    if request.kind == DeviceKind.agent and not (request.name or "").strip():
+        raise errors.bad_request.ValidationError("an agent is enrolled with the name of its machine")
     try:
         load_public_key(request.public_key)
     except ValueError:
@@ -91,6 +120,14 @@ def enroll(call: APICall, _company, request: EnrollRequest):
     if user.idp_disabled:
         raise errors.forbidden.RoleNotAllowed("user is disabled")
 
+    now = datetime.utcnow()
+    queue_id = ""
+    if request.kind == DeviceKind.agent:
+        # the agent serves its own queue, named after its machine, and nothing else (bll/queue/queue_access)
+        queue = _agent_queue(user.company, user.id, request.name.strip(), now)
+        if Queue.objects(id=queue.id).first() is None:
+            queue.save()
+        queue_id = queue.id
     device = Device(
         id=f"dev_{uuid.uuid4().hex}",
         user=user.id,
@@ -98,13 +135,15 @@ def enroll(call: APICall, _company, request: EnrollRequest):
         kind=request.kind,
         name=request.name or "",
         public_key=request.public_key,
-        created=datetime.utcnow(),
+        created=now,
         revoked=False,
+        queue=queue_id,
     )
     device.save()
     audit(user.id, "device.enrolled", ip=client_address(call), company=user.company, device=device.id, kind=device.kind)
     result = {"id": device.id, "kind": device.kind}
     if device.kind == DeviceKind.agent:
+        result["queue"] = queue_id
         result["notice"] = AGENT_NOTICE
     return result
 
@@ -150,8 +189,10 @@ def exchange(call: APICall, _company, request: ExchangeRequest):
         audit(device_id, "token.refused", ip=client_address(call), company=device.company, device=device_id, reason="assertion reused")
         raise errors.unauthorized.InvalidToken("assertion already used")
 
+    # An agent acts with the user role whatever its owner's role: it never holds admin rights.
+    role = Role.user if device.kind == DeviceKind.agent else owner.role
     token = issue_access_token(owner.id, owner.company, device.id, kind=device.kind,
-                               role=owner.role, user_name=owner.name)
+                               role=role, user_name=owner.name)
     device.last_used = datetime.utcnow()
     device.save()
     audit(owner.id, "token.issued", ip=client_address(call), company=owner.company, device=device.id, kind=device.kind)
@@ -259,12 +300,27 @@ def git_token(call: APICall, company, request: GitTokenRequest):
         public = _public_answer(repo, actor, company, claims, request.task, call)
         if public is not None:
             return public
-        # the accesses shared with the task's project come first, as for the task's own repository. The layout is
-        # checked with the same access that reads the repository.
-        if task is not None:
-            granted = _granted_token(company, task, actor, request.task, client_address(call), repo, dataset=True)
-            if granted is not None:
-                return granted
+        # a dataset kept by the environment (or a registry) is read with the credential it holds, and no other. A job
+        # reads it when the one who queued it may see it, or its project holds it by an allocation. Project grants on
+        # credentials are not used for datasets: they are for code.
+        kept = datasets_bll.kept_for_repository(company, repo)
+        if kept is not None:
+            root = user_access.root_project(company, task.project) if task is not None and task.project else None
+            enqueuer = getattr(getattr(task, "execution", None), "enqueued_by", None)
+            if task is None or not datasets_bll.job_can_read(company, enqueuer, root, kept):
+                reason = f"no access to {kept.kind} {kept.name} for this job"
+                audit(actor, "git_token.refused", ip=client_address(call), company=company, device=claims.get("device"), task=request.task, reason=reason)
+                raise errors.bad_request.ValidationError(reason)
+            return _dataset_token(company, kept, repo, actor, request.task, client_address(call), claims,
+                                  layout=kept.kind == "repo")
+        # a repository the company's App finds with no record of its own is read with the company's App, as the list shows.
+        # An App-discovered repository is read only by a user who can read it on GitHub (R70).
+        try:
+            queued_by = getattr(getattr(task, "execution", None), "enqueued_by", None)
+            datasets_bll.require_app_read_for_job(company, queued_by, repo)
+        except datasets_bll.NoGitHubRead as refused:
+            audit(actor, "git_token.refused", ip=client_address(call), company=company, device=claims.get("device"), task=request.task, reason=str(refused))
+            raise errors.bad_request.ValidationError(str(refused)) from None
         if app is None:
             raise errors.bad_request.ValidationError("GitHub is not configured")
         try:
@@ -287,24 +343,27 @@ def git_token(call: APICall, company, request: GitTokenRequest):
     repo = repo_of(repository)
     if repo is None:
         return _stored_token(company, actor, request.task, repository, client_address(call))
+    # A public repository is cloned without a token. A private one is read with the GitHub App attached to its record, which
+    # the run's first use made (bll/repositories). Every answer names the https address the job clones from.
     public = _public_answer(repo, actor, company, claims, request.task, call)
     if public is not None:
-        return public
-    # the accesses shared with the task's project come first: the project decides, not the agent's owner
-    granted = _granted_token(company, task, actor, request.task, client_address(call), repo)
-    if granted is not None:
-        return granted
-    # GitHub: the App when it is set up and installed on the repository, else the Git credentials stored for it.
-    if app is not None:
-        try:
-            return _github_token(app, repo, actor, request.task, client_address(call), company)
-        except RepoNotAccessible:
-            pass
-    if store.find_credential(company, repository) is not None:
-        return _stored_token(company, actor, request.task, repository, client_address(call))
-    if app is None:
-        raise errors.bad_request.ValidationError("GitHub is not configured")
-    raise errors.bad_request.ValidationError(f"the GitHub App is not installed on {repo}")
+        return _with_url(public, repo)
+    record = repositories_bll.ensure(company, repo, task.user, datetime.utcnow())
+    try:
+        answer = repositories_bll.token_for_job(company, record, repo)
+    except errors.bad_request.ValidationError as refused:
+        audit(actor, "git_token.refused", ip=client_address(call), company=company, device=claims.get("device"),
+              task=request.task, reason=str(refused))
+        raise
+    audit(actor, "git_token.issued", ip=client_address(call), company=company, task=request.task, repo=repo,
+          via="repository_credential", access=record.credential)
+    return _with_url(answer, repo)
+
+
+def _with_url(answer: dict, repo: str) -> dict:
+    """The answer with the https address of the repository. The job clones from it: with its token when the answer has
+    one, anonymously when it has none (a public repository)."""
+    return {**answer, "url": canonical_url(repo)}
 
 
 def _refresh_dataset_entry(app, repo: str) -> None:
@@ -345,50 +404,26 @@ AGENT_NOTICE = (
 )
 
 
-def _granted_token(company: str, task, actor: str, task_id: str, ip, repo: str, dataset: bool = False):
-    """A token for the repository from the accesses shared with the task's project, or None. The job is the project's:
-    the access comes from its grants, while its owner is a member and active, and the user who queued the task is a
-    member and active. The agent's owner's own accesses are never used here.
-
-    For a dataset, the layout is checked with the same granted access that will read it: a repository that is not a
-    valid dataset is refused with the reason, as it is with the company's App."""
-    root = user_access.root_project(company, task.project) if task.project else None
-    if root is None:
-        return None
-    host, path = store.host_and_path(canonical_url(repo))
-    enqueuer = task.execution.enqueued_by if task.execution else None
-    if not enqueuer:
-        # a task queued before this was recorded: nothing is granted, rather than guessing who queued it
-        return None
-    for entry, secret in user_access.granted_for_job(company, enqueuer, root, host, path):
+def _dataset_token(company: str, kept, repo: str, actor: str, task_id: str, ip, claims: dict, layout: bool) -> dict:
+    """The token a job gets for a stored dataset or registry: made with the credential the dataset holds (see
+    bll/datasets.job_credential). A dataset's layout is checked with that same access. Refused with the reason, audited."""
+    try:
+        entry, secret = datasets_bll.job_credential(company, kept, repo)
         if entry.kind == "app":
             app = GitHubApp(entry.app_id, secret, entry.api_url or config.get("apiserver.idp.github_api_url"))
             try:
                 token = app.installation_token(repo)
-            except (RepoNotAccessible, GitHubError):
-                continue
-            if dataset:
+            except RepoNotAccessible:
+                raise errors.bad_request.ValidationError(f"the GitHub App {entry.label} is not installed on {repo}") from None
+            except GitHubError as exc:
+                raise errors.bad_request.ValidationError(f"GitHub did not issue a token for {repo} ({exc})") from None
+            if layout:
                 _check_layout(app, repo, actor, company, task_id, ip)
             audit(actor, "git_token.issued", ip=ip, company=company, task=task_id, repo=repo,
-                  via="project_access", access=entry.id, owner=entry.user, project=root)
+                  via="dataset_credential", access=entry.id, owner=entry.user)
             return {"token": token.token, "expires_at": token.expires_at.isoformat(), "username": "x-access-token"}
-        if user_access.project_agent_tokens_allowed(company, root):
-            if dataset:
-                _check_layout(TokenReader(secret, config.get("apiserver.idp.github_api_url")), repo, actor, company,
-                              task_id, ip)
-            audit(actor, "git_token.issued", ip=ip, company=company, task=task_id, repo=repo,
-                  via="project_access_token", access=entry.id, owner=entry.user, project=root)
-            return {"token": secret, "expires_at": None, "username": "x-access-token",
-                    "warning": f"a personal token of {entry.user} is in use: it reaches everything that token reaches"}
-    return None
-
-
-def _check_layout(reader, repo: str, actor: str, company: str, task_id: str, ip) -> None:
-    """The dataset layout check with the reader of a granted access. A repository that fails it is refused, and audited."""
-    try:
-        verify_dataset(reader, repo)
-    except errors.bad_request.ValidationError as exc:
-        audit(actor, "git_token.refused", ip=ip, company=company, task=task_id, repo=repo, reason=str(exc))
+    except errors.bad_request.ValidationError as refused:
+        audit(actor, "git_token.refused", ip=ip, company=company, device=claims.get("device"), task=task_id, reason=str(refused))
         raise
 
 

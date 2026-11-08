@@ -30,9 +30,8 @@ def _ensure_default_queue(company):
     if queue:
         return
 
-    queue = QueueBLL.create(company, name="default", system_tags=["default"])
     # The default queue is public: every company user may use it, as it is the queue for jobs without a choice
-    Queue.objects(id=queue.id).update(set__public=True)
+    QueueBLL.create(company, name="default", system_tags=["default"], public=True)
 
 
 def _ensure_uuid():

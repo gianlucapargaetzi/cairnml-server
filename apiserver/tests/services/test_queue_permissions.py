@@ -23,7 +23,9 @@ from apiserver.apimodels.tasks import DequeueRequest
 from apiserver.bll.queue.queue_access import QueueAccessBLL
 from apiserver.database.model.auth import Role, User
 from apiserver.database.model.project import Project, ProjectMember, ProjectRole, ProjectVisibility
-from apiserver.database.model.queue import Entry, Queue, QueueUser
+from apiserver.bll.access import resource_ids_shared_with
+from apiserver.database.model.queue import Entry, Queue
+from apiserver.database.model.share import Share
 from apiserver.database.model.task.task import Execution, Task, TaskStatus
 from apiserver.service_repo.auth import Identity
 from apiserver.services import project_access as project_svc
@@ -63,13 +65,24 @@ class UpdateCall(FakeCall):
         self.data_model_for_partial_update = data
 
 
+def share_of(company, resource_type, resource_id, scope, granted_by, project="", user=""):
+    """ The share record the writers keep next to each old field """
+    Share(
+        id=uuid4().hex, company=company, resource_type=resource_type, resource_id=resource_id, scope=scope,
+        project=project, user=user, level="read", granted_by=granted_by, created=datetime.utcnow(),
+    ).save()
+
+
 def make_queue(company, name=None, public=False, users=(), system_tags=None, created_by=None):
     queue = Queue(
         id=uuid4().hex, company=company, name=name or f"q-{uuid4().hex[:6]}", created=datetime.utcnow(),
         public=public, system_tags=system_tags or [], created_by=created_by,
-        users=[QueueUser(user=u, added=datetime.utcnow(), added_by="admin") for u in users],
     )
     queue.save()
+    if public:
+        share_of(company, "queue", queue.id, "public", created_by or "")
+    for user in users:
+        share_of(company, "queue", queue.id, "user", "admin", user=user)
     return queue
 
 
@@ -78,14 +91,26 @@ def make_root(company, owner="owner", members=(), queues=(), id_=None):
         id=id_ or uuid4().hex, company=company, user=owner, name=f"p-{uuid4().hex[:6]}", basename="p",
         created=datetime.utcnow(), visibility=ProjectVisibility.private,
         members=[ProjectMember(user=u, role=r, added=datetime.utcnow(), added_by=owner) for u, r in members],
-        queues=list(queues),
     )
     project.save()
+    for queue_id in queues:
+        share_of(company, "queue", queue_id, "projects", owner, project=project.id)
     return project
 
 
 def reload_root(project):
     return Project.objects(id=project.id).first()
+
+
+def allocated_queues(project):
+    """ The queues allocated to the root project: its project shares of queues """
+    return resource_ids_shared_with(project.company, "queue", project.id)
+
+
+def user_grants(queue):
+    """ The users granted the queue: its user shares, as (user) records """
+    shares = Share.objects(company=queue.company, resource_type="queue", resource_id=queue.id, scope="user")
+    return [SimpleNamespace(user=share.user) for share in shares]
 
 
 def visible_ids(company, ident):
@@ -94,24 +119,22 @@ def visible_ids(company, ident):
 
 # --- creation and admin rights --------------------------------------------
 
-def test_a_non_admin_creates_a_queue_and_becomes_its_owner(company):
-    call = FakeCall(identity(company, "u1"))
-    svc.create(call, company, CreateRequest(name="user-queue"))
+def test_a_queue_is_made_for_its_owner_and_is_not_public(company):
+    make_queue(company, name="user-queue", created_by="u1")
     queue = Queue.objects(company=company, name="user-queue").first()
     assert queue.created_by == "u1"
     assert queue.public is False
-    assert call.result.data == {"id": queue.id}
 
 
 def test_a_non_admin_creates_a_public_queue_as_its_owner(company):
-    svc.create(FakeCall(identity(company, "u1")), company, CreateRequest(name="user-public", public=True))
+    make_queue(company, name="user-public", public=True, created_by="u1")
     queue = Queue.objects(company=company, name="user-public").first()
     assert queue.public is True
     assert queue.created_by == "u1"
 
 
 def test_an_admin_creating_a_queue_becomes_its_owner_too(company):
-    svc.create(FakeCall(identity(company, "a1", Role.admin)), company, CreateRequest(name="admin-queue"))
+    make_queue(company, name="admin-queue", created_by="a1")
     assert Queue.objects(company=company, name="admin-queue").first().created_by == "a1"
 
 
@@ -121,9 +144,8 @@ def test_an_admin_is_allowed_to_manage_queues(company):
     assert not QueueAccessBLL.is_admin(identity(company, "u1"))
 
 
-def test_an_admin_creates_a_public_queue(company):
-    call = FakeCall(identity(company, "a1", Role.admin))
-    svc.create(call, company, CreateRequest(name="public-queue", public=True))
+def test_an_admin_made_public_queue_is_public(company):
+    make_queue(company, name="public-queue", public=True, created_by="a1")
     queue = Queue.objects(company=company, name="public-queue").first()
     assert queue.public is True
 
@@ -131,7 +153,7 @@ def test_an_admin_creates_a_public_queue(company):
 # --- ownership -------------------------------------------------------------
 
 def test_the_owner_sees_their_queue_with_its_owner(company):
-    svc.create(FakeCall(identity(company, "owner")), company, CreateRequest(name="owned-queue"))
+    make_queue(company, name="owned-queue", created_by="owner")
     queue = Queue.objects(company=company, name="owned-queue").first()
     call = FakeCall(identity(company, "owner"))
     svc.get_by_id(call, company, GetByIdRequest(queue=queue.id))
@@ -140,7 +162,7 @@ def test_the_owner_sees_their_queue_with_its_owner(company):
 
 def test_the_queue_output_reports_its_owner_or_null_before_ownership(company):
     legacy = make_queue(company, name="legacy-queue", public=True)
-    svc.create(FakeCall(identity(company, "owner")), company, CreateRequest(name="owned-queue"))
+    make_queue(company, name="owned-queue", created_by="owner")
     owned = Queue.objects(company=company, name="owned-queue").first()
 
     listing = FakeCall(identity(company, "a1", Role.admin))
@@ -154,12 +176,13 @@ def test_the_queue_output_reports_its_owner_or_null_before_ownership(company):
     assert single.result.data["queue"]["created_by"] is None
 
 
-def test_the_owner_updates_and_deletes_their_queue(company):
+def test_the_owner_changes_only_the_visibility_and_cannot_delete_the_queue(company):
     queue = make_queue(company, created_by="owner")
-    svc.update(UpdateCall(identity(company, "owner"), tags=["mine"]), company, UpdateRequest(queue=queue.id, tags=["mine"]))
-    assert Queue.objects(id=queue.id).first().tags == ["mine"]
-    svc.delete(FakeCall(identity(company, "owner")), company, DeleteRequest(queue=queue.id))
-    assert Queue.objects(id=queue.id).first() is None
+    svc.update(UpdateCall(identity(company, "owner"), public=True), company, UpdateRequest(queue=queue.id, public=True))
+    assert Queue.objects(id=queue.id).first().public is True
+    with pytest.raises(errors.bad_request.ValidationError, match="not deleted by hand"):
+        svc.delete(FakeCall(identity(company, "owner")), company, DeleteRequest(queue=queue.id))
+    assert Queue.objects(id=queue.id).first() is not None
 
 
 def test_the_owner_manages_grants_and_metadata(company):
@@ -181,7 +204,7 @@ def test_the_owner_manages_grants_and_metadata(company):
     assert "k" not in (Queue.objects(id=queue.id).first().metadata or {})
 
     svc.remove_user(FakeCall(owner), company, UserRequest(queue=queue.id, user="u2"))
-    assert Queue.objects(id=queue.id).first().users == []
+    assert user_grants(queue) == []
 
 
 def test_a_stranger_does_not_see_or_manage_a_queue_they_do_not_own(company):
@@ -244,8 +267,8 @@ def test_admins_see_and_manage_every_queue(company):
     queue = make_queue(company, created_by="owner")
     admin = identity(company, "a1", Role.admin)
     assert queue.id in visible_ids(company, admin)
-    svc.update(UpdateCall(admin, tags=["by-admin"]), company, UpdateRequest(queue=queue.id, tags=["by-admin"]))
-    assert Queue.objects(id=queue.id).first().tags == ["by-admin"]
+    svc.update(UpdateCall(admin, public=True), company, UpdateRequest(queue=queue.id, public=True))
+    assert Queue.objects(id=queue.id).first().public is True
 
 
 def test_public_queues_stay_visible_to_everyone(company):
@@ -273,7 +296,7 @@ def test_the_project_owner_allocates_a_queue_they_own(company):
     root = make_root(company, owner="owner")
     assert queue.id in QueueAccessBLL.assignable_queue_ids(company, "owner")
     project_svc.add_queues(FakeCall(identity(company, "owner")), company, AddQueuesRequest(project=root.id, queues=[queue.id]))
-    assert reload_root(root).queues == [queue.id]
+    assert allocated_queues(root) == [queue.id]
 
 
 def test_the_owner_of_a_queue_who_does_not_own_the_project_cannot_allocate_it(company):
@@ -320,7 +343,7 @@ def test_an_owner_with_a_grant_can_allocate_the_granted_queue(company):
     queue = make_queue(company, users=["owner"])
     root = make_root(company, owner="owner")
     project_svc.add_queues(FakeCall(identity(company, "owner")), company, AddQueuesRequest(project=root.id, queues=[queue.id]))
-    assert reload_root(root).queues == [queue.id]
+    assert allocated_queues(root) == [queue.id]
 
 
 def test_an_owner_without_a_grant_cannot_allocate_a_private_queue(company):
@@ -328,7 +351,7 @@ def test_an_owner_without_a_grant_cannot_allocate_a_private_queue(company):
     root = make_root(company, owner="owner")
     with pytest.raises(errors.bad_request.InvalidQueueId):
         project_svc.add_queues(FakeCall(identity(company, "owner")), company, AddQueuesRequest(project=root.id, queues=[queue.id]))
-    assert reload_root(root).queues == []
+    assert allocated_queues(root) == []
 
 
 def test_an_admin_who_is_not_the_owner_cannot_allocate(company):
@@ -360,7 +383,7 @@ def test_several_queues_can_be_added_in_one_action(company):
     second = make_queue(company, public=True)
     root = make_root(company, owner="owner")
     project_svc.add_queues(FakeCall(identity(company, "owner")), company, AddQueuesRequest(project=root.id, queues=[first.id, second.id]))
-    assert set(reload_root(root).queues) == {first.id, second.id}
+    assert set(allocated_queues(root)) == {first.id, second.id}
 
 
 def test_the_owner_sees_only_the_queues_they_may_allocate(company):
@@ -387,7 +410,7 @@ def test_only_the_owner_removes_an_allocation(company):
     with pytest.raises(errors.forbidden.NoWritePermission):
         project_svc.remove_queue(FakeCall(identity(company, "collab")), company, RemoveQueueRequest(project=root.id, queue=queue.id))
     project_svc.remove_queue(FakeCall(identity(company, "owner")), company, RemoveQueueRequest(project=root.id, queue=queue.id))
-    assert reload_root(root).queues == []
+    assert allocated_queues(root) == []
 
 
 # --- cascades --------------------------------------------------------------
@@ -399,15 +422,16 @@ def test_removing_a_grant_removes_the_allocations_of_projects_the_user_owns(comp
     root = make_root(company, owner="owner", queues=[queue.id])
     other_root = make_root(company, owner="other", queues=[queue.id])
     svc.remove_user(FakeCall(identity(company, "admin", Role.admin)), company, UserRequest(queue=queue.id, user="owner"))
-    assert reload_root(root).queues == []
-    assert reload_root(other_root).queues == [queue.id]
+    assert allocated_queues(root) == []
+    assert allocated_queues(other_root) == [queue.id]
 
 
-def test_deleting_a_queue_removes_it_from_every_allocation(company):
+def test_a_queue_is_not_deleted_by_hand_even_by_an_admin(company):
     queue = make_queue(company, public=True)
     root = make_root(company, owner="owner", queues=[queue.id])
-    svc.delete(FakeCall(identity(company, "admin", Role.admin)), company, DeleteRequest(queue=queue.id))
-    assert reload_root(root).queues == []
+    with pytest.raises(errors.bad_request.ValidationError, match="not deleted by hand"):
+        svc.delete(FakeCall(identity(company, "admin", Role.admin)), company, DeleteRequest(queue=queue.id))
+    assert allocated_queues(root) == [queue.id]
 
 
 def test_transfer_drops_allocations_the_new_owner_may_not_allocate(company):
@@ -416,7 +440,7 @@ def test_transfer_drops_allocations_the_new_owner_may_not_allocate(company):
     private = make_queue(company)
     root = make_root(company, owner="owner", members=[("new-owner", ProjectRole.read)], queues=[public.id, private.id])
     project_svc.transfer_ownership(FakeCall(identity(company, "owner")), company, TransferOwnershipRequest(project=root.id, new_owner="new-owner"))
-    assert reload_root(root).queues == [public.id]
+    assert allocated_queues(root) == [public.id]
 
 
 # --- defaults --------------------------------------------------------------
@@ -436,14 +460,14 @@ def test_an_admin_grants_and_removes_a_user_through_the_endpoints(company):
     queue = make_queue(company)
     admin = FakeCall(identity(company, "a1", Role.admin))
     svc.add_user(admin, company, UserRequest(queue=queue.id, user="u1"))
-    assert Queue.objects(id=queue.id).first().users[0].user == "u1"
+    assert user_grants(queue)[0].user == "u1"
 
     listing = FakeCall(identity(company, "a1", Role.admin))
     svc.get_users(listing, company, QueueRequest(queue=queue.id))
     assert [u["user"] for u in listing.result.data["users"]] == ["u1"]
 
     svc.remove_user(admin, company, UserRequest(queue=queue.id, user="u1"))
-    assert Queue.objects(id=queue.id).first().users == []
+    assert user_grants(queue) == []
 
 
 # --- enqueueing --------------------------------------------------------------
@@ -470,23 +494,44 @@ def test_enqueueing_into_a_queue_the_user_may_not_see_is_refused(company, monkey
 
 # --- agents serving a queue ------------------------------------------------
 
-def test_an_agent_may_serve_only_the_queues_its_user_owns_or_is_granted(company):
+def test_an_agent_serves_only_its_own_queue(company):
+    """An agent is enrolled with its machine's queue, made for its enroller. It serves that queue and no other: not a
+    public one, not one its owner holds a grant on, not another user's."""
     make_user(company, "u1")
-    owned = make_queue(company, created_by="u1")
+    own = make_queue(company, created_by="u1")
     granted = make_queue(company, created_by="owner", users=["u1"])
-    other = make_queue(company, created_by="owner")
     public = make_queue(company, public=True)
+    device = make_agent(company, "u1", own.id)
     user = identity(company, "u1")
 
-    QueueAccessBLL.assert_can_serve(user, company, [owned.id, granted.id])
-    QueueAccessBLL.assert_can_serve(user, company, [owned.id, public.id])
+    QueueAccessBLL.assert_can_serve(user, company, [own.id], device_id=device.id)
+    for refused in (granted.id, public.id):
+        with pytest.raises(errors.bad_request.InvalidQueueId):
+            QueueAccessBLL.assert_can_serve(user, company, [refused], device_id=device.id)
+
+
+def test_an_agent_serves_nothing_once_its_device_is_revoked(company):
+    make_user(company, "u1")
+    own = make_queue(company, created_by="u1")
+    device = make_agent(company, "u1", own.id, revoked=True)
     with pytest.raises(errors.bad_request.InvalidQueueId):
-        QueueAccessBLL.assert_can_serve(user, company, [owned.id, other.id])
+        QueueAccessBLL.assert_can_serve(identity(company, "u1"), company, [own.id], device_id=device.id)
 
 
-def test_an_admin_may_have_an_agent_serve_any_queue(company):
+def make_agent(company, owner, queue_id, revoked=False):
+    from apiserver.database.model.device import Device, DeviceKind
+
+    device = Device(id=f"dev_{uuid4().hex}", user=owner, company=company, kind=DeviceKind.agent, name="gpu-box",
+                    public_key="x", created=datetime.utcnow(), revoked=revoked, queue=queue_id)
+    device.save()
+    return device
+
+
+def test_an_admin_agent_gets_no_queue_by_the_admin_role(company):
+    """An agent acts with the user role, so the admin role of its owner gives it no queue it holds nothing on."""
     queue = make_queue(company, created_by="owner")
-    QueueAccessBLL.assert_can_serve(identity(company, "a1", Role.admin), company, [queue.id])
+    with pytest.raises(errors.bad_request.InvalidQueueId):
+        QueueAccessBLL.assert_can_serve(identity(company, "a1", Role.user), company, [queue.id])
 
 
 @pytest.mark.needs_redis
@@ -583,7 +628,7 @@ def test_child_projects_are_not_returned_as_queue_projects(company):
     root = make_root(company, owner="owner", queues=[queue.id])
     Project(
         id=uuid4().hex, company=company, user="owner", name="child", basename="child",
-        created=datetime.utcnow(), visibility=ProjectVisibility.private, parent=root.id, queues=[queue.id],
+        created=datetime.utcnow(), visibility=ProjectVisibility.private, parent=root.id,
     ).save()
     assert set(projects_of(company, identity(company, "owner"), queue.id)) == {root.id}
     assert set(projects_of(company, identity(company, "a1", Role.admin), queue.id)) == {root.id}
@@ -604,7 +649,7 @@ def make_queued_task(company, queue, owner, task_id):
 
 def test_dequeue_of_a_task_in_a_queue_the_caller_can_no_longer_use_is_refused(company):
     queue = make_queue(company, created_by="owner", users=["u2"])
-    Queue.objects(id=queue.id).update(set__users=[])
+    Share.objects(company=company, resource_type="queue", resource_id=queue.id, scope="user", user="u2").delete()
     make_queued_task(company, queue, "u2", "task-refused")
     with pytest.raises(errors.bad_request.InvalidQueueId):
         tasks_svc.dequeue(FakeCall(identity(company, "u2")), company, DequeueRequest(task="task-refused"))

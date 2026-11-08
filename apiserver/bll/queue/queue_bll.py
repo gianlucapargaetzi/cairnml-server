@@ -9,6 +9,7 @@ from apiserver import database
 from apiserver.database.model.task.task import Task, TaskStatus
 from apiserver.es_factory import es_factory
 from apiserver.apierrors import errors
+from apiserver.bll.access import record_grant, refuse_inactive
 from apiserver.bll.project.access import ProjectAccessBLL
 from apiserver.bll.queue.queue_metrics import QueueMetrics
 from apiserver.bll.workers import WorkerBLL
@@ -44,6 +45,8 @@ class QueueBLL(object):
         created_by: Optional[str] = None,
     ) -> Queue:
         """Creates a queue owned by 'created_by'"""
+        if public:
+            refuse_inactive(created_by or "")
         with translate_errors_context():
             now = datetime.utcnow()
             queue = Queue(
@@ -60,6 +63,8 @@ class QueueBLL(object):
                 last_update=now,
             )
             queue.save()
+            if public:
+                record_grant(company_id, created_by or "", "queue", queue.id, "public", actor=created_by or "")
             return queue
 
     def get_by_name(

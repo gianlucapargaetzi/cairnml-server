@@ -10,6 +10,7 @@ from apiserver.apimodels.queues import AddTaskRequest, MoveTaskRequest
 from apiserver.database.model.auth import Role
 from apiserver.database.model.project import Project, ProjectVisibility
 from apiserver.database.model.queue import Queue
+from apiserver.database.model.share import Share
 from apiserver.database.model.task.task import Task
 from apiserver.service_repo.auth import Identity
 from apiserver.utilities.partial_version import PartialVersion
@@ -38,6 +39,8 @@ def make_public_queue(company, id_=None):
     # task rule to be what refuses the request
     queue = Queue(id=id_ or str(uuid4()), company=company, name=f"q-{uuid4().hex[:6]}", created=datetime.utcnow(), public=True)
     queue.save()
+    Share(id=uuid4().hex, company=company, resource_type="queue", resource_id=queue.id, scope="public", level="read",
+          granted_by="", created=datetime.utcnow()).save()
     return queue
 
 

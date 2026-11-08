@@ -49,3 +49,6 @@ class RemoveQueueRequest(models.Base):
     project = fields.StringField(required=True)
     queue = fields.StringField(required=True)
 
+
+class UsableRequest(models.Base):
+    project = fields.StringField(required=True)

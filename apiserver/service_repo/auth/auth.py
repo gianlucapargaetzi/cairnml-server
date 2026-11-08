@@ -42,6 +42,7 @@ def authorize_token(jwt_token, service, action, call):
         claims = Token.decode(jwt_token)
         token.job_task = claims.get("task") if claims.get("kind") == "job" else None
         token.token_kind = claims.get("kind")
+        token.device_id = claims.get("device")
         return token
     except jwt.exceptions.InvalidKeyError as ex:
         log_error("Failed parsing token.")

@@ -160,3 +160,17 @@ def test_a_job_may_read_the_status_of_its_own_task():
 def test_a_job_may_not_read_the_status_of_another_task():
     with pytest.raises(errors.bad_request.InvalidTaskId):
         validate_job_scope(_endpoint("tasks.get_all"), _call({"id": [JOB_TASK, "other"]}))
+
+
+def test_a_job_may_get_the_repository_token_for_its_own_task():
+    validate_job_scope(_endpoint("devices.git_token"), _call({"task": JOB_TASK}))
+
+
+def test_a_job_may_not_get_the_repository_token_for_another_task():
+    with pytest.raises(errors.bad_request.InvalidTaskId):
+        validate_job_scope(_endpoint("devices.git_token"), _call({"task": "someone-else"}))
+
+
+def test_a_job_may_not_use_other_devices_endpoints():
+    with pytest.raises(errors.forbidden.NoWritePermission):
+        validate_job_scope(_endpoint("devices.enroll"), _call({"task": JOB_TASK}))

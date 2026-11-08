@@ -226,6 +226,8 @@ for file in /tmp/cairnml-clients/*.json; do
     $K create clients -r cairnml -f "$file" >/dev/null
   fi
 done
+# The sign-in page uses the CairnML theme (idp/themes/cairnml). An import sets it only on the first start, so it is set here too.
+$K update realms/cairnml -s loginTheme=cairnml >/dev/null
 $K add-roles -r cairnml --uusername service-account-cairnml-server \
   --cclientid realm-management --rolename view-users >/dev/null 2>&1 || true
 uuid=$($K get clients -r cairnml -q clientId=cairnml-server --fields id \

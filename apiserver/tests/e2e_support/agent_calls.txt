@@ -1,0 +1,85 @@
+# Endpoints that the cairnml-agent package calls, derived statically from its source (task 3).
+# Each name is preceded by the call sites, as cairnml-agent relative file:line.
+# Lines starting with # are comments; every other non-empty line is an endpoint name.
+#
+# cairnml_agent/backend_api/session/callresult.py:94
+async.result
+# cairnml_agent/commands/worker.py:1592
+auth.login
+# cairnml_agent/backend_api/session/session.py:664, cairnml_agent/idp/enrol.py:66
+devices.exchange
+# cairnml_agent/helper/repo.py:897
+devices.git_token
+# cairnml_agent/idp/enrol.py:60
+devices.idp_settings
+# cairnml_agent/helper/job_token.py:26
+devices.job_token
+# cairnml_agent/commands/events.py:30
+events.add_batch
+# cairnml_agent/commands/resolver.py:58, cairnml_agent/helper/custom_template.py:426
+projects.get_all
+# cairnml_agent/glue/k8s.py:1481
+queues.add_task
+# cairnml_agent/commands/worker.py:2022, cairnml_agent/commands/worker.py:2241
+queues.get_all
+# cairnml_agent/commands/worker.py:1709, cairnml_agent/helper/custom_template.py:104
+queues.get_by_id
+# cairnml_agent/commands/worker.py:5762
+queues.get_default
+# cairnml_agent/commands/worker.py:483
+queues.get_next_task
+# cairnml_agent/glue/k8s.py:1506
+queues.move_task_to_front
+# cairnml_agent/commands/worker.py:3235
+tasks.clone
+# cairnml_agent/commands/worker.py:4003
+tasks.completed
+# cairnml_agent/commands/worker.py:3248, cairnml_agent/glue/k8s.py:1291
+tasks.dequeue
+# cairnml_agent/commands/worker.py:1282, cairnml_agent/commands/worker.py:2784, cairnml_agent/commands/worker.py:604, cairnml_agent/commands/worker.py:646, cairnml_agent/commands/worker.py:657, cairnml_agent/commands/worker.py:738, cairnml_agent/commands/worker.py:798, cairnml_agent/glue/k8s.py:807
+tasks.edit
+# cairnml_agent/glue/k8s.py:313
+tasks.edit_hyper_params
+# cairnml_agent/glue/k8s.py:510, cairnml_agent/glue/pending_pods_daemon.py:220
+tasks.enqueue
+# cairnml_agent/commands/worker.py:4025, cairnml_agent/glue/k8s.py:1304, cairnml_agent/glue/k8s.py:1493
+tasks.failed
+# cairnml_agent/commands/resolver.py:30, cairnml_agent/commands/worker.py:1216, cairnml_agent/commands/worker.py:448, cairnml_agent/commands/worker.py:458, cairnml_agent/commands/worker.py:505, cairnml_agent/commands/worker.py:538, cairnml_agent/commands/worker.py:891
+tasks.get_all
+# cairnml_agent/commands/worker.py:1175, cairnml_agent/glue/k8s.py:820, cairnml_agent/helper/task_runtime.py:13
+tasks.get_by_id
+# cairnml_agent/commands/worker.py:3782
+tasks.get_hyper_params
+# cairnml_agent/commands/worker.py:2656
+tasks.ping
+# cairnml_agent/commands/worker.py:4084
+tasks.set_requirements
+# cairnml_agent/commands/worker.py:1297, cairnml_agent/commands/worker.py:1770
+tasks.started
+# cairnml_agent/commands/worker.py:1179, cairnml_agent/commands/worker.py:3930, cairnml_agent/commands/worker.py:4014
+tasks.stopped
+# cairnml_agent/glue/pending_pods_daemon.py:239
+tasks.update
+# cairnml_agent/helper/resource_monitor.py:224
+workers.cluster_report
+# cairnml_agent/helper/resource_monitor.py:239
+workers.cluster_unregister
+# cairnml_agent/commands/worker.py:1941, cairnml_agent/commands/worker.py:4351
+workers.get_all
+# cairnml_agent/commands/worker.py:2040
+workers.get_runtime_properties
+# cairnml_agent/commands/worker.py:4357
+workers.register
+# cairnml_agent/commands/worker.py:2061
+workers.set_runtime_properties
+# cairnml_agent/helper/resource_monitor.py:195
+workers.status_report
+# cairnml_agent/commands/worker.py:4371
+workers.unregister
+#
+# Called by the agent but deliberately NOT allowed for agent tokens:
+# devices.enroll: sensitive, refused for agent tokens; called at cairnml_agent/idp/enrol.py:154
+# devices.revoke: sensitive, refused for agent tokens; an agent revoking its own device on re-enrolment is refused; called at cairnml_agent/idp/enrol.py:74
+# queues.create: already refused for agent tokens before the allowlist; kept refused; called at cairnml_agent/commands/worker.py:5784
+# users.get_current_user: users.* is refused for agent tokens (existing prefix rule); called at cairnml_agent/helper/custom_template.py:407, cairnml_agent/idp/enrol.py:82
+# users.get_vaults: users.* is refused for agent tokens (existing prefix rule); called at cairnml_agent/backend_api/session/session.py:281

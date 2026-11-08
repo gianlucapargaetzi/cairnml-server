@@ -16,12 +16,12 @@ from mongoengine import Q
 from apiserver.apierrors import errors
 from apiserver.config_repo import config
 from apiserver.database.model.auth import User
-from apiserver.database.model.git_credential import GitCredential
 from apiserver.database.model.project import Project
+from apiserver.database.model.share import Share
 from apiserver.database.model.user_access import UserAccess
 from apiserver.idp import git_credentials as store
 from apiserver.idp.audit import record as audit
-from apiserver.idp.github import GitHubApp, GitHubError, GitHubRefused
+from apiserver.idp.github import GitHubApp, GitHubError, GitHubRefused, repository_readable_with
 
 log = logging.getLogger(__name__)
 APP_ID_RE = re.compile(r"^\d{1,12}$")
@@ -34,6 +34,11 @@ def _label(text: str) -> str:
     if not value or len(value) > MAX_LABEL:
         raise errors.bad_request.ValidationError(f"a name is needed, up to {MAX_LABEL} characters")
     return value
+
+
+def _granted_to(entry: UserAccess) -> list:
+    """The root projects the access is shared with, from its share records (whether or not the share applies today)."""
+    return sorted(_access().shared_project_ids(entry.company, "credential", entry.id))
 
 
 def _view(entry: UserAccess) -> dict:
@@ -51,7 +56,7 @@ def _view(entry: UserAccess) -> dict:
         "last_checked": entry.last_checked.isoformat() if entry.last_checked else None,
         "last_state": entry.last_state,
         "last_message": entry.last_message,
-        "granted_projects": list(entry.granted_projects or []),
+        "granted_projects": _granted_to(entry),
     }
 
 
@@ -78,6 +83,11 @@ def add_token(company: str, user: str, label: str, host: str, path: str, token: 
     if not value:
         raise errors.bad_request.ValidationError("the token is empty")
     host = store.normalise_host(host or "github.com")
+    if host == "github.com":
+        # GitHub is reached through a GitHub App only: a personal token is no longer accepted
+        raise errors.bad_request.ValidationError(
+            "personal access tokens are no longer accepted for GitHub: add a GitHub App (your own, or the company's), "
+            "and install it on the repository")
     path = store.normalise_path(path or "")
     now = datetime.utcnow()
     entry = UserAccess(
@@ -112,7 +122,10 @@ def add_app(company: str, user: str, label: str, app_id: str, api_url: str, key:
     now = datetime.utcnow()
     if scope == "company":
         # the server has one GitHub App: adding another replaces it
-        UserAccess.objects(company=company, scope="company", kind="app").delete()
+        _access().refuse_inactive(user)
+        for previous in UserAccess.objects(company=company, scope="company", kind="app"):
+            previous.delete()
+            _access().drop_resource_shares(company, "credential", previous.id, actor=user)
     entry = UserAccess(
         id=uuid.uuid4().hex, company=company, user=user, kind="app", label=_label(label), scope=scope,
         host="github.com", app_id=app_id, api_url=api,
@@ -146,7 +159,7 @@ def _row(entry: UserAccess, owner_name: str, can_edit: bool, source: str = "acce
         "state": entry.last_state or "unchecked",
         "message": entry.last_message or "",
         "last_checked": entry.last_checked.isoformat() if entry.last_checked else None,
-        "granted_projects": list(entry.granted_projects or []),
+        "granted_projects": _granted_to(entry),
         "can_edit": can_edit,
         "app_id": entry.app_id,
     }
@@ -185,9 +198,17 @@ def server_app():
         return None
 
 
+def _access():
+    """bll/access reads this module, so it is imported where it is used"""
+    from apiserver.bll import access
+    return access
+
+
 def delete(company: str, user: str, access_id: str, is_admin: bool = False) -> None:
+    _access().refuse_inactive(user)
     entry = _owned_or_company(company, user, access_id, is_admin)
     entry.delete()
+    _access().drop_resource_shares(company, "credential", entry.id, actor=user)
     audit(user, "user_access.deleted", company=company, kind=entry.kind)
 
 
@@ -226,6 +247,29 @@ def token_works(token: str, api_url: Optional[str] = None) -> bool:
     return response.status_code == 200
 
 
+def github_read_on(company: str, user: str, repo: str) -> bool:
+    """Whether the user's own GitHub token reads the repository on GitHub (R70). Only the user's own tokens for GitHub
+    count, and only those whose path prefix covers the repository. No token, a deactivated user, or a GitHub that cannot
+    answer means no. Nothing is kept: each call asks GitHub again."""
+    if not is_active(user):
+        return False
+    api = config.get("apiserver.idp.github_api_url")
+    for entry in UserAccess.objects(company=company, user=user, scope="user", kind="token").order_by("created"):
+        if entry.host not in GITHUB_HOSTS or not store.covers(entry.path, repo.lower()):
+            continue
+        try:
+            secret = _secret(entry)
+        except store.CredentialUnreadable:
+            log.warning("the GitHub token %s cannot be read with the current key", entry.id)
+            continue
+        try:
+            if repository_readable_with(api, secret, repo):
+                return True
+        except GitHubError:
+            log.warning("GitHub could not say whether the token %s reads %s", entry.id, repo)
+    return False
+
+
 def _secret(entry: UserAccess) -> str:
     return store.decrypt(entry.secret, store.key_material())
 
@@ -261,22 +305,25 @@ def grant_applies(grant_root: str, project_root: Optional[str], owner_is_member:
 
 def grant(company: str, owner: str, access_id: str, project_id: str) -> dict:
     """The owner shares one of their accesses with a project. Only a member of the project may do so."""
+    _access().refuse_inactive(owner)
     entry = _owned(company, owner, access_id)
+    access = _access()
+    access.require(company, owner, False, "credential", entry.id, my_root_ids(company, owner), "manage_sharing")
     root = root_project(company, project_id)
     if root is None:
         raise errors.bad_request.ValidationError("no such project")
     if not is_member(company, root, owner):
         raise errors.bad_request.ValidationError("you are not a member of this project")
-    if root not in (entry.granted_projects or []):
-        entry.granted_projects = list(entry.granted_projects or []) + [root]
-        entry.updated = datetime.utcnow()
-        entry.save()
+    if access.find_share(company, "credential", entry.id, "projects", root) is None:
+        # the owner, a member of the project, grants the access to it
+        access.record_grant(company, owner, "credential", entry.id, "projects", root, actor=owner)
         audit(owner, "user_access.granted", company=company, kind=entry.kind, project=root)
     return _view(entry)
 
 
 def revoke(company: str, actor: str, access_id: str, project_id: str, is_admin: bool) -> dict:
     """The owner of the access, or an admin, or the owner of the project, stops a grant at once."""
+    _access().refuse_inactive(actor)
     entry = UserAccess.objects(company=company, id=access_id).first()
     if entry is None:
         raise errors.bad_request.ValidationError("no such access")
@@ -285,10 +332,9 @@ def revoke(company: str, actor: str, access_id: str, project_id: str, is_admin: 
     allowed = actor == entry.user or is_admin or (project_owner is not None and project_owner.user == actor)
     if not allowed:
         raise errors.bad_request.ValidationError("no such access of yours")
-    if root in (entry.granted_projects or []):
-        entry.granted_projects = [p for p in entry.granted_projects if p != root]
-        entry.updated = datetime.utcnow()
-        entry.save()
+    access = _access()
+    if root and access.find_share(company, "credential", entry.id, "projects", root) is not None:
+        access.remove_grant(company, "credential", entry.id, "projects", root, actor=actor)
         audit(actor, "user_access.revoked", company=company, kind=entry.kind, project=root)
     return _view(entry)
 
@@ -300,7 +346,7 @@ def project_grants(company: str, actor: str, project_id: str) -> list:
     if root is None or not is_member(company, root, actor):
         raise errors.bad_request.ValidationError("no such project")
     result = []
-    for entry in UserAccess.objects(company=company, granted_projects=root).order_by("created"):
+    for entry, share in _project_grants_of(company, root):
         owner = User.objects(id=entry.user).only("name").first()
         result.append({
             "id": entry.id,
@@ -313,8 +359,16 @@ def project_grants(company: str, actor: str, project_id: str) -> list:
             "owner_name": owner.name if owner else entry.user,
             "owner_active": is_active(entry.user),
             "owner_is_member": is_member(company, root, entry.user),
+            "level": share.level,
+            "share_id": share.id,
+            "inherited": bool(share.inherited),
         })
     return result
+
+
+def my_root_ids(company: str, user: str) -> set:
+    """The ids of the root projects the user owns or is a member of, as bll/access reads them."""
+    return {project["id"] for project in my_projects(company, user)}
 
 
 def my_projects(company: str, user: str) -> list:
@@ -324,27 +378,63 @@ def my_projects(company: str, user: str) -> list:
     return [{"id": project.id, "name": project.name} for project in projects]
 
 
+def _project_grants_of(company: str, root: str) -> list:
+    """The accesses that a share of a credential names for the root project, as (entry, share) pairs in the order the
+    accesses were added. The share records are the source: the old field is not read."""
+    shares = {share.resource_id: share
+              for share in Share.objects(company=company, resource_type="credential", scope="projects", project=root)}
+    if not shares:
+        return []
+    entries = UserAccess.objects(company=company, id__in=list(shares)).order_by("created")
+    return [(entry, shares[entry.id]) for entry in entries]
+
+
+def _shared_use(company: str, user: str, share: Share, root: str) -> bool:
+    """Whether a project share lets the user use the credential now. bll/access decides it: the share applies while its
+    granter and the user are active members of the root project, and a share gives use at read."""
+    access = _access()
+    return access.allows(access._share_level(company, share, user, {root}, True, True), "use", "credential")
+
+
+def registry_shared_for_job(company: str, enqueuer: str, root: str, registry_id: str) -> bool:
+    """Whether a job of the root project may read through the registry: the registry's own share (bll/access) must give
+    the user who queued the job the use level on it, with the granter and the user still active members of the root
+    project. A registry no longer shared with the project gives its job nothing, whatever the credential's share."""
+    if not root or not is_active(enqueuer) or not is_member(company, root, enqueuer):
+        return False
+    access = _access()
+    level = access.level_of(company, enqueuer, False, "registry", registry_id, {root})
+    return access.allows(level, "use", "registry")
+
+
+def _own_use(company: str, user: str, entry: UserAccess) -> bool:
+    """Whether the user may use their own credential now: its owner is a collaborator, unless the user is deactivated."""
+    access = _access()
+    return access.allows(access.level_of(company, user, False, "credential", entry.id, set()), "use", "credential")
+
+
 def usable_for(company: str, user: str, host: str, path: str, project: Optional[str] = None) -> list:
     """The accesses the user may use for a repository on this host and path, as (entry, secret) pairs.
 
     Their own: every app, and every token whose host matches and whose path prefix covers the repository. Shared with
-    the project: the accesses granted to the project's root, while their owner is still a member and active, and the
-    user is still a member and active. A disabled user has none."""
+    the project: the accesses a share gives to the project's root, while the granter and the user are still members and
+    active. A disabled user has none."""
     if not user or not is_active(user):
         return []
     found = []
     for entry in UserAccess.objects(company=company, user=user, scope="user").order_by("created"):
         if entry.kind == "token" and (entry.host != host or not store.covers(entry.path, path)):
             continue
-        found.append(entry)
+        if _own_use(company, user, entry):
+            found.append(entry)
     root = root_project(company, project) if project else None
     if root:
-        user_is_member = is_member(company, root, user)
-        for entry in UserAccess.objects(company=company, granted_projects=root, user__ne=user).order_by("created"):
+        for entry, share in _project_grants_of(company, root):
+            if entry.user == user:
+                continue
             if entry.kind == "token" and (entry.host != host or not store.covers(entry.path, path)):
                 continue
-            if grant_applies(root, root, is_member(company, root, entry.user), user_is_member,
-                             is_active(entry.user), is_active(user)):
+            if _shared_use(company, user, share, root):
                 found.append(entry)
     pairs = []
     for entry in found:
@@ -362,11 +452,10 @@ def granted_for_job(company: str, enqueuer: str, root: str, host: str, path: str
     if not root or not is_active(enqueuer) or not is_member(company, root, enqueuer):
         return []
     pairs = []
-    for entry in UserAccess.objects(company=company, granted_projects=root).order_by("created"):
+    for entry, share in _project_grants_of(company, root):
         if entry.kind == "token" and (entry.host != host or not store.covers(entry.path, path)):
             continue
-        if not grant_applies(root, root, is_member(company, root, entry.user), True,
-                             is_active(entry.user), True):
+        if not _shared_use(company, enqueuer, share, root):
             continue
         try:
             pairs.append((entry, _secret(entry)))
@@ -393,3 +482,31 @@ def set_agent_tokens_allowed(company: str, actor: str, project_id: str, allowed:
     Project.objects(company=company, id=root).update_one(set__agent_tokens_allowed=bool(allowed))
     audit(actor, "project.agent_tokens", company=company, project=root, allowed=bool(allowed))
     return {"project": root, "agent_tokens_allowed": bool(allowed)}
+
+
+def usable_credentials(company: str, caller: str, root: str, can_manage: bool) -> list:
+    """The accesses shared with a root project that the project may use now: the grants whose granter and the caller are
+    active members of the project (the same test as granted_for_job). Each row says who owns it and what it is valid for,
+    in its host, path and label; the secret is never read. Removable when can_manage."""
+    rows = []
+    owners = {}
+    for entry, share in _project_grants_of(company, root):
+        if not _shared_use(company, caller, share, root):
+            continue
+        if entry.user not in owners:
+            owner = User.objects(id=entry.user).only("name").first()
+            owners[entry.user] = owner.name if owner else entry.user
+        rows.append({
+            "id": entry.id,
+            "name": entry.label,
+            "host": entry.host,
+            "path": entry.path or "",
+            "owner": entry.user,
+            "owner_name": owners[entry.user],
+            "scope": "project",
+            "removable": bool(can_manage),
+            "level": share.level,
+            "inherited": bool(share.inherited),
+            "share_id": share.id,
+        })
+    return rows

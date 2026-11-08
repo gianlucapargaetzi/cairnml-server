@@ -1,4 +1,4 @@
-"""The cached list of dataset repositories: what datasets.list answers from, so that listing never calls GitHub.
+"""The cached list of the dataset repositories the GitHub App finds: read without a GitHub call, so that listing never calls GitHub.
 
 The list is one snapshot, stored as JSON text in the Settings collection under one key. It is refreshed in two ways:
 
@@ -78,7 +78,7 @@ def _sorted(entries: dict) -> list:
 
 
 def cached_list() -> dict:
-    """What datasets.list answers: the cached entries and when the whole list was last rebuilt. No GitHub call."""
+    """The cached entries and when the whole list was last rebuilt. No GitHub call."""
     snapshot = read_snapshot()
     return {"datasets": snapshot["datasets"], "refreshed_at": snapshot["refreshed_at"]}
 

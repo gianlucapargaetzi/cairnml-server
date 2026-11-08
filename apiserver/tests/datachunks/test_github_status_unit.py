@@ -3,6 +3,7 @@
 Run inside the server image: python -m unittest apiserver.tests.datachunks.test_github_status_unit
 """
 
+from types import SimpleNamespace
 from unittest import TestCase
 from unittest.mock import patch
 
@@ -34,25 +35,30 @@ class FakeApp:
         return self.repositories
 
 
-class TestRunCheck(TestCase):
-    def run_with(self, app=None, build_error=None, registries=None, entries=None, unreadable=()):
-        registries = ["acme/public-datasets", "acme/private-datasets"] if registries is None else registries
-        entries = {} if entries is None else entries
+def record(ref, state="ok", message=""):
+    return SimpleNamespace(ref=ref, state=state, state_message=message)
 
-        def list_entries(app, registry):
-            if registry in unreadable:
-                raise GitHubError(f"folder read failed for {registry}")
-            return entries.get(registry, [])
+
+class TestRunCheck(TestCase):
+    def run_with(self, app=None, build_error=None, registries=None, entries=None):
+        if registries is None:
+            registries = [record("acme/public-datasets"), record("acme/private-datasets")]
+        entries = {} if entries is None else entries
 
         def build():
             if build_error:
                 raise build_error
             return app
 
+        def must_not_list(app, registry):
+            raise AssertionError(f"the check listed the registry {registry} on GitHub")
+
         with patch("apiserver.config_repo.config", FakeConfig()), \
                 patch("apiserver.bll.github_status.build_from_config", side_effect=build), \
-                patch("apiserver.bll.dataset_registry.configured_registries", return_value=registries), \
-                patch("apiserver.bll.dataset_registry.list_entries", side_effect=list_entries):
+                patch("apiserver.bll.dataset_registry.stored_registries", return_value=registries), \
+                patch("apiserver.bll.dataset_registry.stored_entries",
+                      side_effect=lambda registry: entries.get(registry, [])), \
+                patch("apiserver.bll.dataset_registry.list_entries", side_effect=must_not_list):
             return github_status.run_check()
 
     def test_no_app_added_is_not_configured(self):
@@ -90,14 +96,17 @@ class TestRunCheck(TestCase):
         self.assertEqual(result["app"]["slug"], "cairnml")
         self.assertEqual(result["repositories"], [{"repository": "acme/a"}])
 
-    def test_an_unreadable_registry_is_counted_and_does_not_fail_the_check(self):
-        result = self.run_with(app=FakeApp(), entries={"acme/public-datasets": [{"name": "coco"}]},
-                               unreadable=("acme/private-datasets",))
+    def test_a_registry_with_no_access_is_counted_and_does_not_fail_the_check(self):
+        registries = [record("acme/public-datasets"),
+                      record("acme/private-datasets", "no_access", "no access to dataset private-datasets")]
+        result = self.run_with(app=FakeApp(), registries=registries,
+                               entries={"acme/public-datasets": [{"name": "coco"}]})
         self.assertEqual(result["state"], "ok")
         self.assertEqual(result["message"],
                          "GitHub App works. Registered 2 dataset registries with 1 dataset (1 could not be read).")
         failed = [r for r in result["registries"] if not r["ok"]]
         self.assertEqual([r["repository"] for r in failed], ["acme/private-datasets"])
+        self.assertEqual(failed[0]["detail"], "no access to dataset private-datasets")
 
     def test_no_registries_is_stated_plainly(self):
         result = self.run_with(app=FakeApp(), registries=[])

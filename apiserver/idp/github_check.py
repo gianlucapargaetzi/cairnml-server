@@ -18,8 +18,13 @@ def repo_of(repository: str):
     """'owner/name' for a github.com repository URL, or None for anything else."""
     if not repository:
         return None
-    parts = urlsplit(repository if "://" in repository else f"https://{repository}")
-    if parts.netloc.lower() not in ("github.com", "www.github.com"):
+    value = repository.strip()
+    if "://" not in value and ":" in value.split("/", 1)[0]:
+        # git@host:owner/name, the form git prints for SSH
+        host_part, _, rest = value.partition(":")
+        value = f"https://{host_part.rsplit('@', 1)[-1]}/{rest.lstrip('/')}"
+    parts = urlsplit(value if "://" in value else f"https://{value}")
+    if parts.netloc.rsplit("@", 1)[-1].lower() not in ("github.com", "www.github.com"):
         return None
     path = parts.path.strip("/")
     if path.endswith(".git"):
@@ -92,3 +97,17 @@ def build_from_config():
         return None
     entry, key = found
     return GitHubApp(entry.app_id, key, entry.api_url or config.get("apiserver.idp.github_api_url"))
+
+
+def reader():
+    """What the Datasets pages read through: the server's GitHub App when there is one, otherwise a reader of public
+    repositories (no App needed). Private repositories then fail with GitHubError, as they cannot be reached."""
+    from apiserver.config_repo import config
+    from apiserver.idp.github import PublicReader
+    from apiserver.idp.secrets import SecretMissing
+
+    try:
+        app = build_from_config()
+    except SecretMissing:
+        app = None
+    return app or PublicReader(config.get("apiserver.idp.github_api_url"))

@@ -90,6 +90,22 @@ def clear_public_cache() -> None:
     _public_answers.clear()
 
 
+def repository_readable_with(api_url: str, token: str, repo: str, http=None) -> bool:
+    """True when a user's own GitHub token reads the repository. GitHub answers 404 (or 403) to a token that cannot see
+    a repository, so those mean no. GitHubError when GitHub cannot be asked, or answers otherwise."""
+    headers = {**_ANONYMOUS, "Authorization": f"Bearer {token}"}
+    try:
+        response = (http or requests.Session()).request(
+            "GET", f"{api_url.rstrip('/')}/repos/{repo}", headers=headers, timeout=_TIMEOUT)
+    except requests.RequestException:
+        raise GitHubError("GitHub transport error") from None
+    if response.status_code in (401, 403, 404):
+        return False
+    if response.status_code != 200:
+        raise GitHubError(f"repository lookup failed: {response.status_code}")
+    return True
+
+
 class GitHubApp:
     def __init__(self, app_id: str, private_key_pem: str, api_url: str, http=None, clock=time.time) -> None:
         # The id is a number when it comes from the environment; PyJWT needs the issuer as a string.
@@ -237,6 +253,17 @@ class GitHubApp:
             raise GitHubError(f"branch lookup failed: {commit.status_code}")
         return branch, commit.json()["sha"]
 
+    def repository_visible(self, repo: str) -> bool:
+        """Whether this reader can see the repository, empty or not. The repository lookup is used, because an empty
+        repository has no branch to look up. False when GitHub hides it (not found, or forbidden); GitHubError when
+        GitHub cannot answer."""
+        response = self._send("GET", f"{self._api}/repos/{repo}", headers=self._read_headers(repo))
+        if response.status_code in (403, 404):
+            return False
+        if response.status_code != 200:
+            raise GitHubError(f"repository lookup failed: {response.status_code}")
+        return True
+
     def read_file(self, repo: str, path: str, ref: str = None):
         """The bytes of a file at a ref (the default branch if None), or None when there is no such file."""
         headers = dict(self._read_headers(repo), Accept="application/vnd.github.raw+json")
@@ -341,3 +368,16 @@ class TokenReader(GitHubApp):
 
     def _read_headers(self, repo: str) -> dict:
         return self._headers(self._token)
+
+
+class PublicReader(GitHubApp):
+    """Reads public repositories without a token or a GitHub App. Used when the server has no App: the public dataset
+    registries and public datasets are still listed. A private repository is refused, as the App is not there to read it."""
+
+    def __init__(self, api_url: str, http=None, clock=time.time) -> None:
+        super().__init__("0", "", api_url, http=http, clock=clock)
+
+    def _read_headers(self, repo: str) -> dict:
+        if self._is_public(repo):
+            return _ANONYMOUS
+        raise RepoNotAccessible(f"{repo} is private, and the server has no GitHub App to read it")
