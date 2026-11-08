@@ -157,7 +157,10 @@ def anonymous(source: CodeRepository, now: Optional[datetime] = None, force: boo
     now = now or datetime.utcnow()
     if not force and _fresh(source, now):
         return source.anonymous
-    private = is_private(f"https://{source.host}/{source.path}")
+    address = f"https://{source.host}/{source.path}"
+    private = is_private(address)
+    if private is None:  # a name that did not resolve, or a host that failed once: ask a second time before saying unknown
+        private = is_private(address)
     source.anonymous = None if private is None else not private
     source.anonymous_checked = now
     source.save()

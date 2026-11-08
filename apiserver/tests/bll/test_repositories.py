@@ -98,11 +98,12 @@ def test_an_unknown_answer_is_asked_again_after_a_minute_and_never_refuses(world
     world.probe.private = None
     binding = discover(world)
     source = CodeRepository.objects(id=binding.source).first()
-    assert bll.anonymous(source) is None
+    assert bll.anonymous(source) is None and world.probe.calls == 2  # asked twice before saying unknown
     assert bll.resolve(source, binding).state == bll.UNKNOWN
     assert bll.token_for_job(source, binding)["token"] is None
-    assert bll.anonymous(source, datetime.utcnow() + bll.ANONYMOUS_UNKNOWN_TTL + timedelta(seconds=1)) is None
     assert world.probe.calls == 2
+    assert bll.anonymous(source, datetime.utcnow() + bll.ANONYMOUS_UNKNOWN_TTL + timedelta(seconds=1)) is None
+    assert world.probe.calls == 4
 
 
 def test_unassigned_public_private_and_company_reached_repositories(world):
