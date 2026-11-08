@@ -38,9 +38,9 @@ REPO_KEYS = ("repo", "external_repo")
 """ The parameters that name the repository of a recorded dataset """
 
 
-def _recorded_repos(company: str, task_id: str) -> Set[str]:
-    run = Task.objects(company=company, id=task_id).only("hyperparams").first()
-    section = (run.hyperparams or {}).get(SECTION) if run else None
+def repos_of_hyperparams(hyperparams) -> Set[str]:
+    """The repositories a run recorded as the datasets it used, from its parameters."""
+    section = (hyperparams or {}).get(SECTION)
     repos = set()
     for name, item in (section or {}).items():
         alias, _, key = name.rpartition("/")
@@ -49,7 +49,12 @@ def _recorded_repos(company: str, task_id: str) -> Set[str]:
     return repos
 
 
-def _address_of(value: str) -> str:
+def _recorded_repos(company: str, task_id: str) -> Set[str]:
+    run = Task.objects(company=company, id=task_id).only("hyperparams").first()
+    return repos_of_hyperparams(run.hyperparams) if run else set()
+
+
+def address_of(value: str) -> str:
     """The address a recorded repository names: ``owner/name`` is a GitHub repository."""
     return f"https://github.com/{value}" if re.fullmatch(r"[\w.-]+/[\w.-]+", value) else value
 
@@ -143,7 +148,7 @@ def publish_run_datasets(task) -> List[Share]:
 
     created = []
     for repo in sorted(_recorded_repos(run.company, run.id)):
-        address = _address_of(repo)
+        address = address_of(repo)
         # the repository is recorded for the project like code is (bll/repositories), and kept as a dataset when none is
         repositories.discover_quietly(run.company, address, run.user, run.project)
         made = _create_missing(run.company, address, owner, root, run)

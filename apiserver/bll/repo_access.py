@@ -7,7 +7,7 @@ resolver the check at enqueue and the token of a job use. A repository is record
 
 from typing import Optional
 
-from apiserver.bll import repositories, user_access
+from apiserver.bll import dataset_inheritance, repositories, user_access
 from apiserver.idp import repo_address
 from apiserver.database.model.task.task import Task
 
@@ -57,24 +57,34 @@ def requirement(company: str, user: str, task_ids: list, is_admin: bool) -> list
     says whether the asking user may assign its credential, and the credentials they may choose from."""
     mine = user_access.my_root_ids(company, user)
     rows: dict = {}
-    for task in Task.objects(company=company, id__in=task_ids).only("script.repository", "user", "project"):
-        repository = task.script.repository if task.script else None
+    for task in Task.objects(company=company, id__in=task_ids).only("script.repository", "user", "project", "hyperparams"):
         root = user_access.root_project(company, task.project) if task.project else None
-        if not repository or not (is_admin or task.user == user or root in mine):
+        if not (is_admin or task.user == user or root in mine):
             continue
-        key = (repo_address.key_of(repository), root)
-        if key in rows:
-            rows[key]["tasks"].append(str(task.id))
-            continue
-        row = resolve_one(company, repository, task.user, task.project, False, record=True)
-        if row is None:
-            continue
-        binding = repositories.RepositoryBinding.objects(id=row["binding"]).first() if row["binding"] else None
-        source = repositories.source_of(binding) if binding is not None else None
-        # the right is the asking user's, not the task owner's
-        row["can_assign"] = binding is not None and repositories.assigner(binding, user, is_admin) is not None
-        row["assignable"] = repositories.assignable(company, binding, source, user, is_admin) if row["can_assign"] else []
-        row["anonymous"] = source.anonymous if source is not None else None
-        row["tasks"] = [str(task.id)]
-        rows[key] = row
+        used = []
+        if task.script and task.script.repository:
+            used.append((task.script.repository, "code"))
+        used += [(dataset_inheritance.address_of(repo), "dataset")
+                 for repo in sorted(dataset_inheritance.repos_of_hyperparams(task.hyperparams))]
+        for repository, kind in used:
+            key = (repo_address.key_of(repository), root)
+            if key[0] is None:
+                continue
+            if key in rows:
+                rows[key]["tasks"].append(str(task.id))
+                if kind not in rows[key]["kinds"]:
+                    rows[key]["kinds"].append(kind)
+                continue
+            row = resolve_one(company, repository, task.user, task.project, False, record=True)
+            if row is None:
+                continue
+            binding = repositories.RepositoryBinding.objects(id=row["binding"]).first() if row["binding"] else None
+            source = repositories.source_of(binding) if binding is not None else None
+            # the right is the asking user's, not the task owner's
+            row["can_assign"] = binding is not None and repositories.assigner(binding, user, is_admin) is not None
+            row["assignable"] = repositories.assignable(company, binding, source, user, is_admin) if row["can_assign"] else []
+            row["anonymous"] = source.anonymous if source is not None else None
+            row["tasks"] = [str(task.id)]
+            row["kinds"] = [kind]
+            rows[key] = row
     return list(rows.values())

@@ -280,3 +280,23 @@ def test_none_needed_is_not_refused_as_private_when_the_host_could_not_be_asked(
     world.probe.private = None
     with pytest.raises(errors.bad_request.ValidationError, match="try again"):
         bll.set_credential(world.company, "owner", False, binding.id, None, none_needed=True)
+
+
+def test_the_requirement_covers_the_datasets_a_task_used_with_their_kind(world):
+    from apiserver.bll import repo_access
+    from apiserver.database.model.task.task import ParamsItem, Script, Task
+
+    name = "cars/repo"
+    task = Task(id=f"td-{world.company}", company=world.company, user="owner", project=world.project, name="task",
+                type="training", script=Script(repository=URL), created=datetime.utcnow(),
+                last_update=datetime.utcnow(),
+                hyperparams={"Datasets": {name: ParamsItem(section="Datasets", name=name, value="acme/cars", type="str")}})
+    task.save()
+    try:
+        rows = repo_access.requirement(world.company, "owner", [task.id], False)
+        by_key = {row["url"]: row for row in rows}
+        assert set(by_key) == {"https://github.com/acme/proj", "https://github.com/acme/cars"}
+        assert by_key["https://github.com/acme/proj"]["kinds"] == ["code"]
+        assert by_key["https://github.com/acme/cars"]["kinds"] == ["dataset"]
+    finally:
+        Task.objects(company=world.company).delete()
