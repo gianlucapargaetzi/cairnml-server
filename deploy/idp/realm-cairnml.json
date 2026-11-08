@@ -2,6 +2,7 @@
   "realm": "cairnml",
   "enabled": true,
   "sslRequired": "none",
+  "loginTheme": "cairnml",
   "registrationAllowed": false,
   "roles": {
     "realm": [
