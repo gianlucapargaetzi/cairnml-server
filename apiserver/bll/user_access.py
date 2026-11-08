@@ -422,25 +422,6 @@ def usable_for(company: str, user: str, host: str, path: str, project: Optional[
     return pairs
 
 
-def granted_for_job(company: str, enqueuer: str, root: str, host: str, path: str) -> list:
-    """The accesses shared with a project that a job of the project may use, as (entry, secret) pairs: the grants whose
-    owner is still a member and active, while the user who queued the job is a member and active. The agent's owner is
-    not consulted: the access comes from the project. A token counts only for its host and path prefix."""
-    if not root or not is_active(enqueuer) or not is_member(company, root, enqueuer):
-        return []
-    pairs = []
-    for entry, share in _project_grants_of(company, root):
-        if entry.kind == "token" and (entry.host != host or not store.covers(entry.path, path)):
-            continue
-        if not _shared_use(company, enqueuer, share, root):
-            continue
-        try:
-            pairs.append((entry, _secret(entry)))
-        except store.CredentialUnreadable:
-            log.warning("the access %s cannot be read with the current key", entry.id)
-    return pairs
-
-
 def project_agent_tokens_allowed(company: str, root: str) -> bool:
     """Whether a project lets its agents be given personal access tokens shared with it. On by default, with a warning
     at the time of sharing; a project may turn it off."""
@@ -463,7 +444,7 @@ def set_agent_tokens_allowed(company: str, actor: str, project_id: str, allowed:
 
 def usable_credentials(company: str, caller: str, root: str, can_manage: bool) -> list:
     """The accesses shared with a root project that the project may use now: the grants whose granter and the caller are
-    active members of the project (the same test as granted_for_job). Each row says who owns it and what it is valid for,
+    active members of the project (the same test as usable_for). Each row says who owns it and what it is valid for,
     in its host, path and label; the secret is never read. Removable when can_manage."""
     rows = []
     owners = {}
