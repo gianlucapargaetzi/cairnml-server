@@ -18,8 +18,8 @@ def _row(repository: str, binding, source, resolution, right: Optional[str]) -> 
     return {
         "repository": repository,
         "url": f"https://{source.host}/{source.path}",
-        "binding": binding.id,
-        "project": binding.project,
+        "binding": binding.id if binding is not None else None,
+        "project": binding.project if binding is not None else None,
         "state": resolution.state,
         "via": resolution.entry.label if resolution.entry is not None else "",
         "message": resolution.message,
@@ -28,13 +28,21 @@ def _row(repository: str, binding, source, resolution, right: Optional[str]) -> 
     }
 
 
-def resolve_one(company: str, repository: str, user: str, project: Optional[str], is_admin: bool) -> Optional[dict]:
-    binding = repositories.discover(company, repository, user, project)
-    if binding is None:
+def resolve_one(company: str, repository: str, user: str, project: Optional[str], is_admin: bool,
+                record: bool = False) -> Optional[dict]:
+    """How the project reads the repository. With ``record`` the project's binding is made when missing (the repository
+    is one a run names); without it, a repository the project has no binding for is answered from the source alone, and
+    nothing is assigned to it."""
+    if record:
+        binding = repositories.discover(company, repository, user, project)
+        source = repositories.source_of(binding) if binding is not None else None
+    else:
+        binding = repositories.lookup(company, repository, user, project)
+        source = repositories.source_of(binding) if binding is not None else repositories.ensure_source(company, repository)
+    if source is None:
         return None
-    source = repositories.source_of(binding)
     return _row(repository, binding, source, repositories.resolve(source, binding),
-                repositories.assigner(binding, user, is_admin))
+                repositories.assigner(binding, user, is_admin) if binding is not None else None)
 
 
 def resolve(company: str, repository_list: list, user: str, project: Optional[str], is_admin: bool = False) -> list:
@@ -56,11 +64,11 @@ def requirement(company: str, user: str, task_ids: list, is_admin: bool) -> list
         if key in seen:
             continue
         seen.add(key)
-        row = resolve_one(company, repository, task.user, task.project, False)
+        row = resolve_one(company, repository, task.user, task.project, False, record=True)
         if row is not None:
             # the right is the asking user's, not the task owner's
             binding = repositories.RepositoryBinding.objects(id=row["binding"]).first()
-            row["can_assign"] = repositories.assigner(binding, user, is_admin) is not None
+            row["can_assign"] = binding is not None and repositories.assigner(binding, user, is_admin) is not None
             row["tasks"] = [str(task.id)]
             rows.append(row)
     return rows

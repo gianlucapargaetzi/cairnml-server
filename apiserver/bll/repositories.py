@@ -105,6 +105,21 @@ def discover_quietly(company: str, repository: str, user: str, project_id: Optio
         log.warning("the repository %s could not be recorded", repository, exc_info=True)
 
 
+def ensure_source(company: str, repository: str, now: Optional[datetime] = None) -> Optional[CodeRepository]:
+    """The source of a repository, made when missing; no binding. None when the address names no hosted repository."""
+    address = repo_address.parse(repository)
+    return _source_of(company, address, now or datetime.utcnow()) if address is not None else None
+
+
+def lookup(company: str, repository: str, user: str, project_id: Optional[str]) -> Optional[RepositoryBinding]:
+    """The binding of the run's scope when it exists; nothing is made."""
+    source = source_for(company, repository)
+    if source is None:
+        return None
+    scope, _root, _owner = _scope_of(company, user, project_id)
+    return RepositoryBinding.objects(source=source.id, scope=scope).first()
+
+
 def source_of(binding: RepositoryBinding) -> CodeRepository:
     return CodeRepository.objects(id=binding.source).first()
 
@@ -124,11 +139,6 @@ def github_client(resolution: "Resolution", source: CodeRepository):
 def source_for(company: str, repository: str) -> Optional[CodeRepository]:
     key = repo_address.key_of(repository)
     return CodeRepository.objects(company=company, key=key).first() if key else None
-
-
-def binding_for(company: str, repository: str, user: str, project_id: Optional[str]) -> Optional[RepositoryBinding]:
-    """The binding of the run's root project (made when missing)."""
-    return discover(company, repository, user, project_id)
 
 
 # --- reaching a repository without a credential ---------------------------------------------------------------------

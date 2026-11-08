@@ -235,3 +235,14 @@ def test_adding_lists_a_repository_for_a_member_and_refuses_a_stranger(world):
     with pytest.raises(errors.bad_request.ValidationError):
         bll.add(world.company, "owner", False, "not a repository", world.project)
     assert bll.add(world.company, "owner", False, URL, world.project).id == binding.id
+
+
+def test_the_badge_does_not_make_a_binding(world):
+    from apiserver.bll import repo_access
+
+    row = repo_access.resolve_one(world.company, URL, "owner", world.project, False)
+    assert row["state"] == bll.ANONYMOUS and row["binding"] is None and row["can_assign"] is False
+    assert RepositoryBinding.objects(company=world.company).count() == 0
+    recorded = repo_access.resolve_one(world.company, URL, "owner", world.project, False, record=True)
+    assert recorded["binding"] and recorded["can_assign"] is True
+    assert repo_access.resolve_one(world.company, URL, "owner", world.project, False)["binding"] == recorded["binding"]
