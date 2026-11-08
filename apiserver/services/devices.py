@@ -334,24 +334,22 @@ def git_token(call: APICall, company, request: GitTokenRequest):
     repository = task.script.repository
     if not repository:
         raise errors.bad_request.ValidationError("the task has no repository")
-    repo = repo_of(repository)
-    if repo is None:
+    # The repository is recorded for the task's project, and read as bll/repositories.resolve says: the assigned
+    # credential alone, "None needed", else without a credential if the host allows it, else the company's access.
+    binding = repositories_bll.discover(company, repository, task.user, task.project)
+    if binding is None:
         return _stored_token(company, actor, request.task, repository, client_address(call))
-    # A public repository is cloned without a token. A private one is read with the GitHub App attached to its record, which
-    # the run's first use made (bll/repositories). Every answer names the https address the job clones from.
-    public = _public_answer(repo, actor, company, claims, request.task, call)
-    if public is not None:
-        return _with_url(public, repo)
-    record = repositories_bll.ensure(company, repo, task.user, datetime.utcnow())
+    source = repositories_bll.source_of(binding)
     try:
-        answer = repositories_bll.token_for_job(company, record, repo)
+        answer = repositories_bll.token_for_job(source, binding)
     except errors.bad_request.ValidationError as refused:
         audit(actor, "git_token.refused", ip=client_address(call), company=company, device=claims.get("device"),
               task=request.task, reason=str(refused))
         raise
-    audit(actor, "git_token.issued", ip=client_address(call), company=company, task=request.task, repo=repo,
-          via="repository_credential", access=record.credential)
-    return _with_url(answer, repo)
+    audit(actor, "git_token.issued" if answer["token"] else "git_token.public", ip=client_address(call),
+          company=company, device=claims.get("device"), task=request.task, repo=f"{source.host}/{source.path}",
+          via="binding", access=binding.credential or "")
+    return answer
 
 
 def _with_url(answer: dict, repo: str) -> dict:

@@ -1,4 +1,5 @@
-"""The code repositories runs use: the list of the user's repositories, and the GitHub App attached to each one."""
+"""The code repositories runs use: one row per repository, a binding per project that uses it, and the credential
+assigned to each binding. See bll/repositories."""
 
 from apiserver.apierrors import errors
 from apiserver.bll import repositories as bll
@@ -19,18 +20,21 @@ def get_all(call: APICall, company: str, _request):
 @endpoint("repositories.add")
 def add(call: APICall, company: str, _request):
     data = call.data or {}
-    credential = data.get("credential") or None
-    repository = bll.add(company, call.identity.user, data.get("repository", ""), credential)
+    binding = bll.add(company, call.identity.user, _is_admin(call), data.get("repository", ""), data.get("project") or None)
     audit(call.identity.user, "repository.added", ip=client_address(call), company=company,
-          repo=data.get("repository", ""), credential=credential or "")
-    call.result.data = {"repository": repository}
+          repo=data.get("repository", ""), project=binding.project or "")
+    call.result.data = {"binding": binding.id}
 
 
 @endpoint("repositories.set_credential")
 def set_credential(call: APICall, company: str, _request):
     data = call.data or {}
+    binding_id = data.get("binding")
+    if not binding_id:
+        raise errors.bad_request.ValidationError("binding is required")
     credential = data.get("credential") or None
-    repository = bll.set_credential(company, call.identity.user, data.get("repository", ""), credential, _is_admin(call))
+    none_needed = bool(data.get("none_needed"))
+    binding = bll.set_credential(company, call.identity.user, _is_admin(call), binding_id, credential, none_needed)
     audit(call.identity.user, "repository.credential_set", ip=client_address(call), company=company,
-          repo=data.get("repository", ""), credential=credential or "")
-    call.result.data = {"repository": repository}
+          binding=binding.id, credential=credential or "", none_needed=none_needed)
+    call.result.data = {"binding": binding.id}

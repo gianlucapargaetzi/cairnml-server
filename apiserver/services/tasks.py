@@ -1,3 +1,4 @@
+import logging
 import itertools
 from copy import deepcopy
 from datetime import datetime, timezone
@@ -74,6 +75,7 @@ from apiserver.apimodels.tasks import (
     ArchiveManyRequest,
     EditRuntimeRequest,
 )
+from apiserver.bll import repositories as repositories_bll
 from apiserver.bll.event import EventBLL
 from apiserver.bll.model import ModelBLL
 from apiserver.bll.organization import OrgBLL, Tags
@@ -119,6 +121,8 @@ from apiserver.bll.task.utils import (
 )
 from apiserver.bll.util import run_batch_operation, update_project_time
 from apiserver.config_repo import config
+
+log = logging.getLogger(__name__)
 from apiserver.database.errors import translate_errors_context
 from apiserver.database.model import EntityVisibility
 from apiserver.database.model.project import Project
@@ -662,6 +666,19 @@ def _reset_cached_tags(company: str, projects: Sequence[str]):
     org_bll.reset_tags(company, Tags.Task, projects=projects)
 
 
+def _record_repository(company_id: str, user: str, task) -> None:
+    """The repository a saved task names is recorded for the task's project (bll/repositories.discover); a failure never
+    refuses the save. ``task`` is the task, or its id."""
+    try:
+        if isinstance(task, str):
+            task = Task.objects(company=company_id, id=task).only("script.repository", "project").first()
+        repository = task.script.repository if task is not None and task.script else None
+        if repository:
+            repositories_bll.discover_quietly(company_id, repository, user, task.project)
+    except Exception:
+        log.warning("the repository of task %s could not be recorded", getattr(task, "id", task), exc_info=True)
+
+
 @endpoint(
     "tasks.create", request_data_model=CreateRequest, response_data_model=IdResponse
 )
@@ -673,6 +690,7 @@ def create(call: APICall, company_id, _: CreateRequest):
         _update_cached_tags(company_id, project=task.project, fields=fields)
         update_project_time(task.project)
 
+    _record_repository(company_id, call.identity.user, task)
     call.result.data_model = IdResponse(id=task.id)
 
 
@@ -706,6 +724,7 @@ def clone_task(call: APICall, company_id, request: CloneRequest):
         validate_references=request.validate_references,
         new_project_name=request.new_project_name,
     )
+    _record_repository(company_id, call.identity.user, task)
     call.result.data = {
         "id": task.id,
         **({"new_project": new_project} if new_project else {}),
@@ -766,6 +785,8 @@ def update(call: APICall, company_id, req_model: UpdateRequest):
                 )
             update_project_time(updated_fields.get("project"))
         conform_task_data(call, updated_fields)
+        if updated_count:
+            _record_repository(company_id, call.identity.user, task_id)
         return UpdateResponse(updated=updated_count, fields=updated_fields)
 
 
@@ -934,6 +955,8 @@ def edit(call: APICall, company_id, req_model: UpdateRequest):
                     )
                 update_project_time(fields.get("project"))
             conform_task_data(call, fields)
+            if updated:
+                _record_repository(company_id, call.identity.user, task_id)
             call.result.data_model = UpdateResponse(updated=updated, fields=fields)
         else:
             call.result.data_model = UpdateResponse(updated=0)

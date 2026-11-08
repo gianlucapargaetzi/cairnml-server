@@ -478,7 +478,7 @@ def test_enqueueing_into_a_queue_the_user_may_not_see_is_refused(company, monkey
     from apiserver.idp import github_check
 
     monkeypatch.setattr(github_check, "build_from_config", lambda: None)
-    monkeypatch.setattr(github_check, "check_submission", lambda task, config: None)
+    monkeypatch.setattr(github_check, "check_submission", lambda task: None)
     make_user(company, "u2")
     queue = make_queue(company, created_by="owner")
     task = Task(id=uuid4().hex, company=company, user="u2", name="task-one", type="training", created=datetime.utcnow())

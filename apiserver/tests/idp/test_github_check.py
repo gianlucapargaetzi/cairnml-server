@@ -2,20 +2,15 @@ from types import SimpleNamespace
 from unittest import TestCase, mock
 
 from apiserver.apierrors import errors
-from apiserver.idp.github import GitHubError, RepoNotAccessible
+from apiserver.bll import repositories
+from apiserver.idp.access_refused import AccessRefused
+from apiserver.idp.github import GitHubError
 from apiserver.idp.github_check import GITHUB_APP_DOCS, check_submission
 
 
 class FakeApp:
-    def __init__(self, commit_present=True, installed=True, failing=False):
-        self.commit_present, self.installed, self.failing = commit_present, installed, failing
-
-    def installation_token(self, repo):
-        if not self.installed:
-            raise RepoNotAccessible(repo)
-        if self.failing:
-            raise GitHubError("boom")
-        return SimpleNamespace(token="t")
+    def __init__(self, commit_present=True, failing=False):
+        self.commit_present, self.failing = commit_present, failing
 
     def commit_exists(self, repo, sha):
         if self.failing:
@@ -24,78 +19,61 @@ class FakeApp:
 
 
 def task(repository="https://github.com/acme/proj.git", commit="abc123"):
-    return SimpleNamespace(id="t1", company="c1", script=SimpleNamespace(repository=repository, version_num=commit))
+    return SimpleNamespace(id="t1", company="c1", user="u1", project="p1",
+                           script=SimpleNamespace(repository=repository, version_num=commit))
 
 
 class TestSubmissionCheck(TestCase):
-    def setUp(self):
-        # No test reaches GitHub: every repository is private unless a test says otherwise.
-        patcher = mock.patch("apiserver.idp.github_check.public_repo", return_value=False)
-        patcher.start()
-        self.addCleanup(patcher.stop)
+    """The check asks the resolver (tested in tests/bll/test_repositories); here the resolver is faked."""
 
-    def test_a_repository_on_github_with_its_commit_is_accepted(self):
-        check_submission(task(), FakeApp())
+    def check(self, state=repositories.ASSIGNED, host="github.com", app=None, message="", **task_kwargs):
+        source = SimpleNamespace(host=host, path="acme/proj")
+        binding = SimpleNamespace(source="s1")
+        resolution = repositories.Resolution(state, None, message)
+        with mock.patch.object(repositories, "discover", return_value=binding), \
+                mock.patch.object(repositories, "source_of", return_value=source), \
+                mock.patch.object(repositories, "resolve", return_value=resolution), \
+                mock.patch.object(repositories, "github_client", return_value=app):
+            check_submission(task(**task_kwargs))
 
-    def test_a_public_repository_is_accepted_without_the_app_and_its_commit_is_looked_up_without_a_token(self):
-        with mock.patch("apiserver.idp.github_check.public_repo", return_value=True), \
-                mock.patch("apiserver.idp.github_check.public_commit_exists", return_value=True) as exists:
-            check_submission(task(), None)
-        exists.assert_called_once()
-
-    def test_a_public_repository_with_a_missing_commit_is_refused(self):
-        with mock.patch("apiserver.idp.github_check.public_repo", return_value=True), \
-                mock.patch("apiserver.idp.github_check.public_commit_exists", return_value=False):
-            with self.assertRaisesRegex(errors.bad_request.ValidationError, "push it first"):
-                check_submission(task(), None)
-
-    def test_a_public_repository_is_accepted_with_the_app_without_asking_for_an_installation(self):
-        app = FakeApp(installed=False)
-        with mock.patch("apiserver.idp.github_check.public_repo", return_value=True):
-            check_submission(task(), app)
-
-    def test_a_failing_visibility_check_refuses_the_job(self):
-        with mock.patch("apiserver.idp.github_check.public_repo", side_effect=GitHubError("boom")):
-            with self.assertRaisesRegex(errors.bad_request.ValidationError, "could not be reached"):
-                check_submission(task(), FakeApp())
+    def test_a_repository_read_with_a_credential_and_its_commit_is_accepted(self):
+        self.check(app=FakeApp())
 
     def test_a_missing_commit_is_refused_with_a_clear_message(self):
-        with self.assertRaises(errors.bad_request.ValidationError) as ctx:
-            check_submission(task(), FakeApp(commit_present=False))
-        self.assertIn("push it first", str(ctx.exception))
+        with self.assertRaisesRegex(errors.bad_request.ValidationError, "push it first"):
+            self.check(app=FakeApp(commit_present=False))
 
-    def test_a_repository_without_the_app_is_refused(self):
-        with self.assertRaises(errors.bad_request.ValidationError) as ctx:
-            check_submission(task(), FakeApp(installed=False))
-        self.assertIn("not installed", str(ctx.exception))
+    def test_an_unreachable_repository_is_refused_with_the_reason_and_the_steps(self):
+        with self.assertRaises(AccessRefused) as ctx:
+            self.check(state=repositories.UNREACHABLE, message="The repository is private and no credential is assigned")
+        self.assertIn("no credential is assigned", str(ctx.exception))
         self.assertIn(GITHUB_APP_DOCS, str(ctx.exception))
 
     def test_a_github_repository_without_a_recorded_commit_is_refused(self):
         with self.assertRaises(errors.bad_request.ValidationError):
-            check_submission(task(commit=None), FakeApp())
+            self.check(app=FakeApp(), commit=None)
 
     def test_a_failing_github_call_refuses_the_job(self):
         with self.assertRaises(errors.bad_request.ValidationError):
-            check_submission(task(), FakeApp(failing=True))
+            self.check(app=FakeApp(failing=True))
 
-    def test_a_public_repository_that_is_not_on_github_is_accepted(self):
-        with mock.patch("apiserver.idp.repo_visibility.is_private", return_value=False):
-            check_submission(task(repository="https://gitlab.example.org/a/b.git"), None)
+    def test_a_repository_cloned_without_a_credential_is_accepted_and_its_commit_is_not_looked_up(self):
+        self.check(state=repositories.ANONYMOUS, app=None)
 
-    def test_a_private_repository_that_is_not_on_github_needs_stored_credentials(self):
-        with mock.patch("apiserver.idp.repo_visibility.is_private", return_value=True), \
-                mock.patch("apiserver.idp.repo_visibility.store.find_credential", return_value=None):
-            with self.assertRaises(errors.bad_request.ValidationError) as ctx:
-                check_submission(task(repository="https://gitlab.example.org/a/b.git"), None)
-        self.assertIn("gitlab.example.org", str(ctx.exception))
+    def test_an_unknown_answer_never_refuses_the_job(self):
+        self.check(state=repositories.UNKNOWN, app=None)
+
+    def test_another_host_is_checked_by_the_resolver_only(self):
+        self.check(host="gitlab.example.org")
+        with self.assertRaises(AccessRefused) as ctx:
+            self.check(state=repositories.UNREACHABLE, host="gitlab.example.org", message="private")
+        self.assertNotIn(GITHUB_APP_DOCS, str(ctx.exception))
 
     def test_no_repository_is_not_checked(self):
-        check_submission(task(repository=""), None)
+        with mock.patch.object(repositories, "discover") as discover:
+            check_submission(task(repository=""))
+        discover.assert_not_called()
 
-    def test_a_github_repository_is_refused_when_the_app_is_not_configured(self):
-        with self.assertRaises(errors.bad_request.ValidationError) as ctx:
-            check_submission(task(), None)
-        self.assertIn("GitHub", str(ctx.exception))
-        self.assertIn("Settings > Access", str(ctx.exception))
-        self.assertIn(GITHUB_APP_DOCS, str(ctx.exception))
-
+    def test_an_address_that_names_no_hosted_repository_is_not_checked(self):
+        with mock.patch.object(repositories, "discover", return_value=None):
+            check_submission(task(repository="/home/me/code"))
