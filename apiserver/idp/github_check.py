@@ -3,9 +3,9 @@ installed on it; a public repository needs neither the App nor a token. On anoth
 stored Git credentials (repo_visibility). Otherwise the job is refused at once with a clear message, instead of failing
 later in the agent when it tries to clone."""
 
-from urllib.parse import urlsplit
 
 from apiserver.apierrors import errors
+from apiserver.idp import repo_address
 from apiserver.idp.github import GitHubError, RepoNotAccessible, public_commit_exists, public_repository
 from apiserver.idp.repo_visibility import check_readable
 from apiserver.idp.access_refused import AccessRefused
@@ -15,21 +15,10 @@ GITHUB_APP_DOCS = "https://github.com/gianlucapargaetzi/cairnml-server/blob/main
 
 
 def repo_of(repository: str):
-    """'owner/name' for a github.com repository URL, or None for anything else."""
-    if not repository:
-        return None
-    value = repository.strip()
-    if "://" not in value and ":" in value.split("/", 1)[0]:
-        # git@host:owner/name, the form git prints for SSH
-        host_part, _, rest = value.partition(":")
-        value = f"https://{host_part.rsplit('@', 1)[-1]}/{rest.lstrip('/')}"
-    parts = urlsplit(value if "://" in value else f"https://{value}")
-    if parts.netloc.rsplit("@", 1)[-1].lower() not in ("github.com", "www.github.com"):
-        return None
-    path = parts.path.strip("/")
-    if path.endswith(".git"):
-        path = path[:-4]
-    return path if path.count("/") == 1 else None
+    """'owner/name' for a github.com repository address in any spelling (https, ssh, git, with or without .git, a user, a
+    port or www.), or None for anything else. The case is kept as written; apiserver.idp.repo_address has the identity."""
+    parsed = repo_address.parse(repository)
+    return parsed.path if parsed is not None and parsed.is_github else None
 
 
 def public_repo(repo: str) -> bool:
