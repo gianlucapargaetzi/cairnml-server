@@ -9,6 +9,7 @@ from typing import Optional
 
 from apiserver.bll import dataset_inheritance, repositories, user_access
 from apiserver.idp import repo_address
+from apiserver.database.model.project import Project
 from apiserver.database.model.task.task import Task
 
 NEEDS_DECISION = (repositories.ANONYMOUS, repositories.UNKNOWN, repositories.UNREACHABLE)
@@ -87,4 +88,8 @@ def requirement(company: str, user: str, task_ids: list, is_admin: bool) -> list
             row["tasks"] = [str(task.id)]
             row["kinds"] = [kind]
             rows[key] = row
-    return list(rows.values())
+    result = list(rows.values())
+    names = {p.id: p.name for p in Project.objects(company=company, id__in=[r["project"] for r in result if r["project"]]).only("name")}
+    for row in result:
+        row["project_name"] = names.get(row["project"]) if row["project"] else None
+    return result
