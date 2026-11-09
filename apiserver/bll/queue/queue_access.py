@@ -1,8 +1,9 @@
 """
 Who may see, use, manage and allocate a queue.
 
-- Any company user may create a queue. The creator is its owner (`created_by`). Queues created before ownership have
-  no owner and stay admin-managed.
+- A queue is made only when an agent is enrolled (devices.enroll): the agent's own queue, owned by the user who enrolled
+  it (`created_by`). Nobody creates a queue by hand. The `default` queue and queues from before ownership have no owner
+  and stay admin-managed.
 - A user sees a queue when it is public, when they are its owner, when they hold a grant on it, or when it is allocated
   to a root project they own or are a member of (in any role). Admins (company admin or root) see every queue.
 - A queue is usable (enqueue, dequeue, peek and the other task actions) by the same users who see it.

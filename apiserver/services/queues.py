@@ -6,7 +6,6 @@ from apiserver.apierrors import errors
 from apiserver.apimodels.base import UpdateResponse
 from apiserver.apimodels.queues import (
     GetDefaultResp,
-    CreateRequest,
     DeleteRequest,
     UpdateRequest,
     MoveTaskRequest,
@@ -50,7 +49,6 @@ from apiserver.services.tasks import _assert_tasks_access, _scope_query as _scop
 from apiserver.services.utils import (
     conform_tag_fields,
     conform_output_tags,
-    conform_tags,
     escape_metadata,
     unescape_metadata,
 )
@@ -153,27 +151,6 @@ def get_all(call: APICall, company: str, request: GetAllRequest):
     _with_owner(queues)
     conform_queue_data(call, queues)
     call.result.data = {"queues": queues, **ret_params}
-
-
-@endpoint("queues.create", min_version="2.4")
-def create(call: APICall, company_id, request: CreateRequest):
-    # a queue is made by enrolling the agent of a machine (devices.enroll), named after the machine
-    raise errors.bad_request.ValidationError(
-        "queues are not created by hand: enrol the agent of the machine, which makes its queue")
-    tags, system_tags = conform_tags(
-        call, request.tags, request.system_tags, validate=True
-    )
-    queue = queue_bll.create(
-        company_id=company_id,
-        name=request.name,
-        display_name=request.display_name,
-        tags=tags,
-        system_tags=system_tags,
-        metadata=Metadata.metadata_from_api(request.metadata),
-        public=bool(request.public),
-        created_by=call.identity.user,
-    )
-    call.result.data = {"id": queue.id}
 
 
 @endpoint(
