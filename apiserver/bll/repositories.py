@@ -427,12 +427,17 @@ def _view_binding(binding: RepositoryBinding, source: CodeRepository, resolution
     }
 
 
-def list_for(company: str, user: str, is_admin: bool) -> list:
+def list_for(company: str, user: str, is_admin: bool, project: Optional[str] = None) -> list:
     """One row per repository, with a binding per project the user can see: an admin sees every binding, anyone else the
-    bindings of the projects they own or are a member of, and the ones they discovered."""
+    bindings of the projects they own or are a member of, and the ones they discovered. With ``project``, only the
+    bindings of that project's root project."""
     mine = set(user_access.my_root_ids(company, user))
+    root = user_access.root_project(company, project) if project else None
+    if project and root is None:
+        return []
     bindings = [b for b in RepositoryBinding.objects(company=company)
-                if is_admin or b.owner == user or b.discovered_by == user or b.project in mine]
+                if (is_admin or b.owner == user or b.discovered_by == user or b.project in mine)
+                and (root is None or b.project == root)]
     by_source: dict = {}
     for binding in bindings:
         by_source.setdefault(binding.source, []).append(binding)

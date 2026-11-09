@@ -228,6 +228,16 @@ def test_the_list_has_one_row_per_repository_and_a_binding_per_project(world):
     assert bll.list_for(world.company, "stranger", False) == []
 
 
+def test_the_list_can_be_limited_to_one_project(world):
+    Project(id=f"q-{world.company}", company=world.company, name="q", basename="q", user="other", created=datetime.utcnow(),
+            last_update=datetime.utcnow()).save()
+    discover(world)
+    bll.discover(world.company, URL + ".git", "other", f"q-{world.company}")
+    rows = bll.list_for(world.company, "admin", True, world.project)
+    assert len(rows) == 1 and [b["project"] for b in rows[0]["bindings"]] == [world.project]
+    assert bll.list_for(world.company, "admin", True, "no-such-project") == []
+
+
 def test_adding_lists_a_repository_for_a_member_and_refuses_a_stranger(world):
     binding = bll.add(world.company, "owner", False, "git@github.com:Acme/Proj.git", world.project)
     assert binding.project == world.project

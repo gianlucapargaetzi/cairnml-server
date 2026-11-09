@@ -14,7 +14,8 @@ def _is_admin(call: APICall) -> bool:
 
 @endpoint("repositories.get_all")
 def get_all(call: APICall, company: str, _request):
-    call.result.data = {"repositories": bll.list_for(company, call.identity.user, _is_admin(call))}
+    project = (call.data or {}).get("project") or None
+    call.result.data = {"repositories": bll.list_for(company, call.identity.user, _is_admin(call), project)}
 
 
 @endpoint("repositories.add")
