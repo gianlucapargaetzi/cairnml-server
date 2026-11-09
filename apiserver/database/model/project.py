@@ -77,5 +77,3 @@ class Project(AttributedDocument):
     path = ListField(StringField(required=True), exclude_by_default=True)
     visibility = StringField(choices=get_options(ProjectVisibility), default=ProjectVisibility.private)
     members = EmbeddedDocumentListField(ProjectMember, default=list)
-    agent_tokens_allowed = BooleanField(default=True)
-    """ Whether the agents that run this project's jobs may be given personal access tokens shared with it """

@@ -159,7 +159,7 @@ def test_a_member_may_not_change_the_visibility_of_a_dataset_they_do_not_own(com
 
 def test_an_allocation_of_a_credential_the_project_cannot_use_is_refused_for_a_member_who_does_not_own_it(
         company, setup, github):
-    UserAccess(id="cred-owner1", company=company, user="owner1", kind="token", label="cred", host="github.com",
+    UserAccess(id="cred-owner1", company=company, user="owner1", kind="app", label="cred", host="github.com",
                path="", secret="x", scope="user", created=datetime.utcnow()).save()
     dataset = datasets.add_repo(company, "owner1", REPO_URL, visibility="Public")
     Dataset.objects(company=company, id=dataset["id"]).update(credential="cred-owner1")
@@ -171,7 +171,7 @@ def test_an_allocation_of_a_credential_the_project_cannot_use_is_refused_for_a_m
 
 
 def test_the_owner_of_a_credential_may_allocate_a_dataset_that_uses_it(company, setup, github):
-    UserAccess(id="cred-owner1", company=company, user="owner1", kind="token", label="cred", host="github.com",
+    UserAccess(id="cred-owner1", company=company, user="owner1", kind="app", label="cred", host="github.com",
                path="", secret="x", scope="user", created=datetime.utcnow()).save()
     dataset = datasets.add_repo(company, "owner1", REPO_URL, visibility="Public")
     Dataset.objects(company=company, id=dataset["id"]).update(credential="cred-owner1")

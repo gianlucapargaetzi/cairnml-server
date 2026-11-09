@@ -358,18 +358,6 @@ class GitHubApp:
         return commits
 
 
-class TokenReader(GitHubApp):
-    """Reads a repository with a personal token, through the same read calls as the App. Only reads: it issues no token
-    of its own. Used where a repository is reached through a token shared with a project, and its layout is checked."""
-
-    def __init__(self, token: str, api_url: str, http=None, clock=time.time) -> None:
-        super().__init__("0", "", api_url, http=http, clock=clock)
-        self._token = token
-
-    def _read_headers(self, repo: str) -> dict:
-        return self._headers(self._token)
-
-
 class PublicReader(GitHubApp):
     """Reads public repositories without a token or a GitHub App. Used when the server has no App: the public dataset
     registries and public datasets are still listed. A private repository is refused, as the App is not there to read it."""

@@ -54,7 +54,7 @@ def world(company):
     dataset = Dataset(id=uuid4().hex, company=company, kind="repo", ref="acme/cars", name="cars",
                       owner=COLLABORATOR, created=datetime.utcnow())
     dataset.save()
-    credential = UserAccess(id=uuid4().hex, company=company, user=COLLABORATOR, kind="token", label="token",
+    credential = UserAccess(id=uuid4().hex, company=company, user=COLLABORATOR, kind="app", label="token",
                             host="github.com", path="", secret="s3cr3t", created=datetime.utcnow())
     credential.save()
     own_dataset = Dataset(id=uuid4().hex, company=company, kind="repo", ref="acme/trucks", name="trucks",

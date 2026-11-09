@@ -61,7 +61,7 @@ def dataset(company):
 
 
 def credential(company):
-    record = UserAccess(id=uuid4().hex, company=company, user=OWNER, kind="token", label="token", host="github.com",
+    record = UserAccess(id=uuid4().hex, company=company, user=OWNER, kind="app", label="token", host="github.com",
                         path="", secret="s3cr3t", created=datetime.utcnow())
     record.save()
     return record

@@ -55,7 +55,7 @@ def world(company):
     dataset = Dataset(id=uuid4().hex, company=company, kind="repo", ref="acme/cars", name="cars",
                       owner=DATASET_OWNER, created=datetime.utcnow())
     dataset.save()
-    credential = UserAccess(id=uuid4().hex, company=company, user=CREDENTIAL_OWNER, kind="token", label="token",
+    credential = UserAccess(id=uuid4().hex, company=company, user=CREDENTIAL_OWNER, kind="app", label="token",
                             host="github.com", path="", secret="s3cr3t", created=datetime.utcnow())
     credential.save()
     dataset_share = record_grant(company, DATASET_OWNER, "dataset", dataset.id, "projects", root.id,

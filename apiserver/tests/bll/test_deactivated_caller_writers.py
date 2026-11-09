@@ -102,7 +102,7 @@ def test_a_deactivated_owner_cannot_change_the_visibility_of_a_dataset(gone):
 
 
 def test_a_deactivated_owner_cannot_grant_a_credential_to_a_project(gone):
-    UserAccess(id="acc1", company=gone, user="gone", kind="token", label="t", host="github.com", path="",
+    UserAccess(id="acc1", company=gone, user="gone", kind="app", label="t", host="github.com", path="",
                secret=store.encrypt("ghp", store.key_material())).save()
     deactivate(gone)
     with pytest.raises(errors.forbidden.NoWritePermission):

@@ -199,10 +199,10 @@ def test_anyone_else_assigns_nothing(world):
         bll.set_credential(world.company, "stranger", False, binding.id, None, none_needed=True)
 
 
-def test_a_github_token_credential_is_refused(world):
+def test_a_credential_that_is_not_a_github_app_is_refused_for_github(world):
     binding = discover(world)
     credential(world, "tok", "owner", kind="token")
-    with pytest.raises(errors.bad_request.ValidationError, match="personal token"):
+    with pytest.raises(errors.bad_request.ValidationError, match="not a GitHub App"):
         bll.set_credential(world.company, "owner", False, binding.id, "tok")
 
 

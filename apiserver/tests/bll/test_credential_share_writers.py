@@ -45,7 +45,7 @@ def setup(company):
     make_root(company, "root1", "owner1", members=[("u1", ProjectRole.read), ("u2", ProjectRole.read)])
     make_root(company, "root2", "owner1")
     entry = UserAccess(
-        id="acc1", company=company, user="u1", kind="token", label="token", host="github.com", path="",
+        id="acc1", company=company, user="u1", kind="app", label="token", host="github.com", path="",
         secret=store.encrypt("ghp_secret", store.key_material()), created=datetime.utcnow(),
     )
     entry.save()

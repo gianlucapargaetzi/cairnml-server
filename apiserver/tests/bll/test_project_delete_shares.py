@@ -48,7 +48,7 @@ def test_deleting_a_project_removes_its_shares_and_keeps_the_others(company):
     access.record_grant(company, "owner1", "dataset", "d1", "projects", "p-del", actor="owner1")
     access.record_grant(company, "owner1", "dataset", "d1", "projects", "p-keep", actor="owner1")
 
-    UserAccess(id="acc1", company=company, user="owner1", kind="token", label="t", host="github.com", path="",
+    UserAccess(id="acc1", company=company, user="owner1", kind="app", label="t", host="github.com", path="",
                secret=store.encrypt("ghp", store.key_material())).save()
     access.record_grant(company, "owner1", "credential", "acc1", "projects", "p-del", actor="owner1")
     access.record_grant(company, "owner1", "credential", "acc1", "projects", "p-keep", actor="owner1")

@@ -48,8 +48,6 @@ ASSIGNED, NONE_NEEDED, ANONYMOUS, COMPANY, UNKNOWN, UNREACHABLE = (
     "assigned", "none_needed", "anonymous", "company", "unknown", "unreachable")
 """ How a repository is read, see ``resolve``. ANONYMOUS and COMPANY are the unassigned cases. """
 
-APP_ONLY = "a GitHub App is used for GitHub: personal tokens are not"
-
 
 # --- the records ---------------------------------------------------------------------------------------------------
 
@@ -194,7 +192,7 @@ def _entry_problem(entry: Optional[UserAccess], source: CodeRepository) -> Optio
     if entry.scope != "company" and not user_access.is_active(entry.user):
         return f"the owner of {entry.label} is disabled"
     if source.host == "github.com" and entry.kind != "app":
-        return f"{entry.label} is a personal token: {APP_ONLY}"
+        return f"{entry.label} is not a GitHub App: GitHub is read with one"
     if source.host != "github.com":
         if entry.kind != "token":
             return f"{entry.label} is a GitHub App, which does not read {source.host}"

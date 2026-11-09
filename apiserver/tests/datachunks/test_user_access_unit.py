@@ -18,10 +18,6 @@ class TestValidation(TestCase):
         with self.assertRaises(errors.bad_request.ValidationError):
             bll._label("   ")
 
-    def test_a_token_is_needed(self):
-        with self.assertRaises(errors.bad_request.ValidationError):
-            bll.add_token("c", "u", "mine", "github.com", "", "   ")
-
     def test_an_app_id_is_a_number(self):
         with self.assertRaises(errors.bad_request.ValidationError):
             bll.add_app("c", "u", "app", "CairnML", "", PEM)
@@ -37,7 +33,7 @@ class TestValidation(TestCase):
 
 class TestNoSecretInAView(TestCase):
     def test_the_view_has_no_secret_field(self):
-        entry = SimpleNamespace(id="a1", kind="token", label="mine", host="github.com", path="acme", app_id=None,
+        entry = SimpleNamespace(id="a1", kind="app", label="mine", host="github.com", path="", app_id="12345",
                                 api_url=None, created=None, last_checked=None, last_state=None, last_message=None,
                                 secret="ENCRYPTED-VALUE", scope="user")
         with patch.object(bll, "_granted_to", return_value=[]):

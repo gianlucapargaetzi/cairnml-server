@@ -40,7 +40,7 @@ def company():
 
 
 def make_credential(company, user):
-    entry = UserAccess(id=uuid4().hex, company=company, user=user, kind="token", label="token", host="github.com",
+    entry = UserAccess(id=uuid4().hex, company=company, user=user, kind="app", label="token", host="github.com",
                        path="", secret="secret", created=datetime.utcnow())
     entry.save()
     return entry

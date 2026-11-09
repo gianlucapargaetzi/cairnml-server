@@ -28,7 +28,7 @@ from apiserver.database.model.task.task import Task
 from apiserver.idp.assertion import AssertionInvalid, unverified_issuer, verify_assertion
 from apiserver.idp.audit import client_address, record as audit
 from apiserver.idp.checks import AccessDenied, check_device, check_job_issue
-from apiserver.idp.github import GitHubApp, GitHubError, RepoNotAccessible, TokenReader
+from apiserver.idp.github import GitHubApp, GitHubError, RepoNotAccessible
 from apiserver.bll import user_access
 from apiserver.bll import datasets as datasets_bll
 from apiserver.bll.dataset_registry import canonical_url
@@ -392,8 +392,8 @@ def _github_token(app, repo: str, actor: str, task_id: str, ip=None, company=Non
 
 
 AGENT_NOTICE = (
-    "Projects that run jobs on this agent can give them the accesses shared with those projects: GitHub Apps, and "
-    "personal tokens unless a project has turned them off. Enrol this agent only on a machine you trust with them."
+    "Projects that run jobs on this agent can give them the GitHub Apps shared with those projects. Enrol this agent only "
+    "on a machine you trust with them."
 )
 
 

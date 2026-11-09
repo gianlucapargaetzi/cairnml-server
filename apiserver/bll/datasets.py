@@ -25,7 +25,7 @@ from apiserver.database.model.project import Project
 from apiserver.database.model.share import Share
 from apiserver.database.model.user_access import UserAccess
 from apiserver.idp import git_credentials as store
-from apiserver.idp.github import GitHubApp, GitHubError, PublicReader, RepoNotAccessible, TokenReader, public_repository
+from apiserver.idp.github import GitHubApp, GitHubError, PublicReader, RepoNotAccessible, public_repository
 from apiserver.idp.github_check import repo_of
 
 NO_ACCESS = "no_access"
@@ -60,11 +60,8 @@ def _api_url() -> str:
 
 
 def _reader(entry, secret: str):
-    """The client that reads with this access: the App, or the token."""
-    api = entry.api_url or _api_url()
-    if entry.kind == "app":
-        return GitHubApp(entry.app_id, secret, api)
-    return TokenReader(secret, api)
+    """The client that reads with this access: its GitHub App."""
+    return GitHubApp(entry.app_id, secret, entry.api_url or _api_url())
 
 
 def _can_read(reader, repo: str) -> bool:
@@ -290,12 +287,6 @@ def _check_visibility(visibility: str) -> None:
         raise errors.bad_request.ValidationError("the visibility is user, projects or Public")
 
 
-APP_ONLY_MESSAGE = (
-    "personal access tokens are no longer used for GitHub: add a GitHub App (your own, or the company's), and install it "
-    "on the repository"
-)
-
-
 # --- The credential a repository dataset is read with. The dataset stores the choice: no credential means the
 # repository is public, and a private one with no credential cannot be read.
 
@@ -315,7 +306,7 @@ def _credential_entry(company: str, user: str, credential: str, repo: str) -> tu
     if entry.scope != "company" and not user_access.is_active(user):
         raise errors.bad_request.ValidationError("your account is disabled: its credentials cannot be used")
     if entry.kind != "app":
-        raise errors.bad_request.ValidationError(f"{entry.label} is a personal token: {APP_ONLY_MESSAGE}")
+        raise errors.bad_request.ValidationError(f"{entry.label} is not a GitHub App: a dataset repository is read with one")
     secret = store.decrypt(entry.secret, store.key_material())
     if not _can_read(_reader(entry, secret), repo):
         raise errors.bad_request.ValidationError(f"the GitHub App {entry.label} is not installed on {repo}")
@@ -324,8 +315,7 @@ def _credential_entry(company: str, user: str, credential: str, repo: str) -> tu
 
 def token_for_person(company: str, user: str, dataset: Dataset, repo: str, write: bool, permissions: dict) -> dict:
     """The GitHub token a person's machine gets for a dataset repository: made with the credential the dataset is read
-    with. A public dataset has no credential and needs no token (the caller answers that before this). A personal token
-    reads only, because it cannot be limited to one repository. Refused with the reason otherwise."""
+    with. A public dataset has no credential and needs no token (the caller answers that before this). Refused with the reason otherwise."""
     if not dataset.credential:
         raise errors.bad_request.ValidationError(
             f"{repo} has no credential, so it is not readable here: its owner adds one with cairnml dataset add-credential")
@@ -338,7 +328,7 @@ def token_for_person(company: str, user: str, dataset: Dataset, repo: str, write
     if entry.scope != "company" and not user_access.is_active(user):
         raise errors.bad_request.ValidationError("your account is disabled: its credentials cannot be used")
     if entry.kind != "app":
-        raise errors.bad_request.ValidationError(f"{entry.label} is a personal token: {APP_ONLY_MESSAGE}")
+        raise errors.bad_request.ValidationError(f"{entry.label} is not a GitHub App: a dataset repository is read with one")
     secret = store.decrypt(entry.secret, store.key_material())
     app = GitHubApp(entry.app_id, secret, entry.api_url or _api_url())
     try:
@@ -363,8 +353,8 @@ def job_can_read(company: str, enqueuer: Optional[str], task_root: Optional[str]
 
 def job_credential(company: str, dataset: Dataset, repo: str) -> tuple:
     """(entry, secret) of the credential a job reads a dataset with: the one the dataset holds, and no other. It must
-    still exist, be the company's or belong to the dataset's owner, and be able to read the repository's files for a job
-    (a personal token only when its owner is the dataset's owner). Refused with the reason otherwise."""
+    still exist, be the company's or belong to the dataset's owner, and be able to read the repository's files for a job.
+    Refused with the reason otherwise."""
     if not dataset.credential:
         raise errors.bad_request.ValidationError(
             f"{repo} has no credential, so jobs cannot read it: its owner adds one with cairnml dataset add-credential")
@@ -377,7 +367,7 @@ def job_credential(company: str, dataset: Dataset, repo: str) -> tuple:
     if entry.scope != "company" and not user_access.is_active(entry.user):
         raise errors.bad_request.ValidationError(f"the owner of the credential of {repo} is disabled")
     if entry.kind != "app":
-        raise errors.bad_request.ValidationError(f"{entry.label} is a personal token: {APP_ONLY_MESSAGE}")
+        raise errors.bad_request.ValidationError(f"{entry.label} is not a GitHub App: a dataset repository is read with one")
     return entry, store.decrypt(entry.secret, store.key_material())
 
 

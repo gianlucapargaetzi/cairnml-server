@@ -73,7 +73,7 @@ def clean_rows():
 
 
 def access(entry_id: str) -> SimpleNamespace:
-    return SimpleNamespace(id=entry_id, kind="token", api_url=None, app_id=None)
+    return SimpleNamespace(id=entry_id, kind="app", api_url=None, app_id=None)
 
 
 def make_access(entry_id: str, user: str = OWNER, scope: str = "user") -> None:
@@ -285,7 +285,7 @@ def test_app_discovered_repositories_belong_to_the_owner_of_the_app_credential(p
 
 def add_access(access_id: str, owner: str) -> None:
     UserAccess.objects(company=COMPANY, id=access_id).delete()
-    UserAccess(id=access_id, company=COMPANY, user=owner, kind="token", label=access_id, host="github.com", path="",
+    UserAccess(id=access_id, company=COMPANY, user=owner, kind="app", label=access_id, host="github.com", path="",
                secret="x", scope="user", created=datetime.utcnow()).save()
 
 

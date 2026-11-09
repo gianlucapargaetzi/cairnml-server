@@ -75,10 +75,10 @@ def world(company):
                        owner=DATASET_OWNER, visibility="projects", created=datetime.utcnow())
     registry.save()
 
-    credential = UserAccess(id=uuid4().hex, company=company, user=CREDENTIAL_OWNER, kind="token", label="team token",
+    credential = UserAccess(id=uuid4().hex, company=company, user=CREDENTIAL_OWNER, kind="app", label="team token",
                             host="github.com", path="acme", secret=SECRET, created=datetime.utcnow())
     credential.save()
-    UserAccess(id=uuid4().hex, company=company, user=CREDENTIAL_OWNER, kind="token", label="not shared",
+    UserAccess(id=uuid4().hex, company=company, user=CREDENTIAL_OWNER, kind="app", label="not shared",
                host="github.com", path="", secret="another-secret", created=datetime.utcnow()).save()
 
     record_grant(company, OWNER, "dataset", shared.id, "projects", root.id, level="read", actor=OWNER)
