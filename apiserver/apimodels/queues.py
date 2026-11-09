@@ -15,15 +15,6 @@ class GetDefaultResp(Base):
     name = StringField(required=True)
 
 
-class CreateRequest(Base):
-    name = StringField(required=True)
-    display_name = StringField()
-    tags = ListField(items_types=[str])
-    system_tags = ListField(items_types=[str])
-    metadata = DictField(value_types=[MetadataItem])
-    public = BoolField()
-
-
 class QueueRequest(Base):
     queue = StringField(required=True)
 

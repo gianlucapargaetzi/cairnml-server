@@ -10,7 +10,7 @@ from uuid import uuid4
 import pytest
 
 from apiserver.apimodels.project_access import AddQueuesRequest, RemoveQueueRequest
-from apiserver.apimodels.queues import CreateRequest, DeleteRequest, QueueRequest, UpdateRequest, UserRequest
+from apiserver.apimodels.queues import DeleteRequest, QueueRequest, UpdateRequest, UserRequest
 from apiserver.bll.access import resource_ids_shared_with
 from apiserver.bll.queue.queue_access import QueueAccessBLL
 from apiserver.database.model.share import Share

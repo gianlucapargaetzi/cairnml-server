@@ -1,0 +1,29 @@
+/* Heebo, the CairnML UI font, bundled so the page needs no external host. */
+@font-face { font-family: 'Heebo'; src: url('../fonts/Heebo-Bold.ttf') format('truetype'); font-weight: 700; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Heebo'; src: url('../fonts/Heebo-Medium.ttf') format('truetype'); font-weight: 500; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Heebo'; src: url('../fonts/Heebo-Regular.ttf') format('truetype'); font-weight: 400; font-style: normal; font-display: swap; }
+
+/* Colours are the CairnML primary palette (cairnml-web/src/app/webapp-common/styles/cairnml-palette.scss).
+   Light: tone 40 #0060A7 for actions and links, tone 30 #004880 for hover. Dark: tone 60 #0C94FB, tone 70 #69AFFF for hover. */
+:root {
+  --pf-v5-global--FontFamily--sans-serif: 'Heebo', sans-serif;
+  --pf-v5-global--FontFamily--heading--sans-serif: 'Heebo', sans-serif;
+  --pf-v5-global--primary-color--100: #0060A7;
+  --pf-v5-global--primary-color--200: #004880;
+  --pf-v5-global--active-color--100: #0060A7;
+  --pf-v5-global--link--Color: #0060A7;
+  --pf-v5-global--link--Color--hover: #004880;
+}
+:root.pf-v5-theme-dark {
+  --pf-v5-global--primary-color--100: #0C94FB;
+  --pf-v5-global--primary-color--200: #69AFFF;
+  --pf-v5-global--active-color--100: #0C94FB;
+  --pf-v5-global--link--Color: #0C94FB;
+  --pf-v5-global--link--Color--hover: #69AFFF;
+}
+body, .pf-v5-c-page, .pf-v5-c-button, .pf-v5-c-form-control, .pf-v5-c-menu, .pf-v5-c-nav {
+  font-family: 'Heebo', sans-serif;
+}
+
+/* The CairnML logo is wider than Keycloak's. It has the height of the logo in the web app's header (42px), the width follows. */
+.pf-v5-c-masthead__brand img, .pf-v5-c-page__header-brand img { height: 42px; width: auto; max-height: none; }

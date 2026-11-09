@@ -1,0 +1,414 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" viewBox="47 196 414 323" width="414" height="323" role="img" aria-label="CairnML">
+  <title>CairnML</title>
+  <defs>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#8ff0b4" stop-opacity="0.75"/>
+      <stop offset="1" stop-color="#8ff0b4" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="dotGlow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#8ff0b4" stop-opacity="0.9"/>
+      <stop offset="1" stop-color="#8ff0b4" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="blur6" x="-30%" y="-100%" width="160%" height="300%">
+      <feGaussianBlur stdDeviation="6"/>
+    </filter>
+    <linearGradient id="sTop1" x1="0" y1="0" x2="1" y2="0.4">
+      <stop offset="0" stop-color="#363d44"/>
+      <stop offset="1" stop-color="#2a2f35"/>
+    </linearGradient>
+    <linearGradient id="sLeft1" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#454f58"/>
+      <stop offset="1" stop-color="#323940"/>
+    </linearGradient>
+    <linearGradient id="sBot1" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#23282d"/>
+      <stop offset="1" stop-color="#16191c"/>
+    </linearGradient>
+    <linearGradient id="sRight1" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#353c43"/>
+      <stop offset="1" stop-color="#262b31"/>
+    </linearGradient>
+    <linearGradient id="sTop2" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#57506a"/>
+      <stop offset="1" stop-color="#474152"/>
+    </linearGradient>
+    <linearGradient id="sSlope2" x1="0" y1="0" x2="1" y2="0.6">
+      <stop offset="0" stop-color="#857d91"/>
+      <stop offset="0.55" stop-color="#7a7286"/>
+      <stop offset="1" stop-color="#655e72"/>
+    </linearGradient>
+    <linearGradient id="sLeft2" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#6c6479"/>
+      <stop offset="1" stop-color="#554e60"/>
+    </linearGradient>
+    <linearGradient id="sRight2" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#635c70"/>
+      <stop offset="1" stop-color="#4b4556"/>
+    </linearGradient>
+    <linearGradient id="sTop3" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#5b546d"/>
+      <stop offset="1" stop-color="#4a4455"/>
+    </linearGradient>
+    <linearGradient id="sSlope3" x1="0" y1="0" x2="1" y2="0.6">
+      <stop offset="0" stop-color="#8a8296"/>
+      <stop offset="0.55" stop-color="#7d758a"/>
+      <stop offset="1" stop-color="#696276"/>
+    </linearGradient>
+    <linearGradient id="sLeft3" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#6f677c"/>
+      <stop offset="1" stop-color="#585163"/>
+    </linearGradient>
+    <linearGradient id="sRight3" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#655e72"/>
+      <stop offset="1" stop-color="#4d4758"/>
+    </linearGradient>
+    <linearGradient id="gTop" x1="0" y1="0" x2="0.8" y2="1">
+      <stop offset="0" stop-color="#c4f2d4"/>
+      <stop offset="1" stop-color="#9fdcb5"/>
+    </linearGradient>
+    <linearGradient id="gLeft" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#8ccca4"/>
+      <stop offset="1" stop-color="#6aae86"/>
+    </linearGradient>
+    <linearGradient id="gRight" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7dbd96"/>
+      <stop offset="1" stop-color="#5f9f79"/>
+    </linearGradient>
+    <linearGradient id="underShade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0.45" stop-color="#000" stop-opacity="0"/>
+      <stop offset="1" stop-color="#000" stop-opacity="0.28"/>
+    </linearGradient>
+    <radialGradient id="sheen" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="greenFlare" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#b6ffd6" stop-opacity="0.9"/>
+      <stop offset="1" stop-color="#8ff0b4" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="blob" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#fff"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="dotsS" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(-8)">
+      <circle cx="3.5" cy="3.5" r="0.9" fill="#ffffff" fill-opacity="0.55"/>
+    </pattern>
+    <filter id="soft3" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3"/>
+    </filter>
+    <filter id="soft8" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="8"/>
+    </filter>
+    <path id="b1" d="M119.2,447.4 Q113.0,436.0 121.2,425.9 L129.8,415.1 Q138.0,405.0 150.8,402.8 L183.2,397.2 Q196.0,395.0 209.0,394.3 L257.0,391.7 Q270.0,391.0 283.0,391.3 L339.0,392.7 Q352.0,393.0 364.8,395.4 L381.2,398.6 Q394.0,401.0 404.2,409.1 L418.8,420.9 Q429.0,429.0 424.7,441.3 L421.3,450.7 Q417.0,463.0 404.9,467.7 L362.1,484.3 Q350.0,489.0 337.2,491.3 L278.8,501.7 Q266.0,504.0 253.1,502.7 L206.9,498.3 Q194.0,497.0 181.8,492.5 L146.2,479.5 Q134.0,475.0 127.8,463.6 Z"/>
+    <clipPath id="clip1">
+      <use xlink:href="#b1"/>
+    </clipPath>
+    <linearGradient id="dotFade1" gradientUnits="userSpaceOnUse" x1="258" y1="391" x2="419" y2="500">
+      <stop offset="0" stop-color="#fff" stop-opacity="0"/>
+      <stop offset="0.35" stop-color="#fff" stop-opacity="0.25"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="1"/>
+    </linearGradient>
+    <mask id="dotMask1" maskUnits="userSpaceOnUse" x="0" y="0" width="1195" height="896">
+      <rect x="113" y="391" width="316" height="113" fill="url(#dotFade1)"/>
+    </mask>
+    <linearGradient id="rim1" gradientUnits="userSpaceOnUse" x1="0" y1="391" x2="0" y2="504">
+      <stop offset="0" stop-color="#56606a" stop-opacity="0.55"/>
+      <stop offset="0.55" stop-color="#56606a" stop-opacity="0.2"/>
+      <stop offset="1" stop-color="#14161a" stop-opacity="0.45"/>
+    </linearGradient>
+    <path id="b2" d="M156.0,378.4 Q150.0,368.0 158.8,359.8 L171.2,348.2 Q180.0,340.0 192.0,339.3 L253.0,335.7 Q265.0,335.0 277.0,334.9 L333.0,334.1 Q345.0,334.0 355.3,340.1 L371.7,349.9 Q382.0,356.0 379.1,367.6 L376.9,376.4 Q374.0,388.0 363.3,393.4 L328.7,410.6 Q318.0,416.0 306.1,417.7 L273.9,422.3 Q262.0,424.0 250.1,422.6 L207.9,417.4 Q196.0,416.0 186.0,409.3 L176.0,402.7 Q166.0,396.0 160.0,385.6 Z"/>
+    <clipPath id="clip2">
+      <use xlink:href="#b2"/>
+    </clipPath>
+    <linearGradient id="dotFade2" gradientUnits="userSpaceOnUse" x1="266" y1="334" x2="372" y2="420">
+      <stop offset="0" stop-color="#fff" stop-opacity="0"/>
+      <stop offset="0.35" stop-color="#fff" stop-opacity="0.25"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="1"/>
+    </linearGradient>
+    <mask id="dotMask2" maskUnits="userSpaceOnUse" x="0" y="0" width="1195" height="896">
+      <rect x="150" y="334" width="232" height="90" fill="url(#dotFade2)"/>
+    </mask>
+    <linearGradient id="rim2" gradientUnits="userSpaceOnUse" x1="0" y1="334" x2="0" y2="424">
+      <stop offset="0" stop-color="#8f879b" stop-opacity="0.55"/>
+      <stop offset="0.55" stop-color="#8f879b" stop-opacity="0.2"/>
+      <stop offset="1" stop-color="#14161a" stop-opacity="0.45"/>
+    </linearGradient>
+    <path id="b3" d="M184.5,316.5 Q180.0,307.0 187.9,299.4 L198.1,289.6 Q206.0,282.0 217.0,281.5 L261.0,279.5 Q272.0,279.0 283.0,279.2 L321.0,279.8 Q332.0,280.0 339.2,288.3 L345.8,295.7 Q353.0,304.0 348.8,314.2 L347.2,317.8 Q343.0,328.0 332.4,330.8 L285.6,343.2 Q275.0,346.0 264.0,345.1 L225.0,341.9 Q214.0,341.0 204.3,335.8 L199.7,333.2 Q190.0,328.0 185.5,318.5 Z"/>
+    <clipPath id="clip3">
+      <use xlink:href="#b3"/>
+    </clipPath>
+    <linearGradient id="dotFade3" gradientUnits="userSpaceOnUse" x1="278" y1="279" x2="343" y2="342">
+      <stop offset="0" stop-color="#fff" stop-opacity="0"/>
+      <stop offset="0.35" stop-color="#fff" stop-opacity="0.25"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="1"/>
+    </linearGradient>
+    <mask id="dotMask3" maskUnits="userSpaceOnUse" x="0" y="0" width="1195" height="896">
+      <rect x="180" y="279" width="173" height="67" fill="url(#dotFade3)"/>
+    </mask>
+    <linearGradient id="rim3" gradientUnits="userSpaceOnUse" x1="0" y1="279" x2="0" y2="346">
+      <stop offset="0" stop-color="#8f879b" stop-opacity="0.55"/>
+      <stop offset="0.55" stop-color="#8f879b" stop-opacity="0.2"/>
+      <stop offset="1" stop-color="#14161a" stop-opacity="0.45"/>
+    </linearGradient>
+    <path id="b4" d="M225.6,271.5 Q219.0,264.0 224.3,255.5 L230.7,245.5 Q236.0,237.0 245.3,233.4 L262.7,226.6 Q272.0,223.0 281.6,225.9 L295.4,230.1 Q305.0,233.0 310.8,241.1 L317.2,249.9 Q323.0,258.0 319.8,267.1 L319.2,268.9 Q316.0,278.0 306.3,280.4 L285.7,285.6 Q276.0,288.0 266.1,286.4 L243.9,282.6 Q234.0,281.0 227.4,273.5 Z"/>
+    <clipPath id="clip4">
+      <use xlink:href="#b4"/>
+    </clipPath>
+    <linearGradient id="dotFade4" gradientUnits="userSpaceOnUse" x1="285" y1="223" x2="313" y2="284">
+      <stop offset="0" stop-color="#fff" stop-opacity="0"/>
+      <stop offset="0.35" stop-color="#fff" stop-opacity="0.25"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="1"/>
+    </linearGradient>
+    <mask id="dotMask4" maskUnits="userSpaceOnUse" x="0" y="0" width="1195" height="896">
+      <rect x="219" y="223" width="104" height="65" fill="url(#dotFade4)"/>
+    </mask>
+    <linearGradient id="rim4" gradientUnits="userSpaceOnUse" x1="0" y1="223" x2="0" y2="288">
+      <stop offset="0" stop-color="#c9f5d9" stop-opacity="0.55"/>
+      <stop offset="0.55" stop-color="#c9f5d9" stop-opacity="0.2"/>
+      <stop offset="1" stop-color="#14161a" stop-opacity="0.45"/>
+    </linearGradient>
+    <linearGradient id="lf0" gradientUnits="userSpaceOnUse" x1="58.0" y1="415.0" x2="160.0" y2="367.0">
+      <stop offset="0" stop-color="#fff" stop-opacity="0"/>
+      <stop offset="0.22" stop-color="#fff"/>
+      <stop offset="0.78" stop-color="#fff"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="1"/>
+    </linearGradient>
+    <linearGradient id="lf1" gradientUnits="userSpaceOnUse" x1="109.0" y1="398.0" x2="230.0" y2="282.0">
+      <stop offset="0" stop-color="#fff" stop-opacity="0"/>
+      <stop offset="0.22" stop-color="#fff"/>
+      <stop offset="0.78" stop-color="#fff"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="1"/>
+    </linearGradient>
+    <linearGradient id="lf2" gradientUnits="userSpaceOnUse" x1="110.0" y1="326.0" x2="178.0" y2="360.0">
+      <stop offset="0" stop-color="#fff" stop-opacity="0"/>
+      <stop offset="0.22" stop-color="#fff"/>
+      <stop offset="0.78" stop-color="#fff"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="1"/>
+    </linearGradient>
+    <linearGradient id="lf3" gradientUnits="userSpaceOnUse" x1="127.0" y1="384.0" x2="208.0" y2="309.0">
+      <stop offset="0" stop-color="#fff" stop-opacity="1"/>
+      <stop offset="0.22" stop-color="#fff"/>
+      <stop offset="0.78" stop-color="#fff"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="1"/>
+    </linearGradient>
+    <linearGradient id="lf4" gradientUnits="userSpaceOnUse" x1="149.0" y1="285.0" x2="149.0" y2="350.0">
+      <stop offset="0" stop-color="#fff" stop-opacity="1"/>
+      <stop offset="0.22" stop-color="#fff"/>
+      <stop offset="0.78" stop-color="#fff"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="lf5" gradientUnits="userSpaceOnUse" x1="303.0" y1="288.0" x2="422.0" y2="412.0">
+      <stop offset="0" stop-color="#fff" stop-opacity="1"/>
+      <stop offset="0.22" stop-color="#fff"/>
+      <stop offset="0.78" stop-color="#fff"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="lf6" gradientUnits="userSpaceOnUse" x1="332.0" y1="300.0" x2="437.0" y2="227.0">
+      <stop offset="0" stop-color="#fff" stop-opacity="1"/>
+      <stop offset="0.22" stop-color="#fff"/>
+      <stop offset="0.78" stop-color="#fff"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="1"/>
+    </linearGradient>
+    <linearGradient id="lf7" gradientUnits="userSpaceOnUse" x1="328.0" y1="331.0" x2="451.0" y2="262.0">
+      <stop offset="0" stop-color="#fff" stop-opacity="1"/>
+      <stop offset="0.22" stop-color="#fff"/>
+      <stop offset="0.78" stop-color="#fff"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="1"/>
+    </linearGradient>
+    <linearGradient id="lf8" gradientUnits="userSpaceOnUse" x1="391.0" y1="219.0" x2="391.0" y2="325.0">
+      <stop offset="0" stop-color="#fff" stop-opacity="1"/>
+      <stop offset="0.22" stop-color="#fff"/>
+      <stop offset="0.78" stop-color="#fff"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="lf9" gradientUnits="userSpaceOnUse" x1="334.0" y1="340.0" x2="358.0" y2="404.0">
+      <stop offset="0" stop-color="#fff" stop-opacity="1"/>
+      <stop offset="0.22" stop-color="#fff"/>
+      <stop offset="0.78" stop-color="#fff"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="1"/>
+    </linearGradient>
+    <mask id="lineFade" maskUnits="userSpaceOnUse" x="0" y="0" width="1195" height="896">
+      <path d="M58,415 L100,371 C107,363 115,360 126,360 C137,360 146,362 160,367" fill="none" stroke="url(#lf0)" stroke-width="4" stroke-linecap="round"/>
+      <path d="M109,398 L109,322 C109,309 118,302 135,298 C155,293 180,288 230,282" fill="none" stroke="url(#lf1)" stroke-width="4" stroke-linecap="round"/>
+      <path d="M110,326 C113,340 130,352 178,360" fill="none" stroke="url(#lf2)" stroke-width="4" stroke-linecap="round"/>
+      <path d="M127,384 L128,336 C128,323 136,317 150,316 L208,309" fill="none" stroke="url(#lf3)" stroke-width="4" stroke-linecap="round"/>
+      <path d="M149,285 L149,350" fill="none" stroke="url(#lf4)" stroke-width="4" stroke-linecap="round"/>
+      <path d="M303,288 C330,263 355,242 377,242 C402,242 422,262 422,292 L422,412" fill="none" stroke="url(#lf5)" stroke-width="4" stroke-linecap="round"/>
+      <path d="M332,300 C360,297 381,288 392,277 L437,227" fill="none" stroke="url(#lf6)" stroke-width="4" stroke-linecap="round"/>
+      <path d="M328,331 C352,327 369,325 383,322 C396,318 406,307 416,296 L451,262" fill="none" stroke="url(#lf7)" stroke-width="4" stroke-linecap="round"/>
+      <path d="M391,219 L391,325" fill="none" stroke="url(#lf8)" stroke-width="4" stroke-linecap="round"/>
+      <path d="M334,340 C382,330 418,333 428,346 C432,352 433,365 431,375 C428,390 405,400 358,404" fill="none" stroke="url(#lf9)" stroke-width="4" stroke-linecap="round"/>
+    </mask>
+    <mask id="crossMask" maskUnits="userSpaceOnUse" x="0" y="0" width="1195" height="896">
+      <circle cx="109.0" cy="363.7" r="8" fill="url(#blob)"/>
+      <circle cx="127.5" cy="360.0" r="8" fill="url(#blob)"/>
+      <circle cx="149.0" cy="294.7" r="8" fill="url(#blob)"/>
+      <circle cx="127.8" cy="345.6" r="8" fill="url(#blob)"/>
+      <circle cx="149.0" cy="316.1" r="8" fill="url(#blob)"/>
+      <circle cx="410.0" cy="257.0" r="8" fill="url(#blob)"/>
+      <circle cx="422.0" cy="290.2" r="8" fill="url(#blob)"/>
+      <circle cx="391.0" cy="244.2" r="8" fill="url(#blob)"/>
+      <circle cx="422.0" cy="341.0" r="8" fill="url(#blob)"/>
+      <circle cx="422.0" cy="387.7" r="8" fill="url(#blob)"/>
+      <circle cx="391.0" cy="278.0" r="8" fill="url(#blob)"/>
+      <circle cx="391.0" cy="318.5" r="8" fill="url(#blob)"/>
+    </mask>
+    <mask id="greenMask" maskUnits="userSpaceOnUse" x="0" y="0" width="1195" height="896">
+      <circle cx="127" cy="384" r="22" fill="url(#blob)"/>
+      <circle cx="432" cy="354" r="26" fill="url(#blob)"/>
+      <circle cx="402" cy="252" r="30" fill="url(#blob)"/>
+      <circle cx="128" cy="318" r="16" fill="url(#blob)"/>
+      <circle cx="110" cy="312" r="14" fill="url(#blob)"/>
+    </mask>
+  </defs>
+  <g id="hero-symbol" inkscape:label="Cairn symbol" inkscape:groupmode="layer">
+    <ellipse id="ground-shadow" cx="268" cy="497" rx="138" ry="9" fill="#1b2026" opacity="0.5" filter="url(#blur6)" inkscape:label="Ground shadow"/>
+    <ellipse cx="400" cy="250" rx="45" ry="28" fill="#8ff0b4" opacity="0.18" filter="url(#soft8)" inkscape:label="Ambient glow"/>
+    <ellipse cx="428" cy="335" rx="20" ry="30" fill="#8ff0b4" opacity="0.15" filter="url(#soft8)" inkscape:label="Ambient glow"/>
+    <!-- data path lines (behind the stones); ends fade via mask, crossings darken, glow zones tint green -->
+    <g id="data-lines" mask="url(#lineFade)" fill="none" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" inkscape:label="Data lines">
+      <g id="lines-base" inkscape:label="Lines (base)">
+        <path id="line-left-low" d="M58,415 L100,371 C107,363 115,360 126,360 C137,360 146,362 160,367" stroke="#8d9199"/>
+        <path id="line-left-loop" d="M109,398 L109,322 C109,309 118,302 135,298 C155,293 180,288 230,282" stroke="#8d9199"/>
+        <path id="line-left-faint" d="M110,326 C113,340 130,352 178,360" stroke="#b4b8be"/>
+        <path id="line-left-green" d="M127,384 L128,336 C128,323 136,317 150,316 L208,309" stroke="#8d9199"/>
+        <path id="line-left-stem" d="M149,285 L149,350" stroke="#8d9199"/>
+        <path id="line-right-loop" d="M303,288 C330,263 355,242 377,242 C402,242 422,262 422,292 L422,412" stroke="#94989f"/>
+        <path id="line-right-arrow1" d="M332,300 C360,297 381,288 392,277 L437,227" stroke="#8a9295"/>
+        <path id="line-right-arrow2" d="M328,331 C352,327 369,325 383,322 C396,318 406,307 416,296 L451,262" stroke="#8d9199"/>
+        <path id="line-right-stem" d="M391,219 L391,325" stroke="#8d9199"/>
+        <path id="line-right-green" d="M334,340 C382,330 418,333 428,346 C432,352 433,365 431,375 C428,390 405,400 358,404" stroke="#adb2b8"/>
+      </g>
+      <g id="lines-cross-shade" mask="url(#crossMask)" stroke="#62666e" stroke-width="1.9" opacity="0.75" inkscape:label="Lines (crossing shade)">
+        <path d="M58,415 L100,371 C107,363 115,360 126,360 C137,360 146,362 160,367"/>
+        <path d="M109,398 L109,322 C109,309 118,302 135,298 C155,293 180,288 230,282"/>
+        <path d="M110,326 C113,340 130,352 178,360"/>
+        <path d="M127,384 L128,336 C128,323 136,317 150,316 L208,309"/>
+        <path d="M149,285 L149,350"/>
+        <path d="M303,288 C330,263 355,242 377,242 C402,242 422,262 422,292 L422,412"/>
+        <path d="M332,300 C360,297 381,288 392,277 L437,227"/>
+        <path d="M328,331 C352,327 369,325 383,322 C396,318 406,307 416,296 L451,262"/>
+        <path d="M391,219 L391,325"/>
+        <path d="M334,340 C382,330 418,333 428,346 C432,352 433,365 431,375 C428,390 405,400 358,404"/>
+      </g>
+      <g id="lines-green-tint" mask="url(#greenMask)" stroke="#8fd6ac" stroke-width="1.8" opacity="0.6" inkscape:label="Lines (green tint)">
+        <path d="M58,415 L100,371 C107,363 115,360 126,360 C137,360 146,362 160,367"/>
+        <path d="M109,398 L109,322 C109,309 118,302 135,298 C155,293 180,288 230,282"/>
+        <path d="M110,326 C113,340 130,352 178,360"/>
+        <path d="M127,384 L128,336 C128,323 136,317 150,316 L208,309"/>
+        <path d="M149,285 L149,350"/>
+        <path d="M303,288 C330,263 355,242 377,242 C402,242 422,262 422,292 L422,412"/>
+        <path d="M332,300 C360,297 381,288 392,277 L437,227"/>
+        <path d="M328,331 C352,327 369,325 383,322 C396,318 406,307 416,296 L451,262"/>
+        <path d="M391,219 L391,325"/>
+        <path d="M334,340 C382,330 418,333 428,346 C432,352 433,365 431,375 C428,390 405,400 358,404"/>
+      </g>
+    </g>
+    <path d="M444.0,220.0 L440.1,233.1 L438.1,225.9 L430.9,223.9 Z" fill="#8a9295"/>
+    <path d="M457.0,256.0 L453.1,269.1 L451.1,261.9 L443.9,259.9 Z" fill="#8d9199"/>
+    <g id="line-nodes" inkscape:label="Line nodes">
+      <circle cx="58" cy="415" r="7" fill="#e3e6e9"/>
+      <circle cx="58" cy="415" r="3.2" fill="#b8bcc2"/>
+      <circle cx="109" cy="346" r="6.5" fill="#dcdfe3"/>
+      <circle cx="109" cy="346" r="6.5" fill="none" stroke="#a9adb4" stroke-width="1.2"/>
+      <circle cx="109" cy="346" r="3.2" fill="#6f737b"/>
+      <circle cx="149" cy="285" r="6.5" fill="#dcdfe3"/>
+      <circle cx="149" cy="285" r="6.5" fill="none" stroke="#a9adb4" stroke-width="1.2"/>
+      <circle cx="149" cy="285" r="3.2" fill="#6f737b"/>
+      <circle cx="391" cy="219" r="6.5" fill="#dcdfe3"/>
+      <circle cx="391" cy="219" r="6.5" fill="none" stroke="#a9adb4" stroke-width="1.2"/>
+      <circle cx="391" cy="219" r="3.2" fill="#6f737b"/>
+      <circle cx="127" cy="384" r="9" fill="url(#dotGlow)"/>
+      <circle cx="127" cy="384" r="3" fill="#a9e3c0"/>
+      <circle cx="432" cy="354" r="11" fill="url(#dotGlow)"/>
+      <circle cx="432" cy="354" r="3" fill="#a9e3c0"/>
+      <circle cx="80" cy="370" r="1.8" fill="#a8e6c0"/>
+      <circle cx="127" cy="401" r="2.2" fill="#8d9199"/>
+      <circle cx="111" cy="413" r="1.8" fill="#a8e6c0"/>
+      <circle cx="92" cy="420" r="2.5" fill="#8d9199"/>
+      <circle cx="86" cy="386" r="1.6" fill="#8d9199"/>
+      <circle cx="180" cy="288" r="2.1" fill="#6f737b"/>
+      <circle cx="364" cy="238" r="1.7" fill="#a8e6c0"/>
+      <circle cx="415" cy="288" r="1.8" fill="#a8e6c0"/>
+      <circle cx="439" cy="295" r="1.8" fill="#a8e6c0"/>
+      <circle cx="393" cy="323" r="1.8" fill="#a8e6c0"/>
+      <circle cx="414" cy="336" r="1.6" fill="#a8e6c0"/>
+    </g>
+    <g id="cairnMark" inkscape:label="Cairn stones">
+      <g id="stone1" inkscape:label="Stone 1 (dark)">
+        <g clip-path="url(#clip1)" id="stone1-body" inkscape:label="Body (clipped to silhouette)">
+          <use xlink:href="#b1" fill="url(#sRight1)" inkscape:label="Base silhouette"/>
+          <path d="M120,370 L430,370 L394,402 L258,428 L138,406 Z" fill="url(#sTop1)" inkscape:label="Top face"/>
+          <path d="M95,438 L125,395 L138,406 L258,428 Z" fill="url(#sLeft1)" inkscape:label="Left face"/>
+          <path d="M95,438 L258,428 L352,489 L270,525 L100,505 Z" fill="url(#sBot1)" inkscape:label="Bottom face"/>
+          <path d="M258,428 L394,402 L445,430 L430,490 L352,489 Z" fill="url(#sRight1)" inkscape:label="Right face"/>
+          <g mask="url(#dotMask1)" inkscape:label="Dot texture (masked)">
+            <path d="M258,428 L394,402 L445,430 L430,490 L352,489 Z" fill="url(#dotsS)"/>
+          </g>
+          <use xlink:href="#b1" fill="url(#underShade)" inkscape:label="Under-shade"/>
+          <use xlink:href="#b2" transform="translate(0,4)" fill="#0b0c0f" opacity="0.5" filter="url(#soft3)" inkscape:label="Cast shadow from next stone"/>
+          <path d="M258,428 L352,489" fill="none" stroke="#ffffff" stroke-width="0.9" stroke-opacity="0.16" inkscape:label="Crease line"/>
+          <path d="M114,437 L258,428" fill="none" stroke="#7d8a92" stroke-width="0.9" stroke-opacity="0.35" inkscape:label="Crease line"/>
+        </g>
+        <use xlink:href="#b1" fill="none" stroke="url(#rim1)" stroke-width="1.3" inkscape:label="Rim"/>
+        <path d="M139,406 L258,428 L393,402" fill="none" stroke="#8ff0b4" stroke-width="4" opacity="0.2" filter="url(#soft3)"/>
+        <ellipse cx="258" cy="428" rx="28" ry="8" fill="url(#greenFlare)" opacity="0.5"/>
+        <path d="M139,406 L258,428 L393,402" fill="none" stroke="#a9d9c0" stroke-width="1.2" stroke-linejoin="round" stroke-opacity="0.6" inkscape:label="Edge highlight"/>
+      </g>
+      <g id="stone2" inkscape:label="Stone 2 (purple)">
+        <g clip-path="url(#clip2)" id="stone2-body" inkscape:label="Body (clipped to silhouette)">
+          <use xlink:href="#b2" fill="url(#sRight2)" inkscape:label="Base silhouette"/>
+          <path d="M170,316 L360,316 L345,335 L264,348 L180,341 Z" fill="url(#sTop2)" inkscape:label="Top face"/>
+          <path d="M180,341 L264,348 L345,335 L352,337 L266,386 L150,368 Z" fill="url(#sSlope2)" inkscape:label="Slope"/>
+          <path d="M135,368 L266,386 L318,416 L262,446 L150,421 Z" fill="url(#sLeft2)" inkscape:label="Left face"/>
+          <path d="M266,386 L352,337 L400,356 L395,411 L318,416 Z" fill="url(#sRight2)" inkscape:label="Right face"/>
+          <g mask="url(#dotMask2)" inkscape:label="Dot texture (masked)">
+            <path d="M266,386 L352,337 L400,356 L395,411 L318,416 Z" fill="url(#dotsS)"/>
+          </g>
+          <use xlink:href="#b2" fill="url(#underShade)" inkscape:label="Under-shade"/>
+          <use xlink:href="#b3" transform="translate(0,4)" fill="#0b0c0f" opacity="0.5" filter="url(#soft3)" inkscape:label="Cast shadow from next stone"/>
+          <ellipse cx="266" cy="386" rx="40" ry="12" fill="url(#sheen)" opacity="0.4" inkscape:label="Sheen"/>
+          <path d="M181,341 L264,348 L344,335" fill="none" stroke="#2c2834" stroke-width="1.1" stroke-opacity="0.45" inkscape:label="Crease line"/>
+          <path d="M266,386 L318,416" fill="none" stroke="#ffffff" stroke-width="0.9" stroke-opacity="0.16" inkscape:label="Crease line"/>
+        </g>
+        <use xlink:href="#b2" fill="none" stroke="url(#rim2)" stroke-width="1.3" inkscape:label="Rim"/>
+        <path d="M151,368 L266,386 L350,337" fill="none" stroke="#c4bdd0" stroke-width="1.2" stroke-linejoin="round" stroke-opacity="0.6" inkscape:label="Edge highlight"/>
+      </g>
+      <g id="stone3" inkscape:label="Stone 3 (purple)">
+        <g clip-path="url(#clip3)" id="stone3-body" inkscape:label="Body (clipped to silhouette)">
+          <use xlink:href="#b3" fill="url(#sRight3)" inkscape:label="Base silhouette"/>
+          <path d="M200,262 L340,262 L332,280 L276,292 L206,283 Z" fill="url(#sTop3)" inkscape:label="Top face"/>
+          <path d="M206,283 L276,292 L332,280 L340,284 L278,306 L180,307 Z" fill="url(#sSlope3)" inkscape:label="Slope"/>
+          <path d="M165,307 L278,306 L318,336 L275,362 L185,347 Z" fill="url(#sLeft3)" inkscape:label="Left face"/>
+          <path d="M278,306 L340,284 L370,304 L358,347 L318,336 Z" fill="url(#sRight3)" inkscape:label="Right face"/>
+          <g mask="url(#dotMask3)" inkscape:label="Dot texture (masked)">
+            <path d="M278,306 L340,284 L370,304 L358,347 L318,336 Z" fill="url(#dotsS)"/>
+          </g>
+          <use xlink:href="#b3" fill="url(#underShade)" inkscape:label="Under-shade"/>
+          <use xlink:href="#b4" transform="translate(0,4)" fill="#0b0c0f" opacity="0.5" filter="url(#soft3)" inkscape:label="Cast shadow from next stone"/>
+          <ellipse cx="278" cy="306" rx="40" ry="12" fill="url(#sheen)" opacity="0.4" inkscape:label="Sheen"/>
+          <path d="M207,283 L276,292 L331,281" fill="none" stroke="#2c2834" stroke-width="1.1" stroke-opacity="0.45" inkscape:label="Crease line"/>
+          <path d="M278,306 L318,336" fill="none" stroke="#ffffff" stroke-width="0.9" stroke-opacity="0.16" inkscape:label="Crease line"/>
+        </g>
+        <use xlink:href="#b3" fill="none" stroke="url(#rim3)" stroke-width="1.3" inkscape:label="Rim"/>
+        <path d="M181,307 L278,306 L339,284" fill="none" stroke="#c4bdd0" stroke-width="1.2" stroke-linejoin="round" stroke-opacity="0.6" inkscape:label="Edge highlight"/>
+      </g>
+      <ellipse cx="271" cy="253" rx="75" ry="50" fill="url(#glow)" filter="url(#soft8)" inkscape:label="Mark glow"/>
+      <g id="stone4" inkscape:label="Stone 4 (green)">
+        <g clip-path="url(#clip4)" id="stone4-body" inkscape:label="Body (clipped to silhouette)">
+          <use xlink:href="#b4" fill="url(#gRight)" inkscape:label="Base silhouette"/>
+          <path d="M205,264 L236,237 L272,215 L306,227 L308,236 L285,261 Z" fill="url(#gTop)" inkscape:label="Top face"/>
+          <path d="M205,264 L285,261 L278,305 L215,300 Z" fill="url(#gLeft)" inkscape:label="Left face"/>
+          <path d="M285,261 L308,236 L338,260 L322,305 L278,305 Z" fill="url(#gRight)" inkscape:label="Right face"/>
+          <g mask="url(#dotMask4)" inkscape:label="Dot texture (masked)">
+            <path d="M285,261 L308,236 L338,260 L322,305 L278,305 Z" fill="url(#dotsS)"/>
+          </g>
+          <use xlink:href="#b4" fill="url(#underShade)" inkscape:label="Under-shade"/>
+        </g>
+        <use xlink:href="#b4" fill="none" stroke="url(#rim4)" stroke-width="1.3" inkscape:label="Rim"/>
+        <path d="M307,235 L285,261 L277,287" fill="none" stroke="#e8fff1" stroke-width="1.2" stroke-linejoin="round" stroke-opacity="0.6" inkscape:label="Edge highlight"/>
+      </g>
+    </g>
+  </g>
+</svg>

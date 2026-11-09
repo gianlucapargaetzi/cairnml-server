@@ -11,7 +11,6 @@ from apiserver.apimodels.metadata import AddOrUpdateMetadata, DeleteMetadata, Me
 from apiserver.apimodels.queues import (
     AddOrUpdateMetadataRequest,
     GetAllRequest,
-    CreateRequest,
     DeleteMetadataRequest,
     DeleteRequest,
     GetByIdRequest,
