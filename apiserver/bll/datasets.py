@@ -25,19 +25,11 @@ from apiserver.database.model.project import Project
 from apiserver.database.model.share import Share
 from apiserver.database.model.user_access import UserAccess
 from apiserver.idp import git_credentials as store
-from apiserver.idp.github import GitHubApp, GitHubError, PublicReader, RepoNotAccessible, TokenReader, public_repository
+from apiserver.idp.github import GitHubApp, GitHubError, PublicReader, RepoNotAccessible, public_repository
 from apiserver.idp.github_check import repo_of
 
 NO_ACCESS = "no_access"
 OK = "ok"
-NO_GITHUB_READ = "no GitHub read access to {repo}: link a GitHub token in your settings"
-
-
-class NoGitHubRead(Exception):
-    """The user may not read an App-discovered repository on GitHub, so is given no token for it and no row for it (R70).
-    The message is the reason the user is shown."""
-
-
 # --- Rules on plain values
 
 def credential_state(dataset: dict, credential_ids: set) -> tuple:
@@ -68,11 +60,8 @@ def _api_url() -> str:
 
 
 def _reader(entry, secret: str):
-    """The client that reads with this access: the App, or the token."""
-    api = entry.api_url or _api_url()
-    if entry.kind == "app":
-        return GitHubApp(entry.app_id, secret, api)
-    return TokenReader(secret, api)
+    """The client that reads with this access: its GitHub App."""
+    return GitHubApp(entry.app_id, secret, entry.api_url or _api_url())
 
 
 def _can_read(reader, repo: str) -> bool:
@@ -209,35 +198,17 @@ def require_action(company: str, user: str, is_admin: bool, dataset: Dataset, ac
     access.require(company, user, is_admin, resource_type, resource_id, _project_roots(company, user), action)
 
 
-def require_app_read(company: str, user: str, is_admin: bool, repo: str) -> None:
-    """Raises NoGitHubRead unless the user may read an App-discovered repository on GitHub (R70): an admin and the owner
-    of the App credential always may (R71); any other user needs a token of their own that GitHub lets read it."""
-    app = UserAccess.objects(company=company, scope="company", kind="app").order_by("created").first()
-    if app is None or is_admin or user == app.user:
-        return
-    if not user_access.github_read_on(company, user, repo):
-        raise NoGitHubRead(NO_GITHUB_READ.format(repo=repo))
-
-
-def require_app_read_for_job(company: str, user: Optional[str], repo: str) -> None:
-    """require_app_read for a job, which reads as the user who queued it. The job's user decides, not the agent's owner."""
-    queued_by = User.objects(id=user).only("role").first() if user else None
-    is_admin = queued_by is not None and queued_by.role in access.ADMIN_ROLES
-    require_app_read(company, user or "", is_admin, repo)
-
-
 def _app_row_level(company: str, user: str, is_admin: bool, repo: str) -> Optional[str]:
     """The level the user holds on a repository the company's App finds and no record keeps: the rows list_visible shows
-    for it. The owner of the App credential, and admins, hold a collaborator level. Any other user holds read, and only
-    when GitHub lets the user's own token read the repository (R70); otherwise NoGitHubRead is raised. None when the App
-    does not list the repository, or the user is deactivated."""
+    for it. The company's App is the company's shared read access, so every active user holds read on what it finds, and
+    nothing more is asked of the user. The owner of the App credential, and admins, hold a collaborator level. None when
+    the App does not list the repository, or the user is deactivated."""
     app = UserAccess.objects(company=company, scope="company", kind="app").order_by("created").first()
     if app is None or not user_access.is_active(user):
         return None
     listed = {str(entry["repository"]).lower() for entry in dataset_cache.cached_list()["datasets"]}
     if repo.lower() not in listed:
         return None
-    require_app_read(company, user, is_admin, repo)
     return "collaborator" if is_admin or user == app.user else "read"
 
 
@@ -245,8 +216,7 @@ def held_on_repository(company: str, user: str, is_admin: bool, repo: str) -> tu
     """(level, resource type) the user holds on the dataset of this repository. The kept record decides when the user
     holds a level on it through its shares (bll/access). Otherwise the repository is the App's own, as list_visible
     shows it: the level comes from _app_row_level, but only when no record keeps the repository. A repository with a record
-    is never the App's own row, so the level is None when its record gives the user none. Raises NoGitHubRead when the
-    repository is the App's own and the user may not read it on GitHub."""
+    is never the App's own row, so the level is None when its record gives the user none."""
     dataset = kept_for_repository(company, repo)
     if dataset is not None:
         resource_type, resource_id = _gate_of(company, dataset)
@@ -317,12 +287,6 @@ def _check_visibility(visibility: str) -> None:
         raise errors.bad_request.ValidationError("the visibility is user, projects or Public")
 
 
-APP_ONLY_MESSAGE = (
-    "personal access tokens are no longer used for GitHub: add a GitHub App (your own, or the company's), and install it "
-    "on the repository"
-)
-
-
 # --- The credential a repository dataset is read with. The dataset stores the choice: no credential means the
 # repository is public, and a private one with no credential cannot be read.
 
@@ -342,7 +306,7 @@ def _credential_entry(company: str, user: str, credential: str, repo: str) -> tu
     if entry.scope != "company" and not user_access.is_active(user):
         raise errors.bad_request.ValidationError("your account is disabled: its credentials cannot be used")
     if entry.kind != "app":
-        raise errors.bad_request.ValidationError(f"{entry.label} is a personal token: {APP_ONLY_MESSAGE}")
+        raise errors.bad_request.ValidationError(f"{entry.label} is not a GitHub App: a dataset repository is read with one")
     secret = store.decrypt(entry.secret, store.key_material())
     if not _can_read(_reader(entry, secret), repo):
         raise errors.bad_request.ValidationError(f"the GitHub App {entry.label} is not installed on {repo}")
@@ -351,8 +315,7 @@ def _credential_entry(company: str, user: str, credential: str, repo: str) -> tu
 
 def token_for_person(company: str, user: str, dataset: Dataset, repo: str, write: bool, permissions: dict) -> dict:
     """The GitHub token a person's machine gets for a dataset repository: made with the credential the dataset is read
-    with. A public dataset has no credential and needs no token (the caller answers that before this). A personal token
-    reads only, because it cannot be limited to one repository. Refused with the reason otherwise."""
+    with. A public dataset has no credential and needs no token (the caller answers that before this). Refused with the reason otherwise."""
     if not dataset.credential:
         raise errors.bad_request.ValidationError(
             f"{repo} has no credential, so it is not readable here: its owner adds one with cairnml dataset add-credential")
@@ -365,7 +328,7 @@ def token_for_person(company: str, user: str, dataset: Dataset, repo: str, write
     if entry.scope != "company" and not user_access.is_active(user):
         raise errors.bad_request.ValidationError("your account is disabled: its credentials cannot be used")
     if entry.kind != "app":
-        raise errors.bad_request.ValidationError(f"{entry.label} is a personal token: {APP_ONLY_MESSAGE}")
+        raise errors.bad_request.ValidationError(f"{entry.label} is not a GitHub App: a dataset repository is read with one")
     secret = store.decrypt(entry.secret, store.key_material())
     app = GitHubApp(entry.app_id, secret, entry.api_url or _api_url())
     try:
@@ -390,8 +353,8 @@ def job_can_read(company: str, enqueuer: Optional[str], task_root: Optional[str]
 
 def job_credential(company: str, dataset: Dataset, repo: str) -> tuple:
     """(entry, secret) of the credential a job reads a dataset with: the one the dataset holds, and no other. It must
-    still exist, be the company's or belong to the dataset's owner, and be able to read the repository's files for a job
-    (a personal token only when its owner is the dataset's owner). Refused with the reason otherwise."""
+    still exist, be the company's or belong to the dataset's owner, and be able to read the repository's files for a job.
+    Refused with the reason otherwise."""
     if not dataset.credential:
         raise errors.bad_request.ValidationError(
             f"{repo} has no credential, so jobs cannot read it: its owner adds one with cairnml dataset add-credential")
@@ -404,7 +367,7 @@ def job_credential(company: str, dataset: Dataset, repo: str) -> tuple:
     if entry.scope != "company" and not user_access.is_active(entry.user):
         raise errors.bad_request.ValidationError(f"the owner of the credential of {repo} is disabled")
     if entry.kind != "app":
-        raise errors.bad_request.ValidationError(f"{entry.label} is a personal token: {APP_ONLY_MESSAGE}")
+        raise errors.bad_request.ValidationError(f"{entry.label} is not a GitHub App: a dataset repository is read with one")
     return entry, store.decrypt(entry.secret, store.key_material())
 
 
@@ -663,23 +626,19 @@ def _visible_rows(company: str, user: str, is_admin: bool) -> list:
             rows.append({**dataset, "state": state, "state_message": message})
     known = {record.ref.lower() for record in records}
     app = UserAccess.objects(company=company, scope="company", kind="app").order_by("created").first()
-    if app is not None:
+    if app is not None and user_access.is_active(user):
         for entry in dataset_cache.cached_list()["datasets"]:
             if entry["repository"].lower() in known:
                 continue
             known.add(entry["repository"].lower())
-            # a private repository is not named to a user who cannot read it on GitHub (R70)
-            try:
-                require_app_read(company, user, is_admin, entry["repository"])
-            except NoGitHubRead:
-                continue
+            # what the company's App finds is the company's shared read access: every active user sees it
             rows.append(_app_row(entry["repository"], app))
     return rows
 
 
 def _app_row(repo: str, app: UserAccess) -> dict:
-    """A repository the company's App finds, with no record: owned by the owner of the App credential. Shown to the users
-    who may read it on GitHub (see require_app_read)."""
+    """A repository the company's App finds, with no record: owned by the owner of the App credential, and shown to every
+    user of the company (the App is the company's shared read access)."""
     return {
         "id": f"app:{repo.lower()}", "kind": "repo", "ref": repo, "name": repo.split("/", 1)[1], "owner": app.user,
         "visibility": "Public", "projects": [], "credential": app.id, "state": OK, "state_message": "",

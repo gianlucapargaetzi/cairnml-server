@@ -1,5 +1,4 @@
-"""Repository accesses that one user owns: a token for a host (and a path prefix), or a GitHub App with its ID, key and API
-address. Only the owner may see, check, change or delete an access; no call returns a secret. Other users use an access
+"""Repository accesses that one user owns: a GitHub App with its ID, key and API address. Only the owner may see, check, change or delete an access; no call returns a secret. Other users use an access
 only through the repository resolution in bll/repo_access, never by reading it.
 """
 
@@ -9,7 +8,6 @@ import uuid
 from datetime import datetime
 from typing import Optional, Sequence
 
-import requests
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
 from mongoengine import Q
 
@@ -21,11 +19,10 @@ from apiserver.database.model.share import Share
 from apiserver.database.model.user_access import UserAccess
 from apiserver.idp import git_credentials as store
 from apiserver.idp.audit import record as audit
-from apiserver.idp.github import GitHubApp, GitHubError, GitHubRefused, repository_readable_with
+from apiserver.idp.github import GitHubApp, GitHubError, GitHubRefused
 
 log = logging.getLogger(__name__)
 APP_ID_RE = re.compile(r"^\d{1,12}$")
-GITHUB_HOSTS = ("github.com", "www.github.com")
 MAX_LABEL = 80
 
 
@@ -76,27 +73,6 @@ def _owned(company: str, user: str, access_id: str) -> UserAccess:
         # the same answer for an access of someone else: its existence is not revealed
         raise errors.bad_request.ValidationError("no such access of yours")
     return entry
-
-
-def add_token(company: str, user: str, label: str, host: str, path: str, token: str) -> dict:
-    value = (token or "").strip()
-    if not value:
-        raise errors.bad_request.ValidationError("the token is empty")
-    host = store.normalise_host(host or "github.com")
-    if host == "github.com":
-        # GitHub is reached through a GitHub App only: a personal token is no longer accepted
-        raise errors.bad_request.ValidationError(
-            "personal access tokens are no longer accepted for GitHub: add a GitHub App (your own, or the company's), "
-            "and install it on the repository")
-    path = store.normalise_path(path or "")
-    now = datetime.utcnow()
-    entry = UserAccess(
-        id=uuid.uuid4().hex, company=company, user=user, kind="token", label=_label(label),
-        host=host, path=path, secret=store.encrypt(value, store.key_material()), created=now, updated=now,
-    )
-    entry.save()
-    audit(user, "user_access.added", company=company, kind="token", host=host, path=path)
-    return _view(entry)
 
 
 def add_app(company: str, user: str, label: str, app_id: str, api_url: str, key: str, scope: str = "user") -> dict:
@@ -151,7 +127,7 @@ def _row(entry: UserAccess, owner_name: str, can_edit: bool, source: str = "acce
     return {
         "id": entry.id,
         "source": source,
-        "type": "GitHub App" if entry.kind == "app" else "Token",
+        "type": "GitHub App" if entry.kind == "app" else "Git credential",
         "name": entry.label,
         "owner": owner_name,
         "scope": entry.scope or "user",
@@ -226,48 +202,12 @@ def check(company: str, user: str, access_id: str, is_admin: bool = False) -> di
             state, message = "refused", "GitHub did not accept this App ID or key any more"
         except GitHubError:
             state, message = "unreachable", "GitHub could not be reached"
-    elif entry.host in GITHUB_HOSTS:
-        state, message = ("ok", "GitHub accepts this token") if token_works(secret) else (
-            "refused", "GitHub refuses this token")
     else:
-        state, message = "unverified", "Not verified here: a token for this host is checked when a job uses it"
+        state, message = "unverified", "Not verified here: the credential for this host is checked when a job uses it"
     entry.last_checked, entry.last_state, entry.last_message, entry.updated = now, state, message, now
     entry.save()
     audit(user, "user_access.checked", company=company, kind=entry.kind, state=state)
     return _view(entry)
-
-
-def token_works(token: str, api_url: Optional[str] = None) -> bool:
-    api = (api_url or config.get("apiserver.idp.github_api_url")).rstrip("/")
-    try:
-        response = requests.get(f"{api}/user", timeout=15, headers={
-            "Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"})
-    except requests.RequestException:
-        return False
-    return response.status_code == 200
-
-
-def github_read_on(company: str, user: str, repo: str) -> bool:
-    """Whether the user's own GitHub token reads the repository on GitHub (R70). Only the user's own tokens for GitHub
-    count, and only those whose path prefix covers the repository. No token, a deactivated user, or a GitHub that cannot
-    answer means no. Nothing is kept: each call asks GitHub again."""
-    if not is_active(user):
-        return False
-    api = config.get("apiserver.idp.github_api_url")
-    for entry in UserAccess.objects(company=company, user=user, scope="user", kind="token").order_by("created"):
-        if entry.host not in GITHUB_HOSTS or not store.covers(entry.path, repo.lower()):
-            continue
-        try:
-            secret = _secret(entry)
-        except store.CredentialUnreadable:
-            log.warning("the GitHub token %s cannot be read with the current key", entry.id)
-            continue
-        try:
-            if repository_readable_with(api, secret, repo):
-                return True
-        except GitHubError:
-            log.warning("GitHub could not say whether the token %s reads %s", entry.id, repo)
-    return False
 
 
 def _secret(entry: UserAccess) -> str:
@@ -416,23 +356,18 @@ def _own_use(company: str, user: str, entry: UserAccess) -> bool:
 def usable_for(company: str, user: str, host: str, path: str, project: Optional[str] = None) -> list:
     """The accesses the user may use for a repository on this host and path, as (entry, secret) pairs.
 
-    Their own: every app, and every token whose host matches and whose path prefix covers the repository. Shared with
-    the project: the accesses a share gives to the project's root, while the granter and the user are still members and
+    Their own: every App. Shared with the project: the accesses a share gives to the project's root, while the granter and the user are still members and
     active. A disabled user has none."""
     if not user or not is_active(user):
         return []
     found = []
     for entry in UserAccess.objects(company=company, user=user, scope="user").order_by("created"):
-        if entry.kind == "token" and (entry.host != host or not store.covers(entry.path, path)):
-            continue
         if _own_use(company, user, entry):
             found.append(entry)
     root = root_project(company, project) if project else None
     if root:
         for entry, share in _project_grants_of(company, root):
             if entry.user == user:
-                continue
-            if entry.kind == "token" and (entry.host != host or not store.covers(entry.path, path)):
                 continue
             if _shared_use(company, user, share, root):
                 found.append(entry)
@@ -445,48 +380,9 @@ def usable_for(company: str, user: str, host: str, path: str, project: Optional[
     return pairs
 
 
-def granted_for_job(company: str, enqueuer: str, root: str, host: str, path: str) -> list:
-    """The accesses shared with a project that a job of the project may use, as (entry, secret) pairs: the grants whose
-    owner is still a member and active, while the user who queued the job is a member and active. The agent's owner is
-    not consulted: the access comes from the project. A token counts only for its host and path prefix."""
-    if not root or not is_active(enqueuer) or not is_member(company, root, enqueuer):
-        return []
-    pairs = []
-    for entry, share in _project_grants_of(company, root):
-        if entry.kind == "token" and (entry.host != host or not store.covers(entry.path, path)):
-            continue
-        if not _shared_use(company, enqueuer, share, root):
-            continue
-        try:
-            pairs.append((entry, _secret(entry)))
-        except store.CredentialUnreadable:
-            log.warning("the access %s cannot be read with the current key", entry.id)
-    return pairs
-
-
-def project_agent_tokens_allowed(company: str, root: str) -> bool:
-    """Whether a project lets its agents be given personal access tokens shared with it. On by default, with a warning
-    at the time of sharing; a project may turn it off."""
-    project = Project.objects(company=company, id=root).only("agent_tokens_allowed").first()
-    return project is None or project.agent_tokens_allowed is not False
-
-
-def set_agent_tokens_allowed(company: str, actor: str, project_id: str, allowed: bool, is_admin: bool) -> dict:
-    """The owner of the project (or an admin) decides whether its agents may be given personal tokens."""
-    root = root_project(company, project_id)
-    project = Project.objects(company=company, id=root).only("user").first() if root else None
-    if project is None:
-        raise errors.bad_request.ValidationError("no such project")
-    if not (is_admin or project.user == actor):
-        raise errors.bad_request.ValidationError("only the owner of the project may change this")
-    Project.objects(company=company, id=root).update_one(set__agent_tokens_allowed=bool(allowed))
-    audit(actor, "project.agent_tokens", company=company, project=root, allowed=bool(allowed))
-    return {"project": root, "agent_tokens_allowed": bool(allowed)}
-
-
 def usable_credentials(company: str, caller: str, root: str, can_manage: bool) -> list:
     """The accesses shared with a root project that the project may use now: the grants whose granter and the caller are
-    active members of the project (the same test as granted_for_job). Each row says who owns it and what it is valid for,
+    active members of the project (the same test as usable_for). Each row says who owns it and what it is valid for,
     in its host, path and label; the secret is never read. Removable when can_manage."""
     rows = []
     owners = {}

@@ -73,7 +73,7 @@ def clean_rows():
 
 
 def access(entry_id: str) -> SimpleNamespace:
-    return SimpleNamespace(id=entry_id, kind="token", api_url=None, app_id=None)
+    return SimpleNamespace(id=entry_id, kind="app", api_url=None, app_id=None)
 
 
 def make_access(entry_id: str, user: str = OWNER, scope: str = "user") -> None:
@@ -277,15 +277,15 @@ def test_app_discovered_repositories_belong_to_the_owner_of_the_app_credential(p
         rows = bll.list_visible(COMPANY, "admin1", False)
         found = [r for r in rows if r["ref"] == "acme/found"]
         assert found and found[0]["owner"] == "admin1" and found[0]["visibility"] == "Public"
-        # u3 has no GitHub token that reads the repository, so the App's repository is not named to u3 (R70)
-        assert [r for r in bll.list_visible(COMPANY, "u3", False) if r["ref"] == "acme/found"] == []
+        # the company's App is the company's shared read access: u3 sees it too, with nothing more asked
+        assert [r["ref"] for r in bll.list_visible(COMPANY, "u3", False) if r["ref"] == "acme/found"] == ["acme/found"]
     finally:
         app.delete()
 
 
 def add_access(access_id: str, owner: str) -> None:
     UserAccess.objects(company=COMPANY, id=access_id).delete()
-    UserAccess(id=access_id, company=COMPANY, user=owner, kind="token", label=access_id, host="github.com", path="",
+    UserAccess(id=access_id, company=COMPANY, user=owner, kind="app", label=access_id, host="github.com", path="",
                secret="x", scope="user", created=datetime.utcnow()).save()
 
 

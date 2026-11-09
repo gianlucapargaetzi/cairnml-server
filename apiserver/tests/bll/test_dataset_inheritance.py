@@ -52,7 +52,7 @@ def make_dataset(company, owner, ref, credential=None):
 
 
 def make_credential(company, user):
-    entry = UserAccess(id=uuid4().hex, company=company, user=user, kind="token", label="token", host="github.com",
+    entry = UserAccess(id=uuid4().hex, company=company, user=user, kind="app", label="token", host="github.com",
                        path="", secret="secret", created=datetime.utcnow())
     entry.save()
     return entry
@@ -212,3 +212,41 @@ def test_a_credential_shared_manually_by_its_owner_is_not_replaced(setup):
     assert share.inherited is False
     assert share.granted_by == "other"
     assert len(dataset_shares(company, dataset)) == 1
+
+
+def test_a_finished_run_records_each_repository_it_used_for_its_project(setup, monkeypatch):
+    from apiserver.bll import repositories
+    from apiserver.database.model.code_repository import CodeRepository, RepositoryBinding
+
+    monkeypatch.setattr(repositories, "is_private", lambda address: False)
+    company = setup
+    task = make_task(company, RUNNER, refs=[("cars", "acme/cars")])
+    try:
+        finish(task, TaskStatus.completed, RUNNER)
+        binding = RepositoryBinding.objects(company=company).first()
+        assert binding is not None and binding.project == ROOT
+        assert binding.owner == OWNER and binding.discovered_by == RUNNER
+        assert CodeRepository.objects(id=binding.source).first().key == "github.com/acme/cars"
+    finally:
+        CodeRepository.objects(company=company).delete()
+        RepositoryBinding.objects(company=company).delete()
+
+
+def test_a_repository_no_dataset_keeps_becomes_a_dataset_of_the_projects_owner(setup, monkeypatch):
+    from apiserver.bll import repositories
+    from apiserver.database.model.code_repository import CodeRepository, RepositoryBinding
+
+    monkeypatch.setattr(repositories, "is_private", lambda address: False)
+    company = setup
+    task = make_task(company, RUNNER, refs=[("cars", "acme/cars")])
+    try:
+        finish(task, TaskStatus.completed, RUNNER)
+        dataset = Dataset.objects(company=company, kind="repo", ref="acme/cars").first()
+        assert dataset is not None and dataset.owner == OWNER and dataset.visibility == "user"
+        shares = dataset_shares(company, dataset)
+        assert len(shares) == 1 and shares[0].inherited and shares[0].run_id == task.id
+        finish(make_task(company, RUNNER, refs=[("cars", "ACME/Cars")]), TaskStatus.completed, RUNNER)
+        assert Dataset.objects(company=company, kind="repo").count() == 1
+    finally:
+        CodeRepository.objects(company=company).delete()
+        RepositoryBinding.objects(company=company).delete()

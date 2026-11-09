@@ -227,7 +227,7 @@ class TestDatasetLevels:
 
 @pytest.fixture
 def credential(company, levels):
-    entry = UserAccess(id=f"cred-{uuid4().hex[:6]}", company=company, user=OWNER, kind="token", label="token",
+    entry = UserAccess(id=f"cred-{uuid4().hex[:6]}", company=company, user=OWNER, kind="app", label="token",
                        host="github.com", path="", secret="stored-secret-value", scope="user",
                        created=datetime.utcnow())
     entry.save()

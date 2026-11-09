@@ -67,7 +67,7 @@ def make_dataset(company, owner, ref, credential=None, kind="repo"):
     return dataset
 
 
-def make_credential(company, user, kind="token"):
+def make_credential(company, user, kind="app"):
     entry = UserAccess(id=uuid4().hex, company=company, user=user, kind=kind, label="token", host="github.com",
                        path="", secret="secret", created=datetime.utcnow(), app_id="1", api_url=None)
     entry.save()

@@ -69,7 +69,7 @@ def test_a_dataset_with_no_credential_gives_a_job_no_token(company):
 
 
 def test_a_credential_of_someone_else_than_the_dataset_owner_is_not_used_by_jobs(company):
-    credential_id = credential(company, "tok-u2", user="u2", kind="token", secret="ghp_u2")
+    credential_id = credential(company, "tok-u2", user="u2", kind="app", secret="ghp_u2")
     record = dataset(company, "u1", credential_id)
     with pytest.raises(errors.bad_request.ValidationError, match="belongs to someone else"):
         bll.job_credential(company, record, REPO)

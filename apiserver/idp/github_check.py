@@ -3,11 +3,10 @@ installed on it; a public repository needs neither the App nor a token. On anoth
 stored Git credentials (repo_visibility). Otherwise the job is refused at once with a clear message, instead of failing
 later in the agent when it tries to clone."""
 
-from urllib.parse import urlsplit
 
 from apiserver.apierrors import errors
-from apiserver.idp.github import GitHubError, RepoNotAccessible, public_commit_exists, public_repository
-from apiserver.idp.repo_visibility import check_readable
+from apiserver.idp import repo_address
+from apiserver.idp.github import GitHubError, public_repository
 from apiserver.idp.access_refused import AccessRefused
 
 # The section of the server README that sets the App up: every refusal below points to it.
@@ -15,68 +14,54 @@ GITHUB_APP_DOCS = "https://github.com/gianlucapargaetzi/cairnml-server/blob/main
 
 
 def repo_of(repository: str):
-    """'owner/name' for a github.com repository URL, or None for anything else."""
-    if not repository:
-        return None
-    value = repository.strip()
-    if "://" not in value and ":" in value.split("/", 1)[0]:
-        # git@host:owner/name, the form git prints for SSH
-        host_part, _, rest = value.partition(":")
-        value = f"https://{host_part.rsplit('@', 1)[-1]}/{rest.lstrip('/')}"
-    parts = urlsplit(value if "://" in value else f"https://{value}")
-    if parts.netloc.rsplit("@", 1)[-1].lower() not in ("github.com", "www.github.com"):
-        return None
-    path = parts.path.strip("/")
-    if path.endswith(".git"):
-        path = path[:-4]
-    return path if path.count("/") == 1 else None
+    """'owner/name' for a github.com repository address in any spelling (https, ssh, git, with or without .git, a user, a
+    port or www.), or None for anything else. The case is kept as written; apiserver.idp.repo_address has the identity."""
+    parsed = repo_address.parse(repository)
+    return parsed.path if parsed is not None and parsed.is_github else None
 
 
 def public_repo(repo: str) -> bool:
-    """True when GitHub shows the repository to anyone without a token. Needs no GitHub App."""
+    """True when GitHub shows the repository to anyone without a token (the REST API; still used by the dataset paths,
+    which move to the git discovery request in the datasets phase)."""
     return public_repository(_api_url(), repo)
 
 
-def check_submission(task, app) -> None:
-    """Raise a validation error when the task's GitHub repository or commit cannot be used.
+def check_submission(task) -> None:
+    """Raise when the task's repository cannot be read, or its commit does not exist.
 
-    A public repository is cloned without a token, so it needs neither the GitHub App nor an installation; its commit
-    is looked up without one. A private repository needs the App installed on it.
+    The repository is recorded for the task's project (bll/repositories.discover) and read as bll/repositories.resolve
+    says: the assigned credential alone, "None needed", or, with nothing assigned, without a credential when the host
+    allows it, else through the company's access. An unreachable repository refuses the job at once (it is listed
+    Failed with the reason). A host that could not be asked never refuses it. The commit is looked up only when an
+    authenticated read is used: asking GitHub for it without one would spend the anonymous rate limit.
     """
-    repo = repo_of(task.script.repository)
-    if repo is None:
-        if task.script.repository:
-            check_readable(task.company, task.script.repository)
+    from apiserver.bll import repositories
+
+    repository = task.script.repository
+    if not repository:
+        return
+    binding = repositories.discover(task.company, repository, task.user, getattr(task, "project", None))
+    if binding is None:
+        return
+    source = repositories.source_of(binding)
+    resolution = repositories.resolve(source, binding)
+    if resolution.state == repositories.UNREACHABLE:
+        hint = f" Steps: {GITHUB_APP_DOCS}" if source.host == "github.com" else ""
+        raise AccessRefused(f"{source.host}/{source.path}: {resolution.message}{hint}")
+    if source.host != "github.com":
         return
     commit = task.script.version_num
-    try:
-        public = public_repo(repo)
-    except GitHubError:
-        raise errors.bad_request.ValidationError("GitHub could not be reached to check the job") from None
-    if not public:
-        if app is None:
-            raise AccessRefused(
-                f"GitHub is not set up: the job's repository {repo} cannot be checked without the GitHub App. "
-                f"An admin adds the App in the web app (Settings > Access). "
-                f"Steps: {GITHUB_APP_DOCS}")
     if not commit:
-        raise errors.bad_request.ValidationError(f"no commit is recorded for {repo}: commit and push first")
-    if not public:
-        try:
-            app.installation_token(repo)
-        except RepoNotAccessible:
-            raise AccessRefused(
-                f"the GitHub App is not installed on {repo}: install it on this repository, with 'Only select "
-                f"repositories' (steps: {GITHUB_APP_DOCS})") from None
-        except GitHubError:
-            raise errors.bad_request.ValidationError("GitHub could not be reached to check the job") from None
+        raise errors.bad_request.ValidationError(f"no commit is recorded for {source.path}: commit and push first")
+    app = repositories.github_client(resolution, source)
+    if app is None:
+        return
     try:
-        found = app.commit_exists(repo, commit) if app is not None else public_commit_exists(
-            _api_url(), repo, commit)
+        found = app.commit_exists(source.path, commit)
     except GitHubError:
         raise errors.bad_request.ValidationError("GitHub could not be reached to check the job") from None
     if not found:
-        raise errors.bad_request.ValidationError(f"commit not found on GitHub: push it first ({repo}@{commit[:8]})")
+        raise errors.bad_request.ValidationError(f"commit not found on GitHub: push it first ({source.path}@{commit[:8]})")
 
 
 def _api_url() -> str:

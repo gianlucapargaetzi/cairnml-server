@@ -139,7 +139,7 @@ class PinnedAdapter(HTTPAdapter):
 def _fetch(address: str, scheme: str, port: int, path: str, name: str, host_header: str):
     """The discovery request, connected to the checked address. Redirects are not followed."""
     literal = f"[{address}]" if ":" in address else address
-    url = f"{scheme}://{literal}:{port}/{path}/info/refs?service=git-upload-pack"
+    url = f"{scheme}://{literal}:{port}/{path}.git/info/refs?service=git-upload-pack"
     session = requests.Session()
     session.trust_env = False
     session.mount(f"{scheme}://", PinnedAdapter(name, tls=scheme == "https"))

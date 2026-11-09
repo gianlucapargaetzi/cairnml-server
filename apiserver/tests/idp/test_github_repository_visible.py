@@ -4,7 +4,17 @@ from types import SimpleNamespace
 
 import pytest
 
-from apiserver.idp.github import GitHubError, TokenReader
+from apiserver.idp.github import GitHubApp, GitHubError
+
+
+class Reader(GitHubApp):
+    """A reader that sends one fixed header, so the lookup itself is what the tests exercise."""
+
+    def __init__(self, api_url):
+        super().__init__("0", "", api_url)
+
+    def _read_headers(self, repo):
+        return self._headers("token")
 
 
 def reader_answering(monkeypatch, status):
@@ -14,8 +24,8 @@ def reader_answering(monkeypatch, status):
         calls.append(url)
         return SimpleNamespace(status_code=status, json=lambda: {})
 
-    monkeypatch.setattr(TokenReader, "_send", send)
-    return TokenReader("token", "https://api.github.com"), calls
+    monkeypatch.setattr(Reader, "_send", send)
+    return Reader("https://api.github.com"), calls
 
 
 def test_an_empty_repository_is_visible_when_its_lookup_answers(monkeypatch):

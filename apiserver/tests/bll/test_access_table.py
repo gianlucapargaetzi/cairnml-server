@@ -111,7 +111,7 @@ def make_dataset(company, id_="d1", owner="owner1", kind="repo"):
 
 def make_credential(company, id_="a1", owner="owner1"):
     UserAccess(
-        id=id_, company=company, user=owner, kind="token", label=id_, host="github.com", path="", secret="x",
+        id=id_, company=company, user=owner, kind="app", label=id_, host="github.com", path="", secret="x",
         created=now(), updated=now(),
     ).save()
     return id_

@@ -1,5 +1,5 @@
 """A dataset is read with the credential it was added with, and no other. No credential means public; a private
-dataset with none cannot be read. A personal token reads only. Only the owner or an admin changes the credential, and the
+dataset with none cannot be read. Only the owner or an admin changes the credential, and the
 credential is the user's own or the company's."""
 from datetime import datetime
 from types import SimpleNamespace
@@ -100,10 +100,10 @@ def test_the_dataset_is_read_with_its_own_github_app_for_read_and_write(company,
     assert github.requests == [(REPO, READ), (REPO, WRITE)]
 
 
-def test_a_personal_token_is_refused_as_a_credential(company, github):
+def test_a_credential_that_is_not_a_github_app_is_refused(company, github):
     token_id = credential(company, "tok-u1", kind="token")
     dataset(company, "u1", token_id)
-    with pytest.raises(errors.bad_request.ValidationError, match="personal token"):
+    with pytest.raises(errors.bad_request.ValidationError, match="not a GitHub App"):
         ask(company, person("u1"), "read")
 
 
