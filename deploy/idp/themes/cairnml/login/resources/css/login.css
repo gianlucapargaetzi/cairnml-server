@@ -98,3 +98,9 @@ a:hover,
 #kc-header {
   margin-top: -17px;
 }
+
+/* Without a language selector the header's second grid column stays empty and squeezes long titles (the access request
+   "Grant Access to ..." wrapped at 314px). The title takes the whole card width instead. */
+.pf-v5-c-login__main-header:not(:has(.pf-v5-c-login__main-header-utilities)) {
+  grid-template-columns: 1fr;
+}
