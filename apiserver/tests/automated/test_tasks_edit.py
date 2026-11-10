@@ -123,6 +123,31 @@ class TestTasksEdit(TestService):
         self.assertEqual(new_task.execution.model_labels, {"test": 1})
         self.assertEqual(new_task.system_tags, ["test"])
 
+    def test_display_name(self):
+        task = self.new_task(name="training", display_name="lr 0.1, no dropout")
+        got = self.api.tasks.get_by_id(task=task).task
+        self.assertEqual(got.name, "training")
+        self.assertEqual(got.display_name, "lr 0.1, no dropout")
+
+        # editing the label never changes the task name
+        self.api.tasks.edit(task=task, display_name="lr 0.01")
+        got = self.api.tasks.get_by_id(task=task).task
+        self.assertEqual(got.name, "training")
+        self.assertEqual(got.display_name, "lr 0.01")
+
+        # the table search finds the label as well as the name
+        found = self.api.tasks.get_all_ex(display_name="lr 0\\.01", only_fields=["id"]).tasks
+        self.assertIn(task, [t.id for t in found])
+
+        # a clone starts without a label, so it shows the task name
+        clone = self._clone_task(task=task)
+        cloned = self.api.tasks.get_by_id(task=clone).task
+        self.assertEqual(cloned.name, "training")
+        self.assertFalse(cloned.get("display_name"))
+
+        with self.api.raises(ValidationError):
+            self.api.tasks.edit(task=task, display_name="x" * 201)
+
     def test_model_check_in_clone(self):
         model = self.new_model()
         task = self.new_task(execution=dict(model=model))

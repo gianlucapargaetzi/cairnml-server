@@ -33,7 +33,7 @@ def make_root(company, id_="root1", owner="owner1", visibility=ProjectVisibility
 
 
 def make_task(company, project, owner, id_="task1"):
-    task = Task(id=id_, company=company, user=owner, name="real-task-name", project=project, type="training", created=datetime.utcnow())
+    task = Task(id=id_, company=company, user=owner, name="real-task-name", display_name="real label", project=project, type="training", created=datetime.utcnow())
     task.save()
     return task
 
@@ -61,6 +61,7 @@ def test_get_queue_infos_redacts_a_hidden_tasks_name_from_a_stranger(company):
         company_id=company, query_dict={}, identity=identity(company, "stranger")
     )
     assert queue["entries"][0]["task"]["name"] is None
+    assert queue["entries"][0]["task"]["display_name"] is None
 
 
 @pytest.mark.needs_redis
@@ -73,3 +74,4 @@ def test_get_queue_infos_shows_the_name_to_a_member(company):
         company_id=company, query_dict={}, identity=identity(company, "u2")
     )
     assert queue["entries"][0]["task"]["name"] == "real-task-name"
+    assert queue["entries"][0]["task"]["display_name"] == "real label"

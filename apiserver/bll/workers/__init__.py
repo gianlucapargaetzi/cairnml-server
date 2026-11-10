@@ -15,6 +15,7 @@ from apiserver.apierrors import APIError
 from apiserver.apierrors.errors import bad_request, server_error
 from apiserver.apimodels.workers import (
     IdNameEntry,
+    NextTaskEntry,
     WorkerEntry,
     StatusReportRequest,
     WorkerResponseEntry,
@@ -350,7 +351,7 @@ class WorkerBLL:
             tasks_info = {
                 task.id: task
                 for task in Task.objects(id__in=task_ids).only(
-                    "name", "started", "last_iteration", "active_duration", "project"
+                    "name", "display_name", "started", "last_iteration", "active_duration", "project"
                 )
             }
 
@@ -375,8 +376,10 @@ class WorkerBLL:
                 task_id = nested_get(info, ("next_entry", "task"))
                 if task_id and task_visible(task_id):
                     task = tasks_info.get(task_id, None)
-                    entry.next_task = IdNameEntry(
-                        id=task_id, name=task.name if task else None
+                    entry.next_task = NextTaskEntry(
+                        id=task_id,
+                        name=task.name if task else None,
+                        display_name=task.display_name if task else None,
                     )
 
         for helper in helpers:
@@ -384,6 +387,7 @@ class WorkerBLL:
             if helper.task_id:
                 task: Task = tasks_info.get(helper.task_id, None)
                 if task:
+                    worker.task.display_name = task.display_name
                     worker.task.running_time = (task.active_duration or 0) * 1000
                     worker.task.last_iteration = task.last_iteration
 

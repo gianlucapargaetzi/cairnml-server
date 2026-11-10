@@ -279,13 +279,19 @@ class QueueBLL(object):
         """
         projection = query_dict.get("projection") or query_dict.get("only_fields")
         task_name = "entries.task.name"
+        task_display_name = "entries.task.display_name"
         workers_requested = False
         if not projection:
-            projection = Queue.get_extra_projection(task_name)
+            projection = [
+                *Queue.get_extra_projection(task_name),
+                *Queue.get_extra_projection(task_display_name),
+            ]
             workers_requested = True
         else:
-            if self._field_requested(projection, "entries") and task_name not in projection:
-                projection.append(task_name)
+            if self._field_requested(projection, "entries"):
+                for field in (task_name, task_display_name):
+                    if field not in projection:
+                        projection.append(field)
             if self._field_requested(projection, "workers"):
                 workers_requested = True
                 projection = [
@@ -335,6 +341,7 @@ class QueueBLL(object):
                         project = task_projects.get(task["id"])
                         if project and project not in visible:
                             task["name"] = None
+                            task["display_name"] = None
 
         if workers_requested:
             queue_workers = defaultdict(list)
