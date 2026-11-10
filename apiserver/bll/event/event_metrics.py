@@ -22,6 +22,7 @@ from apiserver.bll.event.event_common import (
 )
 from apiserver.bll.event.scalar_key import ScalarKey, ScalarKeyEnum
 from apiserver.bll.query import Builder as QueryBuilder
+from apiserver.bll.task.utils import task_label
 from apiserver.config_repo import config
 from apiserver.database.errors import translate_errors_context
 from apiserver.database.model.model import Model
@@ -171,7 +172,7 @@ class EventMetrics:
             )
 
         task_names = {
-            t.id: t.name for t in itertools.chain.from_iterable(companies.values())
+            t.id: task_label(t) for t in itertools.chain.from_iterable(companies.values())
         }
         res = defaultdict(lambda: defaultdict(dict))
         for task_id, task_data in task_metrics:

@@ -89,13 +89,18 @@ class WorkerEntry(Base, JsonSerializableMixin):
 
 
 class CurrentTaskEntry(IdNameEntry):
+    display_name = StringField()  # the label of the experiment, if it has one
     running_time = IntField()
     last_iteration = IntField()
 
 
+class NextTaskEntry(IdNameEntry):
+    display_name = StringField()  # the label of the experiment, if it has one
+
+
 class QueueEntry(IdNameEntry):
     display_name = StringField()
-    next_task = EmbeddedField(IdNameEntry)
+    next_task = EmbeddedField(NextTaskEntry)
     num_tasks = IntField()
 
 

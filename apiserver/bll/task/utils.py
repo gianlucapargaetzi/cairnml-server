@@ -124,6 +124,11 @@ def _publish_datasets(task) -> None:
         log.exception(f"sharing the datasets of task {task.id} failed")
 
 
+def task_label(entity) -> str:
+    """What an experiment is called on screen: its display name, otherwise its task name. Models have no display name"""
+    return getattr(entity, "display_name", None) or entity.name
+
+
 def validate_status_change(current_status, new_status):
     assert current_status in valid_statuses
     assert new_status in valid_statuses

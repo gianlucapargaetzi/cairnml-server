@@ -46,6 +46,7 @@ from apiserver.bll.event.event_bll import LOCKED_TASK_STATUSES
 from apiserver.bll.event.event_common import EventType, MetricVariants, TaskCompanies
 from apiserver.bll.event.events_iterator import Scroll
 from apiserver.bll.event.scalar_key import ScalarKeyEnum, ScalarKey
+from apiserver.bll.task.utils import task_label
 from apiserver.bll.model import ModelBLL
 from apiserver.bll.project.access import ProjectAccessBLL
 from apiserver.bll.task import TaskBLL
@@ -69,6 +70,8 @@ def _assert_task_or_model_exists(
     identity: Identity,
 ) -> Union[Sequence[Model], Sequence[Task]]:
     only = ("id", "name", "company", "company_origin", "project", "user")
+    if not model_events:
+        only += ("display_name",)
     if model_events:
         entities = model_bll.assert_exists(
             company_id, task_ids, allow_public=True, only=only
@@ -571,7 +574,7 @@ def _get_single_value_metrics_response(
     companies: TaskCompanies, value_metrics: Mapping[str, Sequence[dict]]
 ) -> Sequence[dict]:
     task_names = {
-        task.id: task.name for task in itertools.chain.from_iterable(companies.values())
+        task.id: task_label(task) for task in itertools.chain.from_iterable(companies.values())
     }
     return [
         {"task": task_id, "task_name": task_names.get(task_id), "values": values}
@@ -618,7 +621,7 @@ def get_multi_task_plots_v1_7(call, company_id, request: LegacyMultiTaskEventsRe
     )
 
     task_names = {
-        t.id: t.name for t in itertools.chain.from_iterable(companies.values())
+        t.id: task_label(t) for t in itertools.chain.from_iterable(companies.values())
     }
     return_events = _get_top_iter_unique_events_per_task(
         result.events, max_iters=iters, task_names=task_names
@@ -642,7 +645,7 @@ def _get_multitask_plots(
 ) -> Tuple[dict, int, str]:
     metrics = _get_metric_variants_from_request(request_metrics)
     task_names = {
-        t.id: t.name for t in itertools.chain.from_iterable(companies.values())
+        t.id: task_label(t) for t in itertools.chain.from_iterable(companies.values())
     }
     result = event_bll.get_task_events(
         company_id=list(companies),

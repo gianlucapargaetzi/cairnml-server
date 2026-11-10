@@ -532,6 +532,7 @@ def close(call: APICall, company_id, req_model: UpdateRequest):
 
 create_fields = {
     "name": None,
+    "display_name": None,
     "tags": list,
     "system_tags": list,
     "type": None,
@@ -555,6 +556,9 @@ dict_fields_paths = [("execution", "model_labels"), "container"]
 
 
 def prepare_for_save(call: APICall, fields: dict, previous_task: Task = None):
+    if "display_name" in fields:
+        # an empty label clears it, so that the task name is shown again
+        fields["display_name"] = (fields["display_name"] or "").strip() or None
     conform_tag_fields(call, fields, validate=True)
     params_prepare_for_save(fields, previous_task=previous_task)
     artifacts_prepare_for_save(fields)

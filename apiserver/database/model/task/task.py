@@ -209,6 +209,7 @@ class Task(AttributedDocument):
                 "name": "%s.task.main_text_index" % Database.backend,
                 "fields": [
                     "$name",
+                    "$display_name",
                     "$id",
                     "$comment",
                     "$report",
@@ -220,6 +221,7 @@ class Task(AttributedDocument):
                 "default_language": "english",
                 "weights": {
                     "name": 10,
+                    "display_name": 10,
                     "id": 10,
                     "comment": 10,
                     "report": 10,
@@ -247,13 +249,17 @@ class Task(AttributedDocument):
         ),
         range_fields=("created", "started", "active_duration", "last_metrics.*", "last_iteration"),
         datetime_fields=("status_changed", "last_update", "last_change"),
-        pattern_fields=("name", "comment", "report"),
+        pattern_fields=("name", "display_name", "comment", "report"),
         fields=("runtime.*",),
     )
 
     id = StringField(primary_key=True)
     name = StrippedStringField(
         required=True, user_set_allowed=True, sparse=False, min_length=3
+    )
+    # Label of this one experiment. Never part of the task's identity: the name stays the task name.
+    display_name = StrippedStringField(
+        user_set_allowed=True, sparse=False, min_length=1, max_length=200
     )
 
     type = StringField(required=True, choices=get_options(TaskType))
