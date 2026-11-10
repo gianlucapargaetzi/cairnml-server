@@ -74,6 +74,8 @@ from apiserver.apimodels.tasks import (
     UnarchiveManyRequest,
     ArchiveManyRequest,
     EditRuntimeRequest,
+    UpdateProgressRequest,
+    GetProgressRequest,
 )
 from apiserver.bll import repositories as repositories_bll
 from apiserver.bll.event import EventBLL
@@ -97,6 +99,8 @@ from apiserver.bll.task.artifacts import (
     Artifacts,
 )
 from apiserver.bll.task.hyperparams import HyperParams
+from apiserver.bll.task.progress import TaskProgress
+from apiserver.redis_manager import redman
 from apiserver.bll.task.param_utils import (
     params_prepare_for_save,
     params_unprepare_from_saved,
@@ -155,6 +159,7 @@ from apiserver.utilities.partial_version import PartialVersion
 task_fields = set(Task.get_fields())
 
 task_bll = TaskBLL()
+task_progress = TaskProgress(redman.connection("apiserver"))
 event_bll = EventBLL()
 queue_bll = QueueBLL()
 org_bll = OrgBLL()
@@ -1587,6 +1592,27 @@ def ping(call: APICall, company_id, request: PingRequest):
         user_id=call.identity.user,
         last_update=datetime.now(timezone.utc),
     )
+
+
+@endpoint("tasks.update_progress", min_version="2.23", request_data_model=UpdateProgressRequest)
+def update_progress(call: APICall, company_id, request: UpdateProgressRequest):
+    _assert_tasks_access(company_id, call.identity, [request.task], "write")
+    stored = task_progress.update(company_id, request.task, request.percent, request.bars)
+    if stored:
+        TaskBLL.edit_runtime(
+            company_id=company_id,
+            identity=call.identity,
+            task_id=request.task,
+            add_or_update=stored,
+            remove=[],
+            force=True,
+        )
+
+
+@endpoint("tasks.get_progress", min_version="2.23", request_data_model=GetProgressRequest)
+def get_progress(call: APICall, company_id, request: GetProgressRequest):
+    _assert_tasks_access(company_id, call.identity, request.tasks, "read")
+    call.result.data = {"progress": task_progress.get(company_id, request.tasks)}
 
 
 @endpoint("tasks.edit_runtime", request_data_model=EditRuntimeRequest)
