@@ -151,6 +151,15 @@ class PingRequest(TaskRequest):
     pass
 
 
+class UpdateProgressRequest(TaskRequest):
+    percent = IntField()  # 0-100; none while no bar has a known total
+    bars = ListField(items_types=[dict])  # the outermost bar and the bars inside it: label, n, total
+
+
+class GetProgressRequest(models.Base):
+    tasks = ListField(items_types=[str], required=True)
+
+
 class EditRuntimeRequest(TaskUpdateRequest):
     add_or_update = DictField()
     remove = ListField(items_types=[str])
