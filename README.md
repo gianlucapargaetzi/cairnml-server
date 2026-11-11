@@ -174,18 +174,16 @@ The server builds the addresses it hands out (sign-in redirects, the identity pr
 
 Clients and agents reach the stack on the first two ports, so the machine's firewall must let them in on `CAIRNML_HTTP_PORT` and `CAIRNML_STORAGE_PORT`. The storage console on `CAIRNML_STORAGE_CONSOLE_PORT` answers on loopback only.
 
-## Datasets
+## Repositories and datasets
 
-A dataset is a Git repository of its own, with a `dataset.yaml` at its root. Nothing registers it: the server finds it through the GitHub App, and a job reads it with the App's token.
+Code repositories, datasets (a Git repository with a `dataset.yaml`) and registries of datasets are one kind of record, listed in the web app under **Repositories & Datasets** and with `cairnml repository` in the terminal. One mechanism reads them all.
 
-- **Discovery.** The server lists the repositories the App is installed on, and keeps those whose default branch has a `dataset.yaml` at its root and whose footprint holds (`dataset.lock.json` against `data.dvc`). The Datasets page reads that list. A `DATASET.md` at the root of a dataset is shown as its description: it is text, cut to 20 KB, and never run.
-- **Cache.** The list is a snapshot the server keeps, so listing datasets never calls GitHub. It is rebuilt in full once an hour, by a background thread of each API server process; one process rebuilds at a time, through a Redis lock. A job token issued for a dataset refreshes that dataset's entry when it is missing or older than an hour, at most once in five minutes per dataset. The job's token itself is still checked against GitHub every time. The response's `refreshed_at` is the time of the last full rebuild, and each dataset's `checked_at` the time it was last checked, so a stale list shows. When GitHub cannot be reached or a check fails transiently, the last good entries are kept. A repository is removed from the list only when GitHub confirms it is no longer a dataset (no `dataset.yaml`), or the App is no longer installed on it.
-- **Access.** A job may get a read-only token for any repository the App is installed on that is a dataset. An installed repository without `dataset.yaml` is refused, with `<owner>/<repo> is not a CairnML dataset: dataset.yaml is missing on its default branch`.
-- **Public repositories.** A public repository gets no token, by any job: the server answers the token request with success and `token: null`, and the job clones the repository anonymously. It needs neither the App nor an installation.
+- **Listing.** A run lists the repositories it uses in its project; `cairnml repository add` or the **Add** button lists one before a run. A repository is **non-shared** (owned by the user who listed it, passed on through projects) or **shared** (owned by the admin, visible to every user, read with a company credential).
+- **Credentials.** A credential is assigned to a user, never to a project. How a run reads a repository: the project owner's assignment, then the runner's own (with a warning), then anonymously when the host allows it, then the company's GitHub App (with a warning). Otherwise the repository is not readable and the web app asks for an assignment before dispatch. The owner of the record is no fallback.
+- **Reading.** Whether a repository is public is decided with a git discovery request, never the host's REST API, so the 60-requests-an-hour limit never applies. The entries of a registry are read over git too (a shallow clone with the server's `git`), with the token of the credential that reads it when it is private. A GitHub App's token is still issued through the App's API.
+- **Public repositories.** A repository the host serves without a credential gets no token: the job clones it anonymously.
 
-To make a dataset readable and listed, install the App on its repository, with **Only select repositories** (see [GitHub App](#github-app)). Whoever can install the App on a repository decides which datasets the server reads.
-
-**Public registries (optional).** A registry is a public repository with one file per public dataset or adapter. An admin adds one in the web app (New dataset → Web dataset, Registries), where it is stored with the others; nothing is set in `deploy/.env`. A registry lists public datasets and adapters only: an entry with `source: repo` is ignored, because a dataset of our own lives in its own repository.
+**Registries.** A registry is a repository with one file per dataset (`datasets/<name>.yaml`, optionally `metadata/<name>.json`). It is read once when it is listed and again with **Refresh**; its entries have no credential of their own. A public registry such as `cairnml-dataset-registry` needs nothing set up; a private one needs a credential assigned to it first.
 
 ## Settings reference
 

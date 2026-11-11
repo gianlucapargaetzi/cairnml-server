@@ -188,3 +188,31 @@ def test_cloning_a_private_repository_nobody_can_read_is_refused_with_the_reason
     bll.add(world.company, "owner", False, URL, "dataset")
     with pytest.raises(errors.bad_request.ValidationError, match="no credential is assigned"):
         run(svc.clone, world, "owner", {"ref": "cars"})
+
+
+def test_a_registry_is_read_the_moment_it_is_listed(world, monkeypatch):
+    from apiserver.bll import repository_registry as registry_bll
+
+    class Reader:
+        def read_dir_texts(self, repo, directory):
+            return {"cars.yaml": "source: huggingface\nlink: hf://datasets/acme/cars\n"}
+
+        def read_file(self, repo, path, ref=None):
+            return None
+
+    monkeypatch.setattr(registry_bll, "reader_for", lambda repo, user, project_root=None: Reader())
+    world.private = False
+    answer = run(svc.add, world, "owner", {"url": "https://github.com/acme/registry", "role": "registry", "project": world.root})
+    assert [e["name"] for e in answer["repository"]["entries"]] == ["cars"]
+
+
+def test_a_registry_that_cannot_be_read_is_still_listed(world, monkeypatch):
+    from apiserver.bll import repository_registry as registry_bll
+
+    def refuse(repo, user, project_root=None):
+        raise errors.bad_request.ValidationError("nope")
+
+    monkeypatch.setattr(registry_bll, "reader_for", refuse)
+    world.private = False
+    answer = run(svc.add, world, "owner", {"url": "https://github.com/acme/registry", "role": "registry"})
+    assert answer["repository"]["state"] == "no_access" and answer["repository"]["entries"] == []

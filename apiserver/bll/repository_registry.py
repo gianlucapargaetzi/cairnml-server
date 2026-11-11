@@ -15,9 +15,9 @@ from typing import Optional
 
 from apiserver.apierrors import errors
 from apiserver.bll import repositories as repos
-from apiserver.config_repo import config
 from apiserver.database.model.repository import RegistryEntry, Repository
-from apiserver.idp.github import GitHubError, PublicReader
+from apiserver.idp.git_reader import GitReader
+from apiserver.idp.github import GitHubError
 
 log = logging.getLogger(__name__)
 
@@ -67,14 +67,15 @@ def list_entries(*, reader, registry: str) -> list:
     return entries
 
 
-def reader_for(repo: Repository, user: str, project_root: Optional[str] = None):
-    """The client that reads the registry for the user: without a credential when the host allows it, else with the credential
-    that reads it (see repositories.resolve)."""
+def reader_for(repo: Repository, user: str, project_root: Optional[str] = None) -> GitReader:
+    """The reader of the registry for the user, over git (never the host's REST API): without a credential when the host allows
+    it, else with a token of the credential that reads it (see repositories.resolve)."""
     resolution = repos.resolve(repo, project_root, user)
     if resolution.state in (repos.ANONYMOUS, repos.NONE_NEEDED, repos.UNKNOWN):
-        return PublicReader(config.get("apiserver.idp.github_api_url"))
-    if resolution.state in (repos.ASSIGNED, repos.COMPANY) and resolution.entry is not None:
-        return repos._app_of(resolution.entry)
+        return GitReader(repo.host)
+    if resolution.state in (repos.ASSIGNED, repos.COMPANY):
+        answer = repos.token_for(repo, resolution)
+        return GitReader(repo.host, answer.get("token"), answer.get("username"))
     raise errors.bad_request.ValidationError(f"the registry {repo.path} could not be read: {resolution.message}")
 
 
@@ -119,7 +120,10 @@ def read_entries(company: str, repo: Repository, user: str, project_root: Option
     try:
         reader = reader_for(repo, user, project_root)
         try:
-            listed = list_entries(reader=reader, registry=repo.path)
+            try:
+                listed = list_entries(reader=reader, registry=repo.path)
+            finally:
+                getattr(reader, "close", lambda: None)()
         except GitHubError as exc:
             raise errors.bad_request.ValidationError(f"the registry {repo.path} could not be read ({exc})") from None
     except errors.bad_request.ValidationError as refused:

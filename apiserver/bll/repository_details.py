@@ -15,7 +15,7 @@ from apiserver.apierrors import errors
 from apiserver.bll import repositories as repos
 from apiserver.bll import repository_registry as registry_bll
 from apiserver.database.model.repository import RegistryEntry, Repository
-from apiserver.idp.github import GitHubApp, GitHubError
+from apiserver.idp.github import GitHubError
 
 MANIFEST_FILE = "manifest.json"
 DESCRIPTION_FILE = "DATASET.md"
@@ -37,7 +37,7 @@ def empty_details(repository: str) -> dict:
     }
 
 
-def own_details(app: GitHubApp, repository: str, commit: Optional[str]) -> dict:
+def own_details(app, repository: str, commit: Optional[str]) -> dict:
     """A dataset of our own. commit selects a revision; the default is the head of the default branch. A repository with
     no commit yet is shown as empty (an empty repository has no branch to read)."""
     try:
@@ -99,4 +99,7 @@ def details(company: str, user: str, is_admin: bool, *, repository: Optional[str
     if repo is None or not repos.can_see(company, user, is_admin, repo):
         raise errors.bad_request.ValidationError(f"no such repository: {repository}")
     reader = registry_bll.reader_for(repo, user)
-    return own_details(reader, repo.path, commit)
+    try:
+        return own_details(reader, repo.path, commit)
+    finally:
+        getattr(reader, "close", lambda: None)()

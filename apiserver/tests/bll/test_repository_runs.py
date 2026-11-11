@@ -212,3 +212,24 @@ def test_the_badges_answer_for_the_repositories_that_are_recorded(world):
     rows = runs.resolve_many(world.company, ["https://github.com/acme/cars", "https://github.com/acme/unknown", "nonsense"],
                              "member", world.root)
     assert [r["url"] for r in rows] == ["https://github.com/acme/cars"] and rows[0]["state"] == bll.ANONYMOUS
+
+
+# --- the runs of a repository ---------------------------------------------------------------------------------------------------
+
+def test_the_runs_of_a_repository_are_those_of_its_projects_that_used_it(world):
+    task = make_task(world, "member", registries=[("cars", REGISTRY)])
+    runs.publish_run(task)
+    other = make_task(world, "owner", datasets=[("mine", "acme/ours")])
+    runs.publish_run(other)
+    registry_repo = Repository.objects(company=world.company, key="github.com/acme/registry").first()
+    found = runs.runs_of(world.company, "owner", False, registry_repo)
+    assert [(r["id"], r["as"], r["user_name"], r["project_name"]) for r in found] == [(task.id, "registry", "Member", "P")]
+    ours = Repository.objects(company=world.company, key="github.com/acme/ours").first()
+    assert [r["id"] for r in runs.runs_of(world.company, "member", False, ours)] == [other.id]
+
+
+def test_a_user_outside_the_project_sees_no_runs_of_it(world):
+    runs.publish_run(make_task(world, "owner", registries=[("cars", REGISTRY)]))
+    repo = Repository.objects(company=world.company, key="github.com/acme/registry").first()
+    assert runs.runs_of(world.company, "stranger", False, repo) == []
+    assert len(runs.runs_of(world.company, "stranger", True, repo)) == 1       # the admin sees every project's

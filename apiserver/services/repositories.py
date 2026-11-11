@@ -45,6 +45,13 @@ def add(call: APICall, company: str, _request):
                    credential=data.get("credential") or None, none_needed=bool(data.get("none_needed")))
     audit(call.identity.user, "repository.added", ip=client_address(call), company=company, repo=repo.key,
           role=data.get("role", ""), shared=bool(data.get("shared")))
+    if "registry" in repo.roles and repo.read_at is None:
+        try:  # its entries are there the moment it is listed; one that cannot be read yet says why on its record
+            repository_registry.read_entries(
+                company, repo, call.identity.user, user_access.root_project(company, data.get("project")))
+        except errors.bad_request.ValidationError:
+            pass
+        repo = bll.get(company, repo.id)
     call.result.data = {"repository": _view(call, company, repo)}
 
 
@@ -156,6 +163,12 @@ def _may_read(call: APICall, company: str, repo: Repository) -> bool:
     root = user_access.root_project(company, project) if project else None
     return bll.can_see(company, job_user, False, repo) or (
         root is not None and bll.access.find_share(company, "repository", repo.id, "projects", root) is not None)
+
+
+@endpoint("repositories.get_runs")
+def get_runs(call: APICall, company: str, _request):
+    repo = _repository_of(call, company, call.data or {})
+    call.result.data = {"runs": repository_runs.runs_of(company, call.identity.user, _is_admin(call), repo)}
 
 
 @endpoint("repositories.find")
