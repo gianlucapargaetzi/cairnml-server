@@ -26,6 +26,7 @@ from apiserver.database.model.share import Share
 from apiserver.database.model.user_access import UserAccess
 from apiserver.idp import git_credentials as store
 from apiserver.idp.github import GitHubApp, GitHubError, PublicReader, RepoNotAccessible, public_repository
+from apiserver.idp.repo_visibility import is_private
 from apiserver.idp.github_check import repo_of
 
 NO_ACCESS = "no_access"
@@ -430,11 +431,20 @@ def set_credential(company: str, user: str, repository: str, credential: Optiona
     return view(dataset)
 
 
+def _read_without_credential(repo: str) -> bool:
+    """True when the host clones the repository without a credential. Asked with the git discovery request, never with
+    the REST API, whose anonymous quota is small and runs out. Refused when the host cannot be asked."""
+    private = is_private(f"https://github.com/{repo}")
+    if private is None:
+        raise errors.bad_request.ValidationError("GitHub could not be reached")
+    return not private
+
+
 def check(company: str, user: str, dataset_id: str, is_admin: bool) -> dict:
     """Looks at a repository dataset again and stores what it finds: ok when its repository can be read with the
     credential it has (or without one, when it has none), no access with the reason otherwise. Anyone who may see the
-    dataset may ask; the answer is the same for everyone. GitHub that cannot be reached when the repository's visibility
-    is asked refuses the check and leaves the stored answer as it was."""
+    dataset may ask; the answer is the same for everyone. A host that cannot be asked about the repository's visibility
+    refuses the check and leaves the stored answer as it was."""
     access.refuse_inactive(user)
     dataset = _owned(company, dataset_id)
     if not _record_visible(company, user, is_admin, dataset, _project_roots(company, user)):
@@ -454,7 +464,7 @@ def check(company: str, user: str, dataset_id: str, is_admin: bool) -> dict:
             reads = _can_read(_reader(entry, secret), repo)
             state, message = (OK, "") if reads else (
                 NO_ACCESS, f"the GitHub App {entry.label} is not installed on {repo}: install it, or assign another credential")
-    elif _public(repo):
+    elif _read_without_credential(repo):
         state, message = OK, ""
     else:
         state, message = NO_ACCESS, f"{repo} is private and has no credential: assign one"

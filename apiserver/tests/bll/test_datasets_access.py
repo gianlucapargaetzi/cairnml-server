@@ -90,6 +90,11 @@ def github(monkeypatch):
     monkeypatch.setattr(bll.store, "key_material", lambda: "test-key")
     monkeypatch.setattr(bll.store, "decrypt", lambda token, material: token)
     monkeypatch.setattr(bll, "_public", lambda repo: repo in state.public)
+    # the git discovery request: True when private, False when public, None when the host cannot be asked
+    state.asked = []
+    state.cannot_ask = False
+    monkeypatch.setattr(bll, "is_private", lambda url: state.asked.append(url) or (
+        None if state.cannot_ask else url.removeprefix("https://github.com/") not in state.public))
     monkeypatch.setattr(bll, "_candidates", lambda company, user, root, url: [(a, f"secret-{a.id}") for a in state.candidates])
     monkeypatch.setattr(bll, "_reader", lambda entry, secret: SimpleNamespace(name=entry.id))
     monkeypatch.setattr(bll, "_can_read", lambda reader, repo: reader.name in state.readable.get(repo, ()))
@@ -337,6 +342,22 @@ def test_check_of_a_public_dataset_is_ok_and_renews_the_time(github):
     result = bll.check(COMPANY, "u1", dataset_id, False)
     assert result["state"] == "ok" and result["state_message"] == ""
     assert Dataset.objects(id=dataset_id).first().last_checked > datetime(2021, 1, 1)
+
+
+def test_check_asks_the_host_and_not_the_rest_api_whether_a_repository_is_public(github, monkeypatch):
+    # the REST API has a small anonymous quota, which a check must not spend
+    monkeypatch.setattr(bll, "_public", lambda repo: (_ for _ in ()).throw(AssertionError("the REST API was asked")))
+    github.public = {"acme/checked"}
+    assert bll.check(COMPANY, "u1", stored(), False)["state"] == "ok"
+    assert github.asked == ["https://github.com/acme/checked"]
+
+
+def test_check_is_refused_and_changes_nothing_when_the_host_cannot_be_asked(github):
+    github.cannot_ask = True
+    dataset_id = stored(state="no_access", message="old")
+    with pytest.raises(errors.bad_request.ValidationError, match="could not be reached"):
+        bll.check(COMPANY, "u1", dataset_id, False)
+    assert Dataset.objects(id=dataset_id).first().state_message == "old"
 
 
 def test_check_of_a_private_dataset_with_no_credential_says_to_assign_one(github):
