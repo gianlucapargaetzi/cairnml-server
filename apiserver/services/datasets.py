@@ -15,6 +15,7 @@ from apiserver.idp import github_check
 from apiserver.idp.audit import client_address, record as audit
 from apiserver.idp.github import GitHubError, RepoNotAccessible
 from apiserver.idp.github_check import build_from_config, public_repo, repo_of
+from apiserver.idp.repo_visibility import is_private
 from apiserver.service_repo import APICall, endpoint
 
 
@@ -209,7 +210,7 @@ def _refuse_token(call: APICall, company: str, user: str, repo: str, level: str,
 def git_token(call: APICall, company: str, _request):
     """A token for one dataset repository, for a person's machine, at the level the person holds on the dataset: read
     gives a read-only token, read_write a token that may write to that repository and no other. A person with no share
-    is refused as not found. A job or an agent is refused: the job scope and the agent allowlist refuse them for every
+    is refused as not found, except for reading a public repository, which needs no token and no record. A job or an agent is refused: the job scope and the agent allowlist refuse them for every
     endpoint outside their own, and this endpoint refuses them by token kind as well."""
     kind = getattr(call.auth, "token_kind", None)
     if kind in ("job", DeviceKind.agent):
@@ -220,13 +221,19 @@ def git_token(call: APICall, company: str, _request):
         raise errors.bad_request.ValidationError("level must be read or read_write")
     repo = repo_of(data.get("repository") or "")
     user = call.identity.user
+    write = action == "change_content"
     level, resource_type = access_bll.held_on_repository(company, user, _is_admin(call), repo) if repo else (None, "dataset")
     if level is None:
+        # No record of the repository and not the App's own: nothing is held on it. A public repository is still read by
+        # anyone, with no token and so without a record or an App (a registry of public datasets is read this way). A
+        # private one, or one the host cannot be asked about, is refused as not found, as is every write.
+        if repo and not write and is_private(f"https://github.com/{repo}") is False:
+            audit(user, "git_token.public", ip=client_address(call), company=company, repo=repo, level="none")
+            return {"token": None, "expires_at": None, "username": None}
         raise errors.bad_request.ValidationError("no such dataset")
     if not access.allows(level, action, resource_type):
         raise errors.forbidden.NoWritePermission(f"a {level} level does not allow {action} on this {resource_type}")
 
-    write = action == "change_content"
     if not write:
         try:
             public = public_repo(repo)

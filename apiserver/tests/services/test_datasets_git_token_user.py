@@ -53,6 +53,9 @@ def run(monkeypatch):
     monkeypatch.setattr(datasets, "audit", lambda actor, action, **detail: audits.append((actor, action, detail)))
     monkeypatch.setattr(datasets, "client_address", lambda call: "127.0.0.1")
     monkeypatch.setattr(datasets, "public_repo", lambda repo: False)
+    probed = []
+    state = {"private": True}  # what the git discovery request says about a repository nobody holds a level on
+    monkeypatch.setattr(datasets, "is_private", lambda repository: probed.append(repository) or state["private"])
 
     def run_as(call, repository=REPO_URL, level="read", app=None, held_level=None):
         call.data = {"repository": repository, "level": level}
@@ -65,6 +68,8 @@ def run(monkeypatch):
         except Exception as exc:  # the tests read the error themselves
             return exc, github, audits
 
+    run_as.probed = probed
+    run_as.state = state
     return run_as
 
 
@@ -157,3 +162,48 @@ def test_an_unknown_level_is_refused(run):
 
     assert isinstance(answer, errors.bad_request.ValidationError)
     assert github.requests == []
+
+
+def test_a_public_repository_nobody_holds_a_level_on_is_read_without_a_token(run):
+    # the dataset registry: public, with no record and not listed by the company's App
+    run.state["private"] = False
+    answer, github, audits = run(person(), level="read", held_level=None)
+
+    assert answer == {"token": None, "expires_at": None, "username": None}
+    assert github.requests == []
+    assert run.probed == ["https://github.com/acme/cars"]
+    assert [action for _actor, action, _detail in audits] == ["git_token.public"]
+
+
+def test_a_private_repository_nobody_holds_a_level_on_is_still_not_found(run):
+    run.state["private"] = True
+    answer, github, _ = run(person(), level="read", held_level=None)
+
+    assert isinstance(answer, errors.bad_request.ValidationError)
+    assert "no such dataset" in answer.msg
+    assert github.requests == []
+
+
+def test_a_repository_the_host_cannot_be_asked_about_is_not_found(run):
+    run.state["private"] = None
+    answer, _, _ = run(person(), level="read", held_level=None)
+
+    assert isinstance(answer, errors.bad_request.ValidationError)
+    assert "no such dataset" in answer.msg
+
+
+def test_a_public_repository_is_never_written_without_a_level(run):
+    run.state["private"] = False
+    answer, github, _ = run(person(), level="read_write", held_level=None)
+
+    assert isinstance(answer, errors.bad_request.ValidationError)
+    assert "no such dataset" in answer.msg
+    assert github.requests == []
+    assert run.probed == []
+
+
+def test_a_user_who_holds_a_level_is_not_probed(run):
+    answer, _, _ = run(person(), level="read", held_level="read")
+
+    assert answer["token"] == "tok-read"
+    assert run.probed == []
