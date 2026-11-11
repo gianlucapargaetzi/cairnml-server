@@ -37,21 +37,26 @@ SECTION = "Datasets"
 REPO_KEYS = ("repo", "external_repo")
 """ The parameters that name the repository of a recorded dataset """
 
+DATASET_KEY, REGISTRY_KEY = "repo", "external_repo"
+""" ``repo`` names the repository of a dataset of its own; ``external_repo`` names the registry an external dataset was read
+from. A registry is not a dataset: it lists them, so a run that used one makes (and shares) a registry with all its entries """
 
-def repos_of_hyperparams(hyperparams) -> Set[str]:
-    """The repositories a run recorded as the datasets it used, from its parameters."""
+
+def repos_of_hyperparams(hyperparams, keys=REPO_KEYS) -> Set[str]:
+    """The repositories a run recorded as the datasets it used, from its parameters: those of datasets of its own and the
+    registries of external ones, or only the ``keys`` asked for."""
     section = (hyperparams or {}).get(SECTION)
     repos = set()
     for name, item in (section or {}).items():
         alias, _, key = name.rpartition("/")
-        if alias and key in REPO_KEYS and item.value:
+        if alias and key in keys and item.value:
             repos.add(item.value)
     return repos
 
 
-def _recorded_repos(company: str, task_id: str) -> Set[str]:
+def _recorded_repos(company: str, task_id: str, keys=REPO_KEYS) -> Set[str]:
     run = Task.objects(company=company, id=task_id).only("hyperparams").first()
-    return repos_of_hyperparams(run.hyperparams) if run else set()
+    return repos_of_hyperparams(run.hyperparams, keys) if run else set()
 
 
 def address_of(value: str) -> str:
@@ -80,21 +85,52 @@ def _create_missing(company: str, address: str, owner: str, root: str, run: Task
                                inherited=True, run_id=run.id)
 
 
+def _ensure_registry(company: str, address: str, owner: str, root: str, run: Task) -> Optional[Dataset]:
+    """The registry a run read an external dataset from, kept as a registry with every dataset it lists (the ones the run
+    did not use too), owned by the project's owner like any record a run makes. An existing registry is left as it is.
+    A registry that cannot be read now is kept without entries and says why: its owner refreshes it later. Never raises."""
+    from apiserver.bll import datasets as datasets_bll
+
+    parsed = repo_address.parse(address)
+    if parsed is None or not parsed.is_github:
+        return None
+    existing = Dataset.objects(company=company, kind="registry", ref__iexact=parsed.path).first()
+    if existing is not None:
+        return existing
+    # an earlier version kept the registry as a dataset of its own: it is a registry, and holds that name
+    stale = Dataset.objects(company=company, kind="repo", ref__iexact=parsed.path).first()
+    if stale is not None:
+        access.drop_resource_shares(company, "dataset", stale.id, actor="")
+        stale.delete()
+    try:
+        added = datasets_bll.add_registry(company, owner, f"https://github.com/{parsed.path}", "user", root)
+        return Dataset.objects(company=company, id=added["id"]).first()
+    except Exception as exc:
+        log.warning("the registry %s could not be read for project %s: %s", parsed.path, root, exc)
+        reason = getattr(exc, "msg", None) or str(exc)
+    try:
+        return datasets_bll._save(company, owner, "registry", parsed.path, parsed.path.split("/")[-1], "user", None,
+                                  datasets_bll.NO_ACCESS, f"the registry could not be read: {reason}", datetime.utcnow())
+    except Exception:
+        log.warning("the registry %s could not be kept for project %s", parsed.path, root, exc_info=True)
+        return Dataset.objects(company=company, kind="registry", ref__iexact=parsed.path).first()
+
+
 def _datasets_of(company: str, task_id: str) -> List[Dataset]:
     found = {}
-    for repo in _recorded_repos(company, task_id):
+    for repo in _recorded_repos(company, task_id, (DATASET_KEY,)):
         for dataset in Dataset.objects(company=company, kind="repo", ref__iexact=repo).only("id", "credential"):
             found[dataset.id] = dataset
     return list(found.values())
 
 
-def _run_user_can_use(company: str, user: str, dataset_id: str) -> bool:
-    """True when the run's user holds a level on the dataset that allows its use, through the share records."""
+def _run_user_can_use(company: str, user: str, dataset_id: str, resource_type: str = "dataset") -> bool:
+    """True when the run's user holds a level on the dataset (or registry) that allows its use, through the share records."""
     found = User.objects(id=user, company=company).only("role").first()
     is_admin = found is not None and found.role in access.ADMIN_ROLES
     roots = {project["id"] for project in user_access.my_projects(company, user)}
-    level = access.level_of(company, user, is_admin, "dataset", dataset_id, roots)
-    return access.allows(level, "use", "dataset")
+    level = access.level_of(company, user, is_admin, resource_type, dataset_id, roots)
+    return access.allows(level, "use", resource_type)
 
 
 def _root_owner(company: str, root: str) -> Optional[str]:
@@ -147,7 +183,19 @@ def publish_run_datasets(task) -> List[Share]:
         return []
 
     created = []
-    for repo in sorted(_recorded_repos(run.company, run.id)):
+    for repo in sorted(_recorded_repos(run.company, run.id, (REGISTRY_KEY,))):
+        # the registry an external dataset was read from: kept as a registry with every dataset it lists, shared with the
+        # project; its repository is recorded for the project like code is, so its credential can be assigned there
+        address = address_of(repo)
+        repositories.discover_quietly(run.company, address, run.user, run.project)
+        registry = _ensure_registry(run.company, address, owner, root, run)
+        if registry is None:
+            continue
+        if access.find_share(run.company, "registry", registry.id, "projects", root) is None and (
+                registry.owner == owner or _run_user_can_use(run.company, run.user, registry.id, "registry")):
+            created.append(access.record_grant(run.company, owner, "registry", registry.id, "projects", root,
+                                               level="read", actor=run.user, inherited=True, run_id=run.id))
+    for repo in sorted(_recorded_repos(run.company, run.id, (DATASET_KEY,))):
         address = address_of(repo)
         # the repository is recorded for the project like code is (bll/repositories), and kept as a dataset when none is
         repositories.discover_quietly(run.company, address, run.user, run.project)

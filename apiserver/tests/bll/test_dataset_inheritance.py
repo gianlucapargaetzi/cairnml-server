@@ -250,3 +250,129 @@ def test_a_repository_no_dataset_keeps_becomes_a_dataset_of_the_projects_owner(s
     finally:
         CodeRepository.objects(company=company).delete()
         RepositoryBinding.objects(company=company).delete()
+
+
+# --- a registry an external dataset was read from ----------------------------------------------------------------------
+
+REGISTRY_URL = "https://github.com/acme/registry"
+
+
+def make_external_task(company, user, repo=REGISTRY_URL, status=TaskStatus.in_progress):
+    """A run that read the dataset cars from a registry: the SDK records the registry as <alias>/external_repo."""
+    hyperparams = {SECTION: {}}
+    for key, value in (("external_repo", repo), ("kind", "external"), ("name", "cars"), ("adapter", "cars")):
+        name = f"cars/{key}"
+        hyperparams[SECTION][name] = ParamsItem(section=SECTION, name=name, value=value, type="str")
+    task = Task(id=uuid4().hex, company=company, user=user, name="train", type="training", created=datetime.utcnow(),
+                started=datetime.utcnow(), status=status, project=ROOT, hyperparams=hyperparams)
+    task.save()
+    return task
+
+
+@pytest.fixture
+def registry_world(setup, monkeypatch):
+    """GitHub replaced: adding a registry stores it with two entries, as reading it would."""
+    from apiserver.bll import datasets as datasets_bll
+    from apiserver.bll import repositories
+    from apiserver.database.model.code_repository import CodeRepository, RepositoryBinding
+
+    company = setup
+    calls = []
+
+    def fake_add_registry(company_id, user, url, visibility="user", project=None):
+        calls.append((user, url, visibility, project))
+        registry = datasets_bll._save(company_id, user, "registry", "acme/registry", "registry", visibility, None, "ok", "",
+                                      datetime.utcnow())
+        for name in ("cars", "faces"):
+            Dataset(id=uuid4().hex, company=company_id, kind="registry_entry", ref=f"acme/registry/{name}", name=name,
+                    reference=name, owner=user, visibility=visibility, state="ok", created=datetime.utcnow()).save()
+        return datasets_bll.view(registry)
+
+    monkeypatch.setattr(datasets_bll, "add_registry", fake_add_registry)
+    monkeypatch.setattr(repositories, "is_private", lambda address: False)
+    yield company, calls
+    for model in (CodeRepository, RepositoryBinding):
+        model.objects(company=company).delete()
+
+
+def registry_shares(company, registry):
+    return list(Share.objects(company=company, resource_type="registry", resource_id=registry.id, scope="projects",
+                              project=ROOT))
+
+
+def test_a_run_that_used_an_external_dataset_keeps_its_registry_with_every_dataset_it_lists(registry_world):
+    company, calls = registry_world
+    task = make_external_task(company, RUNNER)
+    finish(task, TaskStatus.completed, RUNNER)
+    registry = Dataset.objects(company=company, kind="registry", ref="acme/registry").first()
+    assert registry is not None and registry.owner == OWNER
+    assert calls == [(OWNER, REGISTRY_URL, "user", ROOT)]       # read as the project's owner, for the project
+    entries = Dataset.objects(company=company, kind="registry_entry", ref__istartswith="acme/registry/")
+    assert sorted(entry.name for entry in entries) == ["cars", "faces"]    # the one it used and the one it did not
+    assert Dataset.objects(company=company, kind="repo").count() == 0     # not a dataset of its own
+    shares = registry_shares(company, registry)
+    assert len(shares) == 1 and shares[0].inherited and shares[0].run_id == task.id
+
+
+def test_the_registry_is_kept_the_first_moment_the_run_records_it_and_only_once(registry_world):
+    company, calls = registry_world
+    first = make_external_task(company, RUNNER)
+    dataset_inheritance.publish_run_datasets(first)             # what recording the parameters does, while the run runs
+    second = make_external_task(company, RUNNER, repo="acme/registry")
+    dataset_inheritance.publish_run_datasets(second)
+    assert len(calls) == 1
+    assert Dataset.objects(company=company, kind="registry").count() == 1
+    registry = Dataset.objects(company=company, kind="registry").first()
+    assert len(registry_shares(company, registry)) == 1
+
+
+def test_a_registry_an_earlier_version_kept_as_a_dataset_becomes_a_registry(registry_world):
+    company, _ = registry_world
+    stale = make_dataset(company, OWNER, "acme/registry")
+    finish(make_external_task(company, RUNNER), TaskStatus.completed, RUNNER)
+    assert Dataset.objects(company=company, id=stale.id).first() is None
+    assert Share.objects(company=company, resource_type="dataset", resource_id=stale.id).count() == 0
+    assert Dataset.objects(company=company, kind="registry", ref="acme/registry").count() == 1
+    assert Dataset.objects(company=company, kind="repo").count() == 0
+
+
+def test_a_registry_that_cannot_be_read_is_kept_without_entries_and_says_why(registry_world, monkeypatch):
+    from apiserver.apierrors import errors
+    from apiserver.bll import datasets as datasets_bll
+
+    company, _ = registry_world
+
+    def refuse(*args, **kwargs):
+        raise errors.bad_request.ValidationError("the registry acme/registry could not be read (rate limited)")
+
+    monkeypatch.setattr(datasets_bll, "add_registry", refuse)
+    finish(make_external_task(company, RUNNER), TaskStatus.completed, RUNNER)
+    registry = Dataset.objects(company=company, kind="registry", ref="acme/registry").first()
+    assert registry is not None and registry.state == "no_access"
+    assert "could not be read" in registry.state_message
+    assert Dataset.objects(company=company, kind="registry_entry").count() == 0
+    assert len(registry_shares(company, registry)) == 1
+
+
+def test_the_registry_repository_is_recorded_for_the_project_so_its_credential_can_be_assigned(registry_world):
+    from apiserver.database.model.code_repository import RepositoryBinding
+
+    company, _ = registry_world
+    finish(make_external_task(company, RUNNER), TaskStatus.completed, RUNNER)
+    binding = RepositoryBinding.objects(company=company).first()
+    assert binding is not None and binding.project == ROOT and binding.owner == OWNER
+
+
+def test_a_dataset_of_its_own_still_becomes_a_dataset_and_no_registry(setup, monkeypatch):
+    from apiserver.bll import repositories
+    from apiserver.database.model.code_repository import CodeRepository, RepositoryBinding
+
+    monkeypatch.setattr(repositories, "is_private", lambda address: False)
+    company = setup
+    try:
+        finish(make_task(company, RUNNER, refs=[("cars", "acme/cars")]), TaskStatus.completed, RUNNER)
+        assert Dataset.objects(company=company, kind="repo", ref="acme/cars").count() == 1
+        assert Dataset.objects(company=company, kind="registry").count() == 0
+    finally:
+        CodeRepository.objects(company=company).delete()
+        RepositoryBinding.objects(company=company).delete()
