@@ -27,13 +27,12 @@ class TestSubmissionCheck(TestCase):
     """The check asks the resolver (tested in tests/bll/test_repositories); here the resolver is faked."""
 
     def check(self, state=repositories.ASSIGNED, host="github.com", app=None, message="", **task_kwargs):
-        source = SimpleNamespace(host=host, path="acme/proj")
-        binding = SimpleNamespace(source="s1")
-        resolution = repositories.Resolution(state, None, message)
-        with mock.patch.object(repositories, "discover", return_value=binding), \
-                mock.patch.object(repositories, "source_of", return_value=source), \
+        repo = SimpleNamespace(host=host, path="acme/proj")
+        resolution = repositories.Resolution(state, SimpleNamespace(kind="app") if app is not None else None, message)
+        with mock.patch.object(repositories, "record_use_quietly", return_value=repo), \
                 mock.patch.object(repositories, "resolve", return_value=resolution), \
-                mock.patch.object(repositories, "github_client", return_value=app):
+                mock.patch.object(repositories, "_app_of", return_value=app), \
+                mock.patch("apiserver.bll.user_access.root_project", return_value="p1"):
             check_submission(task(**task_kwargs))
 
     def test_a_repository_read_with_a_credential_and_its_commit_is_accepted(self):
@@ -70,10 +69,10 @@ class TestSubmissionCheck(TestCase):
         self.assertNotIn(GITHUB_APP_DOCS, str(ctx.exception))
 
     def test_no_repository_is_not_checked(self):
-        with mock.patch.object(repositories, "discover") as discover:
+        with mock.patch.object(repositories, "record_use_quietly") as record:
             check_submission(task(repository=""))
-        discover.assert_not_called()
+        record.assert_not_called()
 
     def test_an_address_that_names_no_hosted_repository_is_not_checked(self):
-        with mock.patch.object(repositories, "discover", return_value=None):
+        with mock.patch.object(repositories, "record_use_quietly", return_value=None):
             check_submission(task(repository="/home/me/code"))

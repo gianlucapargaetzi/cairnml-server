@@ -35,27 +35,23 @@ def test_a_public_share_allows_only_read(level):
         make(scope="public", project="", level=level).validate()
 
 
-def test_a_read_write_share_on_a_registry_is_refused():
+def test_a_read_write_share_on_a_repository_is_refused():
     with pytest.raises(ValidationError):
-        make(resource_type="registry", level="read_write").validate()
+        make(resource_type="repository", level="read_write").validate()
 
 
-def test_a_read_write_share_on_a_credential_is_refused():
+@pytest.mark.parametrize("resource_type", ["dataset", "registry", "credential"])
+def test_the_resource_types_of_the_old_model_are_gone(resource_type):
     with pytest.raises(ValidationError):
-        make(resource_type="credential", level="read_write").validate()
+        make(resource_type=resource_type, level="read").validate()
 
 
 @pytest.mark.parametrize("resource_type, level", [
     ("queue", "read"),
     ("queue", "read_write"),
     ("queue", "collaborator"),
-    ("dataset", "read"),
-    ("dataset", "read_write"),
-    ("dataset", "collaborator"),
-    ("registry", "read"),
-    ("registry", "collaborator"),
-    ("credential", "read"),
-    ("credential", "collaborator"),
+    ("repository", "read"),
+    ("repository", "collaborator"),
 ])
 def test_the_levels_allowed_per_resource_type_are_accepted(resource_type, level):
     make(resource_type=resource_type, level=level).validate()
@@ -102,7 +98,7 @@ def test_a_user_share_must_not_carry_a_project():
         make(scope="user", project="p1", user="u2", level="read").validate()
 
 
-@pytest.mark.parametrize("resource_type", ["dataset", "registry", "credential"])
+@pytest.mark.parametrize("resource_type", ["repository"])
 def test_a_user_share_is_refused_for_any_type_but_queue(resource_type):
     with pytest.raises(ValidationError):
         make(scope="user", project="", user="u2", resource_type=resource_type, level="read").validate()

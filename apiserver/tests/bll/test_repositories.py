@@ -1,19 +1,19 @@
-"""A repository a run uses is recorded once per company, and once per root project, owned by the project's owner. One
-resolver says how it is read; the assignment rights follow the owner / first user / admin rule."""
-from datetime import datetime, timedelta
+"""Repositories: one record, one credential mechanism. Who sees what, who may assign what, and how one repository is read for a
+run in a project by a user (apiserver/bll/repositories)."""
+from datetime import datetime
 from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
 
 from apiserver.apierrors import errors
-from apiserver.bll import repositories as bll
-from apiserver.database.model.code_repository import CodeRepository, RepositoryBinding
-from apiserver.database.model.project import Project
+from apiserver.bll import access, repositories as bll
+from apiserver.database.model.auth import User
+from apiserver.database.model.project import Project, ProjectMember, ProjectRole
+from apiserver.database.model.repository import Assignment, RegistryEntry, Repository
 from apiserver.database.model.share import Share
 from apiserver.database.model.user_access import UserAccess
 from apiserver.idp import git_credentials as store
-from apiserver.idp.github import RepoNotAccessible
 from apiserver.tests.db import ensure_db
 
 ensure_db()
@@ -22,357 +22,455 @@ URL = "https://github.com/acme/proj"
 
 @pytest.fixture
 def world(monkeypatch):
-    company = f"c-repo-{uuid4().hex[:8]}"
-    probe = SimpleNamespace(private=False, calls=0)
+    """A company with an admin, a project owned by ``owner`` with ``member`` in it, and two outsiders. GitHub is replaced: the host
+    says a repository is private, a credential reads every repository, and the company has no App."""
+    company = f"c-rep-{uuid4().hex[:8]}"
+    now = datetime.utcnow()
+    for user, role in (("admin", "admin"), ("owner", "user"), ("member", "user"), ("other", "user"), ("stranger", "user")):
+        User(id=user, name=user.title(), company=company, role=role, created=now).save()
+    root = f"p-{company}"
+    Project(id=root, company=company, user="owner", name="P", basename="P", created=now, last_update=now,
+            members=[ProjectMember(user="member", role=ProjectRole.read, added=now, added_by="owner")]).save()
+    other_root = f"q-{company}"
+    Project(id=other_root, company=company, user="other", name="Q", basename="Q", created=now, last_update=now).save()
+    state = SimpleNamespace(company=company, root=root, other_root=other_root, private=True, reads=True, apps=[],
+                            reach=(None, "no company GitHub App is set up"), probes=[])
 
-    def fake_private(_repository):
-        probe.calls += 1
-        return probe.private
+    def fake_private(address):
+        state.probes.append(address)
+        return state.private
+
+    def fake_check_reads(entry, repo):
+        if not state.reads:
+            raise errors.bad_request.ValidationError(f"the GitHub App {entry.label} is not installed on {repo.path}")
 
     monkeypatch.setattr(store, "key_material", lambda: "test-key-material")
     monkeypatch.setattr(bll, "is_private", fake_private)
-    monkeypatch.setattr(bll, "_github_app", lambda: None)
-    monkeypatch.setattr(bll, "_check_reads", lambda entry, source: None)
-    monkeypatch.setattr(bll.user_access, "is_active", lambda user: user != "gone")
-    Project(id=f"p-{company}", company=company, name="p", basename="p", user="owner", created=datetime.utcnow(),
-            last_update=datetime.utcnow()).save()
-    yield SimpleNamespace(company=company, project=f"p-{company}", probe=probe, monkeypatch=monkeypatch)
-    for model in (CodeRepository, RepositoryBinding, UserAccess, Share, Project):
+    monkeypatch.setattr(bll, "_check_reads", fake_check_reads)
+    monkeypatch.setattr(bll, "_company_reach", lambda repo: state.reach)
+    monkeypatch.setattr(bll.user_access, "company_apps", lambda company=None: state.apps)
+    yield state
+    for model in (Repository, RegistryEntry, Assignment, Share, UserAccess, Project, User):
         model.objects(company=company).delete()
 
 
-def credential(world, entry_id, user, kind="app", scope="user", host="github.com", path=""):
-    UserAccess(id=entry_id, company=world.company, user=user, kind=kind, app_id="1", label=f"cred {entry_id}",
-               scope=scope, host=host, path=path, secret=store.encrypt("pem", store.key_material()),
-               created=datetime.utcnow()).save()
+def credential(world, entry_id, user, scope="user", kind="app"):
+    UserAccess(id=entry_id, company=world.company, user=user, kind=kind, app_id="1", label=f"cred {entry_id}", scope=scope,
+               host="github.com", path="", secret=store.encrypt("pem", store.key_material()), created=datetime.utcnow()).save()
     return entry_id
 
 
-def discover(world, url=URL, user="owner"):
-    return bll.discover(world.company, url, user, world.project)
+def use(world, user="owner", url=URL, role="code", project=None):
+    return bll.record_use(world.company, url, role, user, project or world.root)
 
 
-def test_every_spelling_of_an_address_is_one_source_and_one_binding(world):
+def rows(world, user, is_admin=False, project=None):
+    return bll.list_for(world.company, user, is_admin, project)
+
+
+# --- records ------------------------------------------------------------------------------------------------------------------
+
+def test_every_spelling_of_an_address_is_one_repository(world):
     spellings = [URL, URL + ".git", "git@github.com:Acme/Proj.git", "ssh://git@github.com/acme/proj", "GIT://GitHub.com/ACME/proj/"]
-    ids = {discover(world, spelling).id for spelling in spellings}
-    assert len(ids) == 1
-    assert CodeRepository.objects(company=world.company).count() == 1
-    assert RepositoryBinding.objects(company=world.company).count() == 1
+    ids = {use(world, url=spelling).id for spelling in spellings}
+    assert len(ids) == 1 and Repository.objects(company=world.company).count() == 1
 
 
-def test_a_binding_is_owned_by_the_projects_owner_and_found_by_the_first_user(world):
-    binding = discover(world, user="alice")
-    assert binding.owner == "owner" and binding.discovered_by == "alice" and binding.project == world.project
-    again = discover(world, user="bob")
-    assert again.id == binding.id and again.discovered_by == "alice"
+def test_a_run_makes_the_record_for_the_owner_of_its_project_and_lists_it_there(world):
+    repo = use(world, user="member")                  # a member who does not own the project ran it
+    assert repo.owner == "owner"
+    link = access.find_share(world.company, "repository", repo.id, "projects", world.root)
+    assert link is not None and link.inherited and link.granted_by == "owner"
 
 
-def test_a_second_project_gets_its_own_binding_of_the_same_source(world):
-    Project(id=f"q-{world.company}", company=world.company, name="q", basename="q", user="other", created=datetime.utcnow(),
-            last_update=datetime.utcnow()).save()
-    first = discover(world)
-    second = bll.discover(world.company, URL, "other", f"q-{world.company}")
-    assert first.source == second.source and first.id != second.id and second.owner == "other"
+def test_a_run_outside_any_project_makes_it_for_the_user(world):
+    repo = bll.record_use(world.company, URL, "code", "stranger", None)
+    assert repo.owner == "stranger" and bll.linked_projects(repo) == []
 
 
-def test_a_run_outside_a_project_binds_to_its_user(world):
-    binding = bll.discover(world.company, URL, "dana", None)
-    assert binding.scope == "user:dana" and binding.owner == "dana" and binding.project is None
+def test_a_repository_used_in_a_second_project_is_listed_there_and_not_made_again(world):
+    first = use(world)
+    second = use(world, user="other", project=world.other_root, role="dataset")
+    assert first.id == second.id and second.owner == "owner"
+    assert {s.project for s in bll.linked_projects(first)} == {world.root, world.other_root}
+    assert set(Repository.objects(id=first.id).first().roles) == {"code", "dataset"}
 
 
-def test_an_address_that_names_no_repository_makes_no_record(world):
-    assert bll.discover(world.company, "/home/me/code", "owner", world.project) is None
-    assert bll.discover(world.company, "", "owner", world.project) is None
+def test_an_address_that_names_no_hosted_repository_makes_no_record(world):
+    assert bll.record_use(world.company, "/home/me/code", "code", "owner", world.root) is None
+    assert Repository.objects(company=world.company).count() == 0
 
 
-def test_the_anonymous_answer_is_kept_and_asked_again_only_when_stale(world):
-    binding = discover(world)
-    source = CodeRepository.objects(id=binding.source).first()
-    assert bll.anonymous(source) is True and world.probe.calls == 1
-    assert bll.anonymous(source) is True and world.probe.calls == 1
-    later = datetime.utcnow() + bll.ANONYMOUS_YES_TTL + timedelta(seconds=1)
-    assert bll.anonymous(source, later) is True and world.probe.calls == 2
+def test_a_dataset_gets_a_unique_reference(world):
+    one = use(world, url="https://github.com/acme/cars", role="dataset")
+    two = use(world, url="https://github.com/other/cars", role="dataset")
+    assert one.reference == "cars" and two.reference == "other/cars"
+    assert bll.find_reference(world.company, "cars").id == one.id
+    assert bll.find_reference(world.company, "https://github.com/other/cars.git").id == two.id
 
 
-def test_an_unknown_answer_is_asked_again_after_a_minute_and_never_refuses(world):
-    world.probe.private = None
-    binding = discover(world)
-    source = CodeRepository.objects(id=binding.source).first()
-    assert bll.anonymous(source) is None and world.probe.calls == 2  # asked twice before saying unknown
-    assert bll.resolve(source, binding).state == bll.UNKNOWN
-    assert bll.token_for_job(source, binding)["token"] is None
-    assert world.probe.calls == 2
-    assert bll.anonymous(source, datetime.utcnow() + bll.ANONYMOUS_UNKNOWN_TTL + timedelta(seconds=1)) is None
-    assert world.probe.calls == 4
+# --- who sees what ------------------------------------------------------------------------------------------------------------
+
+def test_a_non_shared_repository_is_seen_by_its_owner_and_the_members_of_the_projects_it_is_listed_in(world):
+    use(world)
+    assert [r["name"] for r in rows(world, "owner")] == ["proj"]
+    assert [r["name"] for r in rows(world, "member")] == ["proj"]
+    assert rows(world, "stranger") == [] and rows(world, "other") == []
+    assert [r["name"] for r in rows(world, "admin", True)] == ["proj"]
 
 
-def test_unassigned_public_private_and_company_reached_repositories(world):
-    binding = discover(world)
-    source = CodeRepository.objects(id=binding.source).first()
-    assert bll.resolve(source, binding).state == bll.ANONYMOUS
-    world.probe.private = True
-    source.anonymous_checked = None
-    assert bll.resolve(source, binding).state == bll.UNREACHABLE
-    with pytest.raises(errors.bad_request.ValidationError, match="private"):
-        bll.token_for_job(source, binding)
-    world.monkeypatch.setattr(bll, "_company_reach", lambda src: ("Company Github App", None))
-    resolution = bll.resolve(source, binding)
-    assert resolution.state == bll.COMPANY and "Auto-Authenticated via Company Github App" in resolution.message
+def test_listing_it_in_another_project_shows_it_to_that_projects_members(world):
+    use(world)
+    use(world, user="other", project=world.other_root)
+    assert [r["name"] for r in rows(world, "other")] == ["proj"]
 
 
-def test_an_assigned_credential_is_the_only_one_used(world):
-    binding = discover(world)
-    source = CodeRepository.objects(id=binding.source).first()
-    world.probe.private = False  # public, yet the assignment decides
-    credential(world, "app-1", "owner")
-    bll.set_credential(world.company, "owner", False, binding.id, "app-1")
-    binding.reload()
-    resolution = bll.resolve(source, binding)
-    assert resolution.state == bll.ASSIGNED and resolution.entry.id == "app-1"
-    UserAccess.objects(id="app-1").delete()
-    gone = bll.resolve(source, binding)
-    assert gone.state == bll.UNREACHABLE and "no longer exists" in gone.message
-    world.monkeypatch.setattr(bll, "_company_reach", lambda src: ("Company Github App", None))
-    assert bll.resolve(source, binding).state == bll.UNREACHABLE  # no fallback
+def test_a_shared_repository_is_seen_by_every_user(world):
+    repo = bll.add(world.company, "admin", True, URL, "dataset", shared=True)
+    assert repo.owner == "admin" and bll.is_shared(repo)
+    for user in ("owner", "stranger", "other"):
+        assert [r["name"] for r in rows(world, user)] == ["proj"]
 
 
-def test_a_credential_of_a_disabled_owner_is_not_usable(world):
-    binding = discover(world)
-    source = CodeRepository.objects(id=binding.source).first()
-    credential(world, "app-gone", "gone")
-    binding.credential = "app-gone"
-    binding.save()
-    assert bll.resolve(source, binding).state == bll.UNREACHABLE
+def test_a_project_filter_lists_only_what_is_listed_in_the_project(world):
+    use(world)
+    use(world, url="https://github.com/acme/else", user="other", project=world.other_root)
+    assert [r["name"] for r in rows(world, "admin", True, world.root)] == ["proj"]
 
 
-def test_none_needed_needs_a_repository_the_host_clones_anonymously(world):
-    binding = discover(world)
-    bll.set_credential(world.company, "owner", False, binding.id, None, none_needed=True)
-    binding.reload()
-    assert binding.none_needed is True
-    world.probe.private = True
-    with pytest.raises(errors.bad_request.ValidationError, match="cannot be cloned without a credential"):
-        bll.set_credential(world.company, "owner", False, binding.id, None, none_needed=True)
+# --- adding, sharing, deleting ------------------------------------------------------------------------------------------------
+
+def test_a_user_adds_only_a_non_shared_repository(world):
+    repo = bll.add(world.company, "stranger", False, URL, "dataset")
+    assert repo.owner == "stranger" and not bll.is_shared(repo)
+    with pytest.raises(errors.forbidden.NoWritePermission):
+        bll.add(world.company, "stranger", False, "https://github.com/acme/x", "dataset", shared=True)
+    with pytest.raises(errors.bad_request.ValidationError):
+        bll.add(world.company, "stranger", False, "not a repository", "dataset")
+    with pytest.raises(errors.bad_request.ValidationError):
+        bll.add(world.company, "stranger", False, "https://github.com/acme/y", "scripts")
 
 
-def test_owner_chooses_any_own_credential_or_the_companys(world):
-    binding = discover(world)
+def test_adding_a_repository_somebody_else_lists_privately_is_refused(world):
+    use(world)
+    with pytest.raises(errors.bad_request.ValidationError, match="already listed"):
+        bll.add(world.company, "stranger", False, URL, "dataset")
+
+
+def test_adding_with_a_project_lists_it_there_for_a_member_only(world):
+    repo = bll.add(world.company, "member", False, URL, "code", project_id=world.root)
+    assert bll.linked_projects(repo)
+    with pytest.raises(errors.forbidden.NoWritePermission):
+        bll.add(world.company, "stranger", False, "https://github.com/acme/z", "code", project_id=world.root)
+
+
+def test_the_owner_makes_a_repository_shared_and_ownership_moves_to_the_admin(world):
     credential(world, "mine", "owner")
-    credential(world, "theirs", "alice")
-    credential(world, "corp", "admin", scope="company")
-    bll.set_credential(world.company, "owner", False, binding.id, "mine")
-    bll.set_credential(world.company, "owner", False, binding.id, "corp")
+    credential(world, "company", "admin", scope="company")
+    repo = use(world)
+    bll.assign(world.company, "owner", repo.id, "mine")
+    world.private = False
+    bll.assign(world.company, "member", repo.id, none_needed=True)
+    world.private = True
+    shared = bll.set_shared(world.company, "owner", False, repo.id, True)
+    assert shared.owner == "admin" and bll.is_shared(shared)
+    assert not Assignment.objects(repository=repo.id, user="owner")            # the former owner's assignment is dropped
+    assert Assignment.objects(repository=repo.id, user="member").first().none_needed   # none needed is kept
+
+
+def test_making_a_repository_shared_drops_assignments_of_credentials_that_are_not_the_companys(world):
+    credential(world, "member-own", "member")
+    credential(world, "company", "admin", scope="company")
+    repo = use(world)
+    bll.assign(world.company, "member", repo.id, "member-own")
+    bll.assign(world.company, "admin", repo.id, "company", is_admin=True)
+    bll.set_shared(world.company, "admin", True, repo.id, True)
+    assert not Assignment.objects(repository=repo.id, user="member")
+    assert Assignment.objects(repository=repo.id, user="admin").first().credential == "company"
+
+
+def test_only_the_owner_or_the_admin_makes_a_repository_shared_and_only_the_admin_undoes_it(world):
+    repo = use(world)
+    with pytest.raises(errors.forbidden.NoWritePermission):
+        bll.set_shared(world.company, "member", False, repo.id, True)
+    bll.set_shared(world.company, "owner", False, repo.id, True)
+    with pytest.raises(errors.forbidden.NoWritePermission):
+        bll.set_shared(world.company, "owner", False, repo.id, False)
+    assert not bll.is_shared(bll.set_shared(world.company, "admin", True, repo.id, False))
+
+
+def test_the_owner_and_the_admin_delete_a_repository_with_everything_on_it(world):
+    credential(world, "mine", "owner")
+    repo = use(world)
+    bll.assign(world.company, "owner", repo.id, "mine")
+    RegistryEntry(id="e1", company=world.company, registry=repo.id, name="cars").save()
+    with pytest.raises(errors.forbidden.NoWritePermission):
+        bll.delete(world.company, "member", False, repo.id)
+    with pytest.raises(errors.bad_request.ValidationError, match="no such repository"):
+        bll.delete(world.company, "stranger", False, repo.id)
+    bll.delete(world.company, "owner", False, repo.id)
+    assert Repository.objects(company=world.company).count() == 0 and Assignment.objects(company=world.company).count() == 0
+    assert RegistryEntry.objects(company=world.company).count() == 0 and Share.objects(company=world.company, resource_type="repository").count() == 0
+
+
+def test_unlinking_takes_a_repository_out_of_a_project_and_a_run_lists_it_again(world):
+    repo = use(world)
+    bll.unlink(world.company, "owner", False, repo.id, world.root)
+    assert rows(world, "member") == []
+    use(world)
+    assert [r["name"] for r in rows(world, "member")] == ["proj"]
+
+
+# --- assigning ----------------------------------------------------------------------------------------------------------------
+
+def test_a_user_assigns_their_own_credential_and_the_companys_and_never_somebody_elses(world):
+    credential(world, "mine", "member")
+    credential(world, "theirs", "owner")
+    credential(world, "company", "admin", scope="company")
+    repo = use(world)
+    assert bll.assign(world.company, "member", repo.id, "mine").credential == "mine"
+    assert bll.assign(world.company, "member", repo.id, "company").credential == "company"
     with pytest.raises(errors.bad_request.ValidationError, match="not one you may assign"):
-        bll.set_credential(world.company, "owner", False, binding.id, "theirs")
+        bll.assign(world.company, "member", repo.id, "theirs")
 
 
-def test_the_first_user_chooses_only_owner_credentials_shared_with_the_project(world):
-    binding = discover(world, user="alice")
-    credential(world, "owned-unshared", "owner")
-    credential(world, "owned-shared", "owner")
-    credential(world, "alices", "alice")
-    Share(id=uuid4().hex, company=world.company, resource_type="credential", resource_id="owned-shared",
-          scope="projects", project=world.project, level="read", granted_by="owner",
-          created=datetime.utcnow()).save()
-    source = CodeRepository.objects(id=binding.source).first()
-    rows = bll.assignable(world.company, binding, source, "alice", False)
-    assert [row["id"] for row in rows] == ["owned-shared"]
-    for refused in ("owned-unshared", "alices"):
-        with pytest.raises(errors.bad_request.ValidationError):
-            bll.set_credential(world.company, "alice", False, binding.id, refused)
-    bll.set_credential(world.company, "alice", False, binding.id, "owned-shared")
+def test_a_shared_repository_takes_company_credentials_only(world):
+    credential(world, "mine", "member")
+    credential(world, "company", "admin", scope="company")
+    repo = bll.add(world.company, "admin", True, URL, "dataset", shared=True)
+    with pytest.raises(errors.bad_request.ValidationError, match="company credential"):
+        bll.assign(world.company, "member", repo.id, "mine")
+    assert bll.assign(world.company, "member", repo.id, "company").credential == "company"
+    assert [c["id"] for c in bll.view(world.company, "member", False, repo)["credentials"]] == ["company"]
 
 
-def test_an_admin_chooses_only_company_credentials_and_none_needed(world):
-    binding = discover(world)
-    credential(world, "mine", "admin")
-    credential(world, "corp", "boss", scope="company")
-    with pytest.raises(errors.bad_request.ValidationError):
-        bll.set_credential(world.company, "admin", True, binding.id, "mine")
-    bll.set_credential(world.company, "admin", True, binding.id, "corp")
-    bll.set_credential(world.company, "admin", True, binding.id, None, none_needed=True)
+def test_a_credential_that_cannot_read_the_repository_is_refused(world):
+    credential(world, "mine", "member")
+    repo = use(world)
+    world.reads = False
+    with pytest.raises(errors.bad_request.ValidationError, match="not installed"):
+        bll.assign(world.company, "member", repo.id, "mine")
+    assert Assignment.objects(company=world.company).count() == 0
 
 
-def test_anyone_else_assigns_nothing(world):
-    binding = discover(world)
-    with pytest.raises(errors.forbidden.NoWritePermission):
-        bll.set_credential(world.company, "stranger", False, binding.id, None, none_needed=True)
+def test_none_needed_needs_a_repository_the_host_clones_without_a_credential(world):
+    repo = use(world)
+    with pytest.raises(errors.bad_request.ValidationError, match="cannot be cloned"):
+        bll.assign(world.company, "member", repo.id, none_needed=True)
+    world.private = False
+    assert bll.assign(world.company, "member", repo.id, none_needed=True).none_needed
 
 
-def test_a_credential_that_is_not_a_github_app_is_refused_for_github(world):
-    binding = discover(world)
-    credential(world, "tok", "owner", kind="token")
-    with pytest.raises(errors.bad_request.ValidationError, match="not a GitHub App"):
-        bll.set_credential(world.company, "owner", False, binding.id, "tok")
-
-
-def test_another_host_takes_a_token_valid_for_its_host_and_path(world):
-    binding = bll.discover(world.company, "https://git.example.org/team/app.git", "owner", world.project)
-    credential(world, "good", "owner", kind="token", host="git.example.org", path="team")
-    credential(world, "wrong", "owner", kind="token", host="git.example.org", path="other")
-    bll.set_credential(world.company, "owner", False, binding.id, "good")
-    with pytest.raises(errors.bad_request.ValidationError, match="not valid for"):
-        bll.set_credential(world.company, "owner", False, binding.id, "wrong")
-
-
-def test_the_list_has_one_row_per_repository_and_a_binding_per_project(world):
-    Project(id=f"q-{world.company}", company=world.company, name="q", basename="q", user="other", created=datetime.utcnow(),
-            last_update=datetime.utcnow()).save()
-    discover(world)
-    bll.discover(world.company, URL + ".git", "other", f"q-{world.company}")
-    rows = bll.list_for(world.company, "admin", True)
-    assert len(rows) == 1 and len(rows[0]["bindings"]) == 2
-    mine = bll.list_for(world.company, "owner", False)
-    assert len(mine) == 1 and [b["owner"] for b in mine[0]["bindings"]] == ["owner"]
-    assert mine[0]["bindings"][0]["can_assign"] is True
-    assert bll.list_for(world.company, "stranger", False) == []
-
-
-def test_the_list_can_be_limited_to_one_project(world):
-    Project(id=f"q-{world.company}", company=world.company, name="q", basename="q", user="other", created=datetime.utcnow(),
-            last_update=datetime.utcnow()).save()
-    discover(world)
-    bll.discover(world.company, URL + ".git", "other", f"q-{world.company}")
-    rows = bll.list_for(world.company, "admin", True, world.project)
-    assert len(rows) == 1 and [b["project"] for b in rows[0]["bindings"]] == [world.project]
-    assert bll.list_for(world.company, "admin", True, "no-such-project") == []
-
-
-def test_adding_lists_a_repository_for_a_member_and_refuses_a_stranger(world):
-    binding = bll.add(world.company, "owner", False, "git@github.com:Acme/Proj.git", world.project)
-    assert binding.project == world.project
-    with pytest.raises(errors.forbidden.NoWritePermission):
-        bll.add(world.company, "stranger", False, URL, world.project)
-    with pytest.raises(errors.bad_request.ValidationError):
-        bll.add(world.company, "owner", False, "not a repository", world.project)
-    assert bll.add(world.company, "owner", False, URL, world.project).id == binding.id
-
-
-def test_the_badge_does_not_make_a_binding(world):
-    from apiserver.bll import repo_access
-
-    row = repo_access.resolve_one(world.company, URL, "owner", world.project, False)
-    assert row["state"] == bll.ANONYMOUS and row["binding"] is None and row["can_assign"] is False
-    assert RepositoryBinding.objects(company=world.company).count() == 0
-    recorded = repo_access.resolve_one(world.company, URL, "owner", world.project, False, record=True)
-    assert recorded["binding"] and recorded["can_assign"] is True
-    assert repo_access.resolve_one(world.company, URL, "owner", world.project, False)["binding"] == recorded["binding"]
-
-
-def test_the_requirement_lists_each_repository_of_a_project_once_with_its_tasks(world):
-    from apiserver.bll import repo_access
-    from apiserver.database.model.task.task import Script, Task
-
-    for index, address in enumerate((URL, URL + ".git", "git@github.com:Acme/Proj.git")):
-        Task(id=f"t{index}-{world.company}", company=world.company, user="owner", project=world.project, name="task", type="training",
-             script=Script(repository=address), created=datetime.utcnow(), last_update=datetime.utcnow()).save()
-    try:
-        rows = repo_access.requirement(world.company, "owner", [f"t{i}-{world.company}" for i in range(3)], False)
-        assert len(rows) == 1 and len(rows[0]["tasks"]) == 3
-        assert rows[0]["state"] == bll.ANONYMOUS and rows[0]["ask"] is True and rows[0]["can_assign"] is True
-        assert rows[0]["anonymous"] is True
-        assert repo_access.requirement(world.company, "stranger", [f"t0-{world.company}"], False) == []
-    finally:
-        Task.objects(company=world.company).delete()
-
-
-def test_another_host_is_reached_by_the_company_only_with_a_stored_credential(world):
-    binding = bll.discover(world.company, "https://git.example.org/team/app.git", "owner", world.project)
-    source = CodeRepository.objects(id=binding.source).first()
-    world.probe.private = True
-    assert bll.resolve(source, binding, reach=False).state == bll.UNREACHABLE
-    world.monkeypatch.setattr(bll.store, "find_credential", lambda company, repository: SimpleNamespace(host="git.example.org"))
-    assert bll.resolve(source, binding, reach=False).state == bll.COMPANY
-
-
-def test_none_needed_is_not_refused_as_private_when_the_host_could_not_be_asked(world):
-    binding = discover(world)
-    world.probe.private = None
-    with pytest.raises(errors.bad_request.ValidationError, match="try again"):
-        bll.set_credential(world.company, "owner", False, binding.id, None, none_needed=True)
-
-
-def test_the_requirement_covers_the_datasets_a_task_used_with_their_kind(world):
-    from apiserver.bll import repo_access
-    from apiserver.database.model.task.task import ParamsItem, Script, Task
-
-    name = "cars/repo"
-    task = Task(id=f"td-{world.company}", company=world.company, user="owner", project=world.project, name="task",
-                type="training", script=Script(repository=URL), created=datetime.utcnow(),
-                last_update=datetime.utcnow(),
-                hyperparams={"Datasets": {name: ParamsItem(section="Datasets", name=name, value="acme/cars", type="str")}})
-    task.save()
-    try:
-        rows = repo_access.requirement(world.company, "owner", [task.id], False)
-        by_key = {row["url"]: row for row in rows}
-        assert set(by_key) == {"https://github.com/acme/proj", "https://github.com/acme/cars"}
-        assert by_key["https://github.com/acme/proj"]["kinds"] == ["code"]
-        assert by_key["https://github.com/acme/cars"]["kinds"] == ["dataset"]
-    finally:
-        Task.objects(company=world.company).delete()
-
-
-# --- Check now and Delete
-
-def test_check_renews_the_host_answer_and_reports_how_the_binding_is_read(world):
-    binding = discover(world)
-    bll.anonymous(bll.source_of(binding))          # asked once, kept
-    calls = world.probe.calls
-    world.probe.private = True                      # the repository turned private since
-    view = bll.check_binding(world.company, "owner", False, binding.id)
-    assert world.probe.calls == calls + 1           # a check asks the host again, whatever is kept
-    assert view["state"] == bll.UNREACHABLE and view["id"] == binding.id
-
-
-def test_check_of_an_assigned_credential_that_cannot_read_the_repository_says_so(world):
-    credential(world, "a1", "owner")
-    binding = discover(world)
-    bll.set_credential(world.company, "owner", False, binding.id, "a1")
-
-    def refuse(entry, source):
-        raise errors.bad_request.ValidationError(f"the GitHub App {entry.label} is not installed on {source.path}")
-
-    world.monkeypatch.setattr(bll, "_check_reads", refuse)
-    view = bll.check_binding(world.company, "owner", False, binding.id)
-    assert view["state"] == bll.UNREACHABLE and "is not installed on acme/proj" in view["message"]
-
-
-def test_check_is_refused_as_not_found_for_a_stranger(world):
-    binding = discover(world)
+def test_a_user_who_does_not_see_a_repository_assigns_nothing_to_it(world):
+    credential(world, "mine", "stranger")
+    repo = use(world)
     with pytest.raises(errors.bad_request.ValidationError, match="no such repository"):
-        bll.check_binding(world.company, "stranger", False, binding.id)
+        bll.assign(world.company, "stranger", repo.id, "mine")
 
 
-def test_delete_takes_the_binding_out_and_the_repository_with_the_last_one(world):
-    Project(id=f"q-{world.company}", company=world.company, name="q", basename="q", user="other", created=datetime.utcnow(),
-            last_update=datetime.utcnow()).save()
-    first = discover(world)
-    second = bll.discover(world.company, URL, "other", f"q-{world.company}")
-    bll.delete_binding(world.company, "owner", False, first.id)
-    assert RepositoryBinding.objects(company=world.company).count() == 1
-    assert CodeRepository.objects(company=world.company).count() == 1       # still used by the other project
-    bll.delete_binding(world.company, "other", False, second.id)
-    assert RepositoryBinding.objects(company=world.company).count() == 0
-    assert CodeRepository.objects(company=world.company).count() == 0
+def test_assigning_one_thing_and_none_needed_together_is_refused_and_nothing_clears_the_assignment(world):
+    credential(world, "mine", "member")
+    repo = use(world)
+    with pytest.raises(errors.bad_request.ValidationError, match="not both"):
+        bll.assign(world.company, "member", repo.id, "mine", none_needed=True)
+    bll.assign(world.company, "member", repo.id, "mine")
+    assert bll.assign(world.company, "member", repo.id) is None
+    assert Assignment.objects(company=world.company).count() == 0
 
 
-def test_a_run_that_names_the_repository_again_lists_it_again(world):
-    binding = discover(world)
-    bll.delete_binding(world.company, "owner", False, binding.id)
-    assert bll.list_for(world.company, "owner", False) == []
-    discover(world)
-    assert len(bll.list_for(world.company, "owner", False)) == 1
+def test_only_the_users_own_assignment_is_changed_by_unassign(world):
+    credential(world, "a", "owner")
+    credential(world, "b", "member")
+    repo = use(world)
+    bll.assign(world.company, "owner", repo.id, "a")
+    bll.assign(world.company, "member", repo.id, "b")
+    bll.unassign(world.company, "member", repo.id)
+    assert [x.user for x in Assignment.objects(repository=repo.id)] == ["owner"]
 
 
-def test_delete_is_for_the_owner_and_an_admin_not_for_the_first_user(world):
-    binding = discover(world, user="alice")         # the first user, not the project's owner
-    shown = {b["id"]: b for row in bll.list_for(world.company, "alice", False) for b in row["bindings"]}
-    assert shown[binding.id]["can_assign"] is True and shown[binding.id]["can_delete"] is False
-    shown = {b["id"]: b for row in bll.list_for(world.company, "owner", False) for b in row["bindings"]}
-    assert shown[binding.id]["can_delete"] is True
+def test_deleting_a_credential_removes_the_assignments_of_it(world):
+    from apiserver.bll import user_access
+
+    credential(world, "mine", "member")
+    repo = use(world)
+    bll.assign(world.company, "member", repo.id, "mine")
+    user_access.delete(world.company, "member", "mine")
+    assert Assignment.objects(repository=repo.id).count() == 0
+
+
+# --- how a repository is read ---------------------------------------------------------------------------------------------------
+
+def resolve(world, repo, user, project="root"):
+    root = world.root if project == "root" else project
+    return bll.resolve(repo, root, user, now=datetime.utcnow())
+
+
+def test_the_project_owners_assignment_is_used_first(world):
+    credential(world, "owner-cred", "owner")
+    credential(world, "member-cred", "member")
+    repo = use(world)
+    bll.assign(world.company, "owner", repo.id, "owner-cred")
+    bll.assign(world.company, "member", repo.id, "member-cred")
+    answer = resolve(world, repo, "member")
+    assert answer.state == bll.ASSIGNED and answer.entry.id == "owner-cred" and not answer.warning
+
+
+def test_the_runners_own_assignment_is_a_fallback_with_a_warning_when_the_owner_has_none(world):
+    credential(world, "member-cred", "member")
+    repo = use(world)
+    bll.assign(world.company, "member", repo.id, "member-cred")
+    answer = resolve(world, repo, "member")
+    assert answer.state == bll.ASSIGNED and answer.entry.id == "member-cred" and answer.warning
+    assert "assign one for the project" in answer.message
+
+
+def test_the_runners_assignment_is_not_used_for_somebody_elses_run(world):
+    credential(world, "member-cred", "member")
+    repo = use(world)
+    bll.assign(world.company, "member", repo.id, "member-cred")
+    assert resolve(world, repo, "owner").state == bll.UNREACHABLE
+
+
+def test_the_record_owners_credential_is_not_a_fallback_for_another_project(world):
+    credential(world, "owner-cred", "owner")
+    repo = use(world)
+    use(world, user="other", project=world.other_root)
+    bll.assign(world.company, "owner", repo.id, "owner-cred")
+    assert bll.resolve(repo, world.other_root, "other").state == bll.UNREACHABLE
+
+
+def test_a_credential_the_owner_assigned_that_cannot_be_used_is_not_replaced_by_a_fallback(world):
+    credential(world, "owner-cred", "owner")
+    credential(world, "member-cred", "member")
+    repo = use(world)
+    bll.assign(world.company, "owner", repo.id, "owner-cred")
+    bll.assign(world.company, "member", repo.id, "member-cred")
+    UserAccess.objects(id="owner-cred").delete()
+    # deleting through the model leaves the assignment (as a credential of an owner that is disabled does)
+    answer = resolve(world, repo, "member")
+    assert answer.state == bll.UNREACHABLE and "no longer exists" in answer.message
+
+
+def test_a_repository_the_host_clones_without_a_credential_needs_none(world):
+    world.private = False
+    repo = use(world)
+    assert resolve(world, repo, "member").state == bll.ANONYMOUS
+
+
+def test_none_needed_is_read_without_a_credential(world):
+    world.private = False
+    repo = use(world)
+    bll.assign(world.company, "owner", repo.id, none_needed=True)
+    assert resolve(world, repo, "member").state == bll.NONE_NEEDED
+
+
+def test_the_company_app_reads_a_private_repository_nobody_assigned_with_a_warning(world):
+    repo = use(world)
+    world.reach = (SimpleNamespace(label="App A", id="app-a"), None)
+    answer = resolve(world, repo, "member")
+    assert answer.state == bll.COMPANY and answer.warning and "App A" in answer.message
+
+
+def test_a_private_repository_nobody_reaches_is_not_readable(world):
+    repo = use(world)
+    answer = resolve(world, repo, "member")
+    assert answer.state == bll.UNREACHABLE and "no credential is assigned" in answer.message
+
+
+def test_a_host_that_cannot_be_asked_is_unknown_and_never_refused(world):
+    world.private = None
+    repo = use(world)
+    answer = resolve(world, repo, "member")
+    assert answer.state == bll.UNKNOWN
+    assert bll.token_for(repo, answer)["token"] is None
+
+
+def test_the_answer_of_the_host_is_kept_and_asked_again_when_forced(world):
+    world.private = False
+    repo = use(world)
+    resolve(world, repo, "owner")
+    resolve(world, repo, "owner")
+    assert len(world.probes) == 1
+    bll.anonymous(repo, force=True)
+    assert len(world.probes) == 2
+
+
+# --- tokens -------------------------------------------------------------------------------------------------------------------
+
+def test_a_public_repository_gives_no_token_and_a_write_is_refused_without_a_github_app(world):
+    world.private = False
+    repo = use(world)
+    answer = bll.token_for_person(world.company, "owner", False, repo)
+    assert answer["token"] is None and answer["url"] == URL
+    with pytest.raises(errors.bad_request.ValidationError, match="to write"):
+        bll.token_for_person(world.company, "owner", False, repo, write=True)
+
+
+def test_only_the_owner_and_the_admin_write(world):
+    world.private = False
+    repo = use(world)
     with pytest.raises(errors.forbidden.NoWritePermission):
-        bll.delete_binding(world.company, "alice", False, binding.id)
-    with pytest.raises(errors.bad_request.ValidationError, match="no such repository"):
-        bll.delete_binding(world.company, "stranger", False, binding.id)
-    bll.delete_binding(world.company, "admin", True, binding.id)
-    assert RepositoryBinding.objects(company=world.company).count() == 0
+        bll.token_for_person(world.company, "member", False, repo, write=True)
+
+
+def test_a_job_reads_with_the_project_owners_credential(world, monkeypatch):
+    credential(world, "owner-cred", "owner")
+    repo = use(world)
+    bll.assign(world.company, "owner", repo.id, "owner-cred")
+    monkeypatch.setattr(bll, "_token_of", lambda entry, r, permissions=None: {"token": f"tok-{entry.id}", "expires_at": None, "username": "x"})
+    answer, resolution = bll.token_for_job(world.company, repo, world.root, "member")
+    assert answer["token"] == "tok-owner-cred" and resolution.state == bll.ASSIGNED
+
+
+def test_an_unreadable_repository_refuses_the_job_with_the_reason(world):
+    repo = use(world)
+    with pytest.raises(errors.bad_request.ValidationError, match="no credential is assigned"):
+        bll.token_for_job(world.company, repo, world.root, "member")
+
+
+# --- what the list shows -----------------------------------------------------------------------------------------------------
+
+def test_the_list_shows_every_assignment_and_only_the_users_own_are_editable(world):
+    credential(world, "owner-cred", "owner")
+    credential(world, "member-cred", "member")
+    repo = use(world)
+    bll.assign(world.company, "owner", repo.id, "owner-cred")
+    bll.assign(world.company, "member", repo.id, "member-cred")
+    row = rows(world, "member")[0]
+    by_user = {a["user"]: a for a in row["assignments"]}
+    assert by_user["member"]["mine"] and by_user["member"]["can_edit"]
+    assert not by_user["owner"]["mine"] and not by_user["owner"]["can_edit"]
+    assert by_user["owner"]["credential_name"] == "cred owner-cred" and by_user["owner"]["used_in"] == [
+        {"project": world.root, "as": "owner"}]
+    assert "secret" not in str(row)
+
+
+def test_the_list_says_what_the_user_may_do(world):
+    repo = use(world)
+    owner_row, member_row = rows(world, "owner")[0], rows(world, "member")[0]
+    assert owner_row["can_delete"] and owner_row["can_share"] and not member_row["can_delete"] and not member_row["can_share"]
+    assert rows(world, "admin", True)[0]["can_delete"] and repo.id == owner_row["id"]
+
+
+def test_a_shared_row_is_owned_by_the_company_and_deleted_by_the_admin_only(world):
+    bll.add(world.company, "admin", True, URL, "dataset", shared=True)
+    row = rows(world, "stranger")[0]
+    assert row["shared"] and row["owner_name"] == "Company" and not row["can_delete"] and not row["can_share"]
+    assert rows(world, "admin", True)[0]["can_delete"] and rows(world, "admin", True)[0]["can_share"]
+
+
+def test_checking_stores_what_it_found(world):
+    credential(world, "mine", "member")
+    repo = use(world)
+    bll.assign(world.company, "member", repo.id, "mine")
+    assert bll.check(world.company, "member", False, repo.id).state == "ok"
+    world.reads = False
+    checked = bll.check(world.company, "member", False, repo.id)
+    assert checked.state == "no_access" and "not installed" in checked.state_message and checked.last_checked
+
+
+def test_the_owner_of_a_project_changing_relinks_its_repositories(world):
+    repo = use(world)
+    bll.regrant_project_links(world.company, world.root, "member", actor="admin")
+    link = access.find_share(world.company, "repository", repo.id, "projects", world.root)
+    assert link is not None and link.granted_by == "member"

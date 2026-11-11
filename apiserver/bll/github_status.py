@@ -5,8 +5,8 @@ It runs in four steps, and a failed step stops the rest:
 1. configured: the server's GitHub App is stored (an admin added it in the UI).
 2. app: GitHub accepts the App ID and key (GET /app with a token made from the key).
 3. repositories: the repositories the App is installed on, and their count.
-4. registries: every dataset registry, and the datasets stored for each one. The registries are not read from GitHub here:
-   they are read when they are added or refreshed (bll/datasets).
+4. registries: every registry, and the datasets stored for each one. The registries are not read from GitHub here:
+   they are read when they are first used or refreshed (bll/repository_registry).
 
 The result is kept in the database, so every API worker shows the same status. It runs once when the server starts and
 again on demand (github.check). The admin sees it as a banner after sign-in.
@@ -41,7 +41,7 @@ def _result(state: str, steps: list, message: str, **extra) -> dict:
 
 def run_check() -> dict:
     """Runs the steps now: the App against GitHub, and the registries from the database. Does not save the result."""
-    from apiserver.bll import dataset_registry as registry_bll
+    from apiserver.database.model.repository import RegistryEntry, Repository
     from apiserver.config_repo import config
 
     steps = []
@@ -78,17 +78,17 @@ def run_check() -> dict:
     step("repositories", True, f"the App is installed on {_plural(len(repositories), 'repository')}")
 
     registries, datasets_total = [], 0
-    for record in registry_bll.stored_registries():
-        # the entries are the ones stored when the registry was added or refreshed: the check does not list them again
-        count = len(registry_bll.stored_entries(record.ref))
+    for record in Repository.objects(roles="registry").order_by("created"):
+        # the entries are the ones stored when the registry was read: the check does not list them again
+        count = RegistryEntry.objects(registry=record.id).count()
         if record.state != "ok":
-            registries.append({"repository": record.ref, "ok": False, "datasets": 0,
+            registries.append({"repository": record.path, "ok": False, "datasets": 0,
                                "detail": record.state_message or "no access"})
-            step(f"registry {record.ref}", False, record.state_message or "no access")
+            step(f"registry {record.path}", False, record.state_message or "no access")
             continue
-        registries.append({"repository": record.ref, "ok": True, "datasets": count, "detail": ""})
+        registries.append({"repository": record.path, "ok": True, "datasets": count, "detail": ""})
         datasets_total += count
-        step(f"registry {record.ref}", True, f"lists {_plural(count, 'dataset')}")
+        step(f"registry {record.path}", True, f"lists {_plural(count, 'dataset')}")
 
     readable = sum(1 for registry in registries if registry["ok"])
     message = (f"GitHub App works. Registered {_plural(len(registries), 'dataset registry', 'dataset registries')} "

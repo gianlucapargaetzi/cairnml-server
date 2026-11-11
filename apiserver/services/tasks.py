@@ -77,7 +77,7 @@ from apiserver.apimodels.tasks import (
     UpdateProgressRequest,
     GetProgressRequest,
 )
-from apiserver.bll import repositories as repositories_bll
+from apiserver.bll import repository_runs
 from apiserver.bll.event import EventBLL
 from apiserver.bll.model import ModelBLL
 from apiserver.bll.organization import OrgBLL, Tags
@@ -676,16 +676,9 @@ def _reset_cached_tags(company: str, projects: Sequence[str]):
 
 
 def _record_repository(company_id: str, user: str, task) -> None:
-    """The repository a saved task names is recorded for the task's project (bll/repositories.discover); a failure never
+    """The repository a saved task names is recorded for the task's project (bll/repository_runs.record_script); a failure never
     refuses the save. ``task`` is the task, or its id."""
-    try:
-        if isinstance(task, str):
-            task = Task.objects(company=company_id, id=task).only("script.repository", "project").first()
-        repository = task.script.repository if task is not None and task.script else None
-        if repository:
-            repositories_bll.discover_quietly(company_id, repository, user, task.project)
-    except Exception:
-        log.warning("the repository of task %s could not be recorded", getattr(task, "id", task), exc_info=True)
+    repository_runs.record_script(company_id, user, task)
 
 
 @endpoint(

@@ -10,7 +10,7 @@ from apiserver.apimodels.datachunks import (
     PrepareUploadRequest,
 )
 from apiserver.bll import datachunks as bll
-from apiserver.bll.dataset_credentials import dataset_credentials
+from apiserver.bll.repository_storage import dataset_credentials
 from apiserver.bll.project.access import ProjectAccessBLL
 from apiserver.bll.task.utils import get_task_with_write_access
 from apiserver.database.model.auth import Role

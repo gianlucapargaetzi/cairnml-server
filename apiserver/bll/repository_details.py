@@ -1,21 +1,21 @@
-"""What the Datasets page shows about one dataset: its metadata, its description (DATASET.md) and its commit history.
+"""What the list shows about one dataset: its metadata, its description (DATASET.md) and its commit history.
 
 A dataset of our own is a repository with a manifest.json (written by the SDK at push) and an optional DATASET.md.
-Everything is read through the GitHub App, at one commit, so the same request always gives the same answer for a commit.
+Everything is read through the credential that reads the repository, at one commit, so the same request always gives the same
+answer for a commit.
 
 A dataset of a registry is not read from GitHub here: its entry, its source, its link and its metadata were read from the
-registry when the registry was added or refreshed (bll/datasets), and are stored with the entry.
+registry when it was first used or refreshed (bll/repository_registry), and are stored with the entry.
 """
 
 import json
-import re
 from typing import Optional
 
 from apiserver.apierrors import errors
-from apiserver.bll import dataset_registry as registry_bll
-from apiserver.database.model.dataset import Dataset
+from apiserver.bll import repositories as repos
+from apiserver.bll import repository_registry as registry_bll
+from apiserver.database.model.repository import RegistryEntry, Repository
 from apiserver.idp.github import GitHubApp, GitHubError
-from apiserver.idp.github_check import repo_of
 
 MANIFEST_FILE = "manifest.json"
 DESCRIPTION_FILE = "DATASET.md"
@@ -66,14 +66,14 @@ def own_details(app: GitHubApp, repository: str, commit: Optional[str]) -> dict:
         raise errors.bad_request.ValidationError(f"the dataset could not be read ({exc})") from None
 
 
-def registry_details(entry: Dataset) -> dict:
-    """A dataset of a registry, from the entry stored when its registry was read: its source, its link and its metadata.
-    No GitHub call. A dataset of the registry has no history of its own."""
+def registry_details(entry: RegistryEntry, registry: Repository) -> dict:
+    """A dataset of a registry, from the entry stored when its registry was read: its source, its link and its metadata. No GitHub
+    call. A dataset of a registry has no history of its own."""
     return {
         "kind": "registry",
         "name": entry.name,
         "repository": None,
-        "registry": entry.ref.rsplit("/", 1)[0],
+        "registry": registry.path,
         "link": entry.link,
         "source": entry.source,
         "revision": None,
@@ -84,19 +84,19 @@ def registry_details(entry: Dataset) -> dict:
     }
 
 
-def repository_of(repository: Optional[str]) -> str:
-    """owner/name of a github.com URL, or of an owner/name given as it is. Refused for anything else."""
-    repo = repo_of(repository or "")
-    if not repo and re.fullmatch(r"[\w.-]+/[\w.-]+", repository or ""):
-        repo = repository
-    if not repo:
-        raise errors.bad_request.ValidationError("the repository must be a github.com repository or owner/name")
-    return repo
-
-
-def details(app: Optional[GitHubApp], *, repository: Optional[str], registry_entry: Optional[Dataset],
-            commit: Optional[str]) -> dict:
-    """The details of a registry's entry (stored, no GitHub call) when one is given, otherwise those of a repository."""
-    if registry_entry is not None:
-        return registry_details(registry_entry)
-    return own_details(app, repository_of(repository), commit)
+def details(company: str, user: str, is_admin: bool, *, repository: Optional[str] = None, entry: Optional[str] = None,
+            commit: Optional[str] = None) -> dict:
+    """The details of a registry's entry (stored, no GitHub call) when ``entry`` (its id, or its reference) is given, otherwise
+    those of the repository (its id, its address or its reference). Refused as missing when the user does not see it."""
+    if entry:
+        found = RegistryEntry.objects(company=company, id=entry).first() or RegistryEntry.objects(
+            company=company, reference=entry).first()
+        registry = Repository.objects(company=company, id=found.registry).first() if found else None
+        if found is None or registry is None or not repos.can_see(company, user, is_admin, registry):
+            raise errors.bad_request.ValidationError(f"no such dataset: {entry}")
+        return registry_details(found, registry)
+    repo = repos.find_reference(company, repository or "")
+    if repo is None or not repos.can_see(company, user, is_admin, repo):
+        raise errors.bad_request.ValidationError(f"no such repository: {repository}")
+    reader = registry_bll.reader_for(repo, user)
+    return own_details(reader, repo.path, commit)

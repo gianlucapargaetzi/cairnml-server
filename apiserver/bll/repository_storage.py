@@ -18,10 +18,8 @@ import boto3
 from botocore.config import Config
 
 from apiserver.apierrors import errors
-from apiserver.bll import datasets as datasets_bll
-from apiserver.bll import user_access
+from apiserver.bll import repositories as repos
 from apiserver.config_repo import config
-from apiserver.database.model.dataset import Dataset
 from apiserver.idp import public_origin
 from apiserver.idp.secrets import read_secret
 
@@ -99,13 +97,12 @@ def _ttl() -> int:
 def _authorize(company: str, user: str, repository: str, level: str, is_admin: bool) -> str:
     """The bucket prefix the keys reach, when the caller may use the level.
 
-    A kept dataset is checked by the share levels (bll/access): ``read`` needs the use level, ``read_write`` the
-    change_content level. A caller who sees a dataset and one who does not get
-    the same answer for a missing one, so a hidden dataset does not reveal itself.
+    A kept repository is checked by what the caller holds on it (bll/repositories.level_of): ``read`` needs to see it,
+    ``read_write`` to own it (or be the admin). A caller who sees a repository and one who does not get the same answer for a
+    missing one, so a hidden dataset does not reveal itself.
 
-    A repository with no kept record (R14) is new: ``read_write`` gets keys under the caller's own company prefix,
-    so that a dataset can be created through the CLI before it is registered. ``read`` is refused. A name that some
-    other record in the company already has is never opened this way.
+    A repository with no record is new: ``read_write`` gets keys under the caller's own company prefix, so that a dataset can be
+    created through the CLI before it is listed. ``read`` is refused.
     """
     if level not in LEVELS:
         raise errors.bad_request.ValidationError("the level is read or read_write")
@@ -113,22 +110,17 @@ def _authorize(company: str, user: str, repository: str, level: str, is_admin: b
         raise errors.bad_request.ValidationError("the repository is owner/name on GitHub, with letters, digits, dots, dashes and underscores")
     if not SEGMENT.fullmatch(company or ""):
         raise errors.bad_request.ValidationError("the company id is not a valid key segment")
-    dataset = Dataset.objects(company=company, kind="repo", ref__iexact=repository).first()
-    if dataset is None:
-        taken = Dataset.objects(company=company, ref__iexact=repository).first() is not None
-        if level == "read" or taken:
+    repo = repos.find(company, f"https://github.com/{repository}")
+    if repo is None:
+        if level == "read":
             raise errors.bad_request.ValidationError("no such dataset")
         return prefix_of(company, repository)
-    if level == "read":
-        if not datasets_bll.can_see(company, user, is_admin, dataset.id):
-            raise errors.bad_request.ValidationError("no such dataset")
-    else:
-        # read_write needs the change_content level on the dataset, as bll/access sets it
-        try:
-            datasets_bll.require_action(company, user, is_admin, dataset, "change_content")
-        except errors.bad_request.ValidationError:
-            raise errors.forbidden.NoWritePermission("only an owner, collaborator or admin may write to a dataset") from None
-    return prefix_of(company, dataset.ref)
+    held = repos.level_of(company, user, is_admin, repo)
+    if held is None:
+        raise errors.bad_request.ValidationError("no such dataset")
+    if level == "read_write" and held != "collaborator":
+        raise errors.forbidden.NoWritePermission("only the owner of a dataset or the admin may write to it")
+    return prefix_of(company, repo.path)
 
 
 def dataset_credentials(company: str, user: str, repository: str, level: str, is_admin: bool = False) -> dict:

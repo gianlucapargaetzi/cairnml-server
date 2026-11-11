@@ -1,5 +1,6 @@
-"""The repository accesses a user owns: their GitHub Apps. Only the owner sees, checks, changes or deletes
-them; the secret is written once and never returned. See bll/user_access."""
+"""The repository accesses (credentials) a user owns: their GitHub Apps, and the company's, which the admin owns. Only the owner
+sees, checks, changes or deletes them; the secret is written once and never returned. A credential is never shared with a
+project: it is used through the assignments of repositories (see bll/repositories). See bll/user_access."""
 
 from apiserver.apierrors import errors
 from apiserver.bll import user_access as access_bll
@@ -38,25 +39,3 @@ def delete(call: APICall, company: str, _request):
 def check(call: APICall, company: str, _request):
     is_admin = call.identity.role in (Role.admin, Role.root)
     call.result.data = {"access": access_bll.check(company, call.identity.user, (call.data or {}).get("id", ""), is_admin)}
-
-
-@endpoint("user_access.grant")
-def grant(call: APICall, company: str, _request):
-    data = call.data or {}
-    call.result.data = {"access": access_bll.grant(
-        company, call.identity.user, data.get("id", ""), data.get("project", ""))}
-
-
-@endpoint("user_access.revoke")
-def revoke(call: APICall, company: str, _request):
-    data = call.data or {}
-    is_admin = call.identity.role in (Role.admin, Role.root)
-    call.result.data = {"access": access_bll.revoke(
-        company, call.identity.user, data.get("id", ""), data.get("project", ""), is_admin)}
-
-
-@endpoint("user_access.project_grants")
-def project_grants(call: APICall, company: str, _request):
-    project = (call.data or {}).get("project", "")
-    grants = access_bll.project_grants(company, call.identity.user, project)
-    call.result.data = {"grants": grants}
