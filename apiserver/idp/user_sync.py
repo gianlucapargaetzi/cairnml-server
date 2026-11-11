@@ -10,7 +10,7 @@ import logging
 import threading
 
 from apiserver.idp.directory import DirectoryError, DirectoryUser
-from apiserver.idp.users import role_for, upsert_idp_user
+from apiserver.idp.users import role_for, single_admin, upsert_idp_user
 
 log = logging.getLogger("cairnml.idp.sync")
 
@@ -97,6 +97,7 @@ def sync_once(directory, admin_role: str) -> int:
     actions = decide(users, answers, admin_role)
     companies = {user.id: user.company for user in users}
     for user_id, disabled, role in actions:
+        role = single_admin(user_id, role, companies.get(user_id))
         User.objects(id=user_id).update_one(set__idp_disabled=disabled, set__role=role)
         if disabled:
             audit_disabled_owner(user_id, company=companies.get(user_id))
