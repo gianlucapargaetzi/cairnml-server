@@ -39,3 +39,24 @@ def set_credential(call: APICall, company: str, _request):
     audit(call.identity.user, "repository.credential_set", ip=client_address(call), company=company,
           binding=binding.id, credential=credential or "", none_needed=none_needed)
     call.result.data = {"binding": binding.id}
+
+
+@endpoint("repositories.check")
+def check(call: APICall, company: str, _request):
+    binding_id = (call.data or {}).get("binding")
+    if not binding_id:
+        raise errors.bad_request.ValidationError("binding is required")
+    view = bll.check_binding(company, call.identity.user, _is_admin(call), binding_id)
+    audit(call.identity.user, "repository.checked", ip=client_address(call), company=company,
+          binding=binding_id, state=view["state"])
+    call.result.data = {"binding": view}
+
+
+@endpoint("repositories.delete")
+def delete(call: APICall, company: str, _request):
+    binding_id = (call.data or {}).get("binding")
+    if not binding_id:
+        raise errors.bad_request.ValidationError("binding is required")
+    bll.delete_binding(company, call.identity.user, _is_admin(call), binding_id)
+    audit(call.identity.user, "repository.deleted", ip=client_address(call), company=company, binding=binding_id)
+    call.result.data = {"deleted": True}

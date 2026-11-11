@@ -147,6 +147,16 @@ def unallocate(call: APICall, company: str, _request):
         company, call.identity.user, data.get("id", ""), data.get("project", ""), _is_admin(call))}
 
 
+@endpoint("datasets.check")
+def check(call: APICall, company: str, _request):
+    """Looks at a repository dataset again: whether its repository can be read with the credential it has (or without
+    one, when it has none). Stores the answer and the time on the dataset and returns the dataset."""
+    dataset = access_bll.check(company, call.identity.user, (call.data or {}).get("id", ""), _is_admin(call))
+    audit(call.identity.user, "dataset.checked", ip=client_address(call), company=company, dataset=dataset["id"],
+          state=dataset["state"])
+    call.result.data = {"dataset": dataset}
+
+
 @endpoint("datasets.delete")
 def delete(call: APICall, company: str, _request):
     data = call.data or {}
@@ -201,6 +211,11 @@ READ_PERMISSIONS = {"contents": "read"}
 WRITE_PERMISSIONS = {"contents": "write", "workflows": "write"}
 
 
+NO_SUCH_DATASET_HINT = (
+    "no such dataset: make sure the dataset is listed and accessible by assigning a valid credential to it "
+    "(web app: Datasets, Add dataset)")
+
+
 def _refuse_token(call: APICall, company: str, user: str, repo: str, level: str, reason: str):
     audit(user, "git_token.refused", ip=client_address(call), company=company, repo=repo, level=level, reason=reason)
     raise errors.bad_request.ValidationError(reason)
@@ -230,7 +245,7 @@ def git_token(call: APICall, company: str, _request):
         if repo and not write and is_private(f"https://github.com/{repo}") is False:
             audit(user, "git_token.public", ip=client_address(call), company=company, repo=repo, level="none")
             return {"token": None, "expires_at": None, "username": None}
-        raise errors.bad_request.ValidationError("no such dataset")
+        raise errors.bad_request.ValidationError(NO_SUCH_DATASET_HINT)
     if not access.allows(level, action, resource_type):
         raise errors.forbidden.NoWritePermission(f"a {level} level does not allow {action} on this {resource_type}")
 

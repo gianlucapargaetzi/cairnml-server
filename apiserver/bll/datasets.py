@@ -430,6 +430,40 @@ def set_credential(company: str, user: str, repository: str, credential: Optiona
     return view(dataset)
 
 
+def check(company: str, user: str, dataset_id: str, is_admin: bool) -> dict:
+    """Looks at a repository dataset again and stores what it finds: ok when its repository can be read with the
+    credential it has (or without one, when it has none), no access with the reason otherwise. Anyone who may see the
+    dataset may ask; the answer is the same for everyone. GitHub that cannot be reached when the repository's visibility
+    is asked refuses the check and leaves the stored answer as it was."""
+    access.refuse_inactive(user)
+    dataset = _owned(company, dataset_id)
+    if not _record_visible(company, user, is_admin, dataset, _project_roots(company, user)):
+        raise errors.bad_request.ValidationError("no such dataset")
+    if dataset.kind != "repo":
+        raise errors.bad_request.ValidationError(
+            "only a repository dataset is checked here: a registry is read again with its refresh")
+    repo = dataset.ref
+    if dataset.credential:
+        entry = UserAccess.objects(company=company, id=dataset.credential).first()
+        if entry is None:
+            state, message = NO_ACCESS, f"the credential of {repo} no longer exists: assign another one"
+        elif entry.kind != "app":
+            state, message = NO_ACCESS, f"{entry.label} is not a GitHub App: a dataset repository is read with one"
+        else:
+            secret = store.decrypt(entry.secret, store.key_material())
+            reads = _can_read(_reader(entry, secret), repo)
+            state, message = (OK, "") if reads else (
+                NO_ACCESS, f"the GitHub App {entry.label} is not installed on {repo}: install it, or assign another credential")
+    elif _public(repo):
+        state, message = OK, ""
+    else:
+        state, message = NO_ACCESS, f"{repo} is private and has no credential: assign one"
+    now = datetime.utcnow()
+    dataset.state, dataset.state_message, dataset.last_checked, dataset.updated = state, message, now, now
+    dataset.save()
+    return view(dataset)
+
+
 def _read_registry(reader, repo: str) -> list:
     """The entries of the registry, each with its metadata: the one read of GitHub that stores them (when the registry is
     added and when it is refreshed). A GitHub error refuses the read with its reason; a metadata file that is not JSON

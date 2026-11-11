@@ -459,6 +459,55 @@ def list_for(company: str, user: str, is_admin: bool, project: Optional[str] = N
     return sorted(rows, key=lambda row: row["key"])
 
 
+def _visible_binding(company: str, user: str, is_admin: bool, binding_id: str) -> RepositoryBinding:
+    """A binding the user may see in the list (list_for): an admin any, anyone else those of their own projects and the
+    ones they own or discovered. Refused as not found otherwise."""
+    binding = RepositoryBinding.objects(company=company, id=binding_id or "").first()
+    mine = set(user_access.my_root_ids(company, user))
+    if binding is None or not (is_admin or binding.owner == user or binding.discovered_by == user or binding.project in mine):
+        raise errors.bad_request.ValidationError("no such repository")
+    return binding
+
+
+def view_of(company: str, user: str, is_admin: bool, binding: RepositoryBinding, resolution: Resolution) -> dict:
+    """One binding as the list shows it, with the given resolution."""
+    source = source_of(binding)
+    names = _names({binding.owner, binding.discovered_by})
+    project_names = {p.id: p.name for p in Project.objects(company=company, id=binding.project).only("name")} if binding.project else {}
+    right = assigner(binding, user, is_admin)
+    return _view_binding(binding, source, resolution, right, names, project_names,
+                         assignable(company, binding, source, user, is_admin) if right else [])
+
+
+def check_binding(company: str, user: str, is_admin: bool, binding_id: str) -> dict:
+    """Looks at a binding again: asks the host whether the repository is cloned without a credential (the kept answer is
+    renewed), and, when a credential is assigned, whether it still reads the repository. Returns the binding as the list
+    shows it, with what was found."""
+    binding = _visible_binding(company, user, is_admin, binding_id)
+    source = source_of(binding)
+    anonymous(source, force=True)
+    resolution = resolve(source, binding)
+    if resolution.state == ASSIGNED:
+        try:
+            _check_reads(resolution.entry, source)
+        except errors.bad_request.ValidationError as refused:
+            resolution = Resolution(UNREACHABLE, None, f"The assigned credential cannot read it: {refused.msg}.")
+    return view_of(company, user, is_admin, binding, resolution)
+
+
+def delete_binding(company: str, user: str, is_admin: bool, binding_id: str) -> None:
+    """Takes a repository out of a project's list: its binding, and the repository itself once no project uses it. Only
+    the owner of the project (or of the run, outside a project) and an admin may. A run that names the repository again
+    lists it again."""
+    binding = _visible_binding(company, user, is_admin, binding_id)
+    if assigner(binding, user, is_admin) not in (OWNER, ADMIN):
+        raise errors.forbidden.NoWritePermission("only the owner of the project or an admin may remove a repository from its list")
+    source_id = binding.source
+    binding.delete()
+    if not RepositoryBinding.objects(company=company, source=source_id).first():
+        CodeRepository.objects(company=company, id=source_id).delete()
+
+
 def add(company: str, user: str, is_admin: bool, repository: str, project_id: Optional[str]) -> RepositoryBinding:
     """Lists a repository before any run has used it: its source and the binding of the given project (the user's own
     scope without one). The user must be a member of the project."""

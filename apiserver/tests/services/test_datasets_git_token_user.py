@@ -175,12 +175,13 @@ def test_a_public_repository_nobody_holds_a_level_on_is_read_without_a_token(run
     assert [action for _actor, action, _detail in audits] == ["git_token.public"]
 
 
-def test_a_private_repository_nobody_holds_a_level_on_is_still_not_found(run):
+def test_a_private_repository_nobody_holds_a_level_on_is_still_not_found_and_says_what_to_do(run):
     run.state["private"] = True
     answer, github, _ = run(person(), level="read", held_level=None)
 
     assert isinstance(answer, errors.bad_request.ValidationError)
     assert "no such dataset" in answer.msg
+    assert "make sure the dataset is listed and accessible by assigning a valid credential to it" in answer.msg
     assert github.requests == []
 
 

@@ -320,3 +320,54 @@ def test_a_registry_and_a_repository_are_found_by_their_address_but_an_entry_is_
     assert bll.kept_for_repository(COMPANY, "acme/registry").id == "reg-1"
     assert bll.kept_for_repository(COMPANY, "acme/cars") is None
     assert bll.kept_for_repository(COMPANY, "acme/registry/cars") is None
+
+
+# --- Check now
+
+def stored(owner="u1", ref="acme/checked", credential=None, kind="repo", state="ok", message=""):
+    Dataset(id=f"chk-{ref}", company=COMPANY, kind=kind, ref=ref, name=ref.split("/")[-1], owner=owner, visibility="user",
+            credential=credential, state=state, state_message=message, created=datetime.utcnow(), updated=datetime.utcnow(),
+            last_checked=datetime(2020, 1, 1)).save()
+    return f"chk-{ref}"
+
+
+def test_check_of_a_public_dataset_is_ok_and_renews_the_time(github):
+    github.public = {"acme/checked"}
+    dataset_id = stored(state="no_access", message="old")
+    result = bll.check(COMPANY, "u1", dataset_id, False)
+    assert result["state"] == "ok" and result["state_message"] == ""
+    assert Dataset.objects(id=dataset_id).first().last_checked > datetime(2021, 1, 1)
+
+
+def test_check_of_a_private_dataset_with_no_credential_says_to_assign_one(github):
+    dataset_id = stored()
+    result = bll.check(COMPANY, "u1", dataset_id, False)
+    assert result["state"] == "no_access" and "assign one" in result["state_message"]
+
+
+def test_check_finds_that_the_credential_reads_the_repository(github):
+    make_access("a1")
+    github.readable = {"acme/checked": {"a1"}}
+    result = bll.check(COMPANY, "u1", stored(credential="a1", state="no_access", message="old"), False)
+    assert result["state"] == "ok" and result["state_message"] == ""
+
+
+def test_check_finds_that_the_credential_no_longer_reads_the_repository(github):
+    make_access("a1")
+    result = bll.check(COMPANY, "u1", stored(credential="a1"), False)
+    assert result["state"] == "no_access" and "not installed on acme/checked" in result["state_message"]
+
+
+def test_check_finds_that_the_credential_is_gone(github):
+    result = bll.check(COMPANY, "u1", stored(credential="gone"), False)
+    assert result["state"] == "no_access" and "no longer exists" in result["state_message"]
+
+
+def test_check_is_refused_as_not_found_for_a_user_who_cannot_see_the_dataset(github):
+    with pytest.raises(errors.bad_request.ValidationError, match="no such dataset"):
+        bll.check(COMPANY, "u2", stored(), False)
+
+
+def test_check_does_not_apply_to_a_registry(github):
+    with pytest.raises(errors.bad_request.ValidationError, match="only a repository dataset"):
+        bll.check(COMPANY, "u1", stored(ref="acme/registry", kind="registry"), False)

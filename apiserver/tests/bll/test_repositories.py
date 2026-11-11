@@ -310,3 +310,65 @@ def test_the_requirement_covers_the_datasets_a_task_used_with_their_kind(world):
         assert by_key["https://github.com/acme/cars"]["kinds"] == ["dataset"]
     finally:
         Task.objects(company=world.company).delete()
+
+
+# --- Check now and Delete
+
+def test_check_renews_the_host_answer_and_reports_how_the_binding_is_read(world):
+    binding = discover(world)
+    bll.anonymous(bll.source_of(binding))          # asked once, kept
+    calls = world.probe.calls
+    world.probe.private = True                      # the repository turned private since
+    view = bll.check_binding(world.company, "owner", False, binding.id)
+    assert world.probe.calls == calls + 1           # a check asks the host again, whatever is kept
+    assert view["state"] == bll.UNREACHABLE and view["id"] == binding.id
+
+
+def test_check_of_an_assigned_credential_that_cannot_read_the_repository_says_so(world):
+    credential(world, "a1", "owner")
+    binding = discover(world)
+    bll.set_credential(world.company, "owner", False, binding.id, "a1")
+
+    def refuse(entry, source):
+        raise errors.bad_request.ValidationError(f"the GitHub App {entry.label} is not installed on {source.path}")
+
+    world.monkeypatch.setattr(bll, "_check_reads", refuse)
+    view = bll.check_binding(world.company, "owner", False, binding.id)
+    assert view["state"] == bll.UNREACHABLE and "is not installed on acme/proj" in view["message"]
+
+
+def test_check_is_refused_as_not_found_for_a_stranger(world):
+    binding = discover(world)
+    with pytest.raises(errors.bad_request.ValidationError, match="no such repository"):
+        bll.check_binding(world.company, "stranger", False, binding.id)
+
+
+def test_delete_takes_the_binding_out_and_the_repository_with_the_last_one(world):
+    Project(id=f"q-{world.company}", company=world.company, name="q", basename="q", user="other", created=datetime.utcnow(),
+            last_update=datetime.utcnow()).save()
+    first = discover(world)
+    second = bll.discover(world.company, URL, "other", f"q-{world.company}")
+    bll.delete_binding(world.company, "owner", False, first.id)
+    assert RepositoryBinding.objects(company=world.company).count() == 1
+    assert CodeRepository.objects(company=world.company).count() == 1       # still used by the other project
+    bll.delete_binding(world.company, "other", False, second.id)
+    assert RepositoryBinding.objects(company=world.company).count() == 0
+    assert CodeRepository.objects(company=world.company).count() == 0
+
+
+def test_a_run_that_names_the_repository_again_lists_it_again(world):
+    binding = discover(world)
+    bll.delete_binding(world.company, "owner", False, binding.id)
+    assert bll.list_for(world.company, "owner", False) == []
+    discover(world)
+    assert len(bll.list_for(world.company, "owner", False)) == 1
+
+
+def test_delete_is_for_the_owner_and_an_admin_not_for_the_first_user(world):
+    binding = discover(world, user="alice")         # the first user, not the project's owner
+    with pytest.raises(errors.forbidden.NoWritePermission):
+        bll.delete_binding(world.company, "alice", False, binding.id)
+    with pytest.raises(errors.bad_request.ValidationError, match="no such repository"):
+        bll.delete_binding(world.company, "stranger", False, binding.id)
+    bll.delete_binding(world.company, "admin", True, binding.id)
+    assert RepositoryBinding.objects(company=world.company).count() == 0
