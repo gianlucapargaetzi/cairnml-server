@@ -366,6 +366,10 @@ def test_a_run_that_names_the_repository_again_lists_it_again(world):
 
 def test_delete_is_for_the_owner_and_an_admin_not_for_the_first_user(world):
     binding = discover(world, user="alice")         # the first user, not the project's owner
+    shown = {b["id"]: b for row in bll.list_for(world.company, "alice", False) for b in row["bindings"]}
+    assert shown[binding.id]["can_assign"] is True and shown[binding.id]["can_delete"] is False
+    shown = {b["id"]: b for row in bll.list_for(world.company, "owner", False) for b in row["bindings"]}
+    assert shown[binding.id]["can_delete"] is True
     with pytest.raises(errors.forbidden.NoWritePermission):
         bll.delete_binding(world.company, "alice", False, binding.id)
     with pytest.raises(errors.bad_request.ValidationError, match="no such repository"):

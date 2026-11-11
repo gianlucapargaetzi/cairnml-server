@@ -421,6 +421,7 @@ def _view_binding(binding: RepositoryBinding, source: CodeRepository, resolution
         "state": resolution.state,
         "message": resolution.message,
         "can_assign": right is not None,
+        "can_delete": right in (OWNER, ADMIN),
         "assignable": assignable_rows,
         "created": binding.created.isoformat() if binding.created else None,
         "last_used": binding.last_used.isoformat() if binding.last_used else None,
