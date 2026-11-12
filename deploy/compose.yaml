@@ -71,6 +71,9 @@ services:
       RUSTFS_ACCESS_KEY: ${RUSTFS_ROOT_USER:-rustfsadmin}
       RUSTFS_SECRET_KEY: ${RUSTFS_ROOT_PASSWORD:?set RUSTFS_ROOT_PASSWORD in deploy/.env}
       RUSTFS_CONSOLE_ENABLE: "true"
+      # The browser PUTs and GETs files straight to the store through presigned URLs (Import run, artifacts), from the
+      # web app's origin. The signature in the URL is the authorisation, so any origin may use a URL it was given.
+      RUSTFS_CORS_ALLOWED_ORIGINS: ${CAIRNML_STORAGE_CORS_ORIGINS:-*}
     volumes:
       - ${CAIRNML_HOME:-${HOME}/.local/share/cairnml}/data/rustfs:/data
     ports:
