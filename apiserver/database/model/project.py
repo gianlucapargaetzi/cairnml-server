@@ -65,6 +65,10 @@ class Project(AttributedDocument):
     tags = SafeSortedListField(StringField(required=True))
     system_tags = SafeSortedListField(StringField(required=True))
     default_output_destination = StrippedStringField()
+    overview_board = StringField(exclude_by_default=True)
+    """ the overview board of the project as JSON text (see bll/project/overview_board.py) """
+    overview_board_version = IntField(default=0)
+    """ counts the saves of the board: a save names the version it was made from, so two writers cannot overwrite each other """
     notification_webhook = StringField(exclude_by_default=True)
     """ https URL that receives a POST when a task of the project completes, fails or is stopped. Not returned by
     default: it may carry a secret token. Set by project admins only. """

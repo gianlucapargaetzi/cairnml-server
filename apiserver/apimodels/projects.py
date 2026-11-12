@@ -112,3 +112,12 @@ class ProjectsGetRequest(models.Base):
     children_type = ActualEnumField(ProjectChildrenType)
     children_tags = fields.ListField(str)
     children_tags_filter = DictField()
+
+
+class OverviewBoardRequest(models.Base):
+    project = fields.StringField(required=True)
+
+
+class SetOverviewBoardRequest(OverviewBoardRequest):
+    version = fields.IntField(required=True)
+    cards = ListField([dict])
