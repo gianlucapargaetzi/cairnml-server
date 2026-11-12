@@ -12,8 +12,8 @@ One limit for the whole graph: the window ends after 30 commits or when 30 tasks
 comes first. The first commit is always shown; what lies between the window and the first commit is one gap.
 
 The rows are newest first, in topological order (a commit before its parents). Each row has a lane (a column of the rail) and
-what is needed to draw the lines: the lanes that are open above and below it, the lanes that end in it and the lanes of its
-parents. See ``assign_lanes``.
+what is needed to draw the lines: the lanes that are open above and below it, the lanes that end in it, the lanes of its
+parents and the lines that move to another lane in it. See ``assign_lanes``.
 """
 
 from collections import defaultdict
@@ -48,7 +48,8 @@ def _runs_of_commit(by_commit: Dict[str, List[dict]], sha: str) -> List[dict]:
 def assign_lanes(rows: List[dict]) -> int:
     """Gives every row (``id`` and ``parents``, newest first, a row before its parents) its lane and what draws its lines:
     ``lane``, ``lanes_before`` and ``lanes_after`` (which lanes are open above and below the row), ``merge_from`` (the other
-    lanes that end in this row) and ``parent_lanes`` (the lane each parent continues in). Returns the number of lanes."""
+    lanes that end in this row), ``parent_lanes`` (the lane each parent continues in) and ``shifts`` (pairs [from, to]: a line
+    that moves to a lane further left in this row). Returns the number of lanes."""
     expecting: List[Optional[str]] = []
     count = 1
     for row in rows:
@@ -63,10 +64,18 @@ def assign_lanes(rows: List[dict]) -> int:
                 expecting.append(None)
         for i in ending:
             expecting[i] = None
-        parent_lanes = []
+        parent_lanes, shifts = [], []
         for number, parent in enumerate(row["parents"]):
             if parent in expecting:
-                parent_lanes.append(expecting.index(parent))
+                other = expecting.index(parent)
+                if number == 0 and other > lane and expecting[lane] is None:
+                    # the line this commit continues is already open in a lane to the right: it moves left into this lane, so a
+                    # line keeps its lane (and its colour) as far as it can
+                    expecting[other], expecting[lane] = None, parent
+                    shifts.append([other, lane])
+                    parent_lanes.append(lane)
+                else:
+                    parent_lanes.append(other)
                 continue
             if number == 0 and expecting[lane] is None:
                 slot = lane
@@ -83,6 +92,7 @@ def assign_lanes(rows: List[dict]) -> int:
             "lanes_after": [item is not None for item in expecting],
             "merge_from": ending[1:],
             "parent_lanes": parent_lanes,
+            "shifts": shifts,
         })
         count = max(count, len(expecting), lane + 1)
     return count

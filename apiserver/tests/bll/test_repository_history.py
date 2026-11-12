@@ -134,12 +134,14 @@ def test_a_merge_commit_is_shown_with_both_of_its_lanes():
     assert result["nodes"][2]["parent_lanes"] == [0]  # the branch joins the main line again below its commit
 
 
-def test_assign_lanes_reuses_a_lane_that_has_ended():
+def test_assign_lanes_moves_a_line_back_to_the_left_when_it_can():
     rows = [{"id": "d", "parents": ["b", "c"]}, {"id": "c", "parents": ["a"]}, {"id": "b", "parents": ["a"]},
             {"id": "a", "parents": []}]
     assert assign_lanes(rows) == 2
-    assert [row["lane"] for row in rows] == [0, 1, 0, 1]  # a shared ancestor continues in the lane that reached it first
-    assert rows[2]["parent_lanes"] == [1]
+    # c continues in lane 1 towards a; b, in lane 0, continues towards a too: the line of lane 1 moves into lane 0 there
+    assert [row["lane"] for row in rows] == [0, 1, 0, 0]
+    assert rows[2]["shifts"] == [[1, 0]]
+    assert rows[2]["parent_lanes"] == [0]
     assert rows[3]["lanes_after"] == [False, False]
 
 
