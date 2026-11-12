@@ -104,16 +104,45 @@ def condense(commits: List[dict], total: int, first: Optional[dict], runs: List[
             break
     by_sha = {commit["sha"]: commit for commit in window}
     first_sha = first["sha"] if first else None
+    wanted = {commit["sha"] for index, commit in enumerate(window)
+              if index == 0 or commit["sha"] == first_sha or commit["sha"] in tips or _runs_of_commit(by_commit, commit["sha"])}
+
+    def ancestors(sha: str) -> set:
+        """The commit and everything below it that is in the window."""
+        found, todo = set(), [sha]
+        while todo:
+            current = todo.pop()
+            if current in by_sha and current not in found:
+                found.add(current)
+                todo.extend(by_sha[current]["parents"])
+        return found
+
+    # A side branch that merges into a commit counts only when something ran on it; otherwise its merge commit is an ordinary
+    # commit of the line it merges into, and the side branch is not drawn.
+    kept: Dict[str, List[str]] = {}
+    for commit in window:
+        parents = commit["parents"]
+        if len(parents) > 1:
+            line = ancestors(parents[0])
+            parents = [parents[0]] + [parent for parent in parents[1:] if (ancestors(parent) - line) & wanted]
+        kept[commit["sha"]] = parents
+    # the commits that the drawn lines lead through: what is below the commits that count, along the kept parents
+    live, todo = set(), list(wanted)
+    while todo:
+        current = todo.pop()
+        if current in by_sha and current not in live:
+            live.add(current)
+            todo.extend(kept[current])
     children: Dict[str, int] = defaultdict(int)
     for commit in window:
-        for parent in commit["parents"]:
-            children[parent] += 1
+        if commit["sha"] in live:
+            for parent in kept[commit["sha"]]:
+                children[parent] += 1
 
-    def structural(index: int, commit: dict) -> bool:
-        return (index == 0 or commit["sha"] == first_sha or bool(_runs_of_commit(by_commit, commit["sha"]))
-                or len(commit["parents"]) != 1 or children[commit["sha"]] > 1 or commit["sha"] in tips)
+    def structural(commit: dict) -> bool:
+        return (commit["sha"] in wanted or len(kept[commit["sha"]]) != 1 or children[commit["sha"]] > 1)
 
-    shown = {commit["sha"] for index, commit in enumerate(window) if structural(index, commit)}
+    shown = {commit["sha"] for commit in window if commit["sha"] in live and structural(commit)}
     remaining = max(total - len(window) - (0 if first_sha in by_sha else 1), 0) if first else 0
 
     def resolve(parent: str):
@@ -126,7 +155,7 @@ def condense(commits: List[dict], total: int, first: Optional[dict], runs: List[
             if parent in shown:
                 return parent, skipped
             skipped += 1
-            parent = by_sha[parent]["parents"][0]
+            parent = kept[parent][0]
 
     def run_rows(sha: str) -> List[dict]:
         return [{k: run.get(k) for k in ("id", "name", "status", "project", "created", "dirty")}
@@ -137,7 +166,7 @@ def condense(commits: List[dict], total: int, first: Optional[dict], runs: List[
         if commit["sha"] not in shown:
             continue
         parents, gaps = [], []
-        for parent in commit["parents"]:
+        for parent in kept[commit["sha"]]:
             target, skipped = resolve(parent)
             if skipped > 0:
                 gap_id = f"gap:{commit['sha']}:{len(gaps)}"

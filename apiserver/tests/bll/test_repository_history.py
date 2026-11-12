@@ -141,3 +141,18 @@ def test_assign_lanes_reuses_a_lane_that_has_ended():
     assert [row["lane"] for row in rows] == [0, 1, 0, 1]  # a shared ancestor continues in the lane that reached it first
     assert rows[2]["parent_lanes"] == [1]
     assert rows[3]["lanes_after"] == [False, False]
+
+
+def test_a_side_branch_without_tasks_is_not_drawn_and_its_merge_is_an_ordinary_commit():
+    # 1-2-3 on main, 2-4 on a branch that was merged by 5; the only task ran on 3
+    commits = [commit(5, [sha(3), sha(4)]), commit(4, [sha(2)]), commit(3), commit(2), commit(1)]
+    result = condense(commits, 5, commits[-1], [run(3)], tips={sha(5): ["main"]})
+    assert shape(result) == [5, 3, "...1", 1]
+    assert result["lane_count"] == 1
+
+
+def test_a_merged_side_branch_with_a_task_keeps_its_lane():
+    commits = [commit(5, [sha(3), sha(4)]), commit(4, [sha(2)]), commit(3), commit(2), commit(1)]
+    result = condense(commits, 5, commits[-1], [run(4)], tips={sha(5): ["main"]})
+    assert result["lane_count"] == 2
+    assert 4 in shape(result)
