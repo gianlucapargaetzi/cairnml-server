@@ -167,3 +167,14 @@ def test_a_merged_side_branch_with_a_task_keeps_its_lane():
     result = condense(commits, 5, commits[-1], [run(4)], tips={sha(5): ["main"]}, default_tip=sha(5))
     assert result["lane_count"] == 2
     assert 4 in shape(result)
+
+
+def test_every_branch_has_a_lane_of_its_own_and_no_lane_is_used_twice():
+    # branch X ends at m3; branch Y starts after that: it does not take X's lane
+    rows = [{"id": "x1", "parents": ["m3"]}, {"id": "m5", "parents": ["m4"]}, {"id": "m4", "parents": ["m3"]},
+            {"id": "m3", "parents": ["m2"]}, {"id": "y1", "parents": ["m1"]}, {"id": "m2", "parents": ["m1"]},
+            {"id": "m1", "parents": []}]
+    count = assign_lanes(rows, {"m5", "m4", "m3", "m2", "m1"})
+    lanes = {row["id"]: row["lane"] for row in rows}
+    assert lanes["x1"] == 1 and lanes["y1"] == 2
+    assert count == 3

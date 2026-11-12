@@ -48,14 +48,12 @@ def _runs_of_commit(by_commit: Dict[str, List[dict]], sha: str) -> List[dict]:
 def assign_lanes(rows: List[dict], main_ids=frozenset()) -> int:
     """Gives every row (``id`` and ``parents``, newest first, a row before its parents) its ``lane``. Lane 0 belongs to the
     default branch: the rows in ``main_ids`` are always in it, and no other row ever is. A line keeps its lane for as long as it
-    can. Returns the number of lanes."""
+    can, and every other branch has a lane of its own. Returns the number of lanes."""
     expecting: List[Optional[str]] = [None]
     count = 1
 
-    def free_lane() -> int:
-        free = [i for i, item in enumerate(expecting) if item is None and i > 0]
-        if free:
-            return free[0]
+    def new_lane() -> int:
+        """A lane of its own: a lane is never reused for another branch, so every branch in the list has its own column and colour."""
         expecting.append(None)
         return len(expecting) - 1
 
@@ -66,7 +64,7 @@ def assign_lanes(rows: List[dict], main_ids=frozenset()) -> int:
         elif ending:
             lane = ending[0]
         else:
-            lane = free_lane()
+            lane = new_lane()
         for i in ending:
             expecting[i] = None
         for number, parent in enumerate(row["parents"]):
@@ -79,7 +77,7 @@ def assign_lanes(rows: List[dict], main_ids=frozenset()) -> int:
             if number == 0 and expecting[lane] is None:
                 expecting[lane] = parent
             else:
-                expecting[free_lane()] = parent
+                expecting[new_lane()] = parent
         row["lane"] = lane
         count = max(count, len(expecting), lane + 1)
     return count
