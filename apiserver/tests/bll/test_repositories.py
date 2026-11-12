@@ -685,3 +685,18 @@ def test_outside_a_project_the_users_own_credential_is_no_fallback_and_carries_n
     assert outside.state == inside.state == bll.ASSIGNED
     assert not outside.warning and "project" not in outside.message
     assert inside.warning and "project" in inside.message
+
+
+def test_a_write_token_refused_by_github_says_the_app_needs_write_access(world):
+    from apiserver.idp.github import GitHubError
+
+    class App:
+        def installation_token(self, repo, permissions=None):
+            raise GitHubError("token request failed: 422")
+
+    repo = use(world)
+    with pytest.raises(errors.bad_request.ValidationError, match="Contents and Workflows: Read and write"):
+        bll._app_token(App(), repo, "the GitHub App x", bll.WRITE_PERMISSIONS)
+    with pytest.raises(errors.bad_request.ValidationError) as read_refused:          # a read token has no such hint
+        bll._app_token(App(), repo, "the GitHub App x")
+    assert "write" not in read_refused.value.msg

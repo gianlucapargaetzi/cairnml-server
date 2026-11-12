@@ -648,7 +648,11 @@ def _app_token(app: GitHubApp, repo: Repository, label: str, permissions: Option
     except RepoNotAccessible:
         raise errors.bad_request.ValidationError(f"{label} is not installed on {repo.path}") from None
     except GitHubError as exc:
-        raise errors.bad_request.ValidationError(f"GitHub did not issue a token for {repo.path} ({exc})") from None
+        hint = ""
+        if permissions and "422" in str(exc):
+            hint = (": the App must be allowed to write (Contents and Workflows: Read and write); change its permissions "
+                    "on GitHub and accept them on the installation")
+        raise errors.bad_request.ValidationError(f"GitHub did not issue a token for {repo.path} ({exc}){hint}") from None
     return {"token": token.token, "expires_at": token.expires_at.isoformat(), "username": "x-access-token"}
 
 
