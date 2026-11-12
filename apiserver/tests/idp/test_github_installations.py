@@ -119,6 +119,15 @@ class TestPublicRepository(TestCase):
         self.assertTrue(github.public_commit_exists("https://api.example", "acme/open", "abc", http=http))
         self.assertIsNone(http.requests[0][3].get("Authorization"))
 
+    def test_a_commit_of_an_empty_repository_is_not_found_rather_than_a_failed_check(self):
+        app = github.GitHubApp("1", "", "https://api.example")
+        app._send = lambda *args, **kwargs: Response(409)      # GitHub: "Git Repository is empty"
+        app._read_headers = lambda repo: {}
+        self.assertFalse(app.commit_exists("acme/empty", "abc"))
+        app._send = lambda *args, **kwargs: Response(500)
+        with self.assertRaises(GitHubError):
+            app.commit_exists("acme/empty", "abc")
+
     def test_a_commit_that_is_not_there_is_not_found(self):
         http = FakeHttp({("/repos/acme/open/commits/zzz", None): Response(422)})
         self.assertFalse(github.public_commit_exists("https://api.example", "acme/open", "zzz", http=http))
