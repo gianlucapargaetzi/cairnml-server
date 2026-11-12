@@ -674,3 +674,14 @@ def test_a_credential_that_reads_makes_the_record_readable(world):
     bll.assign(world.company, "owner", repo.id, "mine")
     row = rows(world, "owner")[0]
     assert row["access"]["readable"] is True and [a["readable"] for a in row["assignments"]] == [True]
+
+
+def test_outside_a_project_the_users_own_credential_is_no_fallback_and_carries_no_warning(world):
+    credential(world, "member-cred", "member")
+    repo = use(world)
+    bll.assign(world.company, "member", repo.id, "member-cred")
+    outside = bll.resolve(repo, None, "member")
+    inside = bll.resolve(repo, world.root, "member")                      # the project's owner has none: a fallback, with a warning
+    assert outside.state == inside.state == bll.ASSIGNED
+    assert not outside.warning and "project" not in outside.message
+    assert inside.warning and "project" in inside.message

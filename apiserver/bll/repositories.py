@@ -616,7 +616,7 @@ def resolve(repo: Repository, project_root: Optional[str], user: str, now: Optio
     if user and user != owner:
         found = Assignment.objects(repository=repo.id, user=user).first()
         if found is not None:
-            return _assigned(found, repo, True)
+            return _assigned(found, repo, bool(owner))  # a fallback only inside a project whose owner has none
     if is_shared(repo):  # a shared repository is read with the company credential the admin assigned when it was shared
         found = Assignment.objects(repository=repo.id, user=repo.owner).first()
         if found is not None:
