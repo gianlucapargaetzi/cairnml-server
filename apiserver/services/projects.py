@@ -725,12 +725,20 @@ def get_contributions(
 
 @endpoint("projects.get_overview_board")
 def get_overview_board(call: APICall, company_id: str, request: OverviewBoardRequest):
-    """The overview board of a project, or None when it never saved one (the page then shows its default board). Everyone who can
-    read the project reads it."""
+    """The overview board of a project, or None when it never saved one (the page then shows its default board), and whether the caller
+    may change it (only the owner may). Everyone who can read the project reads it."""
     ProjectAccessBLL.assert_can(call.identity, request.project, "read")
     project = Project.objects(id=request.project).only("overview_board", "overview_board_version").first()
     cards = overview_board.parse_stored(project.overview_board) if project else None
-    call.result.data = {"board": {"version": project.overview_board_version, "cards": cards} if cards is not None else None}
+    try:
+        ProjectAccessBLL.assert_can(call.identity, request.project, "owner_only")
+        can_edit = True
+    except errors.forbidden.NoWritePermission:
+        can_edit = False
+    call.result.data = {
+        "board": {"version": project.overview_board_version, "cards": cards} if cards is not None else None,
+        "can_edit": can_edit,
+    }
 
 
 @endpoint("projects.set_overview_board")

@@ -66,7 +66,18 @@ def put(company, project, user, version, cards=CARDS):
 
 
 def test_a_project_that_never_saved_a_board_has_none(company, project):
-    assert get(company, project, "viewer") == {"board": None}
+    assert get(company, project, "viewer")["board"] is None
+
+
+@pytest.mark.parametrize("user, can_edit", [("owner1", True), ("collab", False), ("writer", False), ("viewer", False)])
+def test_the_answer_says_whether_the_caller_may_change_the_board(company, project, user, can_edit):
+    assert get(company, project, user)["can_edit"] is can_edit
+
+
+def test_a_company_admin_is_told_they_may_change_it(company, project):
+    call = FakeCall(Identity(user="admin1", company=company, role=Role.admin))
+    svc.get_overview_board(call, company, OverviewBoardRequest(project=project))
+    assert call.result.data["can_edit"] is True
 
 
 @pytest.mark.parametrize("user", ["owner1", "collab", "writer", "viewer"])
@@ -85,7 +96,7 @@ def test_the_owner_saves_and_the_version_goes_up(company, project):
 def test_nobody_but_the_owner_may_change_it(company, project, user):
     with pytest.raises(errors.forbidden.NoWritePermission):
         put(company, project, user, 0)
-    assert get(company, project, "owner1") == {"board": None}
+    assert get(company, project, "owner1")["board"] is None
 
 
 def test_a_company_admin_passes_the_usual_owner_check(company, project):
@@ -107,12 +118,12 @@ def test_a_save_from_an_old_version_is_refused_and_the_newer_board_stays(company
 def test_an_invalid_board_is_refused_and_nothing_is_stored(company, project):
     with pytest.raises(errors.bad_request.ValidationError):
         put(company, project, "owner1", 0, [dict(CARDS[0], type="nonsense")])
-    assert get(company, project, "owner1") == {"board": None}
+    assert get(company, project, "owner1")["board"] is None
 
 
 def test_a_stored_board_that_is_corrupt_reads_as_none(company, project):
     Project.objects(id=project).update(set__overview_board="{broken", set__overview_board_version=3)
-    assert get(company, project, "owner1") == {"board": None}
+    assert get(company, project, "owner1")["board"] is None
 
 
 def test_a_stranger_does_not_even_learn_that_the_project_exists(company, project):
