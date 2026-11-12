@@ -67,10 +67,26 @@ def delete(call: APICall, company: str, _request):
 def set_shared(call: APICall, company: str, _request):
     data = call.data or {}
     repo = _repository_of(call, company, data)
-    repo = bll.set_shared(company, call.identity.user, _is_admin(call), repo.id, bool(data.get("shared")))
+    repo = bll.set_shared(company, call.identity.user, _is_admin(call), repo.id, bool(data.get("shared")),
+                          credential=data.get("credential") or None, none_needed=bool(data.get("none_needed")),
+                          confirm=bool(data.get("shared")))
     audit(call.identity.user, "repository.shared" if data.get("shared") else "repository.unshared",
           ip=client_address(call), company=company, repo=repo.key)
     call.result.data = {"repository": _view(call, company, repo)}
+
+
+@endpoint("repositories.check_sharing")
+def check_sharing(call: APICall, company: str, _request):
+    """Whether a company credential (or None needed) reads the repository, so that it may be shared: ``ok`` and the reason."""
+    data = call.data or {}
+    repo = _repository_of(call, company, data)
+    try:
+        bll.verify_for_sharing(company, call.identity.user, _is_admin(call), repo.id, data.get("credential") or None,
+                               bool(data.get("none_needed")))
+    except errors.bad_request.ValidationError as refused:
+        call.result.data = {"ok": False, "message": refused.msg}
+        return
+    call.result.data = {"ok": True, "message": ""}
 
 
 @endpoint("repositories.link")

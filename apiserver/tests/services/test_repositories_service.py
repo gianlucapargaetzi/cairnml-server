@@ -66,7 +66,7 @@ def test_the_old_services_are_gone_and_the_new_one_is_there():
     names = ServiceRepo.endpoint_names()
     assert not [n for n in names if n.startswith(("datasets.", "dataset_registry.", "repo_access."))]
     assert {"repositories.get_all", "repositories.add", "repositories.assign", "repositories.unassign", "repositories.check",
-            "repositories.set_shared", "repositories.link", "repositories.unlink", "repositories.refresh", "repositories.git_token",
+            "repositories.set_shared", "repositories.check_sharing", "repositories.link", "repositories.unlink", "repositories.refresh", "repositories.git_token",
             "repositories.clone", "repositories.find", "repositories.resolve", "repositories.requirement",
             "repositories.get_details", "repositories.delete"} <= set(names)
     assert not {"user_access.grant", "user_access.revoke", "user_access.project_grants"} & set(names)
@@ -145,7 +145,13 @@ def test_the_admin_shares_a_repository_and_a_user_cannot(world):
     repo = bll.add(world.company, "owner", False, URL, "dataset")
     with pytest.raises(errors.forbidden.NoWritePermission):
         run(svc.add, world, "owner", {"url": "https://github.com/acme/other", "role": "dataset", "shared": True})
-    row = run(svc.set_shared, world, "admin", {"id": repo.id, "shared": True}, role="admin")["repository"]
+    credential(world, "company-app", "admin", scope="company")
+    refused = run(svc.check_sharing, world, "admin", {"id": repo.id}, role="admin")
+    assert refused["ok"] is False and "company credential" in refused["message"]
+    assert run(svc.check_sharing, world, "admin", {"id": repo.id, "credential": "company-app"}, role="admin") == {"ok": True, "message": ""}
+    with pytest.raises(errors.bad_request.ValidationError):                      # sharing needs the credential
+        run(svc.set_shared, world, "admin", {"id": repo.id, "shared": True}, role="admin")
+    row = run(svc.set_shared, world, "admin", {"id": repo.id, "shared": True, "credential": "company-app"}, role="admin")["repository"]
     assert row["shared"] and row["owner_name"] == "Company"
     assert [r["name"] for r in run(svc.get_all, world, "stranger", {})["repositories"]] == ["cars"]
 

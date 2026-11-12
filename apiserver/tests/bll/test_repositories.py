@@ -440,8 +440,9 @@ def test_the_list_shows_every_assignment_and_only_the_users_own_are_editable(wor
     by_user = {a["user"]: a for a in row["assignments"]}
     assert by_user["member"]["mine"] and by_user["member"]["can_edit"]
     assert not by_user["owner"]["mine"] and not by_user["owner"]["can_edit"]
-    assert by_user["owner"]["credential_name"] == "cred owner-cred" and by_user["owner"]["used_in"] == [
-        {"project": world.root, "as": "owner"}]
+    assert by_user["owner"]["credential_name"] == "cred owner-cred" and [
+        (u["project"], u["as"]) for u in by_user["owner"]["used_in"]] == [(world.root, "owner")]
+    assert row["relation"] == "inherited" and rows(world, "owner")[0]["relation"] == "own"
     assert "secret" not in str(row)
 
 
@@ -474,3 +475,65 @@ def test_the_owner_of_a_project_changing_relinks_its_repositories(world):
     bll.regrant_project_links(world.company, world.root, "member", actor="admin")
     link = access.find_share(world.company, "repository", repo.id, "projects", world.root)
     assert link is not None and link.granted_by == "member"
+
+
+def test_a_project_whose_owner_has_no_assignment_is_a_row_of_the_owner_without_a_credential(world):
+    use(world)
+    row = rows(world, "member")[0]
+    assert [(a["user"], a["credential_name"], a["state"], a["can_edit"]) for a in row["assignments"]] == [("owner", "", "none", False)]
+    assert [(u["project"], u["as"], u["member"]) for u in row["assignments"][0]["used_in"]] == [(world.root, "owner", True)]
+    assert rows(world, "owner")[0]["assignments"][0]["can_edit"]            # the owner may assign from that row
+
+
+def test_the_assignment_that_reads_for_a_job_is_marked_used(world, monkeypatch):
+    monkeypatch.setattr(bll, "_token_of", lambda entry, r, permissions=None: {"token": "tok", "expires_at": None, "username": "x"})
+    credential(world, "owner-cred", "owner")
+    repo = use(world)
+    bll.assign(world.company, "owner", repo.id, "owner-cred")
+    assert rows(world, "owner")[0]["assignments"][0]["last_used"] is None
+    bll.token_for_job(world.company, repo, world.root, "member")
+    assert rows(world, "owner")[0]["assignments"][0]["last_used"] is not None
+
+
+# --- sharing needs the company credential, confirmed first --------------------------------------------------------------------------
+
+def test_sharing_with_confirmation_needs_a_company_credential_that_reads_it_and_assigns_it_to_the_admin(world):
+    credential(world, "company", "admin", scope="company")
+    credential(world, "member-own", "member")
+    repo = use(world)
+    with pytest.raises(errors.bad_request.ValidationError, match="choose the company credential"):
+        bll.set_shared(world.company, "owner", False, repo.id, True, confirm=True)
+    with pytest.raises(errors.bad_request.ValidationError, match="company credential"):
+        bll.set_shared(world.company, "owner", False, repo.id, True, credential="member-own", confirm=True)
+    world.reads = False
+    with pytest.raises(errors.bad_request.ValidationError, match="not installed"):
+        bll.set_shared(world.company, "owner", False, repo.id, True, credential="company", confirm=True)
+    assert not bll.is_shared(bll.get(world.company, repo.id))              # nothing changed when it was refused
+    world.reads = True
+    bll.set_shared(world.company, "owner", False, repo.id, True, credential="company", confirm=True)
+    assert bll.is_shared(bll.get(world.company, repo.id))
+    assert Assignment.objects(repository=repo.id, user="admin").first().credential == "company"
+
+
+def test_a_short_id_names_the_repository_when_it_is_unique(world):
+    repo = use(world)
+    assert bll.find_reference(world.company, repo.id[:8]).id == repo.id
+    assert bll.find_reference(world.company, "zzzzzzzz") is None
+
+
+def test_a_shared_repository_is_read_with_the_company_credential_assigned_when_it_was_shared(world):
+    credential(world, "company", "admin", scope="company")
+    repo = use(world)
+    bll.set_shared(world.company, "owner", False, repo.id, True, credential="company", confirm=True)
+    for user in ("owner", "member", "stranger"):
+        resolution = bll.resolve(bll.get(world.company, repo.id), None, user)
+        assert resolution.state == bll.ASSIGNED and resolution.entry.id == "company" and not resolution.warning
+
+
+def test_a_project_of_a_shared_repository_reads_with_the_company_credential_not_with_nothing(world):
+    credential(world, "company", "admin", scope="company")
+    repo = use(world)
+    bll.set_shared(world.company, "owner", False, repo.id, True, credential="company", confirm=True)
+    row = rows(world, "member")[0]
+    reading = [a for a in row["assignments"] if a["user"] == "owner"]
+    assert [(a["credential_name"], a["state"], a["can_edit"], a["company"]) for a in reading] == [("cred company", "ok", False, True)]

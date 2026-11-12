@@ -240,6 +240,9 @@ def find_reference(company: str, reference: str) -> Optional[Repository]:
     if not ref:
         return None
     found = Repository.objects(company=company, id=ref).first()
+    if found is None and 8 <= len(ref) < 32 and all(c in "0123456789abcdef" for c in ref.lower()):
+        starting = list(Repository.objects(company=company, id__startswith=ref.lower()).limit(2))
+        found = starting[0] if len(starting) == 1 else None  # the short id the list shows, when it names one
     if found is None and repo_address.key_of(ref):
         found = find(company, ref)
     if found is None:
@@ -303,10 +306,33 @@ def linked_projects(repo: Repository) -> List[Share]:
 
 # --- sharing and deleting -------------------------------------------------------------------------------------------------------
 
-def set_shared(company: str, user: str, is_admin: bool, repository_id: str, shared: bool) -> Repository:
+def verify_for_sharing(company: str, user: str, is_admin: bool, repository_id: str, credential: Optional[str],
+                       none_needed: bool = False) -> None:
+    """Raises, with the reason, unless the company credential reads the repository (or the host clones it without a credential,
+    for ``none_needed``): what a shared repository is read with must be confirmed before it is shared."""
+    repo = require_visible(company, user, is_admin, repository_id)
+    if credential and none_needed:
+        raise errors.bad_request.ValidationError("choose a company credential or None needed, not both")
+    if credential:
+        entry = UserAccess.objects(company=company, id=credential, scope="company").first()
+        if entry is None:
+            raise errors.bad_request.ValidationError("a shared repository is read with a company credential")
+        _check_reads(entry, repo)
+    elif none_needed:
+        answer = anonymous(repo, force=True)
+        if answer is not True:
+            raise errors.bad_request.ValidationError(
+                f"{repo.host}/{repo.path} cannot be cloned without a credential, so None needed does not apply")
+    else:
+        raise errors.bad_request.ValidationError("choose the company credential that reads it, or None needed for a public repository")
+
+
+def set_shared(company: str, user: str, is_admin: bool, repository_id: str, shared: bool, credential: Optional[str] = None,
+               none_needed: bool = False, confirm: bool = False) -> Repository:
     """Makes an entry shared, or non-shared again. The owner or the admin makes it shared: ownership moves to the admin, and
     the previous owner's assignment is dropped, as is any assignment of a credential that is not the company's (a shared
-    entry is read with company credentials only). Only the admin makes it non-shared again."""
+    entry is read with company credentials only). Only the admin makes it non-shared again. With ``confirm`` the company
+    credential (or None needed) that will read it is verified first and becomes the admin's assignment."""
     access.refuse_inactive(user)
     repo = require_visible(company, user, is_admin, repository_id)
     if shared:
@@ -317,6 +343,8 @@ def set_shared(company: str, user: str, is_admin: bool, repository_id: str, shar
         admin = admin_of(company)
         if admin is None:
             raise errors.bad_request.ValidationError("there is no admin to own a shared repository")
+        if confirm:
+            verify_for_sharing(company, user, is_admin, repository_id, credential, none_needed)
         previous = repo.owner
         repo.owner = admin
         repo.updated = datetime.utcnow()
@@ -327,6 +355,11 @@ def set_shared(company: str, user: str, is_admin: bool, repository_id: str, shar
             if owned_before or (entry is not None and entry.scope != "company"):
                 assignment.delete()
         access.record_grant(company, admin, "repository", repo.id, "public", actor=user)
+        if confirm:
+            reads = Assignment.objects(repository=repo.id, user=admin).first() or Assignment(
+                id=uuid.uuid4().hex, company=company, repository=repo.id, user=admin, created=datetime.utcnow())
+            reads.credential, reads.none_needed = (credential or None), bool(none_needed)
+            reads.save()
         return repo
     if not is_admin:
         raise errors.forbidden.NoWritePermission("only the admin makes a shared repository non-shared")
@@ -527,6 +560,10 @@ def resolve(repo: Repository, project_root: Optional[str], user: str, now: Optio
         found = Assignment.objects(repository=repo.id, user=user).first()
         if found is not None:
             return _assigned(found, repo, True)
+    if is_shared(repo):  # a shared repository is read with the company credential the admin assigned when it was shared
+        found = Assignment.objects(repository=repo.id, user=repo.owner).first()
+        if found is not None:
+            return _assigned(found, repo, False)
     public = anonymous(repo, now)
     if public:
         return Resolution(ANONYMOUS, None, "Readable without a credential; no credential is assigned", True)
@@ -587,7 +624,10 @@ def token_for(repo: Repository, resolution: Resolution, write: bool = False) -> 
     if resolution.state == UNREACHABLE:
         raise errors.bad_request.ValidationError(f"{repo.host}/{repo.path}: {resolution.message}")
     if resolution.state == ASSIGNED:
-        return {**_token_of(resolution.entry, repo, permissions), "url": url}
+        answer = {**_token_of(resolution.entry, repo, permissions), "url": url}
+        if resolution.via_user:
+            Assignment.objects(repository=repo.id, user=resolution.via_user).update(last_used=datetime.utcnow())
+        return answer
     if resolution.state == COMPANY:
         return {**_company_token(repo, permissions), "url": url}
     raise errors.bad_request.ValidationError(
@@ -621,6 +661,7 @@ def check(company: str, user: str, is_admin: bool, repository_id: str) -> Reposi
     state, message = "ok", ""
     mine = Assignment.objects(repository=repo.id, user=user).first()
     if mine is not None and mine.credential and resolution.state == ASSIGNED:
+        mine.update(last_used=datetime.utcnow())
         try:
             _check_reads(resolution.entry, repo)
         except errors.bad_request.ValidationError as refused:
@@ -635,27 +676,57 @@ def check(company: str, user: str, is_admin: bool, repository_id: str) -> Reposi
 
 # --- what the API shows -------------------------------------------------------------------------------------------------------------
 
-def _assignment_rows(repo: Repository, user: str, links: List[Share], owners: dict) -> list:
+def _assignment_rows(repo: Repository, user: str, links: List[Share], owners: dict, names_of_projects: dict,
+                     member_roots: set) -> list:
+    """One row per user who reads the repository, with the projects each reads for: an assignment is a row, and a project whose
+    owner has no assignment gets a row of the owner without a credential (state ``public`` when the host allows it, else ``none``)."""
     assignments = list(Assignment.objects(repository=repo.id).order_by("created"))
     assigned_users = {a.user for a in assignments}
-    names = _names({a.user for a in assignments})
+    unassigned = sorted({owners[s.project] for s in links if owners.get(s.project) and owners[s.project] not in assigned_users})
+    names = _names(assigned_users | set(unassigned))
     entries = {e.id: e for e in UserAccess.objects(id__in=[a.credential for a in assignments if a.credential])}
+
+    def project(share, as_):
+        return {"project": share.project, "project_name": names_of_projects.get(share.project), "as": as_,
+                "member": share.project in member_roots, "inherited": bool(share.inherited)}
+
     rows = []
     for a in assignments:
         used = []
         for share in links:
             owner = owners.get(share.project)
             if a.user == owner:
-                used.append({"project": share.project, "as": "owner"})
+                used.append(project(share, "owner"))
             elif owner not in assigned_users and user_access.is_member(repo.company, share.project, a.user):
-                used.append({"project": share.project, "as": "fallback"})
+                used.append(project(share, "fallback"))
         entry = entries.get(a.credential) if a.credential else None
         rows.append({
             "id": a.id, "user": a.user, "user_name": names.get(a.user, a.user), "mine": a.user == user,
             "credential": a.credential or None,
             "credential_name": entry.label if entry else ("None needed" if a.none_needed else ""),
             "company": bool(entry and entry.scope == "company"), "none_needed": bool(a.none_needed),
+            "state": "public" if a.none_needed else "ok",
             "can_edit": a.user == user, "used_in": used,
+            "last_used": a.last_used.isoformat() if a.last_used else None,
+        })
+    shared_read = next((a for a in assignments if a.user == repo.owner), None) if is_shared(repo) else None
+    shared_entry = entries.get(shared_read.credential) if shared_read is not None and shared_read.credential else None
+    for owner in unassigned:
+        if shared_read is not None:  # a shared repository is read for everyone with the company credential it was shared with
+            rows.append({
+                "id": "", "user": owner, "user_name": names.get(owner, owner), "mine": owner == user,
+                "credential": shared_read.credential or None,
+                "credential_name": shared_entry.label if shared_entry else "None needed", "company": shared_entry is not None,
+                "none_needed": bool(shared_read.none_needed), "state": "public" if shared_read.none_needed else "ok",
+                "can_edit": False, "used_in": [project(s, "owner") for s in links if owners.get(s.project) == owner],
+                "last_used": shared_read.last_used.isoformat() if shared_read.last_used else None,
+            })
+            continue
+        rows.append({
+            "id": "", "user": owner, "user_name": names.get(owner, owner), "mine": owner == user, "credential": None,
+            "credential_name": "", "company": False, "none_needed": False,
+            "state": "public" if repo.anonymous else "none", "can_edit": owner == user,
+            "used_in": [project(s, "owner") for s in links if owners.get(s.project) == owner], "last_used": None,
         })
     return rows
 
@@ -681,7 +752,8 @@ def view(company: str, user: str, is_admin: bool, repo: Repository, entries: boo
         "last_checked": repo.last_checked.isoformat() if repo.last_checked else None,
         "projects": [{"project": s.project, "project_name": names.get(s.project), "share_id": s.id,
                       "inherited": bool(s.inherited), "member": s.project in mine_roots} for s in links],
-        "assignments": _assignment_rows(repo, user, links, owners),
+        "assignments": _assignment_rows(repo, user, links, owners, names, mine_roots),
+        "relation": "shared" if shared else ("own" if repo.owner == user else "inherited"),
         "access": {"state": resolution.state, "message": resolution.message, "warning": resolution.warning},
         "can_delete": level == "collaborator",
         "can_share": (not shared and (repo.owner == user or is_admin)) or (shared and is_admin),
