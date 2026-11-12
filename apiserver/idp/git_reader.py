@@ -137,8 +137,8 @@ class GitReader:
         every other branch that has one of ``run_commits`` among the commits of its own (that the default branch does not have).
         Returns ``total`` (commits of those branches), ``first`` (the oldest commit), ``commits`` (the newest ``limit``, newest
         first in topological order, each with its parents), ``tips`` (branch names by the commit they point at) and ``resolved``
-        (the full sha of each run commit git knows, a run may have recorded a short one) and ``older`` (for each parent that
-        lies below the commits read: the length of its first-parent chain down to the root)."""
+        (the full sha of each run commit git knows, a run may have recorded a short one),
+        ``default_tip`` (the commit the default branch points at)."""
         try:
             repo_visibility.check_address(self.host, 443)
         except repo_visibility.ProbeBlocked as exc:
@@ -189,16 +189,8 @@ class GitReader:
                 tips.setdefault(heads[name], []).append(name)
             commits = [c for c in (_commit(r) for r in git("log", "--topo-order", f"--max-count={limit}", fmt, *refs, "--")
                                    .split("\x1e")) if c]
-            # for every line that leaves the commits read: how long its own (first-parent) chain is down to the first commit
-            inside = {c["sha"] for c in commits}
-            older = {}
-            for commit in commits:
-                for parent in commit["parents"]:
-                    if parent not in inside and parent not in older:
-                        chain = git("rev-list", "--count", "--first-parent", parent).strip()
-                        older[parent] = int(chain) if chain.isdigit() else 0
             return {"total": int(count), "first": _commit(git("log", "-1", fmt, roots[0])), "tips": tips, "resolved": resolved,
-                    "commits": commits, "older": older}
+                    "commits": commits, "default_tip": heads[default]}
         except subprocess.TimeoutExpired:
             raise GitHubError(f"{repo} could not be read in time") from None
         finally:
