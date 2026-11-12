@@ -1,8 +1,12 @@
-"""What a job token may do: only its own task.
+"""What a job token may do: only its own task, and the tasks it starts itself.
 
 A job runs the user's code. The job token acts for the task's owner, so a role check alone would let the job reach
 every task, project, model and user the owner can see. Here a job may use only the endpoints that the task itself
 needs (its own task, events and artifacts), and every request must name its own task.
+
+A job that orchestrates (a pipeline controller, a hyperparameter search) also starts tasks of its own: it may create
+tasks in its project (or below it) whose parent the server sets to the job's task, and read, change, enqueue and stop
+those children, and read (not change) the steps next to it that share its parent. A task that is not the job's or one of its children gets the answer below.
 
 A request that names another task gets the same answer as a task that does not exist, so a job cannot tell that
 the other task exists. A request to any other service is refused as not permitted.
@@ -30,6 +34,14 @@ JOB_MODEL_ACTIONS = {
     "models.add_or_update_metadata",
     "models.delete_metadata",
 }
+
+# What an orchestrating job may look up: the project tree of its own task and a queue it enqueues on, by name.
+JOB_PROJECT_TREE_ENDPOINTS = {"projects.get_all", "projects.get_all_ex", "projects.create"}
+JOB_QUEUE_LOOKUP_ENDPOINTS = {"queues.get_all", "queues.get_all_ex"}
+
+# Reads of the steps next to the job: a step of a pipeline reads the task (and so the artifacts) of the step before it.
+JOB_SIBLING_READ_ENDPOINTS = {"tasks.get_by_id", "tasks.get_by_id_ex", "tasks.get_all", "tasks.get_all_ex",
+                              "datachunks.prepare_download"}
 
 # The one read of the projects service a job needs: the project of its own task, which the SDK reads when it starts.
 JOB_PROJECT_READ = "projects.get_by_id"
@@ -60,6 +72,54 @@ def _task_project_id(task_id: str):
     return task.project if task else None
 
 
+def _is_child(task_id, job_task: str) -> bool:
+    """True when the task was started by the job: its parent is the job's task."""
+    from apiserver.database.model.task.task import Task  # imported here: the module is used without a database
+
+    task = Task.objects(id=task_id).only("parent").first() if task_id else None
+    return bool(task) and task.parent == job_task
+
+
+def may_read_task_data(job_task: str, task_id: str) -> bool:
+    """A job reads the data (artifacts) of its own task, of the tasks it started and of the steps next to it."""
+    return task_id == job_task or _is_child(task_id, job_task) or _is_sibling(task_id, job_task)
+
+
+def _is_sibling(task_id, job_task: str) -> bool:
+    """True when the task has the same parent as the job's task: a step of the same pipeline."""
+    from apiserver.database.model.task.task import Task  # imported here: the module is used without a database
+
+    mine = Task.objects(id=job_task).only("parent").first()
+    other = Task.objects(id=task_id).only("parent").first() if task_id else None
+    return bool(mine and other and mine.parent and other.parent == mine.parent)
+
+
+def _project_name_of(job_task: str):
+    """The name of the project of the job's task: the root of what an orchestrating job may use."""
+    from apiserver.database.model.project import Project  # imported here: the module is used without a database
+
+    project_id = _task_project_id(job_task)
+    project = Project.objects(id=project_id).only("name").first() if project_id else None
+    return project.name if project else None
+
+
+def _name_in_tree(name, root) -> bool:
+    """A project name that is the job's project, below it, or in its '.pipelines' sub-project (the SDK's regex anchors
+    and escapes are ignored)."""
+    if not root or not isinstance(name, str):
+        return False
+    plain = name.lstrip("^").rstrip("$").replace("\\", "")
+    return plain == root or plain.startswith(root + "/") or plain.startswith(root.split("/")[0] + "/.")
+
+
+def _project_in_tree(project_id, job_task: str) -> bool:
+    """True when the project is the project of the job's task or one below it."""
+    from apiserver.database.model.project import Project  # imported here: the module is used without a database
+
+    project = Project.objects(id=project_id).only("name").first() if project_id else None
+    return bool(project) and _name_in_tree(project.name, _project_name_of(job_task))
+
+
 def _chunk_task_id(chunk_id: str):
     """The task that owns a datachunk, for requests that name the chunk rather than the task."""
     from apiserver.database.model.datachunk import Datachunk  # imported here: the module is used without a database
@@ -85,16 +145,45 @@ def validate_job_scope(endpoint, call) -> None:
         _check_model_scope(endpoint.name, call, job_task)
         return
 
+    refused = errors.forbidden.NoWritePermission(reason="a job may only use its own task, events and artifacts")
+
+    if endpoint.name in JOB_PROJECT_TREE_ENDPOINTS:
+        if _name_in_tree((call.data or {}).get("name"), _project_name_of(job_task)):
+            return
+        raise refused
+
+    if endpoint.name in JOB_QUEUE_LOOKUP_ENDPOINTS:
+        # the id of a queue, read by name or id: a listing of all the queues is not what the job needs
+        if (call.data or {}).get("name") or (call.data or {}).get("id"):
+            return
+        raise refused
+
+    if endpoint.name in ("tasks.create", "tasks.clone"):
+        # a task the job starts: in the job's project (or below it). The server makes the job's task its parent,
+        # whatever the body says, so the job can reach the tasks it starts and no others.
+        data = call.data
+        if endpoint.name == "tasks.clone" and data.get("task") != job_task and not _is_child(data.get("task"), job_task):
+            raise errors.bad_request.InvalidTaskId(id="", company="")
+        project = data.get("project") or (_task_project_id(job_task) if endpoint.name == "tasks.clone" else None)
+        if not _project_in_tree(project, job_task):
+            raise errors.bad_request.InvalidTaskId(id="", company="")
+        data["parent"] = job_task
+        return
+
     service = endpoint.name.partition(".")[0]
     if service not in JOB_SERVICES and endpoint.name not in JOB_OWN_TASK_ENDPOINTS:
-        raise errors.forbidden.NoWritePermission(
-            reason="a job may only use its own task, events and artifacts"
-        )
+        raise refused
 
     named = _named_task_ids(call)
     if not named and service == "datachunks" and "id" in call.data:
         named = [_chunk_task_id(call.data["id"])]
-    if not named or any(task_id != job_task for task_id in named):
+    reads_siblings = endpoint.name in JOB_SIBLING_READ_ENDPOINTS
+    if not named or any(
+        task_id != job_task
+        and not _is_child(task_id, job_task)
+        and not (reads_siblings and _is_sibling(task_id, job_task))
+        for task_id in named
+    ):
         # the same answer a missing task gets, so the job cannot tell that another task exists
         raise errors.bad_request.InvalidTaskId(id="", company="")
 

@@ -7,6 +7,7 @@ session cookie. The redirect is only issued for a stored object of the caller's 
 from flask import Flask, Response, redirect, request
 
 from apiserver.apierrors import errors
+from apiserver.service_repo.job_scope import may_read_task_data
 from apiserver.bll import datachunks as bll
 from apiserver.bll.project.access import ProjectAccessBLL
 from apiserver.config_repo import config
@@ -46,8 +47,8 @@ def _caller() -> tuple:
 def _require_task_read_access(identity: Identity, company: str, task_id: str, job_task) -> None:
     """A job token reads only its own task's data; anyone else needs read access to the task."""
     if job_task is not None:
-        if job_task != task_id:
-            raise errors.unauthorized.InvalidToken("a job token only reads its own task's data")
+        if not may_read_task_data(job_task, task_id):
+            raise errors.unauthorized.InvalidToken("a job token only reads the data of its own task and its pipeline's steps")
         return
     task = Task.objects(id=task_id, company=company).only("id", "project", "user").first()
     if not task:

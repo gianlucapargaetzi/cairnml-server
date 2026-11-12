@@ -11,6 +11,13 @@ from apiserver.service_repo.job_scope import validate_job_scope
 JOB_TASK = "task-of-this-job"
 
 
+@pytest.fixture(autouse=True)
+def no_children(monkeypatch):
+    """By default the job started no task: the database is not read."""
+    monkeypatch.setattr(job_scope, "_is_child", lambda task_id, job_task: False)
+    monkeypatch.setattr(job_scope, "_is_sibling", lambda task_id, job_task: task_id == "sibling-step")
+
+
 def _call(data=None, batched=None, job_task=JOB_TASK):
     """Mimics APICall: a plain body is also reported as a one-item batch, as APICall.batched_data does."""
     auth = None if job_task is None else SimpleNamespace(job_task=job_task, identity=SimpleNamespace(user="the-owner"))
@@ -46,7 +53,7 @@ def test_a_list_naming_another_task_is_refused():
         validate_job_scope(_endpoint("tasks.get_all_ex"), _call({"tasks": [JOB_TASK, "other"]}))
 
 
-@pytest.mark.parametrize("name", ["projects.get_all", "users.get_current_user", "devices.revoke",
+@pytest.mark.parametrize("name", ["users.get_current_user", "devices.revoke",
                                   "queues.get_default", "auth.login", "workers.status_report"])
 def test_other_services_are_refused(name):
     with pytest.raises(errors.forbidden.NoWritePermission):
@@ -174,3 +181,93 @@ def test_a_job_may_not_get_the_repository_token_for_another_task():
 def test_a_job_may_not_use_other_devices_endpoints():
     with pytest.raises(errors.forbidden.NoWritePermission):
         validate_job_scope(_endpoint("devices.enroll"), _call({"task": JOB_TASK}))
+
+
+# an orchestrating job (a pipeline controller, a search) starts tasks of its own
+
+
+@pytest.fixture
+def children(monkeypatch):
+    """The tasks the job started: their parent is the job's task."""
+    monkeypatch.setattr(job_scope, "_is_child", lambda task_id, job_task: task_id in ("child-1", "child-2"))
+    monkeypatch.setattr(job_scope, "_project_name_of", lambda job_task: "examples")
+
+
+def test_a_task_the_job_creates_gets_the_job_as_parent(monkeypatch):
+    monkeypatch.setattr(job_scope, "_project_in_tree", lambda project, job_task: project == "p-examples")
+    call = _call({"project": "p-examples", "name": "step", "parent": "someone-else"})
+    validate_job_scope(_endpoint("tasks.create"), call)
+    assert call.data["parent"] == JOB_TASK
+
+
+def test_the_job_may_not_create_a_task_in_another_project(monkeypatch):
+    monkeypatch.setattr(job_scope, "_project_in_tree", lambda project, job_task: project == "p-examples")
+    for body in ({"project": "other"}, {"name": "step"}):
+        with pytest.raises(errors.bad_request.InvalidTaskId):
+            validate_job_scope(_endpoint("tasks.create"), _call(body))
+
+
+def test_the_job_may_clone_its_own_or_a_child_task_but_not_another(monkeypatch, children):
+    monkeypatch.setattr(job_scope, "_project_in_tree", lambda project, job_task: True)
+    monkeypatch.setattr(job_scope, "_task_project_id", lambda job_task: "p-examples")
+    call = _call({"task": "child-1"})
+    validate_job_scope(_endpoint("tasks.clone"), call)
+    assert call.data["parent"] == JOB_TASK
+    with pytest.raises(errors.bad_request.InvalidTaskId):
+        validate_job_scope(_endpoint("tasks.clone"), _call({"task": "someone-elses"}))
+
+
+def test_the_job_may_enqueue_and_read_the_tasks_it_started(children):
+    validate_job_scope(_endpoint("tasks.enqueue"), _call({"task": "child-1"}))
+    validate_job_scope(_endpoint("tasks.get_all_ex"), _call({"id": ["child-1", JOB_TASK]}))
+
+
+def test_the_job_may_not_reach_a_task_it_did_not_start(children):
+    with pytest.raises(errors.bad_request.InvalidTaskId):
+        validate_job_scope(_endpoint("tasks.enqueue"), _call({"task": "someone-elses"}))
+    with pytest.raises(errors.bad_request.InvalidTaskId):
+        validate_job_scope(_endpoint("tasks.get_all_ex"), _call({"id": ["child-1", "someone-elses"]}))
+
+
+@pytest.mark.parametrize("name", ["projects.get_all", "projects.create"])
+def test_the_job_may_use_its_project_and_the_pipelines_below_it(children, name):
+    validate_job_scope(_endpoint(name), _call({"name": "^examples/\\.pipelines/greenhouse\\ workflow$"}))
+    validate_job_scope(_endpoint(name), _call({"name": "examples"}))
+
+
+@pytest.mark.parametrize("name", ["projects.get_all", "projects.create"])
+def test_the_job_may_not_list_or_create_other_projects(children, name):
+    for body in ({}, {"name": "secret-project"}, {"name": "^other/.pipelines/x$"}):
+        with pytest.raises(errors.forbidden.NoWritePermission):
+            validate_job_scope(_endpoint(name), _call(body))
+
+
+def test_the_job_may_look_up_a_queue_by_name_but_not_list_them():
+    validate_job_scope(_endpoint("queues.get_all"), _call({"name": "parg-nb-f4cad6"}))
+    with pytest.raises(errors.forbidden.NoWritePermission):
+        validate_job_scope(_endpoint("queues.get_all"), _call({}))
+
+
+def test_a_step_may_read_but_not_change_the_step_next_to_it():
+    validate_job_scope(_endpoint("tasks.get_by_id_ex"), _call({"task": "sibling-step"}))
+    for name in ("tasks.edit", "tasks.enqueue", "tasks.delete", "tasks.stop"):
+        with pytest.raises(errors.bad_request.InvalidTaskId):
+            validate_job_scope(_endpoint(name), _call({"task": "sibling-step"}))
+    with pytest.raises(errors.bad_request.InvalidTaskId):
+        validate_job_scope(_endpoint("tasks.get_by_id_ex"), _call({"task": "another-pipelines-step"}))
+
+
+def test_a_step_may_download_the_artifact_of_the_step_next_to_it(monkeypatch):
+    validate_job_scope(_endpoint("datachunks.prepare_download"), _call({"task": "sibling-step", "kind": "artifact", "name": "w"}))
+    monkeypatch.setattr(job_scope, "_chunk_task_id", lambda chunk_id: "sibling-step")
+    validate_job_scope(_endpoint("datachunks.prepare_download"), _call({"id": "chunk-1"}))
+    with pytest.raises(errors.bad_request.InvalidTaskId):
+        validate_job_scope(_endpoint("datachunks.prepare_upload"), _call({"task": "sibling-step"}))
+
+
+def test_a_job_reads_the_data_of_its_own_task_its_children_and_its_steps_only(monkeypatch):
+    monkeypatch.setattr(job_scope, "_is_child", lambda task_id, job_task: task_id == "child")
+    monkeypatch.setattr(job_scope, "_is_sibling", lambda task_id, job_task: task_id == "sibling-step")
+    for task in (JOB_TASK, "child", "sibling-step"):
+        assert job_scope.may_read_task_data(JOB_TASK, task)
+    assert not job_scope.may_read_task_data(JOB_TASK, "someone-elses")
