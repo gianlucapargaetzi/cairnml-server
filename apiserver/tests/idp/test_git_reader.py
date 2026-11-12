@@ -88,3 +88,19 @@ def test_a_repository_that_cannot_be_cloned_is_refused_with_the_reason(host):
     from apiserver.bll.dataset_layout import verify_dataset
     with GitReader(host) as reader, pytest.raises(errors.bad_request.ValidationError, match="could not be read"):
         verify_dataset(reader, "owner/nothing")
+
+
+def test_the_history_gives_the_count_the_first_commit_and_the_newest_commits(host):
+    with GitReader(host) as reader:
+        info = reader.commit_history("owner/registry", 30)
+    assert info["total"] == 2
+    assert info["first"]["message"] == "first"
+    assert [c["message"] for c in info["commits"]] == ["second", "first"]
+    assert info["commits"][0]["parents"] == [info["first"]["sha"]]
+
+
+def test_the_history_limit_keeps_the_newest_commits(host):
+    with GitReader(host) as reader:
+        info = reader.commit_history("owner/registry", 1)
+    assert info["total"] == 2
+    assert [c["message"] for c in info["commits"]] == ["second"]

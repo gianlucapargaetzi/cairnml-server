@@ -3,7 +3,7 @@ bll/repositories. The only service for them."""
 
 from apiserver.apierrors import errors
 from apiserver.bll import repositories as bll
-from apiserver.bll import repository_details, repository_registry, repository_runs, user_access
+from apiserver.bll import repository_details, repository_history, repository_registry, repository_runs, user_access
 from apiserver.database.model.auth import Role
 from apiserver.database.model.repository import Repository
 from apiserver.database.model.task.task import Task
@@ -185,6 +185,14 @@ def _may_read(call: APICall, company: str, repo: Repository) -> bool:
 def get_runs(call: APICall, company: str, _request):
     repo = _repository_of(call, company, call.data or {})
     call.result.data = {"runs": repository_runs.runs_of(company, call.identity.user, _is_admin(call), repo)}
+
+
+@endpoint("repositories.get_history")
+def get_history(call: APICall, company: str, _request):
+    """The condensed history of a repository: the newest commit, every commit a task ran on with its tasks, the first commit, and
+    a gap with the number of commits between them. See bll/repository_history."""
+    repo = _repository_of(call, company, call.data or {})
+    call.result.data = repository_history.history(company, call.identity.user, _is_admin(call), repo)
 
 
 @endpoint("repositories.find")

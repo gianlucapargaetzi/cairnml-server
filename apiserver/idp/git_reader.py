@@ -131,6 +131,40 @@ class GitReader:
                                 "parents": fields[4].split()})
         return commits
 
+    def commit_history(self, repo: str, limit: int) -> dict:
+        """The whole history in numbers, from a clone that holds the commits only (no files): ``total`` commits, the ``first``
+        commit and the newest ``limit`` commits of the default branch, newest first."""
+        try:
+            repo_visibility.check_address(self.host, 443)
+        except repo_visibility.ProbeBlocked as exc:
+            raise GitHubError(str(exc)) from None
+        except repo_visibility.ProbeFailed:
+            raise GitHubError(f"{self.host} could not be reached") from None
+        folder = tempfile.mkdtemp(prefix="cairnml-git-history-")
+        try:
+            done = subprocess.run(
+                ["git", "clone", "--quiet", "--bare", "--filter=tree:0", "--single-branch", "--no-tags", "--",
+                 f"https://{self.host}/{repo}.git", folder],
+                env=self._env(), capture_output=True, text=True, timeout=CLONE_TIMEOUT, check=False)
+            if done.returncode != 0:
+                raise RepoNotAccessible(f"{repo} could not be read over git: " + _first_line(done.stderr, self.token))
+
+            def git(*args):
+                return subprocess.run(["git", "-C", folder, *args], env=self._env(), capture_output=True, timeout=CLONE_TIMEOUT,
+                                      check=False).stdout.decode("utf-8", "replace")
+
+            fmt = "--format=%H%x1f%s%x1f%an%x1f%aI%x1f%P%x1e"
+            count = git("rev-list", "--count", "HEAD").strip()
+            roots = git("rev-list", "--max-parents=0", "--reverse", "HEAD").split()
+            if not count.isdigit() or not roots:
+                raise GitHubError(f"{repo} has no commit yet")
+            return {"total": int(count), "first": _commit(git("log", "-1", fmt, roots[0])),
+                    "commits": [c for c in (_commit(r) for r in git("log", f"--max-count={limit}", fmt, "HEAD").split("\x1e")) if c]}
+        except subprocess.TimeoutExpired:
+            raise GitHubError(f"{repo} could not be read in time") from None
+        finally:
+            shutil.rmtree(folder, ignore_errors=True)
+
     def read_file(self, repo: str, path: str, ref: Optional[str] = None) -> Optional[bytes]:
         if ref and _is_sha(ref) and self.commit_exists(repo, ref):
             done = self._git(repo, "show", f"{ref}:{path}")
@@ -157,6 +191,13 @@ class GitReader:
         root = Path(self._clone(repo)).resolve()
         target = (root / path).resolve()
         return target if root == target or root in target.parents else None
+
+
+def _commit(record: str) -> Optional[dict]:
+    fields = record.strip("\n").split("\x1f")
+    if len(fields) != 5:
+        return None
+    return {"sha": fields[0], "message": fields[1], "author": fields[2], "date": fields[3], "parents": fields[4].split()}
 
 
 def _is_sha(text: str) -> bool:

@@ -180,7 +180,8 @@ def runs_of(company: str, user: str, is_admin: bool, repo: Repository) -> list:
     for project in Project.objects(company=company, path__in=list(roots)).only("id"):
         project_ids.add(project.id)
     tasks = Task.objects(company=company, project__in=list(project_ids)).only(
-        "id", "name", "status", "project", "user", "created", "hyperparams", "script.repository", "last_update"
+        "id", "name", "status", "project", "user", "created", "hyperparams", "script.repository", "script.version_num",
+        "last_update"
     ).order_by("-created").limit(MAX_SCANNED)
     found, users, names = [], {}, {}
     for task in tasks:
@@ -195,7 +196,25 @@ def runs_of(company: str, user: str, is_admin: bool, repo: Repository) -> list:
             names[task.project] = project.name if project is not None else task.project
         found.append({"id": task.id, "name": task.name, "status": task.status, "project": task.project,
                       "project_name": names[task.project], "user": task.user, "user_name": users[task.user],
-                      "created": task.created.isoformat() if task.created else None, "as": role})
+                      "created": task.created.isoformat() if task.created else None, "as": role,
+                      "commit": _commit_of(task, repo, role)})
         if len(found) >= MAX_RUNS:
             break
+    # a run that was started with changes that were not committed holds them as a diff
+    dirty = set(Task.objects(company=company, id__in=[run["id"] for run in found], script__diff__nin=[None, ""]).scalar("id"))
+    for run in found:
+        run["dirty"] = run["id"] in dirty and run["as"] == "code"
     return found
+
+
+def _commit_of(task, repo: Repository, role: str) -> Optional[str]:
+    """The commit the run was based on: the commit of its script (code), or the commit it read the dataset at."""
+    if role == "code":
+        return (task.script.version_num if task.script else None) or None
+    if role == "dataset":
+        for name, item in ((task.hyperparams or {}).get(SECTION) or {}).items():
+            alias, _, key = name.rpartition("/")
+            if key == DATASET_KEY and item.value and _key(item.value) == repo.key:
+                commit = ((task.hyperparams or {}).get(SECTION) or {}).get(f"{alias}/commit")
+                return (commit.value if commit else None) or None
+    return None
