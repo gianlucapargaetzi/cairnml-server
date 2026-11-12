@@ -199,13 +199,11 @@ def test_only_the_owner_or_the_admin_makes_a_repository_shared_and_only_the_admi
     assert not bll.is_shared(bll.set_shared(world.company, "admin", True, repo.id, False))
 
 
-def test_the_owner_and_the_admin_delete_a_repository_with_everything_on_it(world):
+def test_a_repository_nobody_else_uses_is_deleted_with_everything_on_it(world):
     credential(world, "mine", "owner")
-    repo = use(world)
+    repo = bll.add(world.company, "owner", False, URL, "dataset")
     bll.assign(world.company, "owner", repo.id, "mine")
     RegistryEntry(id="e1", company=world.company, registry=repo.id, name="cars").save()
-    with pytest.raises(errors.forbidden.NoWritePermission):
-        bll.delete(world.company, "member", False, repo.id)
     with pytest.raises(errors.bad_request.ValidationError, match="no such repository"):
         bll.delete(world.company, "stranger", False, repo.id)
     bll.delete(world.company, "owner", False, repo.id)
@@ -449,14 +447,17 @@ def test_the_list_shows_every_assignment_and_only_the_users_own_are_editable(wor
 def test_the_list_says_what_the_user_may_do(world):
     repo = use(world)
     owner_row, member_row = rows(world, "owner")[0], rows(world, "member")[0]
-    assert owner_row["can_delete"] and owner_row["can_share"] and not member_row["can_delete"] and not member_row["can_share"]
-    assert rows(world, "admin", True)[0]["can_delete"] and repo.id == owner_row["id"]
+    assert owner_row["can_share"] and not member_row["can_share"] and repo.id == owner_row["id"]
+    assert not owner_row["can_delete"] and "used in P" in owner_row["delete_blocked"].replace("It is ", "")   # a project lists it
+    bll.unlink(world.company, "owner", False, repo.id, world.root)
+    assert rows(world, "owner")[0]["can_delete"] and rows(world, "owner")[0]["delete_blocked"] is None
 
 
 def test_a_shared_row_is_owned_by_the_company_and_deleted_by_the_admin_only(world):
     bll.add(world.company, "admin", True, URL, "dataset", shared=True)
     row = rows(world, "stranger")[0]
     assert row["shared"] and row["owner_name"] == "Company" and not row["can_delete"] and not row["can_share"]
+    assert "admin" in row["delete_blocked"]
     assert rows(world, "admin", True)[0]["can_delete"] and rows(world, "admin", True)[0]["can_share"]
 
 
@@ -480,7 +481,7 @@ def test_the_owner_of_a_project_changing_relinks_its_repositories(world):
 def test_a_project_whose_owner_has_no_assignment_is_a_row_of_the_owner_without_a_credential(world):
     use(world)
     row = rows(world, "member")[0]
-    assert [(a["user"], a["credential_name"], a["state"], a["can_edit"]) for a in row["assignments"]] == [("owner", "", "none", False)]
+    assert [(a["user_name"], a["credential_name"], a["readable"], a["can_edit"]) for a in row["assignments"]] == [("Owner", "", False, False)]
     assert [(u["project"], u["as"], u["member"]) for u in row["assignments"][0]["used_in"]] == [(world.root, "owner", True)]
     assert rows(world, "owner")[0]["assignments"][0]["can_edit"]            # the owner may assign from that row
 
@@ -536,4 +537,140 @@ def test_a_project_of_a_shared_repository_reads_with_the_company_credential_not_
     bll.set_shared(world.company, "owner", False, repo.id, True, credential="company", confirm=True)
     row = rows(world, "member")[0]
     reading = [a for a in row["assignments"] if a["user"] == "owner"]
-    assert [(a["credential_name"], a["state"], a["can_edit"], a["company"]) for a in reading] == [("cred company", "ok", False, True)]
+    assert [(a["credential_name"], a["readable"], a["can_edit"], a["company"]) for a in reading] == [("cred company", True, False, True)]
+
+
+# --- deleting: for the user who deletes it, never while a project depends on it ---------------------------------------------------
+
+def test_a_repository_a_project_lists_cannot_be_deleted_and_the_reason_is_given(world):
+    repo = use(world)
+    with pytest.raises(errors.bad_request.ValidationError, match="project depends on it"):
+        bll.delete(world.company, "owner", False, repo.id)
+    row = rows(world, "owner")[0]
+    assert row["can_delete"] is False and "P" in row["delete_blocked"]
+    assert rows(world, "stranger") == []                                  # a user who cannot see it learns nothing of the projects
+    with pytest.raises(errors.bad_request.ValidationError, match="project depends on it"):
+        bll.delete(world.company, "admin", True, repo.id)                 # not even the admin: the project depends on it
+
+
+def test_deleting_what_others_still_hold_removes_it_for_the_user_only(world):
+    credential(world, "mine", "owner")
+    repo = bll.add(world.company, "owner", False, URL, "dataset")
+    bll.assign(world.company, "owner", repo.id, "mine")
+    Assignment(id="a-member", company=world.company, repository=repo.id, user="member", credential="x").save()   # someone else holds one
+    bll.delete(world.company, "owner", False, repo.id)
+    assert Repository.objects(company=world.company).count() == 1                 # the record stays
+    assert not Assignment.objects(repository=repo.id, user="owner") and Assignment.objects(repository=repo.id, user="member")
+    assert rows(world, "owner") == []                                             # gone for the one who deleted it
+    again = bll.add(world.company, "owner", False, URL, "dataset")                  # listing it again brings it back
+    assert again.id == repo.id and [r["name"] for r in rows(world, "owner")] == ["proj"]
+
+
+def test_a_project_that_lists_a_repository_shows_it_again_to_a_user_who_deleted_it(world):
+    repo = bll.add(world.company, "owner", False, URL, "dataset")
+    Assignment(id="a-member", company=world.company, repository=repo.id, user="member", credential="x").save()
+    bll.delete(world.company, "owner", False, repo.id)
+    assert rows(world, "owner") == []
+    use(world)                                                                    # a run in the owner's project lists it
+    assert [r["name"] for r in rows(world, "owner")] == ["proj"]
+
+
+def test_only_the_admin_deletes_a_shared_repository(world):
+    repo = bll.add(world.company, "admin", True, URL, "dataset", shared=True)
+    with pytest.raises(errors.bad_request.ValidationError, match="admin only"):
+        bll.delete(world.company, "owner", False, repo.id)
+    bll.delete(world.company, "admin", True, repo.id)
+    assert Repository.objects(company=world.company).count() == 0
+
+
+# --- losing the access to a project takes the credential entry with it -----------------------------------------------------------
+
+def test_a_user_who_loses_the_project_loses_the_repository_and_the_credential_assigned_to_it(world):
+    credential(world, "member-cred", "member")
+    repo = use(world)
+    bll.assign(world.company, "member", repo.id, "member-cred")
+    assert [r["name"] for r in rows(world, "member")] == ["proj"]
+    Project.objects(id=world.root).update_one(pull__members__user="member")      # the member is removed from the project
+    assert bll.prune_assignments(world.company, user="member") == 1
+    assert not Assignment.objects(repository=repo.id, user="member") and rows(world, "member") == []
+    assert [r["name"] for r in rows(world, "owner")] == ["proj"]                   # the others keep it
+
+
+def test_a_user_who_still_uses_the_repository_in_a_project_of_their_own_keeps_the_credential(world):
+    credential(world, "other-cred", "other")
+    repo = use(world, user="other", project=world.other_root)                      # the record is the owner's; Q lists it too
+    use(world)
+    bll.assign(world.company, "other", repo.id, "other-cred")
+    bll.unlink(world.company, "owner", False, repo.id, world.root)                 # taken out of P: Q still lists it
+    assert Assignment.objects(repository=repo.id, user="other") and [r["name"] for r in rows(world, "other")] == ["proj"]
+
+
+def test_taking_a_repository_out_of_a_project_drops_the_assignments_of_those_who_only_saw_it_there(world):
+    credential(world, "member-cred", "member")
+    repo = use(world)
+    bll.assign(world.company, "member", repo.id, "member-cred")
+    bll.unlink(world.company, "owner", False, repo.id, world.root)
+    assert not Assignment.objects(repository=repo.id, user="member") and rows(world, "member") == []
+
+
+# --- who sees what, and the credentials a record may be read with ------------------------------------------------------------------
+
+def test_everyone_sees_only_their_own_records_the_ones_of_their_projects_and_the_shared_ones(world):
+    mine = use(world, url="https://github.com/acme/mine", user="owner")
+    theirs = use(world, url="https://github.com/acme/theirs", user="other", project=world.other_root)
+    bll.add(world.company, "admin", True, "https://github.com/acme/everyone", "dataset", shared=True)
+    names = lambda user: sorted(r["name"] for r in rows(world, user))
+    assert names("owner") == ["everyone", "mine"] and names("member") == ["everyone", "mine"]
+    assert names("other") == ["everyone", "theirs"] and names("stranger") == ["everyone"]
+    assert {mine.id, theirs.id}.isdisjoint({r["id"] for r in rows(world, "stranger")})
+
+
+def test_the_company_github_app_can_be_assigned_to_a_non_shared_record_and_to_a_shared_one(world):
+    credential(world, "company-app", "admin", scope="company")
+    repo = use(world)
+    bll.assign(world.company, "owner", repo.id, "company-app")
+    assert Assignment.objects(repository=repo.id, user="owner").first().credential == "company-app"
+    assert {"company-app"} <= {c["id"] for c in rows(world, "owner")[0]["credentials"] if c["company"]}
+    shared = bll.add(world.company, "admin", True, "https://github.com/acme/all", "dataset", shared=True)
+    bll.assign(world.company, "admin", shared.id, "company-app", is_admin=True)
+    assert Assignment.objects(repository=shared.id, user="admin").first().credential == "company-app"
+
+
+# --- a missing credential is not a missing access -----------------------------------------------------------------------------------
+
+def test_a_public_repository_without_credentials_is_one_empty_row_with_all_its_projects_and_an_open_lock(world):
+    world.private = False
+    repo = use(world)
+    use(world, user="other", project=world.other_root)
+    row = rows(world, "member")[0]
+    assert len(row["assignments"]) == 1
+    empty = row["assignments"][0]
+    assert empty["credential_name"] == "" and empty["readable"] is True
+    assert sorted(u["project"] for u in empty["used_in"]) == sorted([world.root, world.other_root])
+    assert row["access"]["readable"] is True and repo.id == row["id"]
+
+
+def test_a_private_repository_without_credentials_is_one_empty_row_with_a_closed_lock(world):
+    use(world)
+    use(world, user="other", project=world.other_root)
+    row = rows(world, "owner")[0]
+    assert [(a["credential_name"], a["readable"]) for a in row["assignments"]] == [("", False)]
+    assert len(row["assignments"][0]["used_in"]) == 2 and row["access"]["readable"] is False
+
+
+def test_the_empty_row_is_split_when_the_projects_read_differently(world):
+    credential(world, "owner-cred", "owner")
+    repo = use(world)                                                             # P: its owner assigns a credential below
+    use(world, user="other", project=world.other_root)                            # Q: nobody assigns one, and it is private
+    bll.assign(world.company, "owner", repo.id, "owner-cred")
+    row = rows(world, "owner")[0]
+    kinds = sorted((a["credential_name"], a["readable"]) for a in row["assignments"])
+    assert kinds == [("", False), ("cred owner-cred", True)]
+
+
+def test_a_credential_that_reads_makes_the_record_readable(world):
+    credential(world, "mine", "owner")
+    repo = use(world)
+    bll.assign(world.company, "owner", repo.id, "mine")
+    row = rows(world, "owner")[0]
+    assert row["access"]["readable"] is True and [a["readable"] for a in row["assignments"]] == [True]

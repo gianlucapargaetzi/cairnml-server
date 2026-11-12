@@ -1,15 +1,15 @@
 """Whether a dataset repository has the layout of a CairnML dataset, checked when a job asks for its token.
 
 A dataset repository has a ``dataset.yaml`` at the root of its default branch, and its footprint (``dataset.lock.json``
-against ``data.dvc``, and ``adapter.py`` for a local adapter) holds. It is verified with the SDK's footprint check, read through
-the credential that reads the repository. Nothing is registered by this check: it only refuses a job on a repository that is
+against ``data.dvc``, and ``adapter.py`` for a local adapter) holds. It is verified with the SDK's footprint check, read over git (idp/git_reader)
+with the token of the credential that reads the repository, never through the host's REST API. Nothing is registered by this check: it only refuses a job on a repository that is
 not a dataset or whose footprint does not hold.
 """
 
 import json
 
 from apiserver.apierrors import errors
-from apiserver.idp.github import GitHubApp, GitHubError, RepoNotAccessible
+from apiserver.idp.github import GitHubError, RepoNotAccessible
 from cairnml.datasets import footprint
 
 ADAPTER_MAX_BYTES = 1024 * 1024  # adapter.py comes from an untrusted repository: it is read only up to this size
@@ -34,7 +34,7 @@ def _is_local_adapter(config_text):
         return False
 
 
-def _read_adapter(app: GitHubApp, repo: str, head: str, sizes: dict):
+def _read_adapter(app, repo: str, head: str, sizes: dict):
     """The bytes of adapter.py at the top of the repository at ``head``, or None when there is none.
 
     Only the bytes are kept: the file is hashed by the footprint check and never imported, run or parsed here. Its size
@@ -57,7 +57,7 @@ def _read_adapter(app: GitHubApp, repo: str, head: str, sizes: dict):
     return content
 
 
-def verify_dataset(app: GitHubApp, repo: str) -> tuple:
+def verify_dataset(app, repo: str) -> tuple:
     """Read the default branch of an installed repository and verify it is a dataset with a holding footprint.
 
     Returns (default branch, head sha, lock). Raises NotADataset when dataset.yaml is missing at the root, and a
@@ -77,8 +77,8 @@ def verify_dataset(app: GitHubApp, repo: str) -> tuple:
             files[footprint.ADAPTER_FILE] = _read_adapter(app, repo, head, sizes)
     except NotADataset:
         raise
-    except RepoNotAccessible:
-        raise errors.bad_request.ValidationError(f"the GitHub App is not installed on {repo}") from None
+    except RepoNotAccessible as exc:
+        raise errors.bad_request.ValidationError(f"{repo} could not be read with the credential: {exc}") from None
     except GitHubError as exc:
         raise GitHubUnreadable(f"GitHub could not be read for {repo}: {exc}") from None
     problems = footprint.verify_files(files, sizes)

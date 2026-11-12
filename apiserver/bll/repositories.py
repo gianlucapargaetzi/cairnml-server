@@ -181,6 +181,9 @@ def add(company: str, user: str, is_admin: bool, address: str, role: str, shared
         owner = (admin_of(company) or user) if shared else user
         repo = _create(company, parsed, role, owner, now)
     else:
+        if user in (repo.dismissed or []) and (repo.owner == user or is_admin):
+            repo.update(pull__dismissed=user)  # listing it again brings back what the user deleted
+            repo = get(company, repo.id)
         if not can_see(company, user, is_admin, repo):
             raise errors.bad_request.ValidationError(
                 "this repository is already listed by someone else: ask for it to be shared")
@@ -204,7 +207,11 @@ def is_shared(repo: Repository) -> bool:
 def level_of(company: str, user: str, is_admin: bool, repo: Repository) -> Optional[str]:
     """The level the user holds on the repository: collaborator for its owner and the admin, read for a shared entry and for an
     entry linked to a project they are in, none otherwise."""
-    return access.level_of(company, user, is_admin, "repository", repo.id, user_access.my_root_ids(company, user))
+    roots = user_access.my_root_ids(company, user)
+    level = access.level_of(company, user, is_admin, "repository", repo.id, roots)
+    if level is not None and user in (repo.dismissed or []) and not (roots & {s.project for s in linked_projects(repo)}):
+        return None  # deleted for this user, and no project of theirs lists it
+    return level
 
 
 def can_see(company: str, user: str, is_admin: bool, repo: Repository) -> bool:
@@ -216,9 +223,13 @@ def visible(company: str, user: str, is_admin: bool) -> List[Repository]:
     if not user or not user_access.is_active(user):
         return []
     repos = list(Repository.objects(company=company).order_by("name"))
+    roots = user_access.my_root_ids(company, user)
+    listed_in = {}
+    for share in Share.objects(company=company, resource_type="repository", scope="projects"):
+        listed_in.setdefault(share.resource_id, set()).add(share.project)
+    repos = [r for r in repos if user not in (r.dismissed or []) or roots & listed_in.get(r.id, set())]
     if is_admin:
         return repos
-    roots = user_access.my_root_ids(company, user)
     shares = {}
     for share in Share.objects(company=company, resource_type="repository", resource_id__in=[r.id for r in repos]):
         shares.setdefault(share.resource_id, []).append(share)
@@ -290,6 +301,7 @@ def unlink(company: str, user: str, is_admin: bool, repository_id: str, project_
     if share is None:
         raise errors.bad_request.ValidationError("the repository is not listed in this project")
     access.unshare(company, user, share.id)
+    prune_assignments(company, repo.id)
 
 
 def regrant_project_links(company: str, root: str, new_owner: str, actor: str) -> None:
@@ -367,17 +379,62 @@ def set_shared(company: str, user: str, is_admin: bool, repository_id: str, shar
     return repo
 
 
+def delete_blocked(company: str, user: str, is_admin: bool, repo: Repository) -> Optional[str]:
+    """Why the user may not delete the repository, or None when they may. A repository a project lists is not deleted: the project
+    depends on it. A shared repository is the admin's to delete."""
+    if is_shared(repo) and not is_admin:
+        return "A shared repository is deleted by the admin only."
+    links = linked_projects(repo)
+    if links:
+        names = [p.name for p in Project.objects(company=company, id__in=[s.project for s in links]).only("name")]
+        mine = user_access.my_root_ids(company, user)
+        seen = sorted(p.name for p in Project.objects(company=company, id__in=[s.project for s in links if s.project in mine]).only("name"))
+        where = ", ".join(seen[:3]) + (f" and {len(seen) - 3} more" if len(seen) > 3 else "") if seen else f"{len(names)} project(s)"
+        return f"It is used in {where}: take it out of the project first, because the project depends on it."
+    return None
+
+
 def delete(company: str, user: str, is_admin: bool, repository_id: str) -> None:
-    """Removes the record, its entries, its assignments and its links. Only its owner or the admin may. Nothing in the
-    repository itself changes."""
+    """Deletes the repository for the user. A shared one is removed entirely (the admin only). A non-shared one goes away for the
+    user who deletes it: their credential assignment is dropped and it is hidden from them; when nobody else holds an
+    assignment on it, the record goes entirely. A repository a project lists is not deleted."""
     access.refuse_inactive(user)
     repo = require_visible(company, user, is_admin, repository_id)
-    if level_of(company, user, is_admin, repo) != "collaborator":
-        raise errors.forbidden.NoWritePermission("only the owner of a repository or the admin may delete it")
-    RegistryEntry.objects(company=company, registry=repo.id).delete()
-    Assignment.objects(repository=repo.id).delete()
-    access.drop_resource_shares(company, "repository", repo.id, actor=user)
-    repo.delete()
+    reason = delete_blocked(company, user, is_admin, repo)
+    if reason:
+        raise errors.bad_request.ValidationError(f"it cannot be deleted: {reason}")
+    Assignment.objects(repository=repo.id, user=user).delete()
+    others = Assignment.objects(repository=repo.id, user__ne=user).count()
+    if is_shared(repo) or not others:
+        RegistryEntry.objects(company=company, registry=repo.id).delete()
+        Assignment.objects(repository=repo.id).delete()
+        access.drop_resource_shares(company, "repository", repo.id, actor=user)
+        repo.delete()
+        return
+    repo.update(add_to_set__dismissed=user)
+
+
+def prune_assignments(company: str, repository_id: Optional[str] = None, user: Optional[str] = None) -> int:
+    """Drops the assignments of users who no longer see their repository (they left a project that listed it, or it was taken out
+    of the project) and clears what they deleted. A repository nobody holds, owns or lists any more is removed. Returns the
+    number of assignments dropped."""
+    query = {"company": company}
+    if repository_id:
+        query["repository"] = repository_id
+    if user:
+        query["user"] = user
+    dropped = 0
+    for assignment in list(Assignment.objects(**query)):
+        repo = Repository.objects(company=company, id=assignment.repository).first()
+        if repo is None:
+            assignment.delete()
+            continue
+        if not user_access.is_active(assignment.user):
+            continue
+        if level_of(company, assignment.user, False, repo) is None:
+            assignment.delete()
+            dropped += 1
+    return dropped
 
 
 # --- assignments ---------------------------------------------------------------------------------------------------------------
@@ -676,10 +733,18 @@ def check(company: str, user: str, is_admin: bool, repository_id: str) -> Reposi
 
 # --- what the API shows -------------------------------------------------------------------------------------------------------------
 
+def _readable(resolution: Resolution) -> Optional[bool]:
+    """Whether the repository can be read the way the resolution says: True, False, or None when the host could not be asked."""
+    if resolution.state == UNKNOWN:
+        return None
+    return resolution.state != UNREACHABLE
+
+
 def _assignment_rows(repo: Repository, user: str, links: List[Share], owners: dict, names_of_projects: dict,
                      member_roots: set) -> list:
-    """One row per user who reads the repository, with the projects each reads for: an assignment is a row, and a project whose
-    owner has no assignment gets a row of the owner without a credential (state ``public`` when the host allows it, else ``none``)."""
+    """One row for each credential in use on the repository, with the projects it reads for, and the "empty" rows: the projects whose
+    owner has no assignment, together on one row (two when the host reads them differently: a missing credential is no missing
+    access when the repository is public). ``readable`` is whether the row's reading works: the open lock, or the closed one."""
     assignments = list(Assignment.objects(repository=repo.id).order_by("created"))
     assigned_users = {a.user for a in assignments}
     unassigned = sorted({owners[s.project] for s in links if owners.get(s.project) and owners[s.project] not in assigned_users})
@@ -705,28 +770,30 @@ def _assignment_rows(repo: Repository, user: str, links: List[Share], owners: di
             "credential": a.credential or None,
             "credential_name": entry.label if entry else ("None needed" if a.none_needed else ""),
             "company": bool(entry and entry.scope == "company"), "none_needed": bool(a.none_needed),
-            "state": "public" if a.none_needed else "ok",
+            "readable": not (a.user == user and repo.state == "no_access"),
             "can_edit": a.user == user, "used_in": used,
             "last_used": a.last_used.isoformat() if a.last_used else None,
         })
     shared_read = next((a for a in assignments if a.user == repo.owner), None) if is_shared(repo) else None
     shared_entry = entries.get(shared_read.credential) if shared_read is not None and shared_read.credential else None
+    groups = {}  # readable -> the owners and their projects
     for owner in unassigned:
-        if shared_read is not None:  # a shared repository is read for everyone with the company credential it was shared with
-            rows.append({
-                "id": "", "user": owner, "user_name": names.get(owner, owner), "mine": owner == user,
-                "credential": shared_read.credential or None,
-                "credential_name": shared_entry.label if shared_entry else "None needed", "company": shared_entry is not None,
-                "none_needed": bool(shared_read.none_needed), "state": "public" if shared_read.none_needed else "ok",
-                "can_edit": False, "used_in": [project(s, "owner") for s in links if owners.get(s.project) == owner],
-                "last_used": shared_read.last_used.isoformat() if shared_read.last_used else None,
-            })
-            continue
+        if shared_read is not None:
+            readable = True  # a shared repository is read for everyone with the company credential it was shared with
+        else:
+            projects_of_owner = [s.project for s in links if owners.get(s.project) == owner]
+            readable = _readable(resolve(repo, projects_of_owner[0] if projects_of_owner else None, owner, reach=False))
+        groups.setdefault(readable, []).append(owner)
+    for readable, group in groups.items():
+        used = [project(s, "owner") for s in links if owners.get(s.project) in group]
+        who = ", ".join(names.get(o, o) for o in group[:2]) + (f" and {len(group) - 2} more" if len(group) > 2 else "")
         rows.append({
-            "id": "", "user": owner, "user_name": names.get(owner, owner), "mine": owner == user, "credential": None,
-            "credential_name": "", "company": False, "none_needed": False,
-            "state": "public" if repo.anonymous else "none", "can_edit": owner == user,
-            "used_in": [project(s, "owner") for s in links if owners.get(s.project) == owner], "last_used": None,
+            "id": "", "user": group[0] if len(group) == 1 else "", "user_name": who, "mine": user in group,
+            "credential": shared_read.credential if shared_read is not None else None,
+            "credential_name": (shared_entry.label if shared_entry else "None needed") if shared_read is not None else "",
+            "company": shared_entry is not None, "none_needed": bool(shared_read and shared_read.none_needed),
+            "readable": readable, "can_edit": shared_read is None and user in group, "used_in": used,
+            "last_used": shared_read.last_used.isoformat() if shared_read is not None and shared_read.last_used else None,
         })
     return rows
 
@@ -754,8 +821,10 @@ def view(company: str, user: str, is_admin: bool, repo: Repository, entries: boo
                       "inherited": bool(s.inherited), "member": s.project in mine_roots} for s in links],
         "assignments": _assignment_rows(repo, user, links, owners, names, mine_roots),
         "relation": "shared" if shared else ("own" if repo.owner == user else "inherited"),
-        "access": {"state": resolution.state, "message": resolution.message, "warning": resolution.warning},
-        "can_delete": level == "collaborator",
+        "access": {"state": resolution.state, "message": resolution.message, "warning": resolution.warning,
+                   "readable": _readable(resolution)},
+        "can_delete": delete_blocked(company, user, is_admin, repo) is None and level is not None,
+        "delete_blocked": delete_blocked(company, user, is_admin, repo),
         "can_share": (not shared and (repo.owner == user or is_admin)) or (shared and is_admin),
         "can_assign": level is not None,
         "credentials": [{"id": e.id, "name": e.label, "kind": e.kind, "company": e.scope == "company"}

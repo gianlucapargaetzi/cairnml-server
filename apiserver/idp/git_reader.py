@@ -95,6 +95,21 @@ class GitReader:
             return False
         return True
 
+    def tree_sizes(self, repo: str, ref: str) -> dict:
+        """The size in bytes of every file in the repository at a commit, by path."""
+        if not _is_sha(ref) or not self.commit_exists(repo, ref):
+            raise GitHubError(f"no commit {ref[:10]} in {repo}")
+        done = self._git(repo, "ls-tree", "-r", "-l", "-z", ref)
+        if done.returncode:
+            raise GitHubError(f"tree lookup failed for {repo}")
+        sizes = {}
+        for record in done.stdout.decode("utf-8", "replace").split("\0"):
+            meta, _, path = record.partition("\t")
+            fields = meta.split()
+            if path and len(fields) == 4 and fields[1] == "blob":
+                sizes[path] = int(fields[3]) if fields[3].isdigit() else 0
+        return sizes
+
     def commit_exists(self, repo: str, sha: str) -> bool:
         if not _is_sha(sha):
             return False

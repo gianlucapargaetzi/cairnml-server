@@ -43,6 +43,8 @@ class Repository(DbModelMixin, Document):
     """ what the last check of it found; for a registry, whether its entries could be read """
     anonymous = BooleanField()
     """ whether the repository can be cloned without a credential; unset until asked """
+    dismissed = ListField(StringField())
+    """ the users who deleted the entry for themselves while others still use it: it is hidden from them, and only from them """
     anonymous_checked = DateTimeField()
     read_at = DateTimeField()
     """ when the entries of a registry were last read """

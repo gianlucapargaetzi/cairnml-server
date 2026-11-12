@@ -68,3 +68,23 @@ def test_the_token_is_only_in_the_environment_of_git():
     env = GitReader("example.test", "secret-token", "x-access-token")._env()
     assert "secret-token" not in " ".join(env.values()) and env["GIT_CONFIG_KEY_0"] == "http.extraHeader"
     assert git_reader._first_line("fatal: bad secret-token here", "secret-token") == "fatal: bad *** here"
+
+
+def test_the_size_of_every_file_is_listed_for_a_commit(host):
+    with GitReader(host) as reader:
+        _branch, head = reader.default_branch_head("owner/registry")
+        sizes = reader.tree_sizes("owner/registry", head)
+        assert sizes["DATASET.md"] == len("second") and sizes["datasets/cifar10.yaml"] > 0 and "datasets" not in sizes
+
+
+def test_a_repository_without_dataset_yaml_is_not_a_dataset_when_read_over_git(host):
+    from apiserver.bll.dataset_layout import NotADataset, verify_dataset
+    with GitReader(host) as reader, pytest.raises(NotADataset, match="dataset.yaml is missing"):
+        verify_dataset(reader, "owner/registry")
+
+
+def test_a_repository_that_cannot_be_cloned_is_refused_with_the_reason(host):
+    from apiserver.apierrors import errors
+    from apiserver.bll.dataset_layout import verify_dataset
+    with GitReader(host) as reader, pytest.raises(errors.bad_request.ValidationError, match="could not be read"):
+        verify_dataset(reader, "owner/nothing")

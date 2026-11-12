@@ -150,6 +150,8 @@ def remove_member(call: APICall, company_id: str, request: RemoveMemberRequest):
     )
     # what the member shared with the project goes with them (R19)
     revoke_member_shares(company_id, root_id, request.user, actor=call.identity.user)
+    # a credential the member assigned to a repository only that project let them see goes with their access to it
+    repositories_bll.prune_assignments(company_id, user=request.user)
 
     return UpdateResponse(updated=1)
 

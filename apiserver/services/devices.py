@@ -24,6 +24,7 @@ from apiserver.database.model.auth import Role, User
 from apiserver.database.model.device import Device, DeviceKind
 from apiserver.database.model.queue import Queue
 from apiserver.database.model.task.task import Task
+from apiserver.idp.git_reader import GitReader
 from apiserver.idp.assertion import AssertionInvalid, unverified_issuer, verify_assertion
 from apiserver.idp.audit import client_address, record as audit
 from apiserver.idp.checks import AccessDenied, check_device, check_job_issue
@@ -304,7 +305,8 @@ def git_token(call: APICall, company, request: GitTokenRequest):
         answer, resolution = repositories_bll.token_for_job(company, repo, task.project, user)
         if request.repository and "registry" not in repo.roles and resolution.entry is not None \
                 and resolution.entry.kind == "app":
-            verify_dataset(repositories_bll._app_of(resolution.entry), repo.path)
+            with GitReader(repo.host, answer.get("token"), answer.get("username")) as reader:
+                verify_dataset(reader, repo.path)
     except errors.bad_request.ValidationError as refused:
         audit(actor, "git_token.refused", ip=client_address(call), company=company, device=claims.get("device"),
               task=request.task, reason=str(refused))
