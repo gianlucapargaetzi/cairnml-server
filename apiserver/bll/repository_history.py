@@ -89,10 +89,12 @@ def assign_lanes(rows: List[dict]) -> int:
 
 
 def condense(commits: List[dict], total: int, first: Optional[dict], runs: List[dict], tips: Optional[Dict[str, List[str]]] = None,
-             max_commits: int = MAX_COMMITS, max_tasks: int = MAX_TASKS) -> dict:
+             older: Optional[Dict[str, int]] = None, max_commits: int = MAX_COMMITS, max_tasks: int = MAX_TASKS) -> dict:
     """``commits``: the commits of the branches that count, newest first in topological order, each with ``sha`` and
     ``parents``; ``total`` the number of those commits in the whole history, ``first`` the oldest one, ``runs`` the runs of the
-    repository with their ``commit`` and ``dirty``, ``tips`` the branch names by the commit they point at."""
+    repository with their ``commit`` and ``dirty``, ``tips`` the branch names by the commit they point at, ``older`` the length of the first-parent chain
+    below each parent that is not in ``commits`` (to count the commits a line leaves out; without it the gap is the number of
+    commits below the window)."""
     tips = tips or {}
     by_commit = _runs_by_commit(runs)
     window: List[dict] = []
@@ -151,6 +153,9 @@ def condense(commits: List[dict], total: int, first: Optional[dict], runs: List[
         skipped = 0
         while True:
             if parent not in by_sha:
+                if older is not None and parent in older:
+                    below = 0 if parent == first_sha else max(older[parent] - 1, 0)
+                    return first_sha, skipped + below
                 return first_sha, skipped + remaining
             if parent in shown:
                 return parent, skipped
@@ -206,7 +211,8 @@ def history(company: str, user: str, is_admin: bool, repo) -> dict:
         raise errors.bad_request.ValidationError(f"the history of {repo.path} could not be read ({exc})") from None
     finally:
         getattr(reader, "close", lambda: None)()
-    return condense(info["commits"], info["total"], info["first"], _resolved(runs, info["resolved"]), info["tips"])
+    return condense(info["commits"], info["total"], info["first"], _resolved(runs, info["resolved"]), info["tips"],
+                    info.get("older"))
 
 
 def _resolved(runs: List[dict], resolved: Dict[str, str]) -> List[dict]:

@@ -156,3 +156,13 @@ def test_a_merged_side_branch_with_a_task_keeps_its_lane():
     result = condense(commits, 5, commits[-1], [run(4)], tips={sha(5): ["main"]})
     assert result["lane_count"] == 2
     assert 4 in shape(result)
+
+
+def test_each_line_that_leaves_the_window_counts_its_own_chain():
+    # two lines leave the window: main continues with 40 commits below, the branch forked off much earlier
+    window = [commit(100, [sha(99)]), commit(99, [sha(98)]), commit(50, [sha(49)]), commit(49, [sha(48)])]
+    first = commit(1, [])
+    older = {sha(98): 60, sha(48): 7}
+    result = condense(window, 1000, first, [run(50)], tips={sha(100): ["main"], sha(49): ["feature"]}, older=older)
+    gaps = [n["count"] for n in result["nodes"] if n["type"] == "gap"]
+    assert gaps == [60, 6]  # main: the commit 99 and the 59 below it; the branch: 6
