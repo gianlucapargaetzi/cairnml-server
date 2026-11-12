@@ -236,6 +236,11 @@ def git_token(call: APICall, company: str, _request):
     parsed = bll.repo_address.parse(data.get("repository") or "")
     repo = bll.find(company, data.get("repository") or "") if parsed is not None else None
     if repo is None or not bll.can_see(company, call.identity.user, _is_admin(call), repo):
+        if parsed is not None and level == "read" and bll.is_private(parsed.url) is False:
+            # a public repository nobody listed yet needs no token and no record: a run lists it when it records what it used
+            audit(call.identity.user, "git_token.public", ip=client_address(call), company=company, repo=parsed.key, level=level)
+            call.result.data = {"token": None, "expires_at": None, "username": None}
+            return
         raise errors.bad_request.ValidationError(NO_SUCH_REPOSITORY_HINT)
     answer = bll.token_for_person(company, call.identity.user, _is_admin(call), repo, write=level == "read_write")
     audit(call.identity.user, "git_token.issued" if answer["token"] else "git_token.public", ip=client_address(call),

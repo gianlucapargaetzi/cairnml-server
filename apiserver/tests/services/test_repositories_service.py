@@ -222,3 +222,18 @@ def test_a_registry_that_cannot_be_read_is_still_listed(world, monkeypatch):
     world.private = False
     answer = run(svc.add, world, "owner", {"url": "https://github.com/acme/registry", "role": "registry"})
     assert answer["repository"]["state"] == "no_access" and answer["repository"]["entries"] == []
+
+
+def test_a_public_repository_nobody_listed_yet_gets_no_token_and_no_record(world):
+    world.private = False
+    answer = run(svc.git_token, world, "owner", {"repository": "https://github.com/acme/registry", "level": "read"})
+    assert answer["token"] is None and world.audits[-1] == ("owner", "git_token.public")
+    assert Repository.objects(company=world.company).count() == 0            # a run lists it when it records what it used
+    with pytest.raises(errors.bad_request.ValidationError):                  # a push needs a record and a credential
+        run(svc.git_token, world, "owner", {"repository": "https://github.com/acme/registry", "level": "read_write"})
+
+
+def test_a_private_repository_nobody_listed_is_still_refused_with_the_hint(world):
+    world.private = True
+    with pytest.raises(errors.bad_request.ValidationError, match="make sure it is listed"):
+        run(svc.git_token, world, "owner", {"repository": "https://github.com/acme/secret", "level": "read"})
