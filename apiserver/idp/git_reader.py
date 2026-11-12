@@ -19,6 +19,7 @@ from apiserver.idp.github import GitHubError, RepoNotAccessible
 CLONE_TIMEOUT = 60
 MAX_FILE = 1_000_000
 HISTORY = 60  # commits kept, for the history a dataset shows
+MAX_BRANCHES = 40  # branches that are looked at for tasks of their own
 
 
 class GitReader:
@@ -131,9 +132,12 @@ class GitReader:
                                 "parents": fields[4].split()})
         return commits
 
-    def commit_history(self, repo: str, limit: int) -> dict:
-        """The whole history in numbers, from a clone that holds the commits only (no files): ``total`` commits, the ``first``
-        commit and the newest ``limit`` commits of the default branch, newest first."""
+    def graph_history(self, repo: str, run_commits: list, limit: int) -> dict:
+        """The commit graph of the branches that count, from a clone that holds the commits only (no files): the default branch, and
+        every other branch that has one of ``run_commits`` among the commits of its own (that the default branch does not have).
+        Returns ``total`` (commits of those branches), ``first`` (the oldest commit), ``commits`` (the newest ``limit``, newest
+        first in topological order, each with its parents), ``tips`` (branch names by the commit they point at) and ``resolved``
+        (the full sha of each run commit git knows, a run may have recorded a short one)."""
         try:
             repo_visibility.check_address(self.host, 443)
         except repo_visibility.ProbeBlocked as exc:
@@ -143,8 +147,7 @@ class GitReader:
         folder = tempfile.mkdtemp(prefix="cairnml-git-history-")
         try:
             done = subprocess.run(
-                ["git", "clone", "--quiet", "--bare", "--filter=tree:0", "--single-branch", "--no-tags", "--",
-                 f"https://{self.host}/{repo}.git", folder],
+                ["git", "clone", "--quiet", "--bare", "--filter=tree:0", "--no-tags", "--", f"https://{self.host}/{repo}.git", folder],
                 env=self._env(), capture_output=True, text=True, timeout=CLONE_TIMEOUT, check=False)
             if done.returncode != 0:
                 raise RepoNotAccessible(f"{repo} could not be read over git: " + _first_line(done.stderr, self.token))
@@ -153,13 +156,41 @@ class GitReader:
                 return subprocess.run(["git", "-C", folder, *args], env=self._env(), capture_output=True, timeout=CLONE_TIMEOUT,
                                       check=False).stdout.decode("utf-8", "replace")
 
-            fmt = "--format=%H%x1f%s%x1f%an%x1f%aI%x1f%P%x1e"
-            count = git("rev-list", "--count", "HEAD").strip()
-            roots = git("rev-list", "--max-parents=0", "--reverse", "HEAD").split()
+            default = git("symbolic-ref", "--short", "HEAD").strip()
+            if not default:
+                raise GitHubError(f"{repo} has no commit yet")
+            heads = {}
+            for line in git("for-each-ref", "--format=%(refname:short) %(objectname)", "refs/heads").splitlines():
+                name, _, sha = line.rpartition(" ")
+                if name:
+                    heads[name] = sha
+            resolved = {}
+            for commit in run_commits:
+                full = git("rev-parse", "--verify", "--quiet", f"{commit}^{{commit}}").strip() if _is_sha(commit) else ""
+                if full:
+                    resolved[commit] = full
+            known = set(resolved.values())
+            wanted = [default]
+            for name in sorted(heads):
+                if name == default or len(wanted) > MAX_BRANCHES:
+                    continue
+                own = git("rev-list", "--max-count=2000", f"refs/heads/{name}", f"^refs/heads/{default}").split()
+                if known.intersection(own):
+                    wanted.append(name)
+            refs = [f"refs/heads/{name}" for name in wanted]
+            count = git("rev-list", "--count", *refs).strip()
+            roots = git("rev-list", "--max-parents=0", "--reverse", *refs).split()
             if not count.isdigit() or not roots:
                 raise GitHubError(f"{repo} has no commit yet")
-            return {"total": int(count), "first": _commit(git("log", "-1", fmt, roots[0])),
-                    "commits": [c for c in (_commit(r) for r in git("log", f"--max-count={limit}", fmt, "HEAD").split("\x1e")) if c]}
+            fmt = "--format=%H%x1f%s%x1f%an%x1f%aI%x1f%P%x1e"
+            tips = {}
+            for name in wanted:
+                tips.setdefault(heads[name], []).append(name)
+            return {
+                "total": int(count), "first": _commit(git("log", "-1", fmt, roots[0])), "tips": tips, "resolved": resolved,
+                "commits": [c for c in (_commit(r) for r in git("log", "--topo-order", f"--max-count={limit}", fmt, *refs, "--")
+                                        .split("\x1e")) if c],
+            }
         except subprocess.TimeoutExpired:
             raise GitHubError(f"{repo} could not be read in time") from None
         finally:
