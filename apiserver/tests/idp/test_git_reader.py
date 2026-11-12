@@ -88,3 +88,43 @@ def test_a_repository_that_cannot_be_cloned_is_refused_with_the_reason(host):
     from apiserver.bll.dataset_layout import verify_dataset
     with GitReader(host) as reader, pytest.raises(errors.bad_request.ValidationError, match="could not be read"):
         verify_dataset(reader, "owner/nothing")
+
+
+def test_the_graph_has_the_count_the_first_commit_and_the_newest_commits(host):
+    with GitReader(host) as reader:
+        info = reader.graph_history("owner/registry", [], 30)
+    assert info["total"] == 2
+    assert info["first"]["message"] == "first"
+    assert [c["message"] for c in info["commits"]] == ["second", "first"]
+    assert info["commits"][0]["parents"] == [info["first"]["sha"]]
+    assert list(info["tips"].values()) == [["main"]]
+
+
+def test_the_graph_limit_keeps_the_newest_commits(host):
+    with GitReader(host) as reader:
+        info = reader.graph_history("owner/registry", [], 1)
+    assert info["total"] == 2
+    assert [c["message"] for c in info["commits"]] == ["second"]
+
+
+def test_a_branch_with_a_task_of_its_own_is_part_of_the_graph_and_one_without_is_not(host, tmp_path):
+    bare = tmp_path / "remote" / "owner" / "registry.git"
+    work = tmp_path / "branches"
+    subprocess.run(["git", "clone", "-q", str(bare), str(work)], check=True)
+    _git(work, "checkout", "-q", "-b", "feature/with-task")
+    (work / "a.txt").write_text("a")
+    _git(work, "add", "-A")
+    _git(work, "commit", "-q", "-m", "on the branch")
+    on_branch = subprocess.run(["git", "-C", str(work), "rev-parse", "HEAD"], capture_output=True, text=True, check=True).stdout.strip()
+    _git(work, "push", "-q", "origin", "feature/with-task")
+    _git(work, "checkout", "-q", "-b", "feature/nothing-ran", "main")
+    (work / "b.txt").write_text("b")
+    _git(work, "add", "-A")
+    _git(work, "commit", "-q", "-m", "no task here")
+    _git(work, "push", "-q", "origin", "feature/nothing-ran")
+    with GitReader(host) as reader:
+        info = reader.graph_history("owner/registry", [on_branch, on_branch[:10]], 30)
+    assert sorted(n for names in info["tips"].values() for n in names) == ["feature/with-task", "main"]
+    assert info["total"] == 3
+    assert [c["message"] for c in info["commits"]][0] == "on the branch"
+    assert info["resolved"] == {on_branch: on_branch, on_branch[:10]: on_branch}
