@@ -1,22 +1,18 @@
-"""Which GitHub repositories are CairnML datasets, and how a job may read one.
+"""Whether a dataset repository has the layout of a CairnML dataset, checked when a job asks for its token.
 
-The GitHub App is the source of trust. Its installations are the allow-list: a repository the App is installed on is a
-dataset when its default branch has a ``dataset.yaml`` at its root. Its footprint (``dataset.lock.json`` against
-``data.dvc``, and ``adapter.py`` for a local adapter) is verified with the SDK's footprint check every time the dataset
-is read or listed. Nothing is registered: a dataset lives in its own repository.
-
-A public repository needs no App and no token: it is cloned without one, so this module does not read it.
+A dataset repository has a ``dataset.yaml`` at the root of its default branch, and its footprint (``dataset.lock.json``
+against ``data.dvc``, and ``adapter.py`` for a local adapter) holds. It is verified with the SDK's footprint check, read over git (idp/git_reader)
+with the token of the credential that reads the repository, never through the host's REST API. Nothing is registered by this check: it only refuses a job on a repository that is
+not a dataset or whose footprint does not hold.
 """
 
 import json
 
 from apiserver.apierrors import errors
-from apiserver.idp.github import GitHubApp, GitHubError, RepoNotAccessible
+from apiserver.idp.github import GitHubError, RepoNotAccessible
 from cairnml.datasets import footprint
 
 ADAPTER_MAX_BYTES = 1024 * 1024  # adapter.py comes from an untrusted repository: it is read only up to this size
-DESCRIPTION_FILE = "DATASET.md"
-DESCRIPTION_MAX_BYTES = 20 * 1024  # DATASET.md is text for the dataset view only; longer text is cut
 
 
 class NotADataset(errors.bad_request.ValidationError):
@@ -38,7 +34,7 @@ def _is_local_adapter(config_text):
         return False
 
 
-def _read_adapter(app: GitHubApp, repo: str, head: str, sizes: dict):
+def _read_adapter(app, repo: str, head: str, sizes: dict):
     """The bytes of adapter.py at the top of the repository at ``head``, or None when there is none.
 
     Only the bytes are kept: the file is hashed by the footprint check and never imported, run or parsed here. Its size
@@ -61,7 +57,7 @@ def _read_adapter(app: GitHubApp, repo: str, head: str, sizes: dict):
     return content
 
 
-def verify_dataset(app: GitHubApp, repo: str) -> tuple:
+def verify_dataset(app, repo: str) -> tuple:
     """Read the default branch of an installed repository and verify it is a dataset with a holding footprint.
 
     Returns (default branch, head sha, lock). Raises NotADataset when dataset.yaml is missing at the root, and a
@@ -81,8 +77,8 @@ def verify_dataset(app: GitHubApp, repo: str) -> tuple:
             files[footprint.ADAPTER_FILE] = _read_adapter(app, repo, head, sizes)
     except NotADataset:
         raise
-    except RepoNotAccessible:
-        raise errors.bad_request.ValidationError(f"the GitHub App is not installed on {repo}") from None
+    except RepoNotAccessible as exc:
+        raise errors.bad_request.ValidationError(f"{repo} could not be read with the credential: {exc}") from None
     except GitHubError as exc:
         raise GitHubUnreadable(f"GitHub could not be read for {repo}: {exc}") from None
     problems = footprint.verify_files(files, sizes)
@@ -91,42 +87,3 @@ def verify_dataset(app: GitHubApp, repo: str) -> tuple:
             f"{repo}@{head[:10]} on {branch} does not pass its footprint check: " + "; ".join(problems)
         )
     return branch, head, json.loads(files[footprint.LOCK_FILE].decode())
-
-
-def footprint_summary(lock: dict) -> dict:
-    """What the dataset list shows from the lock: its format kind, its sample count and its labels."""
-    return {
-        "format": (lock.get("format") or {}).get("kind"),
-        "samples": lock.get("samples"),
-        "labels": lock.get("labels") or {},
-    }
-
-
-def description_of(app: GitHubApp, repo: str, head: str):
-    """The text of DATASET.md at the head commit, cut to DESCRIPTION_MAX_BYTES, and whether it was cut. (None, False)
-    when the repository has no DATASET.md at its root. The text is data for the dataset view, never executed."""
-    raw = app.read_file(repo, DESCRIPTION_FILE, head)
-    if raw is None:
-        return None, False
-    return raw[:DESCRIPTION_MAX_BYTES].decode("utf-8", "replace"), len(raw) > DESCRIPTION_MAX_BYTES
-
-
-def dataset_entry(app: GitHubApp, repo: str) -> dict:
-    """The list entry of one installed repository that is a dataset: the fields the Datasets list shows.
-
-    Raises NotADataset when dataset.yaml is missing at its root, GitHubUnreadable when GitHub cannot be read now, and a
-    validation error when the footprint does not hold. See bll/dataset_cache for what a refresh does with each.
-    """
-    branch, head, lock = verify_dataset(app, repo)
-    try:
-        description, truncated = description_of(app, repo, head)
-    except GitHubError as exc:
-        raise GitHubUnreadable(f"GitHub could not be read for {repo}: {exc}") from None
-    return {
-        "repository": repo,
-        "default_branch": branch,
-        "head_commit": head,
-        "footprint": footprint_summary(lock),
-        "description": description,
-        "description_truncated": truncated,
-    }

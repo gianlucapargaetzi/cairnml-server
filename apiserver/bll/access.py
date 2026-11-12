@@ -1,6 +1,6 @@
 """Who may use, change and share a resource: the one place where access is decided.
 
-A resource is a queue, a dataset, a registry or a credential. Its owner, an admin, and a holder of a share each have a
+A resource is a queue or a repository (a code repository, a dataset or a registry). Its owner, an admin, and a holder of a share each have a
 level on it: read, read_write or collaborator. ACTION_NEEDS is the action table; it is the only place where the table
 is written. The levels of the share record (apiserver/database/model/share.py) are the same three.
 
@@ -20,12 +20,11 @@ from mongoengine import ValidationError as ModelValidationError
 from apiserver.apierrors import errors
 from apiserver.bll.user_access import grant_applies, is_active, is_member, my_projects, root_project
 from apiserver.database.model.auth import Role, User
-from apiserver.database.model.dataset import Dataset
+from apiserver.database.model.repository import Repository
 from apiserver.database.model.project import Project, ProjectRole
 from apiserver.database.model.queue import Queue
 from apiserver.database.model.share import LEVELS, RESOURCE_TYPES, Share
 from apiserver.database.model.task.task import Task
-from apiserver.database.model.user_access import UserAccess
 
 ADMIN_ROLES = (Role.admin, Role.root)
 
@@ -34,9 +33,7 @@ RANK = {level: rank for rank, level in enumerate(LEVELS)}
 
 ACTION_NEEDS = {
     "queue": {"use": "read", "change_content": "read_write", "manage_sharing": "collaborator"},
-    "dataset": {"use": "read", "change_content": "read_write", "manage_sharing": "collaborator"},
-    "registry": {"use": "read", "manage_sharing": "collaborator"},
-    "credential": {"use": "read", "manage_sharing": "collaborator"},
+    "repository": {"use": "read", "manage_sharing": "collaborator"},
 }
 """ For each resource type, the lowest level that satisfies each action. An action not listed is never allowed. """
 
@@ -52,16 +49,10 @@ def _owner(company: str, resource_type: str, resource_id: str) -> Optional[str]:
     if resource_type == "queue":
         queue = Queue.objects(company=company, id=resource_id).only("created_by").first()
         return queue.created_by if queue else None
-    if resource_type == "credential":
-        entry = UserAccess.objects(company=company, id=resource_id).only("user").first()
-        return entry.user if entry else None
-    if resource_type == "dataset":
-        record = Dataset.objects(company=company, id=resource_id, kind__ne="registry").only("owner").first()
-    elif resource_type == "registry":
-        record = Dataset.objects(company=company, id=resource_id, kind="registry").only("owner").first()
-    else:
-        return None
-    return record.owner if record else None
+    if resource_type == "repository":
+        record = Repository.objects(company=company, id=resource_id).only("owner").first()
+        return record.owner if record else None
+    return None
 
 
 def _project_share_applies(company: str, share: Share, user: str, project_roots: Set[str], check_active: bool) -> bool:
@@ -225,7 +216,7 @@ def share(company: str, actor: str, resource_type: str, resource_id: str, scope:
 
 
 def _project_steward(company: str, project_id: str, actor: str) -> bool:
-    """The owner of the root project, or one of its collaborators: the ones who may revoke a dataset, credential or queue
+    """The owner of the root project, or one of its collaborators: the ones who may unlink a repository or take a queue
     from the project (decision 5, R34, R62). A plain member is not one."""
     project = Project.objects(company=company, id=project_id).only("user", "members").first()
     if project is None or not actor:
@@ -235,16 +226,15 @@ def _project_steward(company: str, project_id: str, actor: str) -> bool:
 
 
 def _may_revoke_from_project(company: str, actor: str, record: Share) -> bool:
-    """A dataset, credential or queue share of a project may be revoked by the project's owner and collaborators, besides
+    """A repository or queue share of a project may be revoked by the project's owner and collaborators, besides
     the holders of manage_sharing on the resource (see _require_sharing)."""
-    return (record.scope == "projects" and record.resource_type in ("dataset", "credential", "queue")
+    return (record.scope == "projects" and record.resource_type in ("repository", "queue")
             and _project_steward(company, record.project, actor))
 
 
 def unshare(company: str, actor: str, share_id: str) -> None:
     """Removes a share. The actor must be active and either hold manage_sharing on the resource it gives, or, for a
-    dataset or credential shared with a project, be the project's owner or a collaborator of it. Revoking a dataset
-    also removes its inherited credential share when no other dataset shared with the project still needs it."""
+    repository or queue shared with a project, be the project's owner or a collaborator of it."""
     _require_active(actor)
     record = Share.objects(company=company, id=share_id).first()
     if record is None:
@@ -252,10 +242,6 @@ def unshare(company: str, actor: str, share_id: str) -> None:
     if not _may_revoke_from_project(company, actor, record):
         _require_sharing(company, actor, record.resource_type, record.resource_id)
     record.delete()
-    if record.resource_type == "dataset" and record.scope == "projects":
-        # imported here: bll/dataset_inheritance reads this module
-        from apiserver.bll import dataset_inheritance
-        dataset_inheritance.release_credential_of_revoked(company, record)
 
 
 # --- Writers' path. A writer that changes an old field calls these in the same operation, after its own check of the
@@ -280,7 +266,7 @@ def record_grant(company: str, granted_by: str, resource_type: str, resource_id:
                  run_id: Optional[str] = None) -> Share:
     """The share of a grant the old field has just gained, written for the actor who changed the field. An existing
     share of the same grant is kept as it is. inherited and run_id mark a share the server made because a run used
-    the resource (bll/dataset_inheritance)."""
+    the resource (bll/repository_runs)."""
     refuse_inactive(actor)
     existing = find_share(company, resource_type, resource_id, scope, project, user)
     if existing is not None:
@@ -305,44 +291,38 @@ def drop_resource_shares(company: str, resource_type: str, resource_id: str, *, 
 
 def revoke_member_shares(company: str, project: str, member: str, *, actor: str) -> None:
     """The shares a removed member of a root project granted to it: of every resource type, inherited or not. The shares
-    other people granted stay. A dataset share goes with its inherited credential share, as in unshare."""
+    other people granted stay."""
     refuse_inactive(actor)
-    # imported here: bll/dataset_inheritance reads this module
-    from apiserver.bll import dataset_inheritance
-    records = list(Share.objects(company=company, scope="projects", project=project, granted_by=member))
-    for record in records:
-        record.delete()
-        if record.resource_type == "dataset":
-            dataset_inheritance.release_credential_of_revoked(company, record)
+    Share.objects(company=company, scope="projects", project=project, granted_by=member).delete()
 
 
-# --- Notices of inherited datasets. A finished run shares the datasets it used with its project (bll/dataset_inheritance);
+# --- Notices of inherited repositories. A run links the repositories it used to its project (bll/repository_runs);
 # --- the user who ran the run sees each such share as a notice, while they still have use on the project.
 
 def _entitled_to_notice(company: str, user: str, share: Share, project_roots: Set[str]) -> bool:
-    """Whether the user is entitled to the notice of an inherited dataset share: they ran the run it was made for, and the
-    share still gives them use on the project (the user is an active member of it, see level_of)."""
-    if share.resource_type != "dataset" or share.scope != "projects" or not share.inherited or not share.run_id:
+    """Whether the user is entitled to the notice of an inherited repository link: they ran the run it was made for, and the
+    link still gives them use on the project (the user is an active member of it, see level_of)."""
+    if share.resource_type != "repository" or share.scope != "projects" or not share.inherited or not share.run_id:
         return False
     run = Task.objects(company=company, id=share.run_id).only("user").first()
     if run is None or run.user != user:
         return False
     level = _share_level(company, share, user, project_roots, True, True)
-    return allows(level, "use", "dataset")
+    return allows(level, "use", "repository")
 
 
 def notices(company: str, user: str) -> list:
-    """The notices of inherited datasets the user has not dismissed, newest first."""
+    """The notices of inherited repositories the user has not dismissed, newest first."""
     if not user or not is_active(user):
         return []
     roots = _roots_of(company, user)
-    shares = Share.objects(company=company, resource_type="dataset", scope="projects", inherited=True,
+    shares = Share.objects(company=company, resource_type="repository", scope="projects", inherited=True,
                            dismissed_by__ne=user).order_by("-created")
     found = []
     for share in shares:
         if not _entitled_to_notice(company, user, share, roots):
             continue
-        dataset = Dataset.objects(company=company, id=share.resource_id).only("name").first()
+        dataset = Repository.objects(company=company, id=share.resource_id).only("name").first()
         project = Project.objects(company=company, id=share.project).only("name").first()
         found.append({
             "id": share.id,

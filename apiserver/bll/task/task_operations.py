@@ -4,6 +4,7 @@ from typing import Callable, Any, Tuple, Union, Sequence, Optional
 from mongoengine import Q
 
 from apiserver.apierrors import errors, APIError
+from apiserver.bll.queue.project_pool import pick_pool_queue
 from apiserver.bll.queue import QueueBLL
 from apiserver.bll.queue.queue_access import QueueAccessBLL
 from apiserver.bll.task import (
@@ -290,8 +291,8 @@ def enqueue_task(
         queue_id = queue.id
 
     if not queue_id:
-        # try to get default queue
-        queue_id = queue_bll.get_default(company_id).id
+        # no queue named: the project's queue pool (the queues allocated to it), else the default queue
+        queue_id = pick_pool_queue(company_id, identity, task.project, queue_bll) or queue_bll.get_default(company_id).id
     QueueAccessBLL.assert_can_use(identity, company_id, queue_id)
 
     user_id = identity.user

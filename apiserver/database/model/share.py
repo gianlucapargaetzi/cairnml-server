@@ -1,21 +1,20 @@
-"""A grant of one resource (a queue, a dataset, a registry or a credential) to a set of projects, to one user (queues
-only), or to everyone (public, read only). A share with an empty project and an empty user is a public share.
-See docs/superpowers/specs/2026-11-05-access-model-design.md."""
+"""A grant of one resource (a queue or a repository) to a set of projects, to one user (queues only), or to everyone
+(public, read only). A share with an empty project and an empty user is a public share: for a repository it is what makes an
+entry shared (owned by the admin). A project share of a repository is the link that lists it in the project.
+See docs/superpowers/specs/2026-11-05-access-model-design.md and 2026-11-11-unified-repositories-design.md."""
 
 from mongoengine import BooleanField, DateTimeField, Document, ListField, StringField, ValidationError
 
 from apiserver.database import Database, strict
 from apiserver.database.model import DbModelMixin
 
-RESOURCE_TYPES = ("queue", "dataset", "registry", "credential")
+RESOURCE_TYPES = ("queue", "repository")
 SCOPES = ("projects", "public", "user")
 LEVELS = ("read", "read_write", "collaborator")
 
 LEVELS_BY_TYPE = {
     "queue": ("read", "read_write", "collaborator"),
-    "dataset": ("read", "read_write", "collaborator"),
-    "registry": ("read", "collaborator"),
-    "credential": ("read", "collaborator"),
+    "repository": ("read", "collaborator"),
 }
 """ The levels a share may give on each resource type """
 

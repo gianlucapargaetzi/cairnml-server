@@ -8,7 +8,7 @@ from mongoengine.base import UPDATE_OPERATORS
 
 from apiserver.apierrors import errors
 from apiserver.bll import webhooks
-from apiserver.bll.dataset_inheritance import publish_run_datasets
+from apiserver.bll.repository_runs import publish_run
 from apiserver.bll.project.access import ProjectAccessBLL
 from apiserver.bll.util import update_project_time
 from apiserver.config_repo import config
@@ -23,7 +23,7 @@ valid_statuses = get_options(TaskStatus)
 deleted_prefix = "__DELETED__"
 task_running_statuses = [TaskStatus.queued, TaskStatus.in_progress]
 publishing_statuses = (TaskStatus.completed, TaskStatus.failed)
-""" a run that finishes with one of these publishes its datasets to its project; a stopped run does not """
+""" a run that finishes with one of these lists its repositories in its project; a stopped run does not """
 
 log = config.logger(__file__)
 
@@ -117,9 +117,9 @@ class ChangeStatusRequest(object):
 
 
 def _publish_datasets(task) -> None:
-    """Shares the datasets of a finished run with its project. Never raises: sharing must not fail a run."""
+    """Records the repositories a run used and lists them in its project. Never raises: it must not fail a run."""
     try:
-        publish_run_datasets(task)
+        publish_run(task)
     except Exception:
         log.exception(f"sharing the datasets of task {task.id} failed")
 

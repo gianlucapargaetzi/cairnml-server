@@ -16,11 +16,24 @@ def role_for(idp_roles, admin_role: str) -> str:
     return Role.admin if admin_role in idp_roles else Role.user
 
 
+def single_admin(user_id: str, role: str, company: str = None) -> str:
+    """The role the user may hold: there is one admin account, which owns the shared repositories and the company's credentials.
+    A user the identity provider maps to admin stays a user while another account is the admin."""
+    if role != Role.admin:
+        return role
+    other = User.objects(role__in=[Role.admin, Role.root], id__ne=user_id)
+    if company:
+        other = other.filter(company=company)
+    if other.first() is not None:
+        return Role.user
+    return role
+
+
 def upsert_idp_user(issuer: str, subject: str, username: str, idp_roles, admin_role: str) -> User:
     """Create the CairnML user for this identity on first sight; keep its role in step with the IdP."""
     user_id = user_id_for(issuer, subject)
     user = User.objects(id=user_id).first()
-    role = role_for(idp_roles, admin_role)
+    role = single_admin(user_id, role_for(idp_roles, admin_role), user.company if user is not None else get_default_company())
     if user is None:
         user = User(
             id=user_id,

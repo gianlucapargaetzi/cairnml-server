@@ -17,22 +17,18 @@ from apiserver.apimodels.devices import (
     ReassignRequest,
     RevokeRequest,
 )
-from apiserver.bll import dataset_cache
 from apiserver.bll import repositories as repositories_bll
-from apiserver.bll.dataset_access import verify_dataset
+from apiserver.bll.dataset_layout import verify_dataset
 from apiserver.config_repo import config
 from apiserver.database.model.auth import Role, User
 from apiserver.database.model.device import Device, DeviceKind
 from apiserver.database.model.queue import Queue
 from apiserver.database.model.task.task import Task
+from apiserver.idp.git_reader import GitReader
 from apiserver.idp.assertion import AssertionInvalid, unverified_issuer, verify_assertion
 from apiserver.idp.audit import client_address, record as audit
 from apiserver.idp.checks import AccessDenied, check_device, check_job_issue
-from apiserver.idp.github import GitHubApp, GitHubError, RepoNotAccessible
 from apiserver.bll import user_access
-from apiserver.bll import datasets as datasets_bll
-from apiserver.bll.dataset_registry import canonical_url
-from apiserver.idp.github_check import build_from_config, public_repo, repo_of
 from apiserver.idp.keys import load_public_key
 from apiserver.idp import git_credentials as store
 from apiserver.idp import public_origin
@@ -290,105 +286,43 @@ def git_token(call: APICall, company, request: GitTokenRequest):
         raise errors.unauthorized.InvalidToken(str(exc)) from None
 
     actor = claims.get("device") or claims.get("sub") or "unknown"
-    app = build_from_config()
-    if request.repository:
-        # A dataset is a repository like the code's: recorded for the task's project, and read as the project's binding says
-        # (bll/repositories.resolve): the assigned credential alone, "None needed", else without a credential if the host
-        # allows it, else the company's access. A token made with an App is used to check the dataset's layout.
-        if task is None:
-            raise errors.bad_request.InvalidId("task not found")
-        # a registry is read with the credential it holds, when the project holds the registry (its share, not the
-        # binding): the one who queued the job must see it, or the project must hold it by an allocation
-        repo = repo_of(request.repository)
-        kept = datasets_bll.kept_for_repository(company, repo) if repo else None
-        if kept is not None and kept.kind != "repo":
-            root = user_access.root_project(company, task.project) if task.project else None
-            enqueuer = getattr(getattr(task, "execution", None), "enqueued_by", None)
-            if not datasets_bll.job_can_read(company, enqueuer, root, kept):
-                reason = f"no access to {kept.kind} {kept.name} for this job"
-                audit(actor, "git_token.refused", ip=client_address(call), company=company, device=claims.get("device"), task=request.task, reason=reason)
-                raise errors.bad_request.ValidationError(reason)
-            return _dataset_token(company, kept, repo, actor, request.task, client_address(call), claims, layout=False)
-        binding = repositories_bll.discover(company, request.repository, task.user, task.project)
-        if binding is None:
-            raise errors.bad_request.ValidationError("the repository is not a hosted git repository")
-        source = repositories_bll.source_of(binding)
-        resolution = repositories_bll.resolve(source, binding)
-        try:
-            answer = repositories_bll.token_for_job(source, binding, resolution)
-            client = repositories_bll.github_client(resolution, source)
-            if client is not None:
-                verify_dataset(client, source.path)
-        except errors.bad_request.ValidationError as refused:
-            audit(actor, "git_token.refused", ip=client_address(call), company=company, device=claims.get("device"),
-                  task=request.task, reason=str(refused))
-            raise
-        audit(actor, "git_token.issued" if answer["token"] else "git_token.public", ip=client_address(call),
-              company=company, device=claims.get("device"), task=request.task, repo=f"{source.host}/{source.path}",
-              via="binding", access=binding.credential or "")
-        if answer["token"] and client is not None:
-            _refresh_dataset_entry(client, source.path)
-        return answer
-
     if task is None:
         raise errors.bad_request.InvalidId("task not found")
-    repository = task.script.repository
+    # The repository of the task's code, or a dataset it names, is recorded for the task's project and read as
+    # bll/repositories.resolve says for the user who queued the task: the project owner's assignment, else the user's own, else
+    # without a credential if the host allows it, else the company's access.
+    repository = request.repository or (task.script.repository if task.script else None)
     if not repository:
         raise errors.bad_request.ValidationError("the task has no repository")
-    # The repository is recorded for the task's project, and read as bll/repositories.resolve says: the assigned
-    # credential alone, "None needed", else without a credential if the host allows it, else the company's access.
-    binding = repositories_bll.discover(company, repository, task.user, task.project)
-    if binding is None:
+    repo = repositories_bll.record_use_quietly(company, repository, "dataset" if request.repository else "code", task.user,
+                                               task.project)
+    if repo is None:
+        if request.repository:
+            raise errors.bad_request.ValidationError("the repository is not a hosted git repository")
         return _stored_token(company, actor, request.task, repository, client_address(call))
-    source = repositories_bll.source_of(binding)
+    user = (getattr(getattr(task, "execution", None), "enqueued_by", None)) or task.user
     try:
-        answer = repositories_bll.token_for_job(source, binding)
+        answer, resolution = repositories_bll.token_for_job(company, repo, task.project, user)
+        if request.repository and "registry" not in repo.roles and resolution.entry is not None \
+                and resolution.entry.kind == "app":
+            with GitReader(repo.host, answer.get("token"), answer.get("username")) as reader:
+                verify_dataset(reader, repo.path)
     except errors.bad_request.ValidationError as refused:
         audit(actor, "git_token.refused", ip=client_address(call), company=company, device=claims.get("device"),
               task=request.task, reason=str(refused))
         raise
-    audit(actor, "git_token.issued" if answer["token"] else "git_token.public", ip=client_address(call),
-          company=company, device=claims.get("device"), task=request.task, repo=f"{source.host}/{source.path}",
-          via="binding", access=binding.credential or "")
+    audit(actor, "git_token.issued" if answer["token"] else "git_token.public", ip=client_address(call), company=company,
+          device=claims.get("device"), task=request.task, repo=f"{repo.host}/{repo.path}", via="assignment",
+          access=resolution.entry.id if resolution.entry is not None else "", fallback=resolution.warning)
     return answer
 
 
-def _with_url(answer: dict, repo: str) -> dict:
-    """The answer with the https address of the repository. The job clones from it: with its token when the answer has
-    one, anonymously when it has none (a public repository)."""
-    return {**answer, "url": canonical_url(repo)}
 
 
-def _refresh_dataset_entry(app, repo: str) -> None:
-    """Refreshes the repository's entry in the dataset list when it is missing or stale (bll/dataset_cache). The job's
-    token is already issued: a failure here is logged and changes nothing in the answer."""
-    try:
-        dataset_cache.refresh_repository(app, repo)
-    except Exception:
-        log.warning("the dataset list entry of %s could not be refreshed", repo, exc_info=True)
 
 
-def _public_answer(repo: str, actor: str, company, claims: dict, task_id: str, call: APICall):
-    """The answer for a public repository: success with no token, since it is cloned without one. None when the
-    repository is not public. The App is not asked for a public repository."""
-    try:
-        public = public_repo(repo)
-    except GitHubError:
-        raise errors.bad_request.ValidationError("GitHub could not be reached") from None
-    if not public:
-        return None
-    audit(actor, "git_token.public", ip=client_address(call), company=company, device=claims.get("device"), task=task_id, repo=repo)
-    return {"token": None, "expires_at": None, "username": None}
 
 
-def _github_token(app, repo: str, actor: str, task_id: str, ip=None, company=None) -> dict:
-    """The GitHub App's read-only token for one repository. RepoNotAccessible is left to the caller."""
-    try:
-        token = app.installation_token(repo)
-    except GitHubError:
-        raise errors.bad_request.ValidationError("GitHub could not be reached") from None
-    audit(actor, "git_token.issued", ip=ip, company=company, task=task_id, repo=repo)
-    return {"token": token.token, "expires_at": token.expires_at.isoformat(), "username": "x-access-token"}
 
 
 AGENT_NOTICE = (
@@ -397,27 +331,6 @@ AGENT_NOTICE = (
 )
 
 
-def _dataset_token(company: str, kept, repo: str, actor: str, task_id: str, ip, claims: dict, layout: bool) -> dict:
-    """The token a job gets for a stored dataset or registry: made with the credential the dataset holds (see
-    bll/datasets.job_credential). A dataset's layout is checked with that same access. Refused with the reason, audited."""
-    try:
-        entry, secret = datasets_bll.job_credential(company, kept, repo)
-        if entry.kind == "app":
-            app = GitHubApp(entry.app_id, secret, entry.api_url or config.get("apiserver.idp.github_api_url"))
-            try:
-                token = app.installation_token(repo)
-            except RepoNotAccessible:
-                raise errors.bad_request.ValidationError(f"the GitHub App {entry.label} is not installed on {repo}") from None
-            except GitHubError as exc:
-                raise errors.bad_request.ValidationError(f"GitHub did not issue a token for {repo} ({exc})") from None
-            if layout:
-                _check_layout(app, repo, actor, company, task_id, ip)
-            audit(actor, "git_token.issued", ip=ip, company=company, task=task_id, repo=repo,
-                  via="dataset_credential", access=entry.id, owner=entry.user)
-            return {"token": token.token, "expires_at": token.expires_at.isoformat(), "username": "x-access-token"}
-    except errors.bad_request.ValidationError as refused:
-        audit(actor, "git_token.refused", ip=ip, company=company, device=claims.get("device"), task=task_id, reason=str(refused))
-        raise
 
 
 def _stored_token(company: str, actor: str, task_id: str, repository: str, ip=None) -> dict:

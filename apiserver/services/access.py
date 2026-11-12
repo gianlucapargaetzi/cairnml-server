@@ -2,6 +2,7 @@
 """The shares of queues, datasets, registries and credentials (see bll/access). The checks on those resources read them."""
 
 from apiserver.bll import access as access_bll
+from apiserver.bll.repositories import prune_assignments
 from apiserver.database.model.share import Share
 from apiserver.service_repo import APICall, endpoint
 
@@ -41,5 +42,8 @@ def share(call: APICall, company: str, _request):
 @endpoint("access.unshare")
 def unshare(call: APICall, company: str, _request):
     data = call.data or {}
+    share = Share.objects(company=company, id=data.get("share_id", "")).only("resource_type", "resource_id").first()
     access_bll.unshare(company, call.identity.user, data.get("share_id", ""))
+    if share is not None and share.resource_type == "repository":
+        prune_assignments(company, share.resource_id)  # who no longer sees the repository holds no assignment on it
     call.result.data = {"deleted": True}

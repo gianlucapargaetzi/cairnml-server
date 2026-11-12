@@ -177,7 +177,7 @@ class GitHubApp:
     def commit_exists(self, repo: str, sha: str) -> bool:
         """True when GitHub has the commit; False when it does not; GitHubError when the check itself fails."""
         response = self._send("GET", f"{self._api}/repos/{repo}/commits/{sha}", headers=self._read_headers(repo))
-        if response.status_code in (404, 422):
+        if response.status_code in (404, 409, 422):  # 409: the repository is empty, so no commit is in it
             return False
         if response.status_code != 200:
             raise GitHubError(f"GitHub request failed: {response.status_code}")

@@ -1,6 +1,7 @@
 """Object storage endpoints. The bytes never pass through this server: it signs the URL, then checks the commit."""
 
 from apiserver.apierrors import errors
+from apiserver.service_repo.job_scope import may_read_task_data
 from apiserver.apimodels.datachunks import (
     CommitRequest,
     DatasetCredentialsRequest,
@@ -10,7 +11,7 @@ from apiserver.apimodels.datachunks import (
     PrepareUploadRequest,
 )
 from apiserver.bll import datachunks as bll
-from apiserver.bll.dataset_credentials import dataset_credentials
+from apiserver.bll.repository_storage import dataset_credentials
 from apiserver.bll.project.access import ProjectAccessBLL
 from apiserver.bll.task.utils import get_task_with_write_access
 from apiserver.database.model.auth import Role
@@ -44,8 +45,8 @@ def _require_task_read_access(call: APICall, company: str, task_id: str) -> None
     the same bar the artifact's listing/display already requires elsewhere."""
     job_task = _job_task(call)
     if job_task is not None:
-        if job_task != task_id:
-            raise errors.unauthorized.InvalidToken("a job token only reads its own task's data")
+        if not may_read_task_data(job_task, task_id):
+            raise errors.unauthorized.InvalidToken("a job token only reads the data of its own task and its pipeline's steps")
         return
     task = Task.objects(id=task_id, company=company).only("id", "project", "user").first()
     if not task:

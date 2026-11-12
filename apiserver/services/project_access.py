@@ -25,7 +25,7 @@ from apiserver.bll.access import (
     revoke_member_shares,
 )
 from apiserver.bll import user_access
-from apiserver.bll.datasets import regrant_project_shares, usable_datasets
+from apiserver.bll import repositories as repositories_bll
 from apiserver.bll.project.access import ProjectAccessBLL
 from apiserver.bll.queue.queue_access import QueueAccessBLL
 from apiserver.bll.access import ADMIN_ROLES
@@ -150,6 +150,8 @@ def remove_member(call: APICall, company_id: str, request: RemoveMemberRequest):
     )
     # what the member shared with the project goes with them (R19)
     revoke_member_shares(company_id, root_id, request.user, actor=call.identity.user)
+    # a credential the member assigned to a repository only that project let them see goes with their access to it
+    repositories_bll.prune_assignments(company_id, user=request.user)
 
     return UpdateResponse(updated=1)
 
@@ -205,7 +207,7 @@ def transfer_ownership(call: APICall, company_id: str, request: TransferOwnershi
         remove_grant(company_id, "queue", queue_id, "projects", root_id, actor=call.identity.user)
         record_grant(company_id, request.new_owner, "queue", queue_id, "projects", root_id,
                      actor=call.identity.user)
-    regrant_project_shares(company_id, root_id, request.new_owner, actor=call.identity.user)
+    repositories_bll.regrant_project_links(company_id, root_id, request.new_owner, actor=call.identity.user)
 
     return UpdateResponse(updated=1)
 
@@ -292,9 +294,8 @@ def remove_queue(call: APICall, company_id: str, request: RemoveQueueRequest):
 
 @endpoint("projects.usable")
 def usable(call: APICall, company_id: str, request: UsableRequest):
-    """What the project can use: the datasets that are Public or shared with it, and the credentials shared with it. Read
-    for the members of the project; only its owner, its collaborators and company admins may change its shares (the
-    removable flags and can_manage). No secret is returned."""
+    """What the project can use: the repositories listed in it (code, datasets and registries). Read for the members of the
+    project; only its owner, its collaborators and company admins may take one out of the list (can_manage). No secret is returned."""
     root_id = _resolve_root_id(call, request.project)
     ProjectAccessBLL.assert_can(call.identity, request.project, "read")
     # a public project is readable by anyone, but its lists are for its members (and admins) only
@@ -305,6 +306,5 @@ def usable(call: APICall, company_id: str, request: UsableRequest):
     can_manage = ProjectAccessBLL.get_role(call.identity, request.project) in ("owner", ProjectRole.collaborator, "admin")
     call.result.data = {
         "can_manage": can_manage,
-        "datasets": usable_datasets(company_id, call.identity.user, root_id, can_manage),
-        "credentials": user_access.usable_credentials(company_id, call.identity.user, root_id, can_manage),
+        "repositories": repositories_bll.list_for(company_id, call.identity.user, call.identity.role in ADMIN_ROLES, root_id),
     }

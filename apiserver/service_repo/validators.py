@@ -101,12 +101,13 @@ AGENT_SENSITIVE_ENDPOINTS = frozenset({
     "git_credentials.set",
     "git_credentials.delete",
     "git_credentials.get_all",
-    "datasets.delete",
-    "datasets.set_visibility",
-    "datasets.allocate",
-    "datasets.unallocate",
-    "datasets.add",
-    "dataset_registry.add",
+    "repositories.add",
+    "repositories.delete",
+    "repositories.set_shared",
+    "repositories.link",
+    "repositories.unlink",
+    "repositories.assign",
+    "repositories.unassign",
 })
 AGENT_SENSITIVE_PREFIXES = ("storage.", "user_access.", "users.")
 
