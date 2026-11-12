@@ -99,7 +99,7 @@ The server uses one App. Create it once, and install it on every repository that
 - **GitHub App name:** any name, for example `cairnml-<your-name>`.
 - **Homepage URL:** the server's web address, for example `http://<server-ip>/cairnml/`.
 - **Webhook:** untick **Active**. CairnML does not use webhooks.
-- **Repository permissions:** set **Contents** to **Read-only**. Leave every other permission at **No access**. The server only reads: a job reads its repository, and the server reads the datasets of the App's installations. See [Datasets](#datasets).
+- **Repository permissions:** set **Contents** to **Read and write** and **Workflows** to **Read and write**. Leave every other permission at **No access**. Jobs and agents only ever get a read-only token for their repository; the write access is for a person who publishes a dataset (`cairnml dataset push`), whose token the server issues with `contents: write` and `workflows: write`, and GitHub refuses a token with more access than the App has. If nobody publishes datasets, **Contents: Read-only** is enough. See [Repositories and datasets](#repositories-and-datasets).
 - **Where can this GitHub App be installed?** choose **Only on this account**, unless other accounts must use it.
 
 Click **Create GitHub App**. Note the **App ID** shown at the top of the App's page.
