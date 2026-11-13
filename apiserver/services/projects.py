@@ -23,9 +23,10 @@ from apiserver.apimodels.projects import (
     ProjectContributionsRequest,
     EntityTypeEnum,
 )
-from apiserver.apimodels.projects import MAX_CONTRIBUTIONS_PERIOD_DAYS
+from apiserver.apimodels.projects import MAX_CONTRIBUTIONS_PERIOD_DAYS, OverviewBoardRequest, SetOverviewBoardRequest
 from apiserver.bll import webhooks
 from apiserver.bll.organization import OrgBLL, Tags
+from apiserver.bll.project import overview_board
 from apiserver.bll.project.access import ProjectAccessBLL
 from apiserver.bll.project import ProjectBLL, ProjectQueries
 from apiserver.bll.project.project_bll import pipeline_tag, reports_tag
@@ -720,6 +721,40 @@ def get_contributions(
         utc_offset_minutes=min(max(request.utc_offset_minutes, -840), 840),
         limit=min(max(request.limit, 1), 50),
     )
+
+
+@endpoint("projects.get_overview_board")
+def get_overview_board(call: APICall, company_id: str, request: OverviewBoardRequest):
+    """The overview board of a project, or None when it never saved one (the page then shows its default board), and whether the caller
+    may change it (only the owner may). Everyone who can read the project reads it."""
+    ProjectAccessBLL.assert_can(call.identity, request.project, "read")
+    project = Project.objects(id=request.project).only("overview_board", "overview_board_version").first()
+    cards = overview_board.parse_stored(project.overview_board) if project else None
+    try:
+        ProjectAccessBLL.assert_can(call.identity, request.project, "owner_only")
+        can_edit = True
+    except errors.forbidden.NoWritePermission:
+        can_edit = False
+    call.result.data = {
+        "board": {"version": project.overview_board_version, "cards": cards} if cards is not None else None,
+        "can_edit": can_edit,
+    }
+
+
+@endpoint("projects.set_overview_board")
+def set_overview_board(call: APICall, company_id: str, request: SetOverviewBoardRequest):
+    """Saves the overview board. Only the owner of the project may. The save names the version it was made from: when someone else
+    saved since, it is refused and nothing is changed."""
+    ProjectAccessBLL.assert_can(call.identity, request.project, "owner_only")
+    cards = overview_board.validate_board(request.cards)
+    never_saved = Q(overview_board_version=0) | Q(overview_board_version__exists=False)
+    unchanged = never_saved if request.version == 0 else Q(overview_board_version=request.version)
+    updated = Project.objects(Q(id=request.project) & unchanged).update_one(
+        set__overview_board=overview_board.dump(cards), inc__overview_board_version=1
+    )
+    if not updated:
+        raise errors.bad_request.ValidationError("the overview board was changed by someone else; reload it")
+    call.result.data = {"version": request.version + 1}
 
 
 @endpoint("projects.get_user_names")
