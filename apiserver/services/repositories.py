@@ -3,7 +3,7 @@ bll/repositories. The only service for them."""
 
 from apiserver.apierrors import errors
 from apiserver.bll import repositories as bll
-from apiserver.bll import repository_details, repository_history, repository_registry, repository_runs, user_access
+from apiserver.bll import dataset_versions, repository_details, repository_history, repository_registry, repository_runs, user_access
 from apiserver.database.model.auth import Role
 from apiserver.database.model.repository import Repository
 from apiserver.database.model.task.task import Task
@@ -193,6 +193,13 @@ def get_history(call: APICall, company: str, _request):
     a gap with the number of commits between them. See bll/repository_history."""
     repo = _repository_of(call, company, call.data or {})
     call.result.data = repository_history.history(company, call.identity.user, _is_admin(call), repo)
+
+
+@endpoint("repositories.get_dataset_versions")
+def get_dataset_versions(call: APICall, company: str, _request):
+    """The samples and splits of a dataset at the commits that matter (see bll/dataset_versions), oldest first."""
+    repo = _repository_of(call, company, call.data or {})
+    call.result.data = {"versions": dataset_versions.versions(company, call.identity.user, _is_admin(call), repo)}
 
 
 @endpoint("repositories.find")
