@@ -3,10 +3,15 @@
 A shallow clone of the default branch into a temporary folder, then plain file reads. The host's REST quota (60 an hour for an
 anonymous caller on GitHub) is not touched. A token, when there is one, goes to git in the environment as an Authorization
 header, never in the address or on the command line, so it shows in no process list and no log.
+
+The host is a user's choice, so every git call to it is bound to the address guard (``repo_visibility.check_address``): git does not
+follow an HTTP redirect (a repository must be listed under its final address), and it connects to the address that was checked, not
+to what its own resolver answers a moment later (``http.curloptResolve``, git 2.37 or newer). The same two options are on every call.
 """
 
 import base64
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -20,6 +25,57 @@ CLONE_TIMEOUT = 60
 MAX_FILE = 1_000_000
 HISTORY = 60  # commits kept, for the history a dataset shows
 MAX_BRANCHES = 40  # branches that are looked at for tasks of their own
+MIN_GIT = (2, 37)  # the first git with http.curloptResolve; an older git ignores that option, so it is refused
+
+
+def _parse_git_version(text: str) -> tuple:
+    """The version of ``git --version`` output as a tuple of integers, compared as numbers ((2, 100) is newer than (2, 37));
+    (0,) when no version is found."""
+    found = re.search(r"\d+(?:\.\d+)*", text or "")
+    return tuple(int(part) for part in found.group(0).split(".")) if found else (0,)
+
+
+_git_version_read: Optional[tuple] = None
+
+
+def _git_version() -> tuple:
+    """The version of the server's git. A version that was read is kept; a failed lookup is not, so a moment's trouble with
+    ``git --version`` does not refuse every read until the server restarts."""
+    global _git_version_read
+    if _git_version_read is None:
+        try:
+            done = subprocess.run(["git", "--version"], capture_output=True, text=True, timeout=10, check=False)
+        except (OSError, subprocess.TimeoutExpired):
+            return (0,)
+        found = _parse_git_version(done.stdout)
+        if found == (0,):
+            return found
+        _git_version_read = found
+    return _git_version_read
+
+
+def _check_git_version() -> None:
+    if _git_version() < MIN_GIT:
+        raise GitHubError("git 2.37 or newer is needed to connect only to the address that was checked, and the server's git is "
+                          "older or its version could not be read")
+
+
+def _guard_args(host: str, address: str, port: int = 443) -> list:
+    """The git options that bind a call to the checked address: no redirect is followed, and ``host`` is connected to ``address``."""
+    return ["-c", "http.followRedirects=false", "-c", f"http.curloptResolve={host}:{port}:{address}"]
+
+
+def _checked_pin(host: str) -> list:
+    """The guard options for ``host``, after the git version and the address were checked (the one place that does both).
+    ``GitHubError`` when git is too old, the address is one the server does not contact, or the host does not resolve."""
+    _check_git_version()
+    try:
+        address = repo_visibility.check_address(host, 443)
+    except repo_visibility.ProbeBlocked as exc:
+        raise GitHubError(str(exc)) from None
+    except repo_visibility.ProbeFailed:
+        raise GitHubError(f"{host} could not be reached") from None
+    return _guard_args(host, address)
 
 
 class GitReader:
@@ -30,6 +86,7 @@ class GitReader:
         self.host, self.token, self.username = host, token, username or "x-access-token"
         self._dir: Optional[str] = None
         self._path: Optional[str] = None
+        self._pin: Optional[list] = None  # the guard options of the address checked for the clone in ``_dir``
 
     def __enter__(self) -> "GitReader":
         return self
@@ -51,34 +108,31 @@ class GitReader:
                         "GIT_CONFIG_VALUE_0": f"Authorization: Basic {basic}"})
         return env
 
+    def _run_git(self, pin: list, *args: str, **kwargs) -> subprocess.CompletedProcess:
+        """The only place git is run for this reader: always with the guard options of ``pin``."""
+        return subprocess.run(["git", *pin, *args], env=self._env(), capture_output=True, timeout=CLONE_TIMEOUT, check=False, **kwargs)
+
     def _clone(self, repo: str) -> str:
         if self._dir and self._path == repo:
             return self._dir
         self.close()
-        try:
-            repo_visibility.check_address(self.host, 443)
-        except repo_visibility.ProbeBlocked as exc:
-            raise GitHubError(str(exc)) from None
-        except repo_visibility.ProbeFailed:
-            raise GitHubError(f"{self.host} could not be reached") from None
+        pin = _checked_pin(self.host)
         folder = tempfile.mkdtemp(prefix="cairnml-git-")
         try:
-            done = subprocess.run(
-                ["git", "clone", "--quiet", "--depth", str(HISTORY), "--single-branch", "--no-tags", "--",
-                 f"https://{self.host}/{repo}.git", folder],
-                env=self._env(), capture_output=True, text=True, timeout=CLONE_TIMEOUT, check=False)
+            done = self._run_git(pin, "clone", "--quiet", "--depth", str(HISTORY), "--single-branch", "--no-tags", "--",
+                                 f"https://{self.host}/{repo}.git", folder, text=True)
         except subprocess.TimeoutExpired:
             shutil.rmtree(folder, ignore_errors=True)
             raise GitHubError(f"{repo} could not be read in time") from None
         if done.returncode != 0:
             shutil.rmtree(folder, ignore_errors=True)
             raise RepoNotAccessible(f"{repo} could not be read over git: " + _first_line(done.stderr, self.token))
-        self._dir, self._path = folder, repo
+        self._dir, self._path, self._pin = folder, repo, pin
         return folder
 
     def _git(self, repo: str, *args: str) -> subprocess.CompletedProcess:
-        return subprocess.run(["git", "-C", self._clone(repo), *args], env=self._env(), capture_output=True,
-                              timeout=CLONE_TIMEOUT, check=False)
+        folder = self._clone(repo)  # first: it checks the address and sets the pin that every later call uses
+        return self._run_git(self._pin, "-C", folder, *args)
 
     def default_branch_head(self, repo: str) -> tuple:
         """(default branch, the sha of its latest commit). An empty repository has no head: refused."""
@@ -139,23 +193,16 @@ class GitReader:
         first in topological order, each with its parents), ``tips`` (branch names by the commit they point at) and ``resolved``
         (the full sha of each run commit git knows, a run may have recorded a short one),
         ``default_tip`` (the commit the default branch points at)."""
-        try:
-            repo_visibility.check_address(self.host, 443)
-        except repo_visibility.ProbeBlocked as exc:
-            raise GitHubError(str(exc)) from None
-        except repo_visibility.ProbeFailed:
-            raise GitHubError(f"{self.host} could not be reached") from None
+        pin = _checked_pin(self.host)
         folder = tempfile.mkdtemp(prefix="cairnml-git-history-")
         try:
-            done = subprocess.run(
-                ["git", "clone", "--quiet", "--bare", "--filter=tree:0", "--no-tags", "--", f"https://{self.host}/{repo}.git", folder],
-                env=self._env(), capture_output=True, text=True, timeout=CLONE_TIMEOUT, check=False)
+            done = self._run_git(pin, "clone", "--quiet", "--bare", "--filter=tree:0", "--no-tags", "--",
+                                 f"https://{self.host}/{repo}.git", folder, text=True)
             if done.returncode != 0:
                 raise RepoNotAccessible(f"{repo} could not be read over git: " + _first_line(done.stderr, self.token))
 
             def git(*args):
-                return subprocess.run(["git", "-C", folder, *args], env=self._env(), capture_output=True, timeout=CLONE_TIMEOUT,
-                                      check=False).stdout.decode("utf-8", "replace")
+                return self._run_git(pin, "-C", folder, *args).stdout.decode("utf-8", "replace")
 
             default = git("symbolic-ref", "--short", "HEAD").strip()
             if not default:
