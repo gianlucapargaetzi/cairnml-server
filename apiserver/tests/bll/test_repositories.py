@@ -10,7 +10,7 @@ from apiserver.apierrors import errors
 from apiserver.bll import access, repositories as bll
 from apiserver.database.model.auth import User
 from apiserver.database.model.project import Project, ProjectMember, ProjectRole
-from apiserver.database.model.repository import Assignment, RegistryEntry, Repository
+from apiserver.database.model.repository import Assignment, RegistryEntry, Repository, RepositoryCheck
 from apiserver.database.model.share import Share
 from apiserver.database.model.user_access import UserAccess
 from apiserver.idp import git_credentials as store
@@ -50,7 +50,7 @@ def world(monkeypatch):
     monkeypatch.setattr(bll, "_company_reach", lambda repo: state.reach)
     monkeypatch.setattr(bll.user_access, "company_apps", lambda company=None: state.apps)
     yield state
-    for model in (Repository, RegistryEntry, Assignment, Share, UserAccess, Project, User):
+    for model in (Repository, RegistryEntry, Assignment, RepositoryCheck, Share, UserAccess, Project, User):
         model.objects(company=company).delete()
 
 
@@ -461,14 +461,152 @@ def test_a_shared_row_is_owned_by_the_company_and_deleted_by_the_admin_only(worl
     assert rows(world, "admin", True)[0]["can_delete"] and rows(world, "admin", True)[0]["can_share"]
 
 
+def shown(world, user, repo):
+    """The repository as the user's list shows it now."""
+    return bll.view(world.company, user, False, bll.get(world.company, repo.id))
+
+
 def test_checking_stores_what_it_found(world):
     credential(world, "mine", "member")
     repo = use(world)
     bll.assign(world.company, "member", repo.id, "mine")
-    assert bll.check(world.company, "member", False, repo.id).state == "ok"
+    bll.check(world.company, "member", False, repo.id)
+    assert shown(world, "member", repo)["state"] == "ok"
     world.reads = False
-    checked = bll.check(world.company, "member", False, repo.id)
-    assert checked.state == "no_access" and "not installed" in checked.state_message and checked.last_checked
+    bll.check(world.company, "member", False, repo.id)
+    found = shown(world, "member", repo)
+    assert found["state"] == "no_access" and "not installed" in found["state_message"] and found["last_checked"]
+
+
+def _member_reads_owner_does_not(world, monkeypatch):
+    """The member's credential reads the repository, the owner's does not."""
+    credential(world, "good", "member")
+    credential(world, "bad", "owner")
+    repo = use(world)
+    bll.assign(world.company, "member", repo.id, "good")
+    bll.assign(world.company, "owner", repo.id, "bad")
+
+    def check_reads(entry, repo):
+        if entry.id == "bad":
+            raise errors.bad_request.ValidationError("the GitHub App cred bad is not installed on acme/proj")
+
+    monkeypatch.setattr(bll, "_check_reads", check_reads)
+    return repo
+
+
+def test_a_check_by_one_user_does_not_change_what_another_user_sees(world, monkeypatch):
+    # the test of the issue, as it was written there (the helper above does the same setup for the tests that follow)
+    credential(world, "good", "member"); credential(world, "bad", "owner")
+    repo = use(world)
+    bll.assign(world.company, "member", repo.id, "good"); bll.assign(world.company, "owner", repo.id, "bad")
+    def check_reads(entry, repo):
+        if entry.id == "bad":
+            raise errors.bad_request.ValidationError("the GitHub App cred bad is not installed on acme/proj")
+    monkeypatch.setattr(bll, "_check_reads", check_reads)
+    bll.check(world.company, "member", False, repo.id)
+    bll.check(world.company, "owner", False, repo.id)
+    assert bll.view(world.company, "member", False, bll.get(world.company, repo.id))["state"] == "ok"
+
+
+def test_checking_shows_the_callers_own_result(world, monkeypatch):
+    repo = _member_reads_owner_does_not(world, monkeypatch)
+    bll.check(world.company, "owner", False, repo.id)
+    owner = shown(world, "owner", repo)
+    assert owner["state"] == "no_access" and "not installed" in owner["state_message"] and owner["last_checked"]
+    assert [a["readable"] for a in owner["assignments"] if a["mine"]] == [False]   # the closed lock is on the owner's own row
+    member = shown(world, "member", repo)                      # has not checked: what a repository nobody checked shows
+    assert member["state"] == "ok" and member["state_message"] == "" and member["last_checked"] is None
+    assert all(a["readable"] for a in member["assignments"])
+    shared = Repository.objects.get(id=repo.id)                # the record everybody shares was not written
+    assert shared.state == "ok" and shared.state_message == "" and shared.last_checked is None
+    bll.check(world.company, "member", False, repo.id)
+    member = shown(world, "member", repo)
+    assert member["state"] == "ok" and member["last_checked"]
+    assert shown(world, "owner", repo)["state"] == "no_access"   # and the owner's result is not undone
+
+
+def test_checking_keeps_the_anonymous_answer_on_the_repository(world):
+    repo = use(world)
+    world.private = True
+    bll.check(world.company, "owner", False, repo.id)
+    first = Repository.objects.get(id=repo.id)
+    assert first.anonymous is False and first.anonymous_checked
+    shared = (first.state, first.state_message, first.last_checked, first.updated)
+    world.private = False                                       # served anonymously now, the kept answer is still fresh
+    bll.check(world.company, "member", False, repo.id)
+    second = Repository.objects.get(id=repo.id)
+    assert second.anonymous is True and second.anonymous_checked > first.anonymous_checked
+    assert (second.state, second.state_message, second.last_checked, second.updated) == shared
+
+
+def test_checking_without_an_assignment_shows_the_callers_own_result(world):
+    credential(world, "good", "member")
+    repo = use(world)
+    bll.assign(world.company, "member", repo.id, "good")
+    bll.check(world.company, "owner", False, repo.id)          # the owner has no assignment: private, nobody reads it for them
+    owner = shown(world, "owner", repo)
+    assert owner["state"] == "no_access" and "no credential is assigned" in owner["state_message"] and owner["last_checked"]
+    assert shown(world, "member", repo)["state"] == "ok"
+
+
+def test_a_registry_that_cannot_be_read_stays_visible_after_a_check(world):
+    credential(world, "good", "member")
+    repo = use(world, role="registry")
+    bll.assign(world.company, "member", repo.id, "good")
+    Repository.objects(id=repo.id).update(state="no_access", state_message="the registry could not be read: refused")
+    bll.check(world.company, "member", False, repo.id)          # the member's own reading is fine, the registry is still unreadable
+    row = shown(world, "member", repo)
+    assert row["state"] == "no_access" and "registry could not be read" in row["state_message"]
+    assert Repository.objects.get(id=repo.id).state_message.startswith("the registry could not be read")
+
+
+def test_a_legacy_shared_state_does_not_hide_the_callers_own_result(world):
+    credential(world, "good", "member")
+    repo = use(world)
+    bll.assign(world.company, "member", repo.id, "good")
+    Repository.objects(id=repo.id).update(state="no_access", state_message="left by a check of somebody else")
+    assert shown(world, "member", repo)["state"] == "no_access"      # nobody of theirs checked: what they see today
+    bll.check(world.company, "member", False, repo.id)
+    row = shown(world, "member", repo)
+    assert row["state"] == "ok" and row["state_message"] == ""
+
+
+def test_stored_checks_go_with_their_repository(world):
+    credential(world, "mine", "owner")
+    repo = bll.add(world.company, "owner", False, URL, "dataset")
+    bll.assign(world.company, "owner", repo.id, "mine")
+    bll.check(world.company, "owner", False, repo.id)
+    assert RepositoryCheck.objects(repository=repo.id).count() == 1
+    bll.delete(world.company, "owner", False, repo.id)
+    assert RepositoryCheck.objects(company=world.company).count() == 0
+
+
+def test_deleting_for_one_user_drops_only_their_stored_check(world):
+    credential(world, "mine", "owner")
+    repo = bll.add(world.company, "owner", False, URL, "dataset")
+    bll.assign(world.company, "owner", repo.id, "mine")
+    Assignment(id="a-member", company=world.company, repository=repo.id, user="member", credential="x").save()
+    RepositoryCheck(id="k-member", company=world.company, repository=repo.id, user="member", state="ok").save()
+    bll.check(world.company, "owner", False, repo.id)
+    assert RepositoryCheck.objects(repository=repo.id, user="owner").count() == 1
+    bll.delete(world.company, "owner", False, repo.id)
+    assert RepositoryCheck.objects(repository=repo.id, user="owner").count() == 0
+    assert RepositoryCheck.objects(repository=repo.id, user="member").count() == 1
+
+
+@pytest.mark.parametrize("assigned", [True, False])
+def test_a_user_who_loses_the_repository_loses_the_stored_check(world, assigned):
+    credential(world, "member-cred", "member")
+    repo = use(world)
+    if assigned:
+        bll.assign(world.company, "member", repo.id, "member-cred")
+    bll.check(world.company, "owner", False, repo.id)
+    bll.check(world.company, "member", False, repo.id)
+    assert RepositoryCheck.objects(repository=repo.id).count() == 2
+    Project.objects(id=world.root).update_one(pull__members__user="member")
+    bll.prune_assignments(world.company, user="member")
+    assert RepositoryCheck.objects(repository=repo.id, user="member").count() == 0
+    assert RepositoryCheck.objects(repository=repo.id, user="owner").count() == 1
 
 
 def test_the_owner_of_a_project_changing_relinks_its_repositories(world):

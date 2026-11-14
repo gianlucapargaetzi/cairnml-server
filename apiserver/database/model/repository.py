@@ -40,7 +40,8 @@ class Repository(DbModelMixin, Document):
     """ the user who owns it; the admin for a shared entry """
     state = StringField(default="ok", choices=STATES)
     state_message = StringField(default="")
-    """ what the last check of it found; for a registry, whether its entries could be read """
+    """ whether the entries of a registry could be read (the same for everybody). The result of a user's own check of a repository is
+    theirs and is kept in ``RepositoryCheck``; what is here is what a user sees until they check """
     anonymous = BooleanField()
     """ whether the repository can be cloned without a credential; unset until asked """
     dismissed = ListField(StringField())
@@ -52,6 +53,26 @@ class Repository(DbModelMixin, Document):
     updated = DateTimeField()
     last_used = DateTimeField()
     last_checked = DateTimeField()
+
+
+class RepositoryCheck(DbModelMixin, Document):
+    """What the last check of one repository by one user found. The result of a check is the caller's own: whether their reading works
+    (their credential, or none) is not what another user's reading gives, so it is kept per user and never on the shared record."""
+
+    meta = {
+        "db_alias": Database.backend,
+        "strict": strict,
+        "collection": "repository_check",
+        "indexes": [{"fields": ["repository", "user"], "unique": True}, "company"],
+    }
+
+    id = StringField(primary_key=True)
+    company = StringField(required=True)
+    repository = StringField(required=True)
+    user = StringField(required=True)
+    state = StringField(default="ok", choices=STATES)
+    message = StringField(default="")
+    checked = DateTimeField()
 
 
 class RegistryEntry(DbModelMixin, Document):
