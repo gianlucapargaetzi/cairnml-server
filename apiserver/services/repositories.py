@@ -137,9 +137,10 @@ def unassign(call: APICall, company: str, _request):
 def check(call: APICall, company: str, _request):
     repo = _repository_of(call, company, call.data or {})
     repo = bll.check(company, call.identity.user, _is_admin(call), repo.id)
+    row = _view(call, company, repo)  # the caller's own result: what the audit records too
     audit(call.identity.user, "repository.checked", ip=client_address(call), company=company, repo=repo.key,
-          state=repo.state)
-    call.result.data = {"repository": _view(call, company, repo)}
+          state=row["state"])
+    call.result.data = {"repository": row}
 
 
 @endpoint("repositories.refresh")

@@ -10,7 +10,7 @@ from apiserver.apierrors import errors
 from apiserver.bll import access, repositories as bll, repository_registry as registry, repository_runs as runs
 from apiserver.database.model.auth import User
 from apiserver.database.model.project import Project, ProjectMember, ProjectRole
-from apiserver.database.model.repository import Assignment, RegistryEntry, Repository
+from apiserver.database.model.repository import Assignment, RegistryEntry, Repository, RepositoryCheck
 from apiserver.database.model.share import Share
 from apiserver.database.model.task.task import ParamsItem, Task, TaskStatus
 from apiserver.database.model.user_access import UserAccess
@@ -61,7 +61,7 @@ def world(monkeypatch):
     monkeypatch.setattr(bll, "_company_reach", lambda repo: (None, "no company GitHub App is set up"))
     monkeypatch.setattr(registry, "reader_for", lambda repo, user, project_root=None: state.reader)
     yield state
-    for model in (Repository, RegistryEntry, Assignment, Share, UserAccess, Task, Project, User):
+    for model in (Repository, RegistryEntry, Assignment, RepositoryCheck, Share, UserAccess, Task, Project, User):
         model.objects(company=company).delete()
 
 

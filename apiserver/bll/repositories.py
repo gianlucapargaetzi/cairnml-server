@@ -22,7 +22,7 @@ import logging
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from mongoengine.errors import NotUniqueError
 
@@ -31,7 +31,7 @@ from apiserver.bll import access, user_access
 from apiserver.config_repo import config
 from apiserver.database.model.auth import Role, User
 from apiserver.database.model.project import Project
-from apiserver.database.model.repository import ROLES, Assignment, RegistryEntry, Repository
+from apiserver.database.model.repository import ROLES, Assignment, RegistryEntry, Repository, RepositoryCheck
 from apiserver.database.model.share import Share
 from apiserver.database.model.user_access import UserAccess
 from apiserver.idp import git_credentials as store
@@ -404,10 +404,12 @@ def delete(company: str, user: str, is_admin: bool, repository_id: str) -> None:
     if reason:
         raise errors.bad_request.ValidationError(f"it cannot be deleted: {reason}")
     Assignment.objects(repository=repo.id, user=user).delete()
+    RepositoryCheck.objects(repository=repo.id, user=user).delete()
     others = Assignment.objects(repository=repo.id, user__ne=user).count()
     if is_shared(repo) or not others:
         RegistryEntry.objects(company=company, registry=repo.id).delete()
         Assignment.objects(repository=repo.id).delete()
+        RepositoryCheck.objects(repository=repo.id).delete()
         access.drop_resource_shares(company, "repository", repo.id, actor=user)
         repo.delete()
         return
@@ -434,6 +436,11 @@ def prune_assignments(company: str, repository_id: Optional[str] = None, user: O
         if level_of(company, assignment.user, False, repo) is None:
             assignment.delete()
             dropped += 1
+    for stored in list(RepositoryCheck.objects(**query)):  # a user without an assignment has a stored check too
+        # as for the assignments above, a disabled user's data is kept
+        repo = Repository.objects(company=company, id=stored.repository).first()
+        if repo is None or (user_access.is_active(stored.user) and level_of(company, stored.user, False, repo) is None):
+            stored.delete()
     return dropped
 
 
@@ -714,8 +721,10 @@ def token_for_person(company: str, user: str, is_admin: bool, repo: Repository, 
 # --- checking ---------------------------------------------------------------------------------------------------------------------
 
 def check(company: str, user: str, is_admin: bool, repository_id: str) -> Repository:
-    """Looks at the repository again: asks the host whether it is cloned without a credential (the kept answer is renewed) and
-    tries the user's own assignment. Stores what it finds on the record."""
+    """Looks at the repository again: asks the host whether it is cloned without a credential (the kept answer is renewed, and being
+    the same for everybody it is kept on the record) and tries how the user reads it, with their own assignment. What it finds is
+    the user's own result, kept for them (``RepositoryCheck``): how another user reads the repository is not how this one does, so
+    it is shown to nobody else and the shared record is not written."""
     repo = require_visible(company, user, is_admin, repository_id)
     anonymous(repo, force=True)
     resolution = resolve(repo, None, user)
@@ -729,10 +738,19 @@ def check(company: str, user: str, is_admin: bool, repository_id: str) -> Reposi
             state, message = "no_access", f"The assigned credential cannot read it: {refused.msg}."
     elif resolution.state == UNREACHABLE:
         state, message = "no_access", resolution.message
-    now = datetime.utcnow()
-    repo.state, repo.state_message, repo.last_checked, repo.updated = state, message, now, now
-    repo.save()
+    RepositoryCheck.objects(repository=repo.id, user=user).modify(
+        upsert=True, new=True, set_on_insert__id=uuid.uuid4().hex, set__company=company, set__state=state, set__message=message,
+        set__checked=datetime.utcnow())
     return repo
+
+
+def _result_for(repo: Repository, user: str) -> Tuple[str, str, Optional[datetime]]:
+    """(state, message, when) of the check the user's list shows: their own last check, else the shared record (a repository
+    nobody of theirs checked). A registry that cannot be read is the same for everybody, so that stays what everybody sees."""
+    mine = RepositoryCheck.objects(repository=repo.id, user=user).first()
+    if mine is None or ("registry" in repo.roles and repo.state == "no_access"):
+        return repo.state, repo.state_message or "", repo.last_checked
+    return mine.state, mine.message or "", mine.checked
 
 
 # --- what the API shows -------------------------------------------------------------------------------------------------------------
@@ -745,7 +763,7 @@ def _readable(resolution: Resolution) -> Optional[bool]:
 
 
 def _assignment_rows(repo: Repository, user: str, links: List[Share], owners: dict, names_of_projects: dict,
-                     member_roots: set) -> list:
+                     member_roots: set, own_state: str) -> list:
     """One row for each credential in use on the repository, with the projects it reads for, and the "empty" rows: the projects whose
     owner has no assignment, together on one row (two when the host reads them differently: a missing credential is no missing
     access when the repository is public). ``readable`` is whether the row's reading works: the open lock, or the closed one."""
@@ -774,7 +792,7 @@ def _assignment_rows(repo: Repository, user: str, links: List[Share], owners: di
             "credential": a.credential or None,
             "credential_name": entry.label if entry else ("None needed" if a.none_needed else ""),
             "company": bool(entry and entry.scope == "company"), "none_needed": bool(a.none_needed),
-            "readable": not (a.user == user and repo.state == "no_access"),
+            "readable": not (a.user == user and own_state == "no_access"),
             "can_edit": a.user == user, "used_in": used,
             "last_used": a.last_used.isoformat() if a.last_used else None,
         })
@@ -814,16 +832,17 @@ def view(company: str, user: str, is_admin: bool, repo: Repository, entries: boo
     mine_roots = user_access.my_root_ids(company, user)
     resolution = resolve(repo, None, user, reach=False)
     owner_name = "Company" if shared else _names([repo.owner]).get(repo.owner, repo.owner)
+    state, state_message, last_checked = _result_for(repo, user)
     row = {
         "id": repo.id, "key": repo.key, "host": repo.host, "path": repo.path, "url": f"https://{repo.host}/{repo.path}",
         "name": repo.name, "reference": repo.reference or "", "roles": list(repo.roles), "owner": repo.owner,
-        "owner_name": owner_name, "shared": shared, "state": repo.state, "state_message": repo.state_message or "",
+        "owner_name": owner_name, "shared": shared, "state": state, "state_message": state_message,
         "anonymous": repo.anonymous, "added": repo.created.isoformat() if repo.created else None,
         "last_used": repo.last_used.isoformat() if repo.last_used else None,
-        "last_checked": repo.last_checked.isoformat() if repo.last_checked else None,
+        "last_checked": last_checked.isoformat() if last_checked else None,
         "projects": [{"project": s.project, "project_name": names.get(s.project), "share_id": s.id,
                       "inherited": bool(s.inherited), "member": s.project in mine_roots} for s in links],
-        "assignments": _assignment_rows(repo, user, links, owners, names, mine_roots),
+        "assignments": _assignment_rows(repo, user, links, owners, names, mine_roots, state),
         "relation": "shared" if shared else ("own" if repo.owner == user else "inherited"),
         "access": {"state": resolution.state, "message": resolution.message, "warning": resolution.warning,
                    "readable": _readable(resolution)},

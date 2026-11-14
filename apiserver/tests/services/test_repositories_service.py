@@ -10,7 +10,7 @@ from apiserver.apierrors import errors
 from apiserver.bll import repositories as bll
 from apiserver.database.model.auth import User
 from apiserver.database.model.project import Project, ProjectMember, ProjectRole
-from apiserver.database.model.repository import Assignment, RegistryEntry, Repository
+from apiserver.database.model.repository import Assignment, RegistryEntry, Repository, RepositoryCheck
 from apiserver.database.model.share import Share
 from apiserver.database.model.task.task import Execution, Task, TaskStatus
 from apiserver.database.model.user_access import UserAccess
@@ -32,15 +32,19 @@ def world(monkeypatch):
     root = f"p-{company}"
     Project(id=root, company=company, user="owner", name="P", basename="P", created=now, last_update=now,
             members=[ProjectMember(user="member", role=ProjectRole.read, added=now, added_by="owner")]).save()
-    state = SimpleNamespace(company=company, root=root, private=True, audits=[])
+    state = SimpleNamespace(company=company, root=root, private=True, audits=[], audit_details=[])
     monkeypatch.setattr(store, "key_material", lambda: "test-key-material")
     monkeypatch.setattr(bll, "is_private", lambda address: state.private)
     monkeypatch.setattr(bll, "_check_reads", lambda entry, repo: None)
     monkeypatch.setattr(bll, "_company_reach", lambda repo: (None, "no company GitHub App is set up"))
-    monkeypatch.setattr(svc, "audit", lambda actor, action, **detail: state.audits.append((actor, action)))
+    def record_audit(actor, action, **detail):
+        state.audits.append((actor, action))
+        state.audit_details.append(detail)
+
+    monkeypatch.setattr(svc, "audit", record_audit)
     monkeypatch.setattr(svc, "client_address", lambda call: "127.0.0.1")
     yield state
-    for model in (Repository, RegistryEntry, Assignment, Share, UserAccess, Task, Project, User):
+    for model in (Repository, RegistryEntry, Assignment, RepositoryCheck, Share, UserAccess, Task, Project, User):
         model.objects(company=company).delete()
 
 
@@ -237,3 +241,26 @@ def test_a_private_repository_nobody_listed_is_still_refused_with_the_hint(world
     world.private = True
     with pytest.raises(errors.bad_request.ValidationError, match="make sure it is listed"):
         run(svc.git_token, world, "owner", {"repository": "https://github.com/acme/secret", "level": "read"})
+
+
+# --- checking ------------------------------------------------------------------------------------------------------------------------
+
+def test_checking_returns_the_callers_own_result_and_audits_it(world, monkeypatch):
+    credential(world, "good", "member")
+    credential(world, "bad", "owner")
+    repo = bll.add(world.company, "owner", False, URL, "dataset", project_id=world.root)
+    bll.assign(world.company, "member", repo.id, "good")
+    bll.assign(world.company, "owner", repo.id, "bad")
+
+    def check_reads(entry, repo):
+        if entry.id == "bad":
+            raise errors.bad_request.ValidationError("the GitHub App bad is not installed on acme/cars")
+
+    monkeypatch.setattr(bll, "_check_reads", check_reads)
+    owner = run(svc.check, world, "owner", {"id": repo.id})["repository"]
+    member = run(svc.check, world, "member", {"id": repo.id})["repository"]
+    assert owner["state"] == "no_access" and "not installed" in owner["state_message"]
+    assert member["state"] == "ok" and member["state_message"] == ""
+    assert [d["state"] for d in world.audit_details if "state" in d] == ["no_access", "ok"]   # each audit says what its caller sees
+    assert {r["name"]: r["state"] for r in run(svc.get_all, world, "member", {})["repositories"]} == {"cars": "ok"}
+    assert {r["name"]: r["state"] for r in run(svc.get_all, world, "owner", {})["repositories"]} == {"cars": "no_access"}
