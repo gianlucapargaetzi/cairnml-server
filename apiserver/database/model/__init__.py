@@ -17,22 +17,6 @@ class AttributedDocument(DbModelMixin, Document):
     company = StringField(required=True, reference_field=Company)
     user = StringField(reference_field=User)
 
-    def is_public(self) -> bool:
-        return bool(self.company)
-
-
-class PrivateDocument(AttributedDocument):
-    """
-    Represents documents which always belong to a single company
-    """
-    meta = ABSTRACT_FLAG
-    # can not have an empty string as this is the "public" marker
-    company = StringField(required=True, reference_field=Company, min_length=1)
-    user = StringField(reference_field=User, required=True)
-
-    def is_public(self) -> bool:
-        return False
-
 
 def validate_id(cls, company, **kwargs):
     """

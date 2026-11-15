@@ -26,7 +26,6 @@ from apiserver.apimodels.queues import (
     UserRequest,
 )
 from apiserver.bll.access import (
-    drop_resource_shares,
     find_share,
     record_grant,
     refuse_inactive,
@@ -182,15 +181,6 @@ def delete(call: APICall, company_id, request: DeleteRequest):
     QueueAccessBLL.assert_can_manage(call.identity, company_id, request.queue)
     # a queue goes with its agent: revoking the agent removes nothing here, and queues are not deleted by hand
     raise errors.bad_request.ValidationError("queues are not deleted by hand: revoke the agent of the machine instead")
-    refuse_inactive(call.identity.user)
-    queue_bll.delete(
-        company_id=company_id,
-        user_id=call.identity.user,
-        queue_id=request.queue,
-        force=request.force,
-    )
-    drop_resource_shares(company_id, "queue", request.queue, actor=call.identity.user)
-    call.result.data = {"deleted": 1}
 
 
 def _set_public_share(company_id: str, actor: str, queue_id: str, public: bool) -> None:

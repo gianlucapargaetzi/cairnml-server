@@ -86,10 +86,6 @@ def public_commit_exists(api_url: str, repo: str, sha: str, http=None) -> bool:
     return True
 
 
-def clear_public_cache() -> None:
-    _public_answers.clear()
-
-
 def repository_readable_with(api_url: str, token: str, repo: str, http=None) -> bool:
     """True when a user's own GitHub token reads the repository. GitHub answers 404 (or 403) to a token that cannot see
     a repository, so those mean no. GitHubError when GitHub cannot be asked, or answers otherwise."""
@@ -356,16 +352,3 @@ class GitHubApp:
                 "parents": [parent["sha"] for parent in item.get("parents") or []],
             })
         return commits
-
-
-class PublicReader(GitHubApp):
-    """Reads public repositories without a token or a GitHub App. Used when the server has no App: the public dataset
-    registries and public datasets are still listed. A private repository is refused, as the App is not there to read it."""
-
-    def __init__(self, api_url: str, http=None, clock=time.time) -> None:
-        super().__init__("0", "", api_url, http=http, clock=clock)
-
-    def _read_headers(self, repo: str) -> dict:
-        if self._is_public(repo):
-            return _ANONYMOUS
-        raise RepoNotAccessible(f"{repo} is private, and the server has no GitHub App to read it")

@@ -2,10 +2,6 @@ from operator import itemgetter
 from typing import Sequence, Optional, Callable, Tuple
 
 
-def strict_map(*args, **kwargs):
-    return list(map(*args, **kwargs))
-
-
 def extract_properties_to_lists(
     key_names: Sequence[str],
     data: Sequence[dict],

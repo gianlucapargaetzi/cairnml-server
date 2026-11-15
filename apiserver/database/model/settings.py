@@ -1,6 +1,6 @@
-from typing import Any, Optional, Sequence, Tuple
+from typing import Any, Optional
 
-from mongoengine import Document, StringField, DynamicField, Q
+from mongoengine import Document, StringField, DynamicField
 from mongoengine.errors import NotUniqueError
 
 from apiserver.database import Database, strict
@@ -27,17 +27,6 @@ class Settings(DbModelMixin, Document):
         if not res:
             return default
         return res.value
-
-    @classmethod
-    def get_by_prefix(
-        cls, key_prefix: str, default: Optional[Any] = None, sep: str = "."
-    ) -> Sequence[Tuple[str, Any]]:
-        key_prefix = key_prefix.strip(sep)
-        query = Q(key=key_prefix) | Q(key__startswith=key_prefix + sep)
-        res = Settings.objects(query)
-        if not res:
-            return default
-        return [(x.key, x.value) for x in res]
 
     @classmethod
     def set_or_add_value(cls, key: str, value: Any, sep: str = ".") -> bool:

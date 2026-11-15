@@ -114,21 +114,11 @@ def parse_from_call(call_data, fields, cls_fields, discard_none_values=True):
                     try:
                         desc(value)
                     except TypeError:
-                        raise ParseCallError(f"expecting {desc.__name__}", field=field)
+                        raise ParseCallError(f"expecting {desc.__name__}", field=field) from None
                     except Exception as ex:
-                        raise ParseCallError(str(ex), field=field)
+                        raise ParseCallError(str(ex), field=field) from ex
             res[field] = value
         return res
-
-
-def init_cls_from_base(cls, instance):
-    return cls(
-        **{
-            k: v
-            for k, v in instance.to_mongo(use_db_field=False).to_dict().items()
-            if k[0] != "_"
-        }
-    )
 
 
 def get_company_or_none_constraint(company=""):
@@ -167,22 +157,6 @@ def field_exists(field: str, empty_value=None, is_list=False) -> Q:
     if is_list:
         query &= Q(**{f"{field}__not__size": 0})
     return query
-
-
-def get_subkey(d, key_path, default=None):
-    """ Get a key from a nested dictionary. kay_path is a '.' separated string of keys used to traverse
-        the nested dictionary.
-    """
-    keys = key_path.split(".")
-    for i, key in enumerate(keys):
-        if not isinstance(d, dict):
-            raise KeyError(
-                "Expecting a dict (%s)" % (".".join(keys[:i]) if i else "bad input")
-            )
-        d = d.get(key)
-        if d is None:
-            return default
-    return d
 
 
 def id():
