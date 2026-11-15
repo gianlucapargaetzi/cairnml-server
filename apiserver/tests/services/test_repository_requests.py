@@ -76,7 +76,8 @@ def test_resolve_still_takes_repositories(world, monkeypatch):
 
 ID_BASED = ["delete", "set_shared", "check_sharing", "link", "unlink", "assign", "unassign", "check", "refresh", "get_runs",
             "get_history", "get_dataset_versions"]
-TYPED = list(ID_BASED)  # grows with each slice
+OTHERS = ["get_all", "add", "get_details", "git_token", "find", "clone", "resolve", "requirement"]
+TYPED = ID_BASED + OTHERS
 
 
 def model_of(action, service="repositories"):
@@ -122,3 +123,32 @@ def test_ref_wins_over_id_over_repository(world, seen):
 def test_no_identifier_is_refused_as_no_such_repository(world):
     with pytest.raises(errors.bad_request.ValidationError, match=r"no such repository: \)"):
         invoke("delete", world, {})
+
+
+# the exact bodies the callers send today: the SDK (cairnml/datasets/credentials.py, clone.py) and the web app
+# (repositories.service.ts, repo-access.service.ts, dataset-details.service.ts)
+KNOWN_BODIES = [
+    ("get_all", {}), ("get_all", {"project": "p1"}),
+    ("add", {"url": URL, "role": "dataset"}),
+    ("add", {"url": URL, "role": "code", "credential": "c", "none_needed": True, "shared": True, "project": "p1"}),
+    ("git_token", {"repository": URL, "level": "read"}),
+    ("git_token", {"ref": URL, "level": "read_write"}),
+    ("assign", {"repository": URL, "role": "dataset", "credential": "c", "none_needed": True}),
+    ("assign", {"id": "r1", "credential": "c"}),
+    ("unassign", {"repository": URL}), ("check", {"repository": URL}), ("delete", {"repository": URL}),
+    ("set_shared", {"id": "r1", "shared": True, "credential": "c", "none_needed": True}),
+    ("check_sharing", {"id": "r1", "credential": "c", "none_needed": True}),
+    ("link", {"id": "r1", "project": "p1"}), ("unlink", {"repository": URL, "project": "p1"}),
+    ("get_history", {"id": "r1"}), ("get_runs", {"id": "r1"}), ("get_dataset_versions", {"id": "r1"}), ("refresh", {"id": "r1"}),
+    ("get_details", {"repository": URL, "entry": "e", "commit": "abc"}), ("get_details", {"entry": "e"}),
+    ("find", {"ref": URL}), ("clone", {"ref": URL, "commit": "abc"}), ("clone", {"ref": "cars"}),
+    ("resolve", {"repositories": [URL], "project": "p1"}), ("resolve", {"repositories": [URL]}),
+    ("requirement", {"tasks": ["t1"]}),
+]
+
+
+@pytest.mark.parametrize("action,body", KNOWN_BODIES, ids=lambda v: v if isinstance(v, str) else "")
+def test_known_callers_bodies_are_accepted(action, body):
+    model = model_of(action)
+    assert model is not None, f"repositories.{action} has no request class"
+    model(**body).validate()

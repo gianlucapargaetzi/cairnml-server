@@ -32,23 +32,21 @@ def _repository_of(call: APICall, company: str, request: models.RepositoryRefReq
 
 
 @endpoint("repositories.get_all")
-def get_all(call: APICall, company: str, _request):
-    project = (call.data or {}).get("project") or None
-    call.result.data = {"repositories": bll.list_for(company, call.identity.user, _is_admin(call), project)}
+def get_all(call: APICall, company: str, request: models.GetAllRequest):
+    call.result.data = {"repositories": bll.list_for(company, call.identity.user, _is_admin(call), request.project or None)}
 
 
 @endpoint("repositories.add")
-def add(call: APICall, company: str, _request):
-    data = call.data or {}
-    repo = bll.add(company, call.identity.user, _is_admin(call), data.get("url", ""), data.get("role", ""),
-                   shared=bool(data.get("shared")), project_id=data.get("project") or None,
-                   credential=data.get("credential") or None, none_needed=bool(data.get("none_needed")))
+def add(call: APICall, company: str, request: models.AddRequest):
+    repo = bll.add(company, call.identity.user, _is_admin(call), request.url, request.role, shared=bool(request.shared),
+                   project_id=request.project or None, credential=request.credential or None,
+                   none_needed=bool(request.none_needed))
     audit(call.identity.user, "repository.added", ip=client_address(call), company=company, repo=repo.key,
-          role=data.get("role", ""), shared=bool(data.get("shared")))
+          role=request.role, shared=bool(request.shared))
     if "registry" in repo.roles and repo.read_at is None:
         try:  # its entries are there the moment it is listed; one that cannot be read yet says why on its record
             repository_registry.read_entries(
-                company, repo, call.identity.user, user_access.root_project(company, data.get("project")))
+                company, repo, call.identity.user, user_access.root_project(company, request.project))
         except errors.bad_request.ValidationError:
             pass
         repo = bll.get(company, repo.id)
@@ -145,11 +143,10 @@ def refresh(call: APICall, company: str, request: models.RefreshRequest):
 
 
 @endpoint("repositories.get_details")
-def get_details(call: APICall, company: str, _request):
-    data = call.data or {}
+def get_details(call: APICall, company: str, request: models.GetDetailsRequest):
     call.result.data = repository_details.details(
-        company, call.identity.user, _is_admin(call), repository=data.get("repository"), entry=data.get("entry"),
-        commit=data.get("commit"))
+        company, call.identity.user, _is_admin(call), repository=request.reference("repositories.get_details"),
+        entry=request.entry, commit=request.commit)
 
 
 def _job_user(call: APICall, company: str):
@@ -198,10 +195,10 @@ def get_dataset_versions(call: APICall, company: str, request: models.GetDataset
 
 
 @endpoint("repositories.find")
-def find(call: APICall, company: str, _request):
+def find(call: APICall, company: str, request: models.FindRequest):
     """The repository a reference names: its id, its name, or the address of its repository. One the caller may not see is
     refused as missing, the same as one that does not exist. A job may call this for its own task only."""
-    reference = (call.data or {}).get("ref", "")
+    reference = request.ref
     repo = bll.find_reference(company, reference)
     if repo is None or not _may_read(call, company, repo):
         raise errors.bad_request.ValidationError(f"no such dataset: {reference}")
@@ -209,13 +206,12 @@ def find(call: APICall, company: str, _request):
 
 
 @endpoint("repositories.clone")
-def clone(call: APICall, company: str, _request):
+def clone(call: APICall, company: str, request: models.CloneRequest):
     """What a client needs to clone a dataset repository: its address, the commit to clone (the head when none is named) and a
     token made with the credential that reads it for the caller (none when it is cloned without one)."""
-    data = call.data or {}
-    repo = bll.find_reference(company, data.get("ref", ""))
+    repo = bll.find_reference(company, request.ref)
     if repo is None or not _may_read(call, company, repo):
-        raise errors.bad_request.ValidationError(f"no such dataset: {data.get('ref', '')}")
+        raise errors.bad_request.ValidationError(f"no such dataset: {request.ref}")
     job_user, project = _job_user(call, company)
     if job_user is not None:
         answer, _resolution = bll.token_for_job(company, repo, project, job_user)
@@ -224,7 +220,7 @@ def clone(call: APICall, company: str, _request):
     call.result.data = {
         "repository": f"https://{repo.host}/{repo.path}.git",
         "dataset": _view(call, company, repo, entries=False),
-        "commit": data.get("commit") or None,
+        "commit": request.commit or None,
         "token": answer["token"],
         "expires_at": answer["expires_at"],
         "username": answer["username"],
@@ -232,19 +228,19 @@ def clone(call: APICall, company: str, _request):
 
 
 @endpoint("repositories.git_token")
-def git_token(call: APICall, company: str, _request):
+def git_token(call: APICall, company: str, request: models.GitTokenRequest):
     """A token for one repository, for a person's machine: read for anyone who sees it, read_write for its owner and the admin
     (a push). A job or an agent is refused: its own endpoint, devices.git_token, serves them. A public repository needs no
     token for a read: ``token`` is null."""
-    data = call.data or {}
     kind = getattr(call.auth, "token_kind", None)
     if kind in ("job", "agent"):
         raise errors.forbidden.NoWritePermission(f"a {kind} cannot get a repository token here: a person's machine does")
-    level = data.get("level")
+    level = request.level
     if level not in ("read", "read_write"):
         raise errors.bad_request.ValidationError("level must be read or read_write")
-    parsed = bll.repo_address.parse(data.get("repository") or "")
-    repo = bll.find(company, data.get("repository") or "") if parsed is not None else None
+    reference = request.reference("repositories.git_token")
+    parsed = bll.repo_address.parse(reference)
+    repo = bll.find(company, reference) if parsed is not None else None
     if repo is None or not bll.can_see(company, call.identity.user, _is_admin(call), repo):
         if parsed is not None and level == "read" and bll.is_private(parsed.url) is False:
             # a public repository nobody listed yet needs no token and no record: a run lists it when it records what it used
@@ -264,21 +260,19 @@ NO_SUCH_REPOSITORY_HINT = (
 
 
 @endpoint("repositories.resolve")
-def resolve(call: APICall, company: str, _request):
+def resolve(call: APICall, company: str, request: models.ResolveRequest):
     """How the caller reads each repository in a project: for the badges."""
-    data = call.data or {}
-    repositories = data.get("repositories") or []
-    if not isinstance(repositories, list) or len(repositories) > MAX_REPOSITORIES:
+    repositories = request.references("repositories.resolve")
+    if len(repositories) > MAX_REPOSITORIES:
         raise errors.bad_request.ValidationError(f"give a list of at most {MAX_REPOSITORIES} repositories")
     call.result.data = {"repositories": repository_runs.resolve_many(
-        company, [str(item) for item in repositories], call.identity.user, data.get("project") or None, _is_admin(call))}
+        company, repositories, call.identity.user, request.project or None, _is_admin(call))}
 
 
 @endpoint("repositories.requirement")
-def requirement(call: APICall, company: str, _request):
+def requirement(call: APICall, company: str, request: models.RequirementRequest):
     """What the tasks' repositories need before the caller dispatches them: the warning of the web app."""
-    tasks = (call.data or {}).get("tasks") or []
-    if not isinstance(tasks, list) or len(tasks) > 500:
+    tasks = list(request.tasks or [])
+    if len(tasks) > 500:
         raise errors.bad_request.ValidationError("give a list of at most 500 tasks")
-    call.result.data = {"repositories": repository_runs.requirement(
-        company, call.identity.user, [str(item) for item in tasks], _is_admin(call))}
+    call.result.data = {"repositories": repository_runs.requirement(company, call.identity.user, tasks, _is_admin(call))}

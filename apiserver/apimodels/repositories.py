@@ -5,6 +5,7 @@ import logging
 
 from jsonmodels import fields
 
+from apiserver.apimodels import ListField
 from apiserver.apimodels.base import StrictRequest
 
 log = logging.getLogger(__name__)
@@ -79,3 +80,53 @@ class GetHistoryRequest(RepositoryRefRequest):
 
 class GetDatasetVersionsRequest(RepositoryRefRequest):
     pass
+
+
+class GetAllRequest(StrictRequest):
+    project = fields.StringField()
+
+
+class AddRequest(StrictRequest):
+    url = fields.StringField(required=True)
+    role = fields.StringField(required=True)
+    shared = fields.BoolField()
+    project = fields.StringField()
+    credential = fields.StringField()
+    none_needed = fields.BoolField()
+
+
+class GetDetailsRequest(RepositoryRefRequest):
+    entry = fields.StringField()
+    commit = fields.StringField()
+
+
+class GitTokenRequest(RepositoryRefRequest):
+    level = fields.StringField(required=True)  # read or read_write: checked by the handler, which says which
+
+
+class FindRequest(StrictRequest):
+    ref = fields.StringField(required=True)
+
+
+class CloneRequest(StrictRequest):
+    ref = fields.StringField(required=True)
+    commit = fields.StringField()
+
+
+class ResolveRequest(StrictRequest):
+    refs = ListField(items_types=str)
+    repositories = ListField(items_types=str)  # deprecated alias of refs
+    project = fields.StringField()
+
+    def references(self, action: str) -> list:
+        """The repositories named: ``refs``, else ``repositories``; none when neither is given."""
+        if self.refs:
+            return list(self.refs)
+        if self.repositories:
+            log.warning("%s: 'repositories' is deprecated, send 'refs'", action)
+            return list(self.repositories)
+        return []
+
+
+class RequirementRequest(StrictRequest):
+    tasks = ListField(items_types=str, required=True)
