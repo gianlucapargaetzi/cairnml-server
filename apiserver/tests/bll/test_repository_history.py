@@ -178,3 +178,42 @@ def test_every_branch_has_a_lane_of_its_own_and_no_lane_is_used_twice():
     lanes = {row["id"]: row["lane"] for row in rows}
     assert lanes["x1"] == 1 and lanes["y1"] == 2
     assert count == 3
+
+
+# --- one test per stage of condense (the stages are extracted from it without a change of behaviour) ----------------------
+
+def test_the_window_stops_at_max_commits_and_says_the_history_is_limited():
+    commits, first = history(10)
+    runs = [{"id": f"r{n}", "commit": sha(n), "name": "x", "status": "completed", "project": "p", "created": "", "dirty": False}
+            for n in range(10, 0, -1)]  # a run on every commit, so each one of the window is shown
+    result = condense(commits, total=10, first=first, runs=runs, max_commits=4)
+    assert [node["sha"] for node in result["nodes"] if node["type"] == "commit"] == [sha(n) for n in (10, 9, 8, 7)]
+    assert result["limited"] is True and result["total_commits"] == 10
+
+
+def test_a_history_that_fits_the_window_is_not_limited():
+    commits, first = history(3)
+    result = condense(commits, total=3, first=first, runs=[], max_commits=30)
+    assert result["limited"] is False
+
+
+def test_the_newest_commit_is_the_first_node_and_the_oldest_is_marked_first():
+    commits, first = history(3)
+    runs = [{"id": "r1", "commit": sha(1), "name": "x", "status": "completed", "project": "p", "created": "", "dirty": False}]
+    result = condense(commits, total=3, first=first, runs=runs)  # the oldest commit is shown because a run is on it
+    assert result["nodes"][0]["newest"] is True
+    assert [n["first"] for n in result["nodes"] if n["type"] == "commit"][-1] is True
+
+
+def test_a_run_on_a_commit_outside_the_window_is_counted_as_outside():
+    commits, first = history(5)
+    runs = [{"id": "r1", "commit": sha(99), "name": "x", "status": "completed", "project": "p", "created": "", "dirty": False}]
+    result = condense(commits, total=5, first=first, runs=runs)
+    assert result["outside_runs"] == 1
+
+
+def test_without_a_default_tip_the_main_line_starts_at_the_newest_row():
+    commits, first = history(4)
+    result = condense(commits, total=4, first=first, runs=[], default_tip=None)
+    assert result["lane_count"] >= 1
+    assert result["nodes"][0]["lane"] == 0

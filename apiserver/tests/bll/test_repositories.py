@@ -7,6 +7,7 @@ from uuid import uuid4
 import pytest
 
 from apiserver.apierrors import errors
+from apiserver.bll import user_access
 from apiserver.bll import access, repositories as bll
 from apiserver.database.model.auth import AuthUser
 from apiserver.database.model.project import Project, ProjectMember, ProjectRole
@@ -15,6 +16,15 @@ from apiserver.database.model.share import Share
 from apiserver.database.model.user_access import UserAccess
 from apiserver.idp import git_credentials as store
 from apiserver.tests.db import ensure_db
+
+
+def _patch(monkeypatch, name, value):
+    """The helpers moved to bll/repository_access in the split of bll/repositories: patch both places that may look them up."""
+    from apiserver.bll import repository_access
+
+    for module in (bll, repository_access):
+        monkeypatch.setattr(module, name, value, raising=False)
+
 
 ensure_db()
 URL = "https://github.com/acme/proj"
@@ -45,10 +55,10 @@ def world(monkeypatch):
             raise errors.bad_request.ValidationError(f"the GitHub App {entry.label} is not installed on {repo.path}")
 
     monkeypatch.setattr(store, "key_material", lambda: "test-key-material")
-    monkeypatch.setattr(bll, "is_private", fake_private)
-    monkeypatch.setattr(bll, "_check_reads", fake_check_reads)
-    monkeypatch.setattr(bll, "_company_reach", lambda repo: state.reach)
-    monkeypatch.setattr(bll.user_access, "company_apps", lambda company=None: state.apps)
+    _patch(monkeypatch, "is_private", fake_private)
+    _patch(monkeypatch, "_check_reads", fake_check_reads)
+    _patch(monkeypatch, "_company_reach", lambda repo: state.reach)
+    monkeypatch.setattr(user_access, "company_apps", lambda company=None: state.apps)
     yield state
     for model in (Repository, RegistryEntry, Assignment, RepositoryCheck, Share, UserAccess, Project, AuthUser):
         model.objects(company=company).delete()
@@ -415,7 +425,7 @@ def test_a_job_reads_with_the_project_owners_credential(world, monkeypatch):
     credential(world, "owner-cred", "owner")
     repo = use(world)
     bll.assign(world.company, "owner", repo.id, "owner-cred")
-    monkeypatch.setattr(bll, "_token_of", lambda entry, r, permissions=None: {"token": f"tok-{entry.id}", "expires_at": None, "username": "x"})
+    _patch(monkeypatch, "_token_of", lambda entry, r, permissions=None: {"token": f"tok-{entry.id}", "expires_at": None, "username": "x"})
     answer, resolution = bll.token_for_job(world.company, repo, world.root, "member")
     assert answer["token"] == "tok-owner-cred" and resolution.state == bll.ASSIGNED
 
@@ -490,7 +500,7 @@ def _member_reads_owner_does_not(world, monkeypatch):
         if entry.id == "bad":
             raise errors.bad_request.ValidationError("the GitHub App cred bad is not installed on acme/proj")
 
-    monkeypatch.setattr(bll, "_check_reads", check_reads)
+    _patch(monkeypatch, "_check_reads", check_reads)
     return repo
 
 
@@ -502,7 +512,7 @@ def test_a_check_by_one_user_does_not_change_what_another_user_sees(world, monke
     def check_reads(entry, repo):
         if entry.id == "bad":
             raise errors.bad_request.ValidationError("the GitHub App cred bad is not installed on acme/proj")
-    monkeypatch.setattr(bll, "_check_reads", check_reads)
+    _patch(monkeypatch, "_check_reads", check_reads)
     bll.check(world.company, "member", False, repo.id)
     bll.check(world.company, "owner", False, repo.id)
     assert bll.view(world.company, "member", False, bll.get(world.company, repo.id))["state"] == "ok"
@@ -625,7 +635,7 @@ def test_a_project_whose_owner_has_no_assignment_is_a_row_of_the_owner_without_a
 
 
 def test_the_assignment_that_reads_for_a_job_is_marked_used(world, monkeypatch):
-    monkeypatch.setattr(bll, "_token_of", lambda entry, r, permissions=None: {"token": "tok", "expires_at": None, "username": "x"})
+    _patch(monkeypatch, "_token_of", lambda entry, r, permissions=None: {"token": "tok", "expires_at": None, "username": "x"})
     credential(world, "owner-cred", "owner")
     repo = use(world)
     bll.assign(world.company, "owner", repo.id, "owner-cred")

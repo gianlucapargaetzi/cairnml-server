@@ -20,6 +20,15 @@ from apiserver.services import repositories as svc
 from apiserver.tests.db import ensure_db
 from apiserver.utilities.partial_version import PartialVersion
 
+
+def _patch(monkeypatch, name, value):
+    """The helpers moved to bll/repository_access in the split of bll/repositories: patch both places that may look them up."""
+    from apiserver.bll import repository_access
+
+    for module in (bll, repository_access):
+        monkeypatch.setattr(module, name, value, raising=False)
+
+
 ensure_db()
 URL = "https://github.com/acme/cars"
 
@@ -35,9 +44,9 @@ def world(monkeypatch):
             members=[ProjectMember(user="member", role=ProjectRole.read, added=now, added_by="owner")]).save()
     state = SimpleNamespace(company=company, root=root, private=True, audits=[], audit_details=[])
     monkeypatch.setattr(store, "key_material", lambda: "test-key-material")
-    monkeypatch.setattr(bll, "is_private", lambda address: state.private)
-    monkeypatch.setattr(bll, "_check_reads", lambda entry, repo: None)
-    monkeypatch.setattr(bll, "_company_reach", lambda repo: (None, "no company GitHub App is set up"))
+    _patch(monkeypatch, "is_private", lambda address: state.private)
+    _patch(monkeypatch, "_check_reads", lambda entry, repo: None)
+    _patch(monkeypatch, "_company_reach", lambda repo: (None, "no company GitHub App is set up"))
     def record_audit(actor, action, **detail):
         state.audits.append((actor, action))
         state.audit_details.append(detail)
@@ -266,7 +275,7 @@ def test_checking_returns_the_callers_own_result_and_audits_it(world, monkeypatc
         if entry.id == "bad":
             raise errors.bad_request.ValidationError("the GitHub App bad is not installed on acme/cars")
 
-    monkeypatch.setattr(bll, "_check_reads", check_reads)
+    _patch(monkeypatch, "_check_reads", check_reads)
     owner = run(svc.check, world, "owner", {"id": repo.id})["repository"]
     member = run(svc.check, world, "member", {"id": repo.id})["repository"]
     assert owner["state"] == "no_access" and "not installed" in owner["state_message"]
