@@ -1,0 +1,41 @@
+# The known disagreements between the server and its callers (python -m apiserver.contract).
+# Each line: <area> <kind> <service.action or service.action.field>  <reason>. An entry that stops matching fails the check.
+
+agent generated client action the server lacks auth.create_credentials  the generated client is older than the schema (cairnml-server #136)
+agent generated client action the server lacks auth.edit_user  the generated client is older than the schema (cairnml-server #136)
+agent generated client action the server lacks auth.get_credentials  the generated client is older than the schema (cairnml-server #136)
+agent generated client action the server lacks auth.login  the generated client is older than the schema (cairnml-server #136)
+agent generated client action the server lacks auth.logout  the generated client is older than the schema (cairnml-server #136)
+agent generated client action the server lacks auth.revoke_credentials  the generated client is older than the schema (cairnml-server #136)
+agent generated client action the server lacks debug.apiex  the agent calls debug actions the server does not define (cairnml-server #136)
+agent generated client action the server lacks debug.echo  the agent calls debug actions the server does not define (cairnml-server #136)
+agent generated client action the server lacks debug.ex  the agent calls debug actions the server does not define (cairnml-server #136)
+agent generated client action the server lacks debug.ping_auth  the agent calls debug actions the server does not define (cairnml-server #136)
+agent generated client action the server lacks queues.create  the agent's generated client is older than the schema (cairnml-server #136)
+agent generated client field the schema lacks events.debug_images.task  a field the generated client sends that the schema lacks: regeneration from the schema removes it (cairnml-server #136)
+agent generated client field the schema lacks events.get_task_log.from  a field the generated client sends that the schema lacks: regeneration from the schema removes it (cairnml-server #136)
+agent generated client field the schema lacks events.get_task_log.scroll_id  a field the generated client sends that the schema lacks: regeneration from the schema removes it (cairnml-server #136)
+agent generated client field the schema lacks tasks.create.input  a field the generated client sends that the schema lacks: regeneration from the schema removes it (cairnml-server #136)
+agent raw call to an action the server lacks github.com  not an API call: a host name or a configuration key matched the call pattern
+sdk generated client action the server lacks auth.create_credentials  the generated client is older than the schema (cairnml-server #136)
+sdk generated client action the server lacks auth.edit_credentials  the generated client is older than the schema (cairnml-server #136)
+sdk generated client action the server lacks auth.edit_user  the generated client is older than the schema (cairnml-server #136)
+sdk generated client action the server lacks auth.get_credentials  the generated client is older than the schema (cairnml-server #136)
+sdk generated client action the server lacks auth.login  the generated client is older than the schema (cairnml-server #136)
+sdk generated client action the server lacks auth.revoke_credentials  the generated client is older than the schema (cairnml-server #136)
+sdk generated client action the server lacks tasks.share  the generated client is older than the schema; regenerating removes it (cairnml-server #136)
+sdk generated client field the schema lacks events.get_plot_sample.variant  a field the generated client sends that the schema lacks: regeneration from the schema removes it (cairnml-server #136)
+sdk generated client field the schema lacks tasks.create.input  a field the generated client sends that the schema lacks: regeneration from the schema removes it (cairnml-server #136)
+sdk generated client field the schema lacks tasks.edit.input  a field the generated client sends that the schema lacks: regeneration from the schema removes it (cairnml-server #136)
+sdk generated client field the schema lacks tasks.get_all.input.view.entries.dataset  a field the generated client sends that the schema lacks: regeneration from the schema removes it (cairnml-server #136)
+sdk generated client field the schema lacks tasks.get_all.input.view.entries.version  a field the generated client sends that the schema lacks: regeneration from the schema removes it (cairnml-server #136)
+sdk generated client field the schema lacks tasks.validate.input  a field the generated client sends that the schema lacks: regeneration from the schema removes it (cairnml-server #136)
+sdk raw call to an action the server lacks datasets.external_repo  HyperDatasets, removed from the server (cairnml #62)
+sdk raw call to an action the server lacks github.com  not an API call: a host name or a configuration key matched the call pattern
+sdk raw call to an action the server lacks models.input  not an API call: a host name or a configuration key matched the call pattern
+sdk raw call to an action the server lacks models.output  not an API call: a host name or a configuration key matched the call pattern
+sdk raw call to an action the server lacks storage.block_pickled_artifacts  not an API call: a host name or a configuration key matched the call pattern
+sdk raw call to an action the server lacks storage.cache  not an API call: a host name or a configuration key matched the call pattern
+sdk raw call to an action the server lacks storage.direct_access  not an API call: a host name or a configuration key matched the call pattern
+sdk raw call to an action the server lacks storage.path_substitution  not an API call: a host name or a configuration key matched the call pattern
+web raw call to an action the server lacks tasks.service  dead: a generated web call to an action the server does not have (cairnml-web #122)
