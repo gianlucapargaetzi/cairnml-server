@@ -420,9 +420,6 @@ class APICall(DataContainer):
     def log_api(self, value):
         self._log_api = value
 
-    def assign_new_id(self):
-        self._id = database.utils.id()
-
     def get_header(self, header, default=None):
         """
         Get header value
@@ -688,23 +685,3 @@ class APICall(DataContainer):
             error_data=error_data,
             cookies=self._result.cookies,
         )
-
-    def get_redacted_headers(self, fields=None):
-        headers = (
-            {k: v for k, v in self._headers.items() if k in fields}
-            if fields
-            else self.headers
-        )
-        if not self.requires_authorization or self.auth:
-            # We won't log the authorization header if call shouldn't be authorized, or if it was successfully
-            #  authorized. This means we'll only log authorization header for calls that failed to authorize (hopefully
-            #  this will allow us to debug authorization errors).
-            for header, sep in self._redacted_headers.items():
-                if header in headers:
-                    if sep:
-                        prefix, _, redact = headers[header].partition(sep)
-                    else:
-                        prefix = sep = ""
-                        redact = headers[header]
-                    headers[header] = prefix + sep + f"<{len(redact)} bytes redacted>"
-        return headers
