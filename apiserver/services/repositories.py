@@ -31,7 +31,7 @@ def _view(call: APICall, company: str, repo: Repository, entries: bool = True) -
 
 def _repository_of(call: APICall, company: str, request: models.RepositoryRefRequest, action: str) -> Repository:
     """The repository a request names (``ref``: its id, name or address). One the caller does not see is refused as missing."""
-    reference = request.reference(action)
+    reference = request.reference()
     repo = bll.find_reference(company, reference)
     if repo is None or not bll.can_see(company, call.identity.user, _is_admin(call), repo):
         raise errors.bad_request.ValidationError(f"no such repository: {reference}")
@@ -142,7 +142,7 @@ def unlink(call: APICall, company: str, request: models.UnlinkRequest):
 def assign(call: APICall, company: str, request: models.AssignRequest):
     """The caller's own assignment on a repository, named by id or by address. An address no one has listed yet is listed first,
     as the caller's own non-shared entry with the role asked for (a dataset by default)."""
-    reference = request.reference("repositories.assign")
+    reference = request.reference()
     repo = bll.find_reference(company, reference)
     if repo is not None and not bll.can_see(company, call.identity.user, _is_admin(call), repo):
         repo = None  # listed by someone else: adding it says so
@@ -202,7 +202,7 @@ def get_details(call: APICall, company: str, request: models.GetDetailsRequest):
         company,
         call.identity.user,
         _is_admin(call),
-        repository=request.reference("repositories.get_details"),
+        repository=request.reference(),
         entry=request.entry,
         commit=request.commit,
     )
@@ -300,7 +300,7 @@ def git_token(call: APICall, company: str, request: models.GitTokenRequest):
     level = request.level
     if level not in ("read", "read_write"):
         raise errors.bad_request.ValidationError("level must be read or read_write")
-    reference = request.reference("repositories.git_token")
+    reference = request.reference()
     parsed = bll.repo_address.parse(reference)
     repo = bll.find(company, reference) if parsed is not None else None
     if repo is None or not bll.can_see(company, call.identity.user, _is_admin(call), repo):
@@ -338,7 +338,7 @@ NO_SUCH_REPOSITORY_HINT = (
 @endpoint("repositories.resolve")
 def resolve(call: APICall, company: str, request: models.ResolveRequest):
     """How the caller reads each repository in a project: for the badges."""
-    repositories = request.references("repositories.resolve")
+    repositories = request.references()
     if len(repositories) > MAX_REPOSITORIES:
         raise errors.bad_request.ValidationError(f"give a list of at most {MAX_REPOSITORIES} repositories")
     call.result.data = {

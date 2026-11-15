@@ -1,5 +1,5 @@
-"""The request classes of the repositories service: the old identifier names still work, one name (ref) wins over them, an
-unknown field is refused. See docs/compatibility/repository-identifier.md."""
+"""The request classes of the repositories service: one name names the repository (``ref``, ``refs`` for resolve); the old
+names ``id``, ``repository`` and ``repositories`` are refused as unknown fields. See docs/compatibility/repository-identifier.md."""
 
 import pytest
 
@@ -77,22 +77,46 @@ def try_invoke(action, world, data):
         pass
 
 
+OLD_NAMES = [("id", "ref"), ("repository", "ref")]
+
+
+def _refused_by_validation(action, data):
+    from apiserver.service_repo import APICall
+    from apiserver.service_repo.validators import validate_data
+
+    endpoint = ServiceRepo._get_endpoint(f"repositories.{action}", VERSION)
+    api_call = APICall(f"repositories.{action}", data=data, headers={}, remote_addr="127.0.0.1")
+    with pytest.raises(errors.bad_request.ValidationError) as refused:
+        validate_data(api_call, endpoint)
+    return str(refused.value)
+
+
 @pytest.mark.parametrize("action", sorted(ID_ACTIONS))
-@pytest.mark.parametrize("alias", ["id", "repository"])
-def test_old_names_still_work(world, seen, action, alias):
-    if alias == "id" and action in ("get_details", "git_token"):
-        pytest.skip("these two never took id")
+@pytest.mark.parametrize("old", ["id", "repository"])
+def test_the_old_name_is_refused_and_named(action, old):
+    message = _refused_by_validation(action, {old: URL, **ID_ACTIONS[action]})
+    assert old in message
+
+
+@pytest.mark.parametrize("old", ["repositories"])
+def test_the_old_plural_name_is_refused_and_named(old):
+    message = _refused_by_validation("resolve", {old: [URL]})
+    assert old in message
+
+
+@pytest.mark.parametrize("action", sorted(ID_ACTIONS))
+def test_ref_names_the_repository(world, seen, action):
     repo = bll.add(world.company, "owner", False, URL, "dataset", project_id=world.root)
-    value = repo.id if alias == "id" else URL
+    value = URL if action == "git_token" else repo.id  # git_token reads an address only
     extra = {k: (world.root if k == "project" else v) for k, v in ID_ACTIONS[action].items()}
-    try_invoke(action, world, {alias: value, **extra})
+    try_invoke(action, world, {"ref": value, **extra})
     assert seen and seen[0] == value
 
 
-def test_resolve_still_takes_repositories(world, monkeypatch):
+def test_resolve_takes_refs(world, monkeypatch):
     got = []
     monkeypatch.setattr(svc.repository_runs, "resolve_many", lambda company, items, *a: got.append(items) or [])
-    c = call("owner", {"repositories": [URL]})
+    c = call("owner", {"refs": [URL]})
     model = ServiceRepo._get_endpoint("repositories.resolve", VERSION).request_data_model
     svc.resolve(c, world.company, model(**c.data) if model else None)
     assert got == [[URL]]
@@ -140,25 +164,6 @@ def test_an_unknown_field_is_a_validation_error_through_the_call():
         validate_data(api_call, endpoint)
 
 
-def test_an_alias_logs_a_warning_with_the_action(world, caplog, seen):
-    repo = bll.add(world.company, "owner", False, URL, "dataset")
-    with caplog.at_level("WARNING", logger="apiserver.apimodels.repositories"):
-        invoke("unassign", world, {"id": repo.id})
-        invoke("assign", world, {"repository": URL})
-        invoke("unassign", world, {"ref": repo.id})
-    warnings = [r.getMessage() for r in caplog.records if r.name == "apiserver.apimodels.repositories"]
-    assert len(warnings) == 2
-    assert "repositories.unassign" in warnings[0] and "'id'" in warnings[0]
-    assert "repositories.assign" in warnings[1] and "'repository'" in warnings[1]
-
-
-def test_ref_wins_over_id_over_repository(world, seen):
-    repo = bll.add(world.company, "owner", False, URL, "dataset")
-    invoke("check", world, {"ref": repo.id, "id": "the-id", "repository": "the-repository"})
-    invoke("check", world, {"id": repo.id, "repository": "the-repository"})
-    assert seen == [repo.id, repo.id]
-
-
 def test_no_identifier_is_refused_as_no_such_repository(world):
     with pytest.raises(errors.bad_request.ValidationError, match=r"no such repository: \)"):
         invoke("delete", world, {})
@@ -171,28 +176,28 @@ KNOWN_BODIES = [
     ("get_all", {"project": "p1"}),
     ("add", {"url": URL, "role": "dataset"}),
     ("add", {"url": URL, "role": "code", "credential": "c", "none_needed": True, "shared": True, "project": "p1"}),
-    ("git_token", {"repository": URL, "level": "read"}),
+    ("git_token", {"ref": URL, "level": "read"}),
     ("git_token", {"ref": URL, "level": "read_write"}),
-    ("assign", {"repository": URL, "role": "dataset", "credential": "c", "none_needed": True}),
-    ("assign", {"id": "r1", "credential": "c"}),
-    ("unassign", {"repository": URL}),
-    ("check", {"repository": URL}),
-    ("delete", {"repository": URL}),
-    ("set_shared", {"id": "r1", "shared": True, "credential": "c", "none_needed": True}),
-    ("check_sharing", {"id": "r1", "credential": "c", "none_needed": True}),
-    ("link", {"id": "r1", "project": "p1"}),
-    ("unlink", {"repository": URL, "project": "p1"}),
-    ("get_history", {"id": "r1"}),
-    ("get_runs", {"id": "r1"}),
-    ("get_dataset_versions", {"id": "r1"}),
-    ("refresh", {"id": "r1"}),
-    ("get_details", {"repository": URL, "entry": "e", "commit": "abc"}),
+    ("assign", {"ref": URL, "role": "dataset", "credential": "c", "none_needed": True}),
+    ("assign", {"ref": "r1", "credential": "c"}),
+    ("unassign", {"ref": URL}),
+    ("check", {"ref": URL}),
+    ("delete", {"ref": URL}),
+    ("set_shared", {"ref": "r1", "shared": True, "credential": "c", "none_needed": True}),
+    ("check_sharing", {"ref": "r1", "credential": "c", "none_needed": True}),
+    ("link", {"ref": "r1", "project": "p1"}),
+    ("unlink", {"ref": URL, "project": "p1"}),
+    ("get_history", {"ref": "r1"}),
+    ("get_runs", {"ref": "r1"}),
+    ("get_dataset_versions", {"ref": "r1"}),
+    ("refresh", {"ref": "r1"}),
+    ("get_details", {"ref": URL, "entry": "e", "commit": "abc"}),
     ("get_details", {"entry": "e"}),
     ("find", {"ref": URL}),
     ("clone", {"ref": URL, "commit": "abc"}),
     ("clone", {"ref": "cars"}),
-    ("resolve", {"repositories": [URL], "project": "p1"}),
-    ("resolve", {"repositories": [URL]}),
+    ("resolve", {"refs": [URL], "project": "p1"}),
+    ("resolve", {"refs": [URL]}),
     ("requirement", {"tasks": ["t1"]}),
 ]
 
