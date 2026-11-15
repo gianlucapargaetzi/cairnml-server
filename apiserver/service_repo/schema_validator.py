@@ -66,7 +66,7 @@ class SchemaValidator:
                     validator_value=detailed_error.validator_value,
                     instance=detailed_error.instance,
                     parent=detailed_error.parent,
-                )
+                ) from detailed_error
             else:
                 log.error("fast validation failed while detailed validation succeeded")
                 raise error.error.with_traceback(traceback)

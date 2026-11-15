@@ -52,7 +52,7 @@ class Endpoint(object):
         except KeyError:
             raise RuntimeError(
                 f"schema for endpoint {service}.{endpoint_name} not found"
-            )
+            ) from None
         if validate_schema:
             if self.required_fields:
                 raise ValueError(
