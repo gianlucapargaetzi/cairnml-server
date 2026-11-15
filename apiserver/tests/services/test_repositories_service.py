@@ -161,7 +161,7 @@ def test_the_old_modules_and_records_are_gone():
 def test_a_public_repository_is_read_without_a_token_by_anyone_who_sees_it(world):
     world.private = False
     bll.add(world.company, "owner", False, URL, "dataset", project_id=world.root)
-    answer = run(svc.git_token, world, "member", {"repository": URL, "level": "read"})
+    answer = run(svc.git_token, world, "member", {"ref": URL, "level": "read"})
     assert answer == {"token": None, "expires_at": None, "username": None}
     assert world.audits[-1] == ("member", "git_token.public")
 
@@ -169,24 +169,24 @@ def test_a_public_repository_is_read_without_a_token_by_anyone_who_sees_it(world
 def test_a_repository_nobody_lists_for_the_user_is_refused_with_the_hint(world):
     bll.add(world.company, "owner", False, URL, "dataset")
     with pytest.raises(errors.bad_request.ValidationError, match="assigning a valid credential to it"):
-        run(svc.git_token, world, "stranger", {"repository": URL, "level": "read"})
+        run(svc.git_token, world, "stranger", {"ref": URL, "level": "read"})
     with pytest.raises(errors.bad_request.ValidationError, match="no such repository"):
-        run(svc.git_token, world, "stranger", {"repository": "https://github.com/acme/unknown", "level": "read"})
+        run(svc.git_token, world, "stranger", {"ref": "https://github.com/acme/unknown", "level": "read"})
 
 
 def test_a_job_or_an_agent_is_refused_and_the_level_is_checked(world):
     for kind in ("job", "agent"):
         with pytest.raises(errors.forbidden.NoWritePermission):
-            run(svc.git_token, world, "owner", {"repository": URL, "level": "read"}, token_kind=kind)
+            run(svc.git_token, world, "owner", {"ref": URL, "level": "read"}, token_kind=kind)
     with pytest.raises(errors.bad_request.ValidationError, match="level must be"):
-        run(svc.git_token, world, "owner", {"repository": URL, "level": "admin"})
+        run(svc.git_token, world, "owner", {"ref": URL, "level": "admin"})
 
 
 def test_only_the_owner_writes(world):
     world.private = False
     bll.add(world.company, "owner", False, URL, "dataset", project_id=world.root)
     with pytest.raises(errors.forbidden.NoWritePermission):
-        run(svc.git_token, world, "member", {"repository": URL, "level": "read_write"})
+        run(svc.git_token, world, "member", {"ref": URL, "level": "read_write"})
 
 
 # --- assigning, by address ---------------------------------------------------------------------------------------------------------
@@ -194,7 +194,7 @@ def test_only_the_owner_writes(world):
 
 def test_assigning_by_address_lists_the_repository_for_the_user_and_assigns(world):
     credential(world, "mine", "stranger")
-    row = run(svc.assign, world, "stranger", {"repository": URL, "role": "dataset", "credential": "mine"})["repository"]
+    row = run(svc.assign, world, "stranger", {"ref": URL, "role": "dataset", "credential": "mine"})["repository"]
     assert row["name"] == "cars" and row["roles"] == ["dataset"] and row["owner"] == "stranger"
     assert [a["credential"] for a in row["assignments"]] == ["mine"] and row["assignments"][0]["can_edit"]
     assert Repository.objects(company=world.company).count() == 1
@@ -204,7 +204,7 @@ def test_assigning_to_an_address_somebody_else_lists_privately_is_refused(world)
     credential(world, "mine", "stranger")
     bll.add(world.company, "owner", False, URL, "dataset")
     with pytest.raises(errors.bad_request.ValidationError, match="already listed by someone else"):
-        run(svc.assign, world, "stranger", {"repository": URL, "credential": "mine"})
+        run(svc.assign, world, "stranger", {"ref": URL, "credential": "mine"})
 
 
 def test_unassigning_clears_only_the_callers_own(world):
@@ -213,7 +213,7 @@ def test_unassigning_clears_only_the_callers_own(world):
     repo = bll.add(world.company, "owner", False, URL, "dataset", project_id=world.root)
     bll.assign(world.company, "owner", repo.id, "a")
     bll.assign(world.company, "member", repo.id, "b")
-    row = run(svc.unassign, world, "member", {"repository": URL})["repository"]
+    row = run(svc.unassign, world, "member", {"ref": URL})["repository"]
     assert [a["user"] for a in row["assignments"]] == ["owner"] and not row["assignments"][0]["can_edit"]
 
 
@@ -222,16 +222,16 @@ def test_the_admin_shares_a_repository_and_a_user_cannot(world):
     with pytest.raises(errors.forbidden.NoWritePermission):
         run(svc.add, world, "owner", {"url": "https://github.com/acme/other", "role": "dataset", "shared": True})
     credential(world, "company-app", "admin", scope="company")
-    refused = run(svc.check_sharing, world, "admin", {"id": repo.id}, role="admin")
+    refused = run(svc.check_sharing, world, "admin", {"ref": repo.id}, role="admin")
     assert refused["ok"] is False and "company credential" in refused["message"]
-    assert run(svc.check_sharing, world, "admin", {"id": repo.id, "credential": "company-app"}, role="admin") == {
+    assert run(svc.check_sharing, world, "admin", {"ref": repo.id, "credential": "company-app"}, role="admin") == {
         "ok": True,
         "message": "",
     }
     with pytest.raises(errors.bad_request.ValidationError):  # sharing needs the credential
-        run(svc.set_shared, world, "admin", {"id": repo.id, "shared": True}, role="admin")
+        run(svc.set_shared, world, "admin", {"ref": repo.id, "shared": True}, role="admin")
     row = run(
-        svc.set_shared, world, "admin", {"id": repo.id, "shared": True, "credential": "company-app"}, role="admin"
+        svc.set_shared, world, "admin", {"ref": repo.id, "shared": True, "credential": "company-app"}, role="admin"
     )["repository"]
     assert row["shared"] and row["owner_name"] == "Company"
     assert [r["name"] for r in run(svc.get_all, world, "stranger", {})["repositories"]] == ["cars"]
@@ -325,17 +325,17 @@ def test_a_registry_that_cannot_be_read_is_still_listed(world, monkeypatch):
 
 def test_a_public_repository_nobody_listed_yet_gets_no_token_and_no_record(world):
     world.private = False
-    answer = run(svc.git_token, world, "owner", {"repository": "https://github.com/acme/registry", "level": "read"})
+    answer = run(svc.git_token, world, "owner", {"ref": "https://github.com/acme/registry", "level": "read"})
     assert answer["token"] is None and world.audits[-1] == ("owner", "git_token.public")
     assert Repository.objects(company=world.company).count() == 0  # a run lists it when it records what it used
     with pytest.raises(errors.bad_request.ValidationError):  # a push needs a record and a credential
-        run(svc.git_token, world, "owner", {"repository": "https://github.com/acme/registry", "level": "read_write"})
+        run(svc.git_token, world, "owner", {"ref": "https://github.com/acme/registry", "level": "read_write"})
 
 
 def test_a_private_repository_nobody_listed_is_still_refused_with_the_hint(world):
     world.private = True
     with pytest.raises(errors.bad_request.ValidationError, match="make sure it is listed"):
-        run(svc.git_token, world, "owner", {"repository": "https://github.com/acme/secret", "level": "read"})
+        run(svc.git_token, world, "owner", {"ref": "https://github.com/acme/secret", "level": "read"})
 
 
 # --- checking ------------------------------------------------------------------------------------------------------------------------
@@ -353,8 +353,8 @@ def test_checking_returns_the_callers_own_result_and_audits_it(world, monkeypatc
             raise errors.bad_request.ValidationError("the GitHub App bad is not installed on acme/cars")
 
     _patch(monkeypatch, "_check_reads", check_reads)
-    owner = run(svc.check, world, "owner", {"id": repo.id})["repository"]
-    member = run(svc.check, world, "member", {"id": repo.id})["repository"]
+    owner = run(svc.check, world, "owner", {"ref": repo.id})["repository"]
+    member = run(svc.check, world, "member", {"ref": repo.id})["repository"]
     assert owner["state"] == "no_access" and "not installed" in owner["state_message"]
     assert member["state"] == "ok" and member["state_message"] == ""
     assert [d["state"] for d in world.audit_details if "state" in d] == [

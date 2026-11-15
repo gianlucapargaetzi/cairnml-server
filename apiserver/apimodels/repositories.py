@@ -1,33 +1,19 @@
-"""The requests of the repositories service. A repository is named by one field, ``ref`` (its id, its name, or its address); ``id``
-and ``repository`` are the deprecated names the SDK and the web app still send, accepted for one more release. See
+"""The requests of the repositories service. A repository is named by one field, ``ref`` (its id, its name, or its address), and
+several by ``refs``. The old names ``id``, ``repository`` and ``repositories`` are refused. See
 docs/compatibility/repository-identifier.md."""
-
-import logging
 
 from jsonmodels import fields
 
 from apiserver.apimodels import ListField
 from apiserver.apimodels.base import StrictRequest
 
-log = logging.getLogger(__name__)
-
 
 class RepositoryRefRequest(StrictRequest):
     ref = fields.StringField()
-    id = fields.StringField()  # deprecated alias of ref
-    repository = fields.StringField()  # deprecated alias of ref
 
-    def reference(self, action: str) -> str:
-        """The repository named: ``ref``, else ``id``, else ``repository``; the empty string when none is given. A deprecated
-        name that supplied the value is logged with the action."""
-        if self.ref:
-            return self.ref
-        for alias in ("id", "repository"):
-            value = getattr(self, alias)
-            if value:
-                log.warning("%s: '%s' is deprecated, send 'ref'", action, alias)
-                return value
-        return ""
+    def reference(self) -> str:
+        """The repository named by ``ref``; the empty string when none is given."""
+        return self.ref or ""
 
 
 class DeleteRequest(RepositoryRefRequest):
@@ -116,17 +102,11 @@ class CloneRequest(StrictRequest):
 
 class ResolveRequest(StrictRequest):
     refs = ListField(items_types=str)
-    repositories = ListField(items_types=str)  # deprecated alias of refs
     project = fields.StringField()
 
-    def references(self, action: str) -> list:
-        """The repositories named: ``refs``, else ``repositories``; none when neither is given."""
-        if self.refs:
-            return list(self.refs)
-        if self.repositories:
-            log.warning("%s: 'repositories' is deprecated, send 'refs'", action)
-            return list(self.repositories)
-        return []
+    def references(self) -> list:
+        """The repositories named by ``refs``; none when none is given."""
+        return list(self.refs) if self.refs else []
 
 
 class RequirementRequest(StrictRequest):
