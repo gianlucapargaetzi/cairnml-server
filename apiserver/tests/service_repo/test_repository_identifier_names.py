@@ -1,5 +1,6 @@
 """One name for the repository an action acts on (``ref``; ``refs`` for several), in the schema and in the request classes. The
 old names stay for one release, as deprecated aliases, on the actions listed here. See docs/compatibility/repository-identifier.md."""
+
 import pytest
 from jsonmodels import fields as jsonmodels_fields
 
@@ -12,8 +13,21 @@ CONF = SchemaReader.root
 
 # the 15 actions that still accept the old names; removing an alias means removing the action from this tuple
 DEPRECATED_ALIASES = (
-    "delete", "set_shared", "check_sharing", "link", "unlink", "assign", "unassign", "check", "refresh", "get_runs",
-    "get_history", "get_dataset_versions", "get_details", "git_token", "resolve",
+    "delete",
+    "set_shared",
+    "check_sharing",
+    "link",
+    "unlink",
+    "assign",
+    "unassign",
+    "check",
+    "refresh",
+    "get_runs",
+    "get_history",
+    "get_dataset_versions",
+    "get_details",
+    "git_token",
+    "resolve",
 )
 NO_IDENTIFIER = ("get_all", "add", "requirement")  # they name no repository (add takes an address as url)
 IDENTIFIER_FIELDS = {"ref", "refs", "id", "repository", "repositories"}
@@ -58,6 +72,10 @@ def test_request_class_fields_equal_the_schema(service):
         fields = {name: field for _, name, field in model.iterate_with_name()}
         assert set(fields) == set(request.get("properties", {})), f"{service}.{action}"
         # jsonmodels never requires a list field: a missing list is the empty list
-        required = {name for name, field in fields.items() if field.required or isinstance(field, jsonmodels_fields.ListField)}
+        required = {
+            name for name, field in fields.items() if field.required or isinstance(field, jsonmodels_fields.ListField)
+        }
         assert required & set(request.get("required", [])) == set(request.get("required", [])), f"{service}.{action}"
-        assert {name for name, field in fields.items() if field.required} <= set(request.get("required", [])), f"{service}.{action}"
+        assert {name for name, field in fields.items() if field.required} <= set(request.get("required", [])), (
+            f"{service}.{action}"
+        )

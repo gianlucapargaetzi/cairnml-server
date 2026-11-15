@@ -61,8 +61,10 @@ def run(endpoint, world, user, data, **kwargs):
     model = ServiceRepo._get_endpoint(name, PartialVersion("2.40")).request_data_model
     try:
         request = model(**data) if model else None
-    except TypeError as refused:
-        raise errors.bad_request.ValidationError(str(refused))
+        if request is not None:
+            request.validate()  # as APICall does before the handler
+    except (TypeError, ValueError) as refused:
+        raise errors.bad_request.ValidationError(str(refused)) from refused
     endpoint(c, world.company, request)
     return c.result.data
 

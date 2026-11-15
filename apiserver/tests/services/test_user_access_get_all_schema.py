@@ -1,4 +1,5 @@
 """user_access.get_all declares every key it returns, and no other."""
+
 from datetime import datetime
 from types import SimpleNamespace
 from uuid import uuid4
@@ -23,8 +24,19 @@ def company():
     now = datetime.utcnow()
     User(id="u1", name="U", company=company, role="user", created=now).save()
     Project(id=f"p-{company}", company=company, user="u1", name="P", basename="P", created=now, last_update=now).save()
-    UserAccess(id=f"a-{company}", company=company, user="u1", scope="company", kind="app", app_id="1", label="App", host="github.com",
-               path="", secret="x", created=now).save()
+    UserAccess(
+        id=f"a-{company}",
+        company=company,
+        user="u1",
+        scope="company",
+        kind="app",
+        app_id="1",
+        label="App",
+        host="github.com",
+        path="",
+        secret="x",
+        created=now,
+    ).save()
     yield company
     for model in (UserAccess, Project, User):
         model.objects(company=company).delete()

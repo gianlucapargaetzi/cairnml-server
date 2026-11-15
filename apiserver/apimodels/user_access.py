@@ -1,5 +1,6 @@
 """The requests of the user_access service (the repository credentials a user owns). ``id`` here is the id of an access record,
 not of a repository, and stays ``id``."""
+
 from jsonmodels import fields
 
 from apiserver.apimodels.base import StrictRequest

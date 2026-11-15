@@ -1,6 +1,7 @@
 """The requests of the repositories service. A repository is named by one field, ``ref`` (its id, its name, or its address); ``id``
 and ``repository`` are the deprecated names the SDK and the web app still send, accepted for one more release. See
 docs/compatibility/repository-identifier.md."""
+
 import logging
 
 from jsonmodels import fields
@@ -129,4 +130,6 @@ class ResolveRequest(StrictRequest):
 
 
 class RequirementRequest(StrictRequest):
-    tasks = ListField(items_types=str)  # the schema requires it; jsonmodels never does for a list, a missing one is the empty list, as before
+    tasks = ListField(
+        items_types=str
+    )  # the schema requires it; jsonmodels never does for a list, a missing one is the empty list, as before

@@ -1,5 +1,6 @@
 """The request classes of the repositories service: the old identifier names still work, one name (ref) wins over them, an
 unknown field is refused. See docs/compatibility/repository-identifier.md."""
+
 import pytest
 
 from apiserver.apierrors import errors
@@ -7,16 +8,30 @@ from apiserver.apierrors.apierror import APIError
 from apiserver.bll import repositories as bll
 from apiserver.service_repo import ServiceRepo
 from apiserver.services import repositories as svc
+from apiserver.services import user_access  # noqa: F401  (registers the user_access endpoints)
 from apiserver.utilities.partial_version import PartialVersion
-from apiserver.tests.services.test_repositories_service import URL, call, world  # noqa: F401  (the fixture)
+from apiserver.tests.services import test_repositories_service as base
+from apiserver.tests.services.test_repositories_service import URL, call
 
+world = base.world  # the fixture of the service tests
 VERSION = PartialVersion("2.40")
 
 # the actions that name a repository, with the extra fields each needs to get past its own checks
 ID_ACTIONS = {
-    "delete": {}, "set_shared": {}, "check_sharing": {}, "link": {"project": "P"}, "unlink": {"project": "P"},
-    "assign": {}, "unassign": {}, "check": {}, "refresh": {}, "get_runs": {}, "get_history": {},
-    "get_dataset_versions": {}, "get_details": {}, "git_token": {"level": "read"},
+    "delete": {},
+    "set_shared": {},
+    "check_sharing": {},
+    "link": {"project": "P"},
+    "unlink": {"project": "P"},
+    "assign": {},
+    "unassign": {},
+    "check": {},
+    "refresh": {},
+    "get_runs": {},
+    "get_history": {},
+    "get_dataset_versions": {},
+    "get_details": {},
+    "git_token": {"level": "read"},
 }
 
 
@@ -35,9 +50,20 @@ def seen(world, monkeypatch):
     looked_up = []
     for module, name in ((bll, "find_reference"), (bll, "find")):
         original = getattr(module, name)
-        monkeypatch.setattr(module, name, lambda company, reference, _o=original, **kw: (looked_up.append(reference), _o(company, reference, **kw))[1])
+        monkeypatch.setattr(
+            module,
+            name,
+            lambda company, reference, _o=original, **kw: (looked_up.append(reference), _o(company, reference, **kw))[
+                1
+            ],
+        )
     from apiserver.bll import repository_details
-    monkeypatch.setattr(repository_details, "details", lambda company, user, is_admin, repository=None, **kw: looked_up.append(repository) or {})
+
+    monkeypatch.setattr(
+        repository_details,
+        "details",
+        lambda company, user, is_admin, repository=None, **kw: looked_up.append(repository) or {},
+    )
     return looked_up
 
 
@@ -74,8 +100,20 @@ def test_resolve_still_takes_repositories(world, monkeypatch):
 
 # --- the request classes ------------------------------------------------------------------------------------------------------------
 
-ID_BASED = ["delete", "set_shared", "check_sharing", "link", "unlink", "assign", "unassign", "check", "refresh", "get_runs",
-            "get_history", "get_dataset_versions"]
+ID_BASED = [
+    "delete",
+    "set_shared",
+    "check_sharing",
+    "link",
+    "unlink",
+    "assign",
+    "unassign",
+    "check",
+    "refresh",
+    "get_runs",
+    "get_history",
+    "get_dataset_versions",
+]
 OTHERS = ["get_all", "add", "get_details", "git_token", "find", "clone", "resolve", "requirement"]
 TYPED = ID_BASED + OTHERS
 
@@ -95,6 +133,7 @@ def test_unknown_field_is_refused(action):
 def test_an_unknown_field_is_a_validation_error_through_the_call():
     from apiserver.service_repo import APICall
     from apiserver.service_repo.validators import validate_data
+
     endpoint = ServiceRepo._get_endpoint("repositories.check", VERSION)
     api_call = APICall("repositories.check", data={"bogus": 1}, headers={}, remote_addr="127.0.0.1")
     with pytest.raises(errors.bad_request.ValidationError, match="bogus"):
@@ -128,21 +167,32 @@ def test_no_identifier_is_refused_as_no_such_repository(world):
 # the exact bodies the callers send today: the SDK (cairnml/datasets/credentials.py, clone.py) and the web app
 # (repositories.service.ts, repo-access.service.ts, dataset-details.service.ts)
 KNOWN_BODIES = [
-    ("get_all", {}), ("get_all", {"project": "p1"}),
+    ("get_all", {}),
+    ("get_all", {"project": "p1"}),
     ("add", {"url": URL, "role": "dataset"}),
     ("add", {"url": URL, "role": "code", "credential": "c", "none_needed": True, "shared": True, "project": "p1"}),
     ("git_token", {"repository": URL, "level": "read"}),
     ("git_token", {"ref": URL, "level": "read_write"}),
     ("assign", {"repository": URL, "role": "dataset", "credential": "c", "none_needed": True}),
     ("assign", {"id": "r1", "credential": "c"}),
-    ("unassign", {"repository": URL}), ("check", {"repository": URL}), ("delete", {"repository": URL}),
+    ("unassign", {"repository": URL}),
+    ("check", {"repository": URL}),
+    ("delete", {"repository": URL}),
     ("set_shared", {"id": "r1", "shared": True, "credential": "c", "none_needed": True}),
     ("check_sharing", {"id": "r1", "credential": "c", "none_needed": True}),
-    ("link", {"id": "r1", "project": "p1"}), ("unlink", {"repository": URL, "project": "p1"}),
-    ("get_history", {"id": "r1"}), ("get_runs", {"id": "r1"}), ("get_dataset_versions", {"id": "r1"}), ("refresh", {"id": "r1"}),
-    ("get_details", {"repository": URL, "entry": "e", "commit": "abc"}), ("get_details", {"entry": "e"}),
-    ("find", {"ref": URL}), ("clone", {"ref": URL, "commit": "abc"}), ("clone", {"ref": "cars"}),
-    ("resolve", {"repositories": [URL], "project": "p1"}), ("resolve", {"repositories": [URL]}),
+    ("link", {"id": "r1", "project": "p1"}),
+    ("unlink", {"repository": URL, "project": "p1"}),
+    ("get_history", {"id": "r1"}),
+    ("get_runs", {"id": "r1"}),
+    ("get_dataset_versions", {"id": "r1"}),
+    ("refresh", {"id": "r1"}),
+    ("get_details", {"repository": URL, "entry": "e", "commit": "abc"}),
+    ("get_details", {"entry": "e"}),
+    ("find", {"ref": URL}),
+    ("clone", {"ref": URL, "commit": "abc"}),
+    ("clone", {"ref": "cars"}),
+    ("resolve", {"repositories": [URL], "project": "p1"}),
+    ("resolve", {"repositories": [URL]}),
     ("requirement", {"tasks": ["t1"]}),
 ]
 
@@ -165,13 +215,32 @@ def test_user_access_unknown_field_is_refused(action):
         model(bogus=1)
 
 
-@pytest.mark.parametrize("action,body", [
-    ("get_all", {}), ("delete", {"id": "a1"}), ("check", {"id": "a1"}),
-    ("add_app", {"label": "L", "app_id": "1", "api_url": "", "key": "k", "scope": "company"}),
-    ("add_app", {"label": "L", "app_id": "1", "key": "k"}),
-])
+@pytest.mark.parametrize(
+    "action,body",
+    [
+        ("get_all", {}),
+        ("delete", {"id": "a1"}),
+        ("check", {"id": "a1"}),
+        ("add_app", {"label": "L", "app_id": "1", "api_url": "", "key": "k", "scope": "company"}),
+        ("add_app", {"label": "L", "app_id": "1", "key": "k"}),
+    ],
+)
 def test_user_access_known_bodies_are_accepted(action, body):
     model = ServiceRepo._get_endpoint(f"user_access.{action}", PartialVersion("2.38")).request_data_model
     assert model is not None
     model(**body).validate()
 
+
+def test_a_missing_level_and_a_non_list_are_validation_errors_through_the_call():
+    from apiserver.service_repo import APICall
+    from apiserver.service_repo.validators import validate_data
+
+    for action, body in (
+        ("git_token", {"ref": URL}),
+        ("resolve", {"refs": "not-a-list"}),
+        ("requirement", {"tasks": "t1"}),
+    ):
+        endpoint = ServiceRepo._get_endpoint(f"repositories.{action}", VERSION)
+        api_call = APICall(f"repositories.{action}", data=body, headers={}, remote_addr="127.0.0.1")
+        with pytest.raises(errors.bad_request.ValidationError):
+            validate_data(api_call, endpoint)
