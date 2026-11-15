@@ -45,7 +45,14 @@ from apiserver.service_repo.auth import Identity
 from apiserver.utilities.dicts import nested_set
 from apiserver.utilities.parameter_key_escaper import mongoengine_safe
 from .artifacts import artifacts_prepare_for_save
-from .clone import merged_configuration, merged_hyperparams
+from .clone import (
+    apply_execution_overrides,
+    drop_queue_and_output_artifacts,
+    merged_configuration,
+    merged_hyperparams,
+    script_with_overrides,
+    stamped_input_models,
+)
 from .param_utils import params_prepare_for_save
 from .utils import (
     ChangeStatusRequest,
@@ -251,55 +258,18 @@ class TaskBLL:
             params_dict["configuration"] = updated_configuration
 
         now = datetime.now(timezone.utc)
-        if input_models:
-            input_models = [
-                ModelItem(model=m.model, name=m.name, updated=now) for m in input_models
-            ]
-
-        script_dict = task.script.to_proper_dict() if task.script else {}
-        if script_overrides:
-            cls.strip_script_fields(script_overrides)
-            script_dict.update(script_overrides)
+        input_models = stamped_input_models(input_models, now)
+        script_dict = script_with_overrides(task, script_overrides, cls.strip_script_fields)
 
         execution_dict = task.execution.to_proper_dict() if task.execution else {}
-        if execution_overrides:
-            execution_model = execution_overrides.pop("model", None)
-            if not input_models and execution_model:
-                input_models = [
-                    ModelItem(
-                        model=execution_model,
-                        name=TaskModelNames[TaskModelTypes.input],
-                        updated=now,
-                    )
-                ]
-
-            docker_cmd = execution_overrides.pop("docker_cmd", None)
-            if not container and docker_cmd:
-                image, _, arguments = docker_cmd.partition(" ")
-                container = {"image": image, "arguments": arguments}
-
-            artifacts_prepare_for_save({"execution": execution_overrides})
-
-            params_dict["execution"] = {}
-            for legacy_param in ("parameters", "configuration"):
-                legacy_value = execution_overrides.pop(legacy_param, None)
-                if legacy_value is not None:
-                    params_dict["execution"] = legacy_value
-
-            escape_dict_field(execution_overrides, "model_labels")
-
-            execution_dict.update(execution_overrides)
+        execution_dict, input_models, container, legacy_params = apply_execution_overrides(
+            execution_dict, execution_overrides, input_models, container, now
+        )
+        if legacy_params is not None:
+            params_dict["execution"] = legacy_params
 
         params_prepare_for_save(params_dict, previous_task=task)
-
-        artifacts = execution_dict.get("artifacts")
-        if artifacts:
-            execution_dict["artifacts"] = {
-                k: a
-                for k, a in artifacts.items()
-                if a.get("mode", DEFAULT_ARTIFACT_MODE) != ArtifactModes.output
-            }
-        execution_dict.pop("queue", None)
+        drop_queue_and_output_artifacts(execution_dict)
 
         new_project_data = None
         if not project and new_project_name:
