@@ -881,10 +881,6 @@ class GetMixin(PropsMixin):
         return value
 
     @classmethod
-    def set_default_ordering(cls, parameters: dict, value: Sequence[str]) -> None:
-        cls.set_ordering(parameters, cls.get_ordering(parameters) or value)
-
-    @classmethod
     def validate_scroll_size(cls, query_dict: dict) -> int:
         size = query_dict.get(cls._size_key)
         if not size or not isinstance(size, int) or size < 1:
