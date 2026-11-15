@@ -1,4 +1,3 @@
-from apiserver.config_repo import config
 from apiserver.services import devices
 
 

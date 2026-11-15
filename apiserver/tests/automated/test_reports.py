@@ -138,7 +138,7 @@ class TestReports(TestService):
 
     def test_reports_search(self):
         report_task = self._temp_report(name="Rep1")
-        non_report_task = self._temp_task(name="hello")
+        self._temp_task(name="hello")
         res = self.api.reports.get_all_ex(
             _any_={"pattern": "hello", "fields": ["name", "id", "tags", "report"]}
         ).tasks
@@ -152,7 +152,7 @@ class TestReports(TestService):
         self.assertEqual(res[0].id, report_task)
 
     def test_reports_task_data(self):
-        report_task = self._temp_report(name="Rep1")
+        self._temp_report(name="Rep1")
         non_reports_task_name = "test non-reports"
         for model_events in (False, True):
             if model_events:
@@ -181,7 +181,7 @@ class TestReports(TestService):
                     iteration=1,
                     metric=f"Metric_{m}",
                     variant=f"Variant_{v}",
-                    plot_str=f"Hello plot",
+                    plot_str="Hello plot",
                     **event_args,
                 )
                 for m in range(2)

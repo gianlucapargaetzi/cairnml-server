@@ -232,7 +232,7 @@ class TestTaskEvents(TestService):
             "log",
             task=model,
             iteration=0,
-            msg=f"This is a log message",
+            msg="This is a log message",
             model_event=True,
         )
         with self.api.raises(errors.bad_request.EventsNotAdded):
@@ -259,7 +259,7 @@ class TestTaskEvents(TestService):
                 "log",
                 task=task,
                 iteration=0,
-                msg=f"This is a log message",
+                msg="This is a log message",
                 metric="Metric0",
                 variant="Variant0",
                 allow_locked=True,

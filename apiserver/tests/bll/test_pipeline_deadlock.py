@@ -5,7 +5,6 @@ from types import SimpleNamespace
 import pytest
 
 from apiserver.apierrors import errors
-from apiserver.bll.queue import pipeline_deadlock
 from apiserver.bll.queue.pipeline_deadlock import assert_not_deadlocked, blocks_its_own_steps
 
 QUEUE = "queue-1"

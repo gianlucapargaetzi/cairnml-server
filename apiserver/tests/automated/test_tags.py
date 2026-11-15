@@ -100,7 +100,7 @@ class TestTags(TestService):
             name="Tags test1", project=pr_id, system_tags=["active"]
         )
         self._run_task(task1_id)
-        task2_id = self._temp_task(
+        self._temp_task(
             name="Tags test2", project=pr_id, system_tags=["archived"]
         )
         projects = self.api.projects.get_all_ex(name="Test tags").projects

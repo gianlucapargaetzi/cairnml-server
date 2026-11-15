@@ -6,7 +6,6 @@ container with the server URL in SM_API_URL.
 """
 
 import pytest
-import json
 import os
 import time
 from unittest import TestCase
@@ -18,7 +17,6 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
 from apiserver.idp.assertion import make_assertion
-from apiserver.idp.keys import private_key_to_pem
 
 pytestmark = pytest.mark.integration  # needs MongoDB, Elasticsearch or a running API server
 

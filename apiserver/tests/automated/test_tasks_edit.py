@@ -27,13 +27,13 @@ class TestTasksEdit(TestService):
 
     def test_task_types(self):
         with self.api.raises(ValidationError):
-            task = self.new_task(type="Unsupported")
+            self.new_task(type="Unsupported")
 
         types = ["controller", "optimizer"]
         p1 = self.create_temp("projects", name="Test tasks1", description="test")
-        task1 = self.new_task(project=p1, type=types[0])
+        self.new_task(project=p1, type=types[0])
         p2 = self.create_temp("projects", name="Test tasks2", description="test")
-        task2 = self.new_task(project=p2, type=types[1])
+        self.new_task(project=p2, type=types[1])
 
         # all company types
         res = self.api.tasks.get_types()
@@ -82,7 +82,7 @@ class TestTasksEdit(TestService):
         task = self.new_task()
         self.api.tasks.started(task=task)
         model_id = self.api.models.update_for_task(task=task, uri="file:///b")["id"]
-        task_2 = self.new_task(execution=dict(model=model_id))
+        self.new_task(execution=dict(model=model_id))
         self.api.tasks.reset(task=task)
         self.api.models.get_by_id(model=model_id)
 

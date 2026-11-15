@@ -1,5 +1,3 @@
-import base64
-import json
 from unittest import TestCase
 
 from apiserver.idp.github import GitHubApp

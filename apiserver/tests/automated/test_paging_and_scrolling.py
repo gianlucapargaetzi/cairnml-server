@@ -3,7 +3,7 @@ from apiserver.tests.automated import TestService
 
 
 class TestPagingAndScrolling(TestService):
-    name_prefix = f"Test paging "
+    name_prefix = "Test paging "
 
     def setUp(self, **kwargs):
         super().setUp(**kwargs)

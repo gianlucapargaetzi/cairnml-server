@@ -89,7 +89,7 @@ class TestTaskParent(TestService):
 
         parent1_name = "Test parent parent1"
         parent1 = self.new_task(project=project, name=parent1_name)
-        t1 = self.new_task(project=project, name="Test parent task1", parent=parent1)
+        self.new_task(project=project, name="Test parent task1", parent=parent1)
 
         parent2_name = "Test parent parent2"
         parent2 = self.new_task(project=project, name=parent2_name)

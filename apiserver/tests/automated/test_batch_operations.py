@@ -9,7 +9,7 @@ class TestBatchOperations(TestService):
 
     def test_tasks(self):
         tasks = [self._temp_task() for _ in range(2)]
-        models = [
+        [
             self._temp_task_model(task=t, uri=f"uri_{idx}")
             for idx, t in enumerate(tasks)
         ]
