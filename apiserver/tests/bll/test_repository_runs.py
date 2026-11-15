@@ -17,6 +17,15 @@ from apiserver.database.model.user_access import UserAccess
 from apiserver.idp import git_credentials as store
 from apiserver.tests.db import ensure_db
 
+
+def _patch(monkeypatch, name, value):
+    """The helpers moved to bll/repository_access in the split of bll/repositories: patch both places that may look them up."""
+    from apiserver.bll import repository_access
+
+    for module in (bll, repository_access):
+        monkeypatch.setattr(module, name, value, raising=False)
+
+
 ensure_db()
 SECTION = "Datasets"
 REGISTRY = "https://github.com/acme/registry"
@@ -57,8 +66,8 @@ def world(monkeypatch):
             members=[ProjectMember(user="member", role=ProjectRole.read, added=now, added_by="owner")]).save()
     state = SimpleNamespace(company=company, root=root, private=False, reader=FakeReader(), reached=[])
     monkeypatch.setattr(store, "key_material", lambda: "test-key-material")
-    monkeypatch.setattr(bll, "is_private", lambda address: state.private)
-    monkeypatch.setattr(bll, "_company_reach", lambda repo: (None, "no company GitHub App is set up"))
+    _patch(monkeypatch, "is_private", lambda address: state.private)
+    _patch(monkeypatch, "_company_reach", lambda repo: (None, "no company GitHub App is set up"))
     monkeypatch.setattr(registry, "reader_for", lambda repo, user, project_root=None: state.reader)
     yield state
     for model in (Repository, RegistryEntry, Assignment, RepositoryCheck, Share, UserAccess, Task, Project, AuthUser):
@@ -154,8 +163,8 @@ def test_a_repository_that_is_not_a_registry_is_not_refreshed(world):
 def test_a_registry_is_read_with_the_credential_that_reads_it(world, monkeypatch):
     monkeypatch.undo()
     monkeypatch.setattr(store, "key_material", lambda: "test-key-material")
-    monkeypatch.setattr(bll, "is_private", lambda address: True)
-    monkeypatch.setattr(bll, "_company_reach", lambda repo: (None, "none"))
+    _patch(monkeypatch, "is_private", lambda address: True)
+    _patch(monkeypatch, "_company_reach", lambda repo: (None, "none"))
     repo = bll.record_use(world.company, REGISTRY, "registry", "owner", world.root)
     with pytest.raises(errors.bad_request.ValidationError, match="could not be read"):
         registry.reader_for(repo, "owner", world.root)           # private, and nobody assigned a credential
