@@ -4,6 +4,7 @@ schema_property) for the newest definition of every action. The templates make t
 afterwards, so the output does not depend on a formatter version. Nothing in it depends on the date, the machine or
 the schema's location.
 """
+
 import json
 import keyword
 import re

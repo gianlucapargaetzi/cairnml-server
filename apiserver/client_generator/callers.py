@@ -8,6 +8,7 @@ Checks the hand-written callers of the API in Python source against the schema:
 The allow file has one line per exception, `exempt <service.action> <reason>` (the reason is mandatory); blank lines and
 lines starting with `#` are ignored.
 """
+
 import ast
 import re
 from dataclasses import dataclass, field
@@ -57,7 +58,9 @@ class _Visitor(ast.NodeVisitor):
         self.path, self.schema, self.generated, self.allow, self.findings = path, schema, generated, allow, findings
         self.aliases: Dict[str, str] = {}  # local name -> generated service
         self.requests = {
-            service: {camel(a) + "Request": a for a in schema[service].actions} for service in generated if service in schema
+            service: {camel(a) + "Request": a for a in schema[service].actions}
+            for service in generated
+            if service in schema
         }
 
     def report(self, node, message):

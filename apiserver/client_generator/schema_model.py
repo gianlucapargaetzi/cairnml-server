@@ -4,6 +4,7 @@ A standalone reader of the API schema for the generator.
 It uses pyhocon only: importing apiserver.schema pulls in the whole server configuration. The test
 test_model_lists_the_same_actions_and_versions_as_the_server_reader keeps this reader equal to SchemaReader.
 """
+
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -22,7 +23,7 @@ def version_key(version: str) -> Tuple[int, ...]:
 def ref_name(ref: str) -> str:
     if not ref.startswith(DEFINITIONS_PREFIX):
         raise ValueError(f"unsupported reference {ref!r}")
-    return ref[len(DEFINITIONS_PREFIX):]
+    return ref[len(DEFINITIONS_PREFIX) :]
 
 
 @dataclass(frozen=True)
@@ -82,11 +83,7 @@ def _load_service(path: Path) -> Service:
 def load_schema(root: Path) -> Dict[str, Service]:
     """Every service of the schema folder (files `*.conf` that do not start with an underscore)."""
     root = Path(root)
-    return {
-        path.stem: _load_service(path)
-        for path in sorted(root.glob("*.conf"))
-        if not path.name.startswith("_")
-    }
+    return {path.stem: _load_service(path) for path in sorted(root.glob("*.conf")) if not path.name.startswith("_")}
 
 
 def _refs(node, found: list) -> None:

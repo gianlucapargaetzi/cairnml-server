@@ -4,6 +4,7 @@ is needed): every schema action of a generated service has a handler, every hand
 handler starts above the newest schema version of its action, so a request at the newest version (which is what a
 generated client sends) reaches the top handler.
 """
+
 import ast
 from collections import defaultdict
 from pathlib import Path
@@ -29,7 +30,9 @@ def handlers(services_dir=ROOT / "services"):
             min_version = "1.0"
             for keyword in node.keywords:
                 if keyword.arg == "min_version":
-                    assert isinstance(keyword.value, ast.Constant), f"{path}:{node.lineno}: min_version is not a literal"
+                    assert isinstance(keyword.value, ast.Constant), (
+                        f"{path}:{node.lineno}: min_version is not a literal"
+                    )
                     min_version = keyword.value.value
             found[node.args[0].value].append(min_version)
     return found

@@ -13,7 +13,7 @@ def _render():
 
 
 def test_renders_the_fixture_exactly():
-    assert _render() == (HERE / "golden" / "demo.py").read_text()
+    assert _render() == (HERE / "golden" / "demo.py.txt").read_text()
 
 
 def test_output_is_identical_on_a_second_run_and_has_no_date_or_path():

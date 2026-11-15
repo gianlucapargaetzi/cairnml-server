@@ -27,7 +27,9 @@ def schema(tmp_path):
 
 
 def _generate(schema, out, *extra):
-    return _run("generate", "--target", "sdk", "--services", "queues", "--schema", str(schema), "--out", str(out), *extra)
+    return _run(
+        "generate", "--target", "sdk", "--services", "queues", "--schema", str(schema), "--out", str(out), *extra
+    )
 
 
 def test_check_fails_naming_a_stale_file(schema, tmp_path):
