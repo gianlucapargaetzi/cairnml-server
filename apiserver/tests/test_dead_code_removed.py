@@ -11,6 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 # (module path below apiserver/, name defined as a function or class anywhere in the module)
 REMOVED = [
+    ("bll/project/project_workloads.py", "_get_date_from_iso_str"),
     ("bll/event/scalar_key.py", "ISOTimeKey"),
     ("bll/event/scalar_key.py", "IterKey"),
     ("bll/event/scalar_key.py", "TimestampKey"),

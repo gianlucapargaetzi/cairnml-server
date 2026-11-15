@@ -1,5 +1,5 @@
 from collections import defaultdict
-from datetime import datetime, timezone, timedelta, date, time
+from datetime import datetime, timezone, timedelta, time
 from itertools import chain
 from operator import itemgetter
 from typing import Sequence, Mapping, Type
@@ -329,16 +329,6 @@ class ProjectWorkloads:
             }
         )
         return q_names
-
-    @staticmethod
-    def _get_date_from_iso_str(iso_str: str) -> date:
-        try:
-            date_str, _, _ = iso_str.partition("T")
-            return date.fromisoformat(date_str)
-        except Exception as ex:
-            raise errors.bad_request.ValidationError(
-                f"Invalid ISO 8601 date {iso_str}: {str(ex)}"
-            )
 
     @classmethod
     def get_project_workloads_internal(
