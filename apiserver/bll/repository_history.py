@@ -97,6 +97,21 @@ def condense(commits: List[dict], total: int, first: Optional[dict], runs: List[
     off the bottom of the list."""
     tips = tips or {}
     by_commit = _runs_by_commit(runs)
+    window = _window(commits, by_commit, max_commits, max_tasks)
+    by_sha = {commit["sha"]: commit for commit in window}
+    wanted = _wanted(window, by_commit, tips)
+    kept = _kept_parents(window, wanted, by_sha)
+    live = _live(wanted, by_sha, kept)
+    children = _children(window, live, kept)
+    shown = _shown(window, live, wanted, kept, children)
+    rows = _rows(window, shown, kept, by_sha, by_commit, tips, first["sha"] if first else None)
+    lane_count = assign_lanes(rows, _main_line(rows, default_tip))
+    return {"nodes": _nodes(rows), "lane_count": lane_count, "total_commits": total,
+            "outside_runs": _outside_runs(by_commit, by_sha), "limited": total > len(window)}
+
+
+def _window(commits: List[dict], by_commit: dict, max_commits: int, max_tasks: int) -> List[dict]:
+    """The newest commits, until ``max_commits`` are taken or the runs on them reach ``max_tasks``."""
     window: List[dict] = []
     listed = 0
     for commit in commits:
@@ -104,71 +119,95 @@ def condense(commits: List[dict], total: int, first: Optional[dict], runs: List[
         listed += len(_runs_of_commit(by_commit, commit["sha"]))
         if len(window) >= max_commits or listed >= max_tasks:
             break
-    by_sha = {commit["sha"]: commit for commit in window}
-    first_sha = first["sha"] if first else None
-    wanted = {commit["sha"] for index, commit in enumerate(window)
-              if index == 0 or commit["sha"] in tips or _runs_of_commit(by_commit, commit["sha"])}
+    return window
 
-    def ancestors(sha: str) -> set:
-        """The commit and everything below it that is in the window."""
-        found, todo = set(), [sha]
-        while todo:
-            current = todo.pop()
-            if current in by_sha and current not in found:
-                found.add(current)
-                todo.extend(by_sha[current]["parents"])
-        return found
 
-    # A side branch that merges into a commit counts only when something ran on it; otherwise its merge commit is an ordinary
-    # commit of the line it merges into, and the side branch is not drawn.
+def _wanted(window: List[dict], by_commit: dict, tips: Dict[str, List[str]]) -> set:
+    """The commits that count: the newest, the ones a branch points at, and the ones a run was on."""
+    return {commit["sha"] for index, commit in enumerate(window)
+            if index == 0 or commit["sha"] in tips or _runs_of_commit(by_commit, commit["sha"])}
+
+
+def _ancestors(sha: str, by_sha: Dict[str, dict]) -> set:
+    """The commit and everything below it that is in the window."""
+    found, todo = set(), [sha]
+    while todo:
+        current = todo.pop()
+        if current in by_sha and current not in found:
+            found.add(current)
+            todo.extend(by_sha[current]["parents"])
+    return found
+
+
+def _kept_parents(window: List[dict], wanted: set, by_sha: Dict[str, dict]) -> Dict[str, List[str]]:
+    """The parents each commit is drawn with. A side branch that merges into a commit counts only when something ran on it;
+    otherwise its merge commit is an ordinary commit of the line it merges into, and the side branch is not drawn."""
     kept: Dict[str, List[str]] = {}
     for commit in window:
         parents = commit["parents"]
         if len(parents) > 1:
-            line = ancestors(parents[0])
-            parents = [parents[0]] + [parent for parent in parents[1:] if (ancestors(parent) - line) & wanted]
+            line = _ancestors(parents[0], by_sha)
+            parents = [parents[0]] + [parent for parent in parents[1:] if (_ancestors(parent, by_sha) - line) & wanted]
         kept[commit["sha"]] = parents
-    # the commits that the drawn lines lead through: what is below the commits that count, along the kept parents
+    return kept
+
+
+def _live(wanted: set, by_sha: Dict[str, dict], kept: Dict[str, List[str]]) -> set:
+    """The commits that the drawn lines lead through: what is below the commits that count, along the kept parents."""
     live, todo = set(), list(wanted)
     while todo:
         current = todo.pop()
         if current in by_sha and current not in live:
             live.add(current)
             todo.extend(kept[current])
+    return live
+
+
+def _children(window: List[dict], live: set, kept: Dict[str, List[str]]) -> Dict[str, int]:
     children: Dict[str, int] = defaultdict(int)
     for commit in window:
         if commit["sha"] in live:
             for parent in kept[commit["sha"]]:
                 children[parent] += 1
+    return children
 
-    shown = {commit["sha"] for commit in window
-             if commit["sha"] in live and (commit["sha"] in wanted or len(kept[commit["sha"]]) > 1 or children[commit["sha"]] > 1)}
 
-    def resolve(parent: str):
-        """Where an edge from a shown commit leads through commits that are not shown: (the shown commit, how many it skips). The
-        shown commit is None when the line ends in the root, and ``""`` when it leaves the window."""
-        skipped = 0
-        while True:
-            if parent not in by_sha:
-                return "", skipped
-            if parent in shown:
-                return parent, skipped
-            skipped += 1
-            if not kept[parent]:
-                return None, skipped
-            parent = kept[parent][0]
+def _shown(window: List[dict], live: set, wanted: set, kept: Dict[str, List[str]], children: Dict[str, int]) -> set:
+    """The commits drawn as rows: the ones that count, and the ones where lines meet or split."""
+    return {commit["sha"] for commit in window
+            if commit["sha"] in live and (commit["sha"] in wanted or len(kept[commit["sha"]]) > 1 or children[commit["sha"]] > 1)}
 
-    def run_rows(sha: str) -> List[dict]:
-        return [{k: run.get(k) for k in ("id", "name", "status", "project", "created", "dirty")}
-                for run in _runs_of_commit(by_commit, sha)]
 
+def _resolve_edge(parent: str, by_sha: Dict[str, dict], shown: set, kept: Dict[str, List[str]]):
+    """Where an edge from a shown commit leads through commits that are not shown: (the shown commit, how many it skips). The
+    shown commit is None when the line ends in the root, and ``""`` when it leaves the window."""
+    skipped = 0
+    while True:
+        if parent not in by_sha:
+            return "", skipped
+        if parent in shown:
+            return parent, skipped
+        skipped += 1
+        if not kept[parent]:
+            return None, skipped
+        parent = kept[parent][0]
+
+
+def _run_rows(by_commit: dict, sha: str) -> List[dict]:
+    return [{k: run.get(k) for k in ("id", "name", "status", "project", "created", "dirty")}
+            for run in _runs_of_commit(by_commit, sha)]
+
+
+def _rows(window: List[dict], shown: set, kept: Dict[str, List[str]], by_sha: Dict[str, dict], by_commit: dict,
+          tips: Dict[str, List[str]], first_sha: Optional[str]) -> List[dict]:
+    """A row for each shown commit, followed by the gap rows its lines skip over."""
     rows: List[dict] = []
     for commit in window:
         if commit["sha"] not in shown:
             continue
         parents, gaps = [], []
         for number, parent in enumerate(kept[commit["sha"]]):
-            target, skipped = resolve(parent)
+            target, skipped = _resolve_edge(parent, by_sha, shown, kept)
             leave = f"off:{commit['sha']}:{number}"
             if target == "":
                 target = leave
@@ -182,26 +221,36 @@ def condense(commits: List[dict], total: int, first: Optional[dict], runs: List[
             "id": commit["sha"], "type": "commit", "sha": commit["sha"], "message": commit.get("message", ""),
             "author": commit.get("author", ""), "date": commit.get("date", ""),
             "newest": commit is window[0], "first": commit["sha"] == first_sha,
-            "branches": tips.get(commit["sha"], []), "parents": parents, "runs": run_rows(commit["sha"]),
+            "branches": tips.get(commit["sha"], []), "parents": parents, "runs": _run_rows(by_commit, commit["sha"]),
         })
         rows.extend(gaps)
+    return rows
 
+
+def _main_line(rows: List[dict], default_tip: Optional[str]) -> set:
+    """The rows of the default branch, from its tip (or the newest row) down the first parents."""
     by_id = {row["id"]: row for row in rows}
     main_ids, current = set(), default_tip if default_tip in by_id else (rows[0]["id"] if rows else None)
     while current in by_id and current not in main_ids:
         main_ids.add(current)
         current = by_id[current]["parents"][0] if by_id[current]["parents"] else None
-    lane_count = assign_lanes(rows, main_ids)
+    return main_ids
+
+
+def _nodes(rows: List[dict]) -> List[dict]:
     index = {row["id"]: number for number, row in enumerate(rows)}
     nodes = []
     for row in rows:
         node = {key: row[key] for key in NODE_FIELDS if key in row}
         node["parent_rows"] = [index.get(parent, -1) for parent in row["parents"]]
         nodes.append(node)
-    outside = sum(len(items) for sha, items in by_commit.items()
-                  if not any(sha == s or (len(sha) >= 7 and s.startswith(sha)) for s in by_sha))
-    return {"nodes": nodes, "lane_count": lane_count, "total_commits": total, "outside_runs": outside,
-            "limited": total > len(window)}
+    return nodes
+
+
+def _outside_runs(by_commit: dict, by_sha: Dict[str, dict]) -> int:
+    """The runs on commits that are not in the window (a short sha names a commit by its prefix)."""
+    return sum(len(items) for sha, items in by_commit.items()
+               if not any(sha == s or (len(sha) >= 7 and s.startswith(sha)) for s in by_sha))
 
 
 def history(company: str, user: str, is_admin: bool, repo) -> dict:

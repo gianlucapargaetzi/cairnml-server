@@ -1,6 +1,7 @@
 """Secrets are read from files in one read-only mount, never from configuration files."""
 
 import os
+from apiserver.config_repo import config
 
 DEFAULT_SECRETS_DIR = "/run/secrets-dir"
 
@@ -38,7 +39,6 @@ def session_secret() -> str:
     """The web session key: read from the secrets folder. The configuration value is used only when
     CAIRNML_ALLOW_CONFIG_SECRET=1 (tests), and the repository default is refused otherwise."""
     if os.environ.get("CAIRNML_ALLOW_CONFIG_SECRET") == "1":
-        from apiserver.config_repo import config
 
         return config.get("secure.http.session_secret.apiserver")
     value = read_secret("session_secret")
