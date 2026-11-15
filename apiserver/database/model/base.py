@@ -512,7 +512,7 @@ class GetMixin(PropsMixin):
                         try:
                             data = cls.MultiFieldParameters(**value)
                         except Exception:
-                            raise MakeGetAllQueryError("incorrect field format", field)
+                            raise MakeGetAllQueryError("incorrect field format", field) from None
                         if not data.fields:
                             break
                         if data.pattern is not None:
@@ -557,7 +557,7 @@ class GetMixin(PropsMixin):
                 "failed parsing query field",
                 error=str(ex),
                 **({"field": field} if field else {}),
-            )
+            ) from ex
 
         return query & RegexQ(**dict_query)
 
@@ -693,7 +693,7 @@ class GetMixin(PropsMixin):
                 raise errors.bad_request.ValidationError(
                     field=field,
                     value=str(ex),
-                )
+                ) from ex
 
     @classmethod
     def get_list_filter_query(
@@ -879,10 +879,6 @@ class GetMixin(PropsMixin):
     def set_ordering(cls, parameters: dict, value: Sequence[str]) -> Sequence[str]:
         parameters[cls._ordering_key] = value
         return value
-
-    @classmethod
-    def set_default_ordering(cls, parameters: dict, value: Sequence[str]) -> None:
-        cls.set_ordering(parameters, cls.get_ordering(parameters) or value)
 
     @classmethod
     def validate_scroll_size(cls, query_dict: dict) -> int:
