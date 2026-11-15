@@ -20,7 +20,6 @@ PUBLIC_ENDPOINTS = {
     "devices.idp_settings": "the issuer and the client id devices sign in with (public information)",
     "devices.enroll": "registers a device key; checks the identity provider's token itself",
     "devices.exchange": "exchanges a signed device assertion for a token; checks the signature itself",
-    "auth.fixed_users_mode": "reports whether fixed users are on (they are removed; the answer is a status)",
     "debug.ping": "liveness probe",
 }
 OPTIONAL_ENDPOINTS = {"login.supported_modes", "login.logout"}
