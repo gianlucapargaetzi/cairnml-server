@@ -1,4 +1,4 @@
-from mongoengine import StringField, DateTimeField, IntField, ListField, BooleanField, EmbeddedDocument, EmbeddedDocumentListField
+from mongoengine import StringField, DateTimeField, IntField, ListField, EmbeddedDocument, EmbeddedDocumentListField
 
 from apiserver.database import Database, strict
 from apiserver.database.fields import StrippedStringField, SafeSortedListField

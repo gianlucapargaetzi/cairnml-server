@@ -39,7 +39,7 @@ def get_last_server_version() -> Version:
             reverse=True,
         )
     except ValueError as ex:
-        raise ValueError(f"Invalid database version number encountered: {ex}")
+        raise ValueError(f"Invalid database version number encountered: {ex}") from ex
 
     return previous_versions[0] if previous_versions else Version("0.0.0")
 
@@ -98,7 +98,7 @@ def _apply_migrations(log: Logger):
             if ver > last_version
         }
     except ValueError as ex:
-        raise ValueError(f"Failed parsing migration version from file: {ex}")
+        raise ValueError(f"Failed parsing migration version from file: {ex}") from ex
 
     dbs = {Database.auth: "migrate_auth", Database.backend: "migrate_backend"}
 
@@ -133,7 +133,7 @@ def _apply_migrations(log: Logger):
                     log.exception(f"Failed applying {script}:{func_name}()")
                     raise ValueError(
                         "Migration failed, aborting. Please restore backup."
-                    )
+                    ) from None
 
         DatabaseVersion(
             id=utils.id(),
