@@ -1,5 +1,3 @@
-import json
-
 import pytest
 
 from apiserver.apierrors import errors
@@ -33,18 +31,18 @@ def test_the_latest_value_is_kept_with_an_expiry_and_read_back():
 
 def test_the_database_only_gets_a_coarse_value():
     progress = TaskProgress(FakeRedis())
-    assert progress.update("c", "t", 1, BARS) == {"progress": "1", "progress_label": "epochs"}  # the first value
-    assert progress.update("c", "t", 2, BARS) is None
-    assert progress.update("c", "t", 10, BARS) is None  # only 9 since the last stored one
-    assert progress.update("c", "t", 11, BARS) == {"progress": "11", "progress_label": "epochs"}
-    assert progress.update("c", "t", 100, BARS) == {"progress": "100", "progress_label": "epochs"}
+    assert progress.update("c", "t", 1, BARS).add_or_update == {"progress": "1", "progress_label": "epochs"}
+    assert progress.update("c", "t", 2, BARS).add_or_update == {}
+    assert progress.update("c", "t", 10, BARS).add_or_update == {}  # only 9 since the last stored one
+    assert progress.update("c", "t", 11, BARS).add_or_update == {"progress": "11", "progress_label": "epochs"}
+    assert progress.update("c", "t", 100, BARS).add_or_update == {"progress": "100", "progress_label": "epochs"}
 
 
 def test_a_new_outermost_bar_is_stored_at_once():
     progress = TaskProgress(FakeRedis())
     progress.update("c", "t", 100, [{"label": "loading", "n": 5, "total": 5}])
     stored = progress.update("c", "t", 0, [{"label": "epochs", "n": 0, "total": 10}])
-    assert stored == {"progress": "0", "progress_label": "epochs"}
+    assert stored.add_or_update == {"progress": "0", "progress_label": "epochs"}
 
 
 def test_without_a_known_total_the_last_percentage_stays():
@@ -79,14 +77,32 @@ def test_a_broken_stored_value_is_ignored():
     redis = FakeRedis()
     redis.data["task_progress_c_t"] = "{not json"
     assert TaskProgress(redis).get("c", ["t"]) == {}
-    assert json.loads(json.dumps(TaskProgress(redis).update("c", "t", 5, BARS)))["progress"] == "5"
+    assert TaskProgress(redis).update("c", "t", 5, BARS).add_or_update["progress"] == "5"
 
 
-def test_idle_clears_the_live_value_and_stores_nothing():
+def test_idle_clears_the_live_value_and_the_stored_coarse_value():
     progress = TaskProgress(FakeRedis())
     progress.update("c", "t", 40, BARS)
-    assert progress.update("c", "t", None, []) is None  # nothing for the database
+    change = progress.update("c", "t", None, [])
+    assert change.add_or_update == {}
+    assert change.remove == ["progress", "progress_label"]  # the database value of the last bar goes
     assert progress.get("c", ["t"])["t"]["percent"] is None
     assert progress.get("c", ["t"])["t"]["bars"] == []
-    assert progress.update("c", "t", None, None) is None  # no bars at all is idle too
-    assert progress.update("c", "t", 5, BARS) == {"progress": "5", "progress_label": "epochs"}  # the next bar is stored
+
+
+def test_repeated_idle_reports_clear_only_once():
+    progress = TaskProgress(FakeRedis())
+    progress.update("c", "t", 40, BARS)
+    progress.update("c", "t", None, [])
+    assert progress.update("c", "t", None, None).remove == []  # no bars at all is idle too, already cleared
+
+
+def test_an_idle_report_with_no_earlier_live_value_clears_once():
+    assert TaskProgress(FakeRedis()).update("c", "t", None, []).remove == ["progress", "progress_label"]
+
+
+def test_the_first_bar_after_idle_is_stored_at_once():
+    progress = TaskProgress(FakeRedis())
+    progress.update("c", "t", 83, BARS)
+    progress.update("c", "t", None, [])
+    assert progress.update("c", "t", 5, BARS).add_or_update == {"progress": "5", "progress_label": "epochs"}
