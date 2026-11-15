@@ -56,3 +56,6 @@ def endpoint(
         return func
 
     return decorator
+
+# APICallResult is re-exported for the callers of service_repo.
+__all__ = ["APICallResult"]

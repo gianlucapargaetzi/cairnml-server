@@ -115,7 +115,7 @@ class Token(Payload):
         except Exception as e:
             raise errors.unauthorized.InvalidToken(
                 "failed parsing token", reason=e.args[0]
-            )
+            ) from e
 
     @classmethod
     def create_encoded_token(

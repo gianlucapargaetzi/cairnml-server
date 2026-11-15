@@ -212,7 +212,7 @@ class ServiceRepo(object):
             except ValueError as e:
                 raise errors.bad_request.RequestPathHasInvalidVersion(
                     version=version, reason=e
-                )
+                ) from e
             if cls._check_max_version and version > cls._max_version:
                 raise InvalidVersionError(
                     f"Invalid API version (max. supported version is {cls._max_version})"
