@@ -10,7 +10,7 @@ import requests
 from apiserver.config_repo import config
 
 from apiserver import database as db
-from apiserver.database.model.auth import User
+from apiserver.database.model.auth import AuthUser
 from apiserver.idp.tokens import issue_access_token
 from apiserver.idp.users import upsert_idp_user
 
@@ -29,7 +29,7 @@ class TestOriginCheck(TestCase):
     def setUp(self):
         issuer = f"http://idp.test/csrf-{uuid.uuid4().hex}"
         self.user = upsert_idp_user(issuer, "csrf-user", "csrf", (), "admin")
-        self.addCleanup(lambda: User.objects(id=self.user.id).delete())
+        self.addCleanup(lambda: AuthUser.objects(id=self.user.id).delete())
         self.session = issue_access_token(self.user.id, self.user.company, "", kind="web", role=self.user.role)
 
     def post(self, headers=None, cookie=True, bearer=False):

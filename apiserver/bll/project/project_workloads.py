@@ -10,7 +10,7 @@ from mongoengine import Document
 from apiserver.apimodels.organization import WorkloadBreakdownKeys, UsageAggFields
 from apiserver.apierrors import errors
 from apiserver.config_repo import config
-from apiserver.database.model import User
+from apiserver.database.model import UserProfile
 from apiserver.database.model.project import Project
 from apiserver.database.model.queue import Queue
 from apiserver.database.model.task.task import Task
@@ -30,7 +30,7 @@ class ProjectWorkloads:
 
     _field_to_cls = {
         WorkloadBreakdownKeys.project: Project,
-        WorkloadBreakdownKeys.user: User,
+        WorkloadBreakdownKeys.user: UserProfile,
         WorkloadBreakdownKeys.queue: Queue,
     }
     _other_q_id = "_other_"

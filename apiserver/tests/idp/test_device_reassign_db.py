@@ -10,7 +10,7 @@ from apiserver import database as db
 from apiserver.apierrors import errors
 from apiserver.apimodels.devices import ReassignRequest
 from apiserver.database.model.audit import AuditEvent
-from apiserver.database.model.auth import Role, User
+from apiserver.database.model.auth import Role, AuthUser
 from apiserver.database.model.device import Device
 from apiserver.idp.checks import check_device
 from apiserver.idp.users import upsert_idp_user
@@ -61,7 +61,7 @@ class TestReassignDevice(TestCase):
         self.assertEqual(moved.user, self.admin_b.id)
         self.assertEqual(moved.public_key, "pem")
         self.assertFalse(moved.revoked)
-        check_device(moved, User.objects(id=self.admin_b.id).get())
+        check_device(moved, AuthUser.objects(id=self.admin_b.id).get())
         event = AuditEvent.objects(action="device.reassigned", detail__device=self.device.id).first()
         self.assertIsNotNone(event)
         self.addCleanup(event.delete)
@@ -77,7 +77,7 @@ class TestReassignDevice(TestCase):
         self.assertEqual(Device.objects(id=self.device.id).get().user, self.admin_a.id)
 
     def test_a_disabled_new_owner_is_refused(self):
-        User.objects(id=self.admin_b.id).update_one(set__idp_disabled=True)
+        AuthUser.objects(id=self.admin_b.id).update_one(set__idp_disabled=True)
         with self.assertRaises(errors.bad_request.InvalidId):
             self._call(self._identity(self.admin_a), self.admin_b.id)
 
@@ -89,7 +89,7 @@ class TestReassignDevice(TestCase):
         self.assertFalse(mine["owner_disabled"])
         self.assertEqual(mine["owner_name"], self.admin_a.name)
 
-        User.objects(id=self.admin_a.id).update_one(set__idp_disabled=True)
+        AuthUser.objects(id=self.admin_a.id).update_one(set__idp_disabled=True)
         listed = svc.get_all(call, self.admin_a.company, None)["devices"]
         mine = next(d for d in listed if d["id"] == self.device.id)
         self.assertTrue(mine["owner_disabled"])

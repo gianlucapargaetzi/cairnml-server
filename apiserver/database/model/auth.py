@@ -55,8 +55,9 @@ class Credentials(EmbeddedDocument):
     last_used_from = StringField()
 
 
-class User(DbModelMixin, AuthDocument):
-    meta = {"db_alias": Database.auth, "strict": strict}
+class AuthUser(DbModelMixin, AuthDocument):
+    # the collection name is pinned: renaming the class must not move the data
+    meta = {"db_alias": Database.auth, "strict": strict, "collection": "user"}
 
     id = StringField(primary_key=True)
     name = StringField()

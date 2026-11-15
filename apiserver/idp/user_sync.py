@@ -73,9 +73,9 @@ def import_missing(directory, issuer: str, admin_role: str) -> int:
     Users who never signed in are then in the company's user list (the add-user dialogs), and can be given access
     before their first sign-in. Disabled users and users the directory no longer answers for are not created.
     """
-    from apiserver.database.model.auth import User
+    from apiserver.database.model.auth import AuthUser
 
-    known = {user.idp_subject for user in User.objects(idp_subject__ne=None).only("idp_subject")}
+    known = {user.idp_subject for user in AuthUser.objects(idp_subject__ne=None).only("idp_subject")}
     created = 0
     for user_id, username, enabled in directory.list_users():
         if not enabled or f"{issuer}|{user_id}" in known:
@@ -90,15 +90,15 @@ def import_missing(directory, issuer: str, admin_role: str) -> int:
 
 def sync_once(directory, admin_role: str) -> int:
     """Run one pass against the database. Returns the number of users changed or created."""
-    from apiserver.database.model.auth import User
+    from apiserver.database.model.auth import AuthUser
 
-    users = list(User.objects(idp_subject__ne=None))
+    users = list(AuthUser.objects(idp_subject__ne=None))
     answers = fetch_answers(directory, users)
     actions = decide(users, answers, admin_role)
     companies = {user.id: user.company for user in users}
     for user_id, disabled, role in actions:
         role = single_admin(user_id, role, companies.get(user_id))
-        User.objects(id=user_id).update_one(set__idp_disabled=disabled, set__role=role)
+        AuthUser.objects(id=user_id).update_one(set__idp_disabled=disabled, set__role=role)
         if disabled:
             audit_disabled_owner(user_id, company=companies.get(user_id))
     changed = len(actions)

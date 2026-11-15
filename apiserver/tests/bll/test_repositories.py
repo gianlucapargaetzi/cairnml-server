@@ -8,7 +8,7 @@ import pytest
 
 from apiserver.apierrors import errors
 from apiserver.bll import access, repositories as bll
-from apiserver.database.model.auth import User
+from apiserver.database.model.auth import AuthUser
 from apiserver.database.model.project import Project, ProjectMember, ProjectRole
 from apiserver.database.model.repository import Assignment, RegistryEntry, Repository, RepositoryCheck
 from apiserver.database.model.share import Share
@@ -27,7 +27,7 @@ def world(monkeypatch):
     company = f"c-rep-{uuid4().hex[:8]}"
     now = datetime.utcnow()
     for user, role in (("admin", "admin"), ("owner", "user"), ("member", "user"), ("other", "user"), ("stranger", "user")):
-        User(id=user, name=user.title(), company=company, role=role, created=now).save()
+        AuthUser(id=user, name=user.title(), company=company, role=role, created=now).save()
     root = f"p-{company}"
     Project(id=root, company=company, user="owner", name="P", basename="P", created=now, last_update=now,
             members=[ProjectMember(user="member", role=ProjectRole.read, added=now, added_by="owner")]).save()
@@ -50,7 +50,7 @@ def world(monkeypatch):
     monkeypatch.setattr(bll, "_company_reach", lambda repo: state.reach)
     monkeypatch.setattr(bll.user_access, "company_apps", lambda company=None: state.apps)
     yield state
-    for model in (Repository, RegistryEntry, Assignment, RepositoryCheck, Share, UserAccess, Project, User):
+    for model in (Repository, RegistryEntry, Assignment, RepositoryCheck, Share, UserAccess, Project, AuthUser):
         model.objects(company=company).delete()
 
 

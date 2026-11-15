@@ -14,6 +14,7 @@ from datetime import datetime
 from typing import Optional
 
 from apiserver.apierrors import errors
+from apiserver.bll import membership
 from apiserver.bll import repositories as repos
 from apiserver.database.model.repository import RegistryEntry, Repository
 from apiserver.idp.git_reader import GitReader
@@ -156,7 +157,7 @@ def ensure_registry(company: str, address: str, user: str, project_id: Optional[
         return None
     if repo.read_at is None:
         try:
-            read_entries(company, repo, user, project_id and repos.user_access.root_project(company, project_id))
+            read_entries(company, repo, user, project_id and membership.root_project(company, project_id))
         except errors.bad_request.ValidationError as refused:
             log.warning("the registry %s could not be read: %s", repo.path, refused.msg)
         except Exception:

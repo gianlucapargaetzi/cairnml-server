@@ -4,7 +4,7 @@ import jsonmodels.errors
 from apiserver.apierrors import errors, APIError
 from apiserver.config_repo import config
 from apiserver.database.model import Company
-from apiserver.database.model.auth import Role, User
+from apiserver.database.model.auth import Role, AuthUser
 from apiserver.service_repo import APICall
 from apiserver.service_repo.apicall import MissingIdentity
 from apiserver.service_repo.endpoint import Endpoint
@@ -32,14 +32,14 @@ def validate_data(call: APICall, endpoint: Endpoint):
         return True
 
     except CallParsingError as ex:
-        raise errors.bad_request.ValidationError(str(ex))
+        raise errors.bad_request.ValidationError(str(ex)) from ex
     except jsonmodels.errors.ValidationError as ex:
         raise errors.bad_request.ValidationError(
             " ".join(map(str.lower, map(str, ex.args)))
-        )
+        ) from ex
     except fastjsonschema.exceptions.JsonSchemaException as ex:
         log.exception(f"{endpoint.name}: fastjsonschema exception")
-        raise errors.bad_request.ValidationError(ex.args[0])
+        raise errors.bad_request.ValidationError(ex.args[0]) from ex
 
 
 # Agents hold the admin role of the person who enrolled them, so a leaked agent token would carry it too. An agent
@@ -203,7 +203,7 @@ def validate_impersonation(endpoint, call):
             query = dict(id=user_id)
         else:
             query = dict(id=user_id, company=identity.company)
-        user = User.objects(**query).first()
+        user = AuthUser.objects(**query).first()
         if not user:
             raise errors.bad_request.ImpersonationError("unknown user", **query)
 
@@ -250,7 +250,7 @@ def validate_impersonation(endpoint, call):
         raise
     except Exception as ex:
         log.exception(f"Validating impersonation: {str(ex)}")
-        raise errors.server_error.InternalError("validating impersonation")
+        raise errors.server_error.InternalError("validating impersonation") from ex
 
 
 def validate_required_fields(endpoint, call):

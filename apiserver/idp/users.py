@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 
 from apiserver.config.info import get_default_company
-from apiserver.database.model.auth import Role, User
+from apiserver.database.model.auth import Role, AuthUser
 
 
 def user_id_for(issuer: str, subject: str) -> str:
@@ -21,7 +21,7 @@ def single_admin(user_id: str, role: str, company: str = None) -> str:
     A user the identity provider maps to admin stays a user while another account is the admin."""
     if role != Role.admin:
         return role
-    other = User.objects(role__in=[Role.admin, Role.root], id__ne=user_id)
+    other = AuthUser.objects(role__in=[Role.admin, Role.root], id__ne=user_id)
     if company:
         other = other.filter(company=company)
     if other.first() is not None:
@@ -29,13 +29,13 @@ def single_admin(user_id: str, role: str, company: str = None) -> str:
     return role
 
 
-def upsert_idp_user(issuer: str, subject: str, username: str, idp_roles, admin_role: str) -> User:
+def upsert_idp_user(issuer: str, subject: str, username: str, idp_roles, admin_role: str) -> AuthUser:
     """Create the CairnML user for this identity on first sight; keep its role in step with the IdP."""
     user_id = user_id_for(issuer, subject)
-    user = User.objects(id=user_id).first()
+    user = AuthUser.objects(id=user_id).first()
     role = single_admin(user_id, role_for(idp_roles, admin_role), user.company if user is not None else get_default_company())
     if user is None:
-        user = User(
+        user = AuthUser(
             id=user_id,
             name=username,
             company=get_default_company(),
@@ -52,11 +52,11 @@ def upsert_idp_user(issuer: str, subject: str, username: str, idp_roles, admin_r
     return user
 
 
-def _ensure_profile(user: User) -> None:
+def _ensure_profile(user: AuthUser) -> None:
     """The profile (name, company, preferences) that the API reads for get_current_user."""
-    from apiserver.database.model.user import User as Profile
+    from apiserver.database.model.user import UserProfile
 
-    if Profile.objects(id=user.id).first() is None:
-        Profile(id=user.id, company=user.company, name=user.name, created=datetime.utcnow()).save()
+    if UserProfile.objects(id=user.id).first() is None:
+        UserProfile(id=user.id, company=user.company, name=user.name, created=datetime.utcnow()).save()
     else:
-        Profile.objects(id=user.id).update_one(set__name=user.name)
+        UserProfile.objects(id=user.id).update_one(set__name=user.name)

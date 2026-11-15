@@ -2,7 +2,7 @@ from unittest import TestCase
 
 from mongoengine import ValidationError
 
-from apiserver.database.model.auth import User
+from apiserver.database.model.auth import AuthUser
 from apiserver.database.model.device import Device
 
 
@@ -28,9 +28,9 @@ class TestDeviceModel(TestCase):
 
 class TestIdpUserFields(TestCase):
     def test_user_has_idp_fields(self):
-        fields = User._fields
+        fields = AuthUser._fields
         self.assertIn("idp_subject", fields)
         self.assertIn("idp_disabled", fields)
         self.assertTrue(fields["idp_subject"].unique)
         self.assertTrue(fields["idp_subject"].sparse)
-        self.assertFalse(User(id="u", company="c").idp_disabled)
+        self.assertFalse(AuthUser(id="u", company="c").idp_disabled)

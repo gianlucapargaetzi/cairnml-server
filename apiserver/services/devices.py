@@ -1,10 +1,8 @@
 """Devices (laptops and agents) enrol with their IdP sign-in and their public key, then exchange
 a signed assertion for short-lived access tokens. Ported from the mlops server's enrol and exchange."""
 
-import hashlib
 import jwt
 import logging
-import re
 import uuid
 from datetime import datetime
 
@@ -18,9 +16,10 @@ from apiserver.apimodels.devices import (
     RevokeRequest,
 )
 from apiserver.bll import repositories as repositories_bll
+from apiserver.bll.queue.agent_queue import allocate_agent_queue
 from apiserver.bll.dataset_layout import verify_dataset
 from apiserver.config_repo import config
-from apiserver.database.model.auth import Role, User
+from apiserver.database.model.auth import Role, AuthUser
 from apiserver.database.model.device import Device, DeviceKind
 from apiserver.database.model.queue import Queue
 from apiserver.database.model.task.task import Task
@@ -51,7 +50,7 @@ def _bearer(call: APICall) -> str:
     return header[7:].strip()
 
 
-def _device_view(device: Device, owner: User = None) -> dict:
+def _device_view(device: Device, owner: AuthUser = None) -> dict:
     """The device as the API shows it. owner_disabled is true when the owner is disabled or no longer exists: the
     device's tokens are refused then, until an admin reassigns it."""
     return {
@@ -69,30 +68,8 @@ def _device_view(device: Device, owner: User = None) -> dict:
 
 def _device_views(devices) -> list:
     devices = list(devices)
-    owners = {u.id: u for u in User.objects(id__in=list({d.user for d in devices})).only("id", "name", "idp_disabled")}
+    owners = {u.id: u for u in AuthUser.objects(id__in=list({d.user for d in devices})).only("id", "name", "idp_disabled")}
     return [_device_view(d, owners.get(d.user)) for d in devices]
-
-
-def agent_queue_id(owner: str, machine: str, length: int = 6) -> str:
-    """The id of an agent's queue: the machine's name, then a short hash of its owner and the name. The same owner and
-    machine always get the same queue, and two owners with machines of one name get different queues."""
-    slug = re.sub(r"[^a-z0-9]+", "-", machine.lower()).strip("-")[:40] or "machine"
-    digest = hashlib.sha256(f"{owner}:{machine}".encode("utf-8")).hexdigest()
-    return f"{slug}-{digest[:length]}"
-
-
-def _agent_queue(company: str, owner: str, machine: str, now: datetime) -> Queue:
-    """The agent's own queue: the one its owner has for this machine (reused when the machine is enrolled again), or a new
-    one, unpublished, owned by the owner. A hash taken by someone else's queue is lengthened."""
-    for length in range(6, 13):
-        queue_id = agent_queue_id(owner, machine, length)
-        existing = Queue.objects(id=queue_id).first()
-        if existing is None:
-            return Queue(id=queue_id, company=company, name=queue_id, display_name=machine, created=now,
-                         created_by=owner, public=False)
-        if existing.company == company and existing.created_by == owner:
-            return existing
-    raise errors.bad_request.ValidationError(f"no queue id is free for the machine {machine}")
 
 
 @endpoint("devices.enroll", min_version="2.8", request_data_model=EnrollRequest)
@@ -120,7 +97,7 @@ def enroll(call: APICall, _company, request: EnrollRequest):
     queue_id = ""
     if request.kind == DeviceKind.agent:
         # the agent serves its own queue, named after its machine, and nothing else (bll/queue/queue_access)
-        queue = _agent_queue(user.company, user.id, request.name.strip(), now)
+        queue = allocate_agent_queue(user.company, user.id, request.name.strip(), now)
         if Queue.objects(id=queue.id).first() is None:
             queue.save()
         queue_id = queue.id
@@ -166,7 +143,7 @@ def exchange(call: APICall, _company, request: ExchangeRequest):
     except AssertionInvalid:
         raise errors.unauthorized.InvalidToken("malformed assertion") from None
     device = Device.objects(id=device_id).first()
-    owner = User.objects(id=device.user).first() if device else None
+    owner = AuthUser.objects(id=device.user).first() if device else None
     try:
         check_device(device, owner)
     except AccessDenied as exc:
@@ -213,7 +190,7 @@ def revoke(call: APICall, _company, request: RevokeRequest):
     device.revoked = True
     device.save()
     audit(identity.user, "device.revoked", ip=client_address(call), company=device.company, device=device.id)
-    return _device_view(device, User.objects(id=device.user).first())
+    return _device_view(device, AuthUser.objects(id=device.user).first())
 
 
 @endpoint("devices.reassign", min_version="2.8", request_data_model=ReassignRequest)
@@ -226,7 +203,7 @@ def reassign(call: APICall, _company, request: ReassignRequest):
         raise errors.bad_request.InvalidId("no such device")
     if device.revoked:
         raise errors.bad_request.InvalidId("device is revoked")
-    new_owner = User.objects(id=request.user, company=device.company).first()
+    new_owner = AuthUser.objects(id=request.user, company=device.company).first()
     if new_owner is None:
         raise errors.bad_request.InvalidId("no such user")
     if new_owner.idp_disabled or new_owner.role not in ADMIN_ROLES:
@@ -253,7 +230,7 @@ def _caller_device_id(call: APICall) -> str:
 def job_token(call: APICall, _company, request: JobTokenRequest):
     device = Device.objects(id=_caller_device_id(call)).first()
     task = Task.objects(id=request.task).only("status", "last_device", "user").first()
-    owner = User.objects(id=task.user).first() if task else None
+    owner = AuthUser.objects(id=task.user).first() if task else None
     try:
         check_job_issue(task.status if task else None, task.last_device if task else None, device)
         if owner is None or owner.idp_disabled:

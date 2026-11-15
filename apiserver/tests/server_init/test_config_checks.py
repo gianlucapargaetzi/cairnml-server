@@ -1,7 +1,7 @@
 import pytest
 from unittest import TestCase
 
-from apiserver.idp.legacy import check_no_legacy_settings, legacy_settings_in_use
+from apiserver.server_init.config_checks import check_startup_config, removed_settings_problems
 
 pytestmark = pytest.mark.integration  # needs MongoDB, Elasticsearch or a running API server
 
@@ -12,31 +12,31 @@ def settings(**values):
 
 class TestLegacySettings(TestCase):
     def test_clean_settings_start(self):
-        self.assertEqual(legacy_settings_in_use(settings()), [])
-        check_no_legacy_settings(settings())
+        self.assertEqual(removed_settings_problems(settings()), [])
+        check_startup_config(settings())
 
     def test_access_keys_refuse_to_start(self):
         get = settings(**{"secure.credentials": {"tests": {"role": "user"}}})
-        self.assertEqual(len(legacy_settings_in_use(get)), 1)
+        self.assertEqual(len(removed_settings_problems(get)), 1)
         with self.assertRaises(RuntimeError):
-            check_no_legacy_settings(get)
+            check_startup_config(get)
 
     def test_fixed_users_refuse_to_start(self):
         get = settings(**{"apiserver.auth.fixed_users.enabled": True})
         with self.assertRaises(RuntimeError) as ctx:
-            check_no_legacy_settings(get)
+            check_startup_config(get)
         self.assertIn("fixed users", str(ctx.exception))
 
     def test_disabled_fixed_users_start(self):
         get = settings(**{"apiserver.auth.fixed_users.enabled": False})
-        check_no_legacy_settings(get)
+        check_startup_config(get)
 
 
 class TestTestOnlySettings(TestCase):
     def check(self, env, **values):
-        from apiserver.idp.legacy import test_only_settings_in_use
+        from apiserver.server_init.config_checks import settings_for_test_runs_problems
 
-        return test_only_settings_in_use(settings(**values), env)
+        return settings_for_test_runs_problems(settings(**values), env)
 
     def test_no_test_settings_in_production(self):
         self.assertEqual(self.check({}), [])
@@ -55,10 +55,11 @@ class TestTestOnlySettings(TestCase):
 
 class TestCookieSettings(TestCase):
     def check(self, url, secure):
-        from apiserver.idp.legacy import cookie_settings_problems
+        from apiserver.server_init.config_checks import cookie_settings_problems
 
-        return cookie_settings_problems(settings(**{"apiserver.idp.public_url": url,
-                                                     "apiserver.auth.cookies.secure": secure}))
+        return cookie_settings_problems(
+            settings(**{"apiserver.idp.public_url": url, "apiserver.auth.cookies.secure": secure})
+        )
 
     def test_https_with_a_secure_cookie_starts(self):
         self.assertEqual(self.check("https://cairnml.example", True), [])

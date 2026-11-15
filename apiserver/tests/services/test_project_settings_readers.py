@@ -12,7 +12,7 @@ import pytest
 from apiserver.apierrors import errors
 from apiserver.bll.access import record_grant
 from apiserver.apimodels.project_access import AddQueuesRequest, GetQueuesRequest, RemoveQueueRequest
-from apiserver.database.model.auth import Role, User
+from apiserver.database.model.auth import Role, AuthUser
 from apiserver.database.model.project import Project, ProjectMember, ProjectRole, ProjectVisibility
 from apiserver.database.model.queue import Queue
 from apiserver.service_repo.auth import Identity
@@ -59,7 +59,7 @@ def world(company):
     """ An owner, a member of the root project, a stranger and a company admin; a root project of the owner, and three
     queues of the owner: two that the owner may allocate and a third that is never allocated """
     for user in (OWNER, MEMBER, STRANGER, ADMIN):
-        User(id=user, name=user, company=company, created=datetime.utcnow()).save()
+        AuthUser(id=user, name=user, company=company, created=datetime.utcnow()).save()
     root = Project(
         id=uuid4().hex, company=company, user=OWNER, name="root", basename="root", created=datetime.utcnow(),
         visibility=ProjectVisibility.private,
@@ -83,12 +83,12 @@ def deactivate():
     touched = []
 
     def switch_off(user):
-        User.objects(id=user).update_one(set__idp_disabled=True)
+        AuthUser.objects(id=user).update_one(set__idp_disabled=True)
         touched.append(user)
 
     yield switch_off
     for user in touched:
-        User.objects(id=user).update_one(unset__idp_disabled=True)
+        AuthUser.objects(id=user).update_one(unset__idp_disabled=True)
 
 
 def listed(company, user, root, role=Role.user):

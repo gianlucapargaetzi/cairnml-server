@@ -8,7 +8,7 @@ import pytest
 
 from apiserver.apierrors import errors
 from apiserver.bll import access, repositories as bll, repository_registry as registry, repository_runs as runs
-from apiserver.database.model.auth import User
+from apiserver.database.model.auth import AuthUser
 from apiserver.database.model.project import Project, ProjectMember, ProjectRole
 from apiserver.database.model.repository import Assignment, RegistryEntry, Repository, RepositoryCheck
 from apiserver.database.model.share import Share
@@ -51,7 +51,7 @@ def world(monkeypatch):
     company = f"c-run-{uuid4().hex[:8]}"
     now = datetime.utcnow()
     for user in ("owner", "member", "stranger"):
-        User(id=user, name=user.title(), company=company, created=now).save()
+        AuthUser(id=user, name=user.title(), company=company, created=now).save()
     root = f"p-{company}"
     Project(id=root, company=company, user="owner", name="P", basename="P", created=now, last_update=now,
             members=[ProjectMember(user="member", role=ProjectRole.read, added=now, added_by="owner")]).save()
@@ -61,7 +61,7 @@ def world(monkeypatch):
     monkeypatch.setattr(bll, "_company_reach", lambda repo: (None, "no company GitHub App is set up"))
     monkeypatch.setattr(registry, "reader_for", lambda repo, user, project_root=None: state.reader)
     yield state
-    for model in (Repository, RegistryEntry, Assignment, RepositoryCheck, Share, UserAccess, Task, Project, User):
+    for model in (Repository, RegistryEntry, Assignment, RepositoryCheck, Share, UserAccess, Task, Project, AuthUser):
         model.objects(company=company).delete()
 
 
@@ -171,7 +171,7 @@ def test_a_dataset_of_its_own_is_recorded_as_a_dataset_the_moment_the_run_record
 
 
 def test_a_deactivated_user_records_nothing(world):
-    User(id="gone", name="Gone", company=world.company, created=datetime.utcnow(), idp_disabled=True).save()
+    AuthUser(id="gone", name="Gone", company=world.company, created=datetime.utcnow(), idp_disabled=True).save()
     runs.publish_run(make_task(world, "gone", datasets=[("cars", "acme/cars")]))
     assert Repository.objects(company=world.company).count() == 0
 

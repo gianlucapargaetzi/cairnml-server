@@ -948,7 +948,7 @@ class GetMixin(PropsMixin):
             a sub-document in the format {_id: <ID>}. Otherwise, field values are left as a string.
         """
         if issubclass(cls, AuthDocument):
-            # Refuse projection (join) for auth documents (auth.User etc.) to avoid inadvertently disclosing
+            # Refuse projection (join) for auth documents (AuthUser etc.) to avoid inadvertently disclosing
             # auth-related secrets and prevent security leaks
             log.error(
                 f"Attempted projection of {cls.__name__} auth document (ignored)",

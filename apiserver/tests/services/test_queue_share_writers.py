@@ -11,7 +11,7 @@ from apiserver.apimodels.project_access import AddQueuesRequest, RemoveQueueRequ
 from apiserver.apimodels.queues import DeleteRequest, QueueRequest, UpdateRequest, UserRequest
 from apiserver.bll.queue.queue_access import QueueAccessBLL
 from apiserver.bll.queue.queue_bll import QueueBLL
-from apiserver.database.model.auth import Role, User
+from apiserver.database.model.auth import Role, AuthUser
 from apiserver.database.model.project import Project, ProjectMember, ProjectRole
 from apiserver.database.model.queue import Queue
 from apiserver.database.model.share import Share
@@ -42,7 +42,7 @@ class FakeCall:
 
 
 def make_user(company, user_id):
-    User(id=user_id, name=user_id, company=company, created=datetime.utcnow()).save()
+    AuthUser(id=user_id, name=user_id, company=company, created=datetime.utcnow()).save()
 
 
 def make_root(company, id_, owner, members=()):

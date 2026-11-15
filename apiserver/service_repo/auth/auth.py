@@ -48,15 +48,15 @@ def authorize_token(jwt_token, service, action, call):
         log_error("Failed parsing token.")
         raise errors.unauthorized.InvalidToken(
             "jwt invalid key error", reason=ex.args[0]
-        )
+        ) from ex
     except jwt.InvalidTokenError as ex:
         log_error("Failed parsing token.")
-        raise errors.unauthorized.InvalidToken("invalid jwt token", reason=ex.args[0])
+        raise errors.unauthorized.InvalidToken("invalid jwt token", reason=ex.args[0]) from ex
     except ValueError as ex:
         log_error(f"Failed while processing token: {str(ex.args[0])}.")
         raise errors.unauthorized.InvalidToken(
             "failed processing token", reason=ex.args[0]
-        )
+        ) from ex
     except Exception:
         log_error("Failed processing token.")
         raise
@@ -79,7 +79,7 @@ def check_idp_token(jwt_token: str) -> None:
 
     Tokens without a kind are refused: every token is now issued by the identity-provider flow.
     """
-    from apiserver.database.model.auth import User
+    from apiserver.database.model.auth import AuthUser
     from apiserver.database.model.device import Device
     from apiserver.database.model.task.task import Task
     from apiserver.idp.checks import DEVICE_KINDS, AccessDenied, check_device, check_job, check_user
@@ -91,14 +91,14 @@ def check_idp_token(jwt_token: str) -> None:
     try:
         if kind in DEVICE_KINDS:
             device = Device.objects(id=claims.get("device")).first()
-            owner = User.objects(id=device.user).first() if device else None
+            owner = AuthUser.objects(id=device.user).first() if device else None
             check_device(device, owner)
         elif kind == "job":
             task = Task.objects(id=claims.get("task")).only("status", "user").first()
-            owner = User.objects(id=task.user).first() if task else None
+            owner = AuthUser.objects(id=task.user).first() if task else None
             check_job(task.status if task else None, owner)
         elif kind == "web":
-            owner = User.objects(id=claims["identity"]["user"]).first()
+            owner = AuthUser.objects(id=claims["identity"]["user"]).first()
             check_user(owner)
     except AccessDenied as exc:
         raise errors.unauthorized.InvalidToken(str(exc)) from None

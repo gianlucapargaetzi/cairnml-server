@@ -10,7 +10,7 @@ import pytest
 
 from apiserver.apierrors import errors
 from apiserver.bll.access import record_grant
-from apiserver.database.model.auth import Role, User
+from apiserver.database.model.auth import Role, AuthUser
 from apiserver.database.model.project import Project, ProjectMember, ProjectRole, ProjectVisibility
 from apiserver.database.model.queue import Queue
 from apiserver.database.model.share import Share
@@ -40,7 +40,7 @@ def company():
 @pytest.fixture
 def world(company):
     for user in (OWNER, COLLABORATOR, MEMBER, QUEUE_OWNER):
-        User(id=user, name=user, company=company, created=datetime.utcnow()).save()
+        AuthUser(id=user, name=user, company=company, created=datetime.utcnow()).save()
     root = Project(
         id=uuid4().hex, company=company, user=OWNER, name="root", basename="root", created=datetime.utcnow(),
         visibility=ProjectVisibility.private,

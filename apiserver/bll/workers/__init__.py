@@ -24,7 +24,7 @@ from apiserver.apimodels.workers import (
 )
 from apiserver.config_repo import config
 from apiserver.database.errors import translate_errors_context
-from apiserver.database.model.auth import User
+from apiserver.database.model.auth import AuthUser
 from apiserver.database.model.company import Company
 from apiserver.database.model.project import Project
 from apiserver.database.model.queue import Queue
@@ -87,7 +87,7 @@ class WorkerBLL:
 
         with translate_errors_context():
             query = dict(id=user_id, company=company_id)
-            user = User.objects(**query).only("id", "name").first()
+            user = AuthUser.objects(**query).only("id", "name").first()
             if not user:
                 raise bad_request.InvalidUserId(**query)
             company = Company.objects(id=company_id).only("id", "name").first()
@@ -231,7 +231,7 @@ class WorkerBLL:
         except Exception as e:
             msg = "Failed processing worker status report"
             log.exception(msg)
-            raise server_error.DataError(msg, err=e.args[0])
+            raise server_error.DataError(msg, err=e.args[0]) from e
         finally:
             self._save_worker(entry)
 
@@ -285,7 +285,7 @@ class WorkerBLL:
                 worker_pattern=worker_pattern,
             )
         except Exception as e:
-            raise server_error.DataError("failed loading worker entries", err=e.args[0])
+            raise server_error.DataError("failed loading worker entries", err=e.args[0]) from e
 
         if last_seen:
             ref_time = datetime.utcnow() - timedelta(seconds=max(1, last_seen))
@@ -435,7 +435,7 @@ class WorkerBLL:
             except Exception as e:
                 msg = "Failed parsing worker entry"
                 log.exception(msg)
-                raise server_error.DataError(msg, err=e.args[0])
+                raise server_error.DataError(msg, err=e.args[0]) from e
 
         # Failed loading worker from Redis
         if config.get("apiserver.workers.auto_register", False):

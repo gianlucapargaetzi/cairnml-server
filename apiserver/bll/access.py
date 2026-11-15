@@ -6,7 +6,7 @@ is written. The levels of the share record (apiserver/database/model/share.py) a
 
 - The owner and an admin (company admin or root) are collaborators.
 - Otherwise the highest share that applies: a public share (read), a project share whose project is one the user is in
-  and whose granting owner is still an active member of it (bll/user_access.grant_applies), or a user share to this
+  and whose granting owner is still an active member of it (bll/membership.grant_applies), or a user share to this
   user (read).
 """
 
@@ -18,8 +18,8 @@ from mongoengine import NotUniqueError, Q
 from mongoengine import ValidationError as ModelValidationError
 
 from apiserver.apierrors import errors
-from apiserver.bll.user_access import grant_applies, is_active, is_member, my_projects, root_project
-from apiserver.database.model.auth import Role, User
+from apiserver.bll.membership import grant_applies, is_active, is_member, my_projects, root_project
+from apiserver.database.model.auth import Role, AuthUser
 from apiserver.database.model.repository import Repository
 from apiserver.database.model.project import Project, ProjectRole
 from apiserver.database.model.queue import Queue
@@ -161,7 +161,7 @@ def require(company: str, user: str, is_admin: bool, resource_type: str, resourc
 
 
 def _is_admin(company: str, actor: str) -> bool:
-    found = User.objects(id=actor, company=company).only("role").first()
+    found = AuthUser.objects(id=actor, company=company).only("role").first()
     return found is not None and found.role in ADMIN_ROLES
 
 

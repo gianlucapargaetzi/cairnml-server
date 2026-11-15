@@ -8,7 +8,7 @@ import pytest
 
 from apiserver.apierrors import errors
 from apiserver.bll import repositories as bll
-from apiserver.database.model.auth import User
+from apiserver.database.model.auth import AuthUser
 from apiserver.database.model.project import Project, ProjectMember, ProjectRole
 from apiserver.database.model.repository import Assignment, RegistryEntry, Repository, RepositoryCheck
 from apiserver.database.model.share import Share
@@ -29,7 +29,7 @@ def world(monkeypatch):
     company = f"c-svc-{uuid4().hex[:8]}"
     now = datetime.utcnow()
     for user, role in (("admin", "admin"), ("owner", "user"), ("member", "user"), ("stranger", "user")):
-        User(id=user, name=user.title(), company=company, role=role, created=now).save()
+        AuthUser(id=user, name=user.title(), company=company, role=role, created=now).save()
     root = f"p-{company}"
     Project(id=root, company=company, user="owner", name="P", basename="P", created=now, last_update=now,
             members=[ProjectMember(user="member", role=ProjectRole.read, added=now, added_by="owner")]).save()
@@ -45,7 +45,7 @@ def world(monkeypatch):
     monkeypatch.setattr(svc, "audit", record_audit)
     monkeypatch.setattr(svc, "client_address", lambda call: "127.0.0.1")
     yield state
-    for model in (Repository, RegistryEntry, Assignment, RepositoryCheck, Share, UserAccess, Task, Project, User):
+    for model in (Repository, RegistryEntry, Assignment, RepositoryCheck, Share, UserAccess, Task, Project, AuthUser):
         model.objects(company=company).delete()
 
 
