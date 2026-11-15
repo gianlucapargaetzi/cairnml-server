@@ -6,6 +6,7 @@ mongoengine connection is only registered once per process.
 Needs a real MongoDB reachable at the default config (mongodb://127.0.0.1:27017), which the CI
 workflow and a local development environment both provide — see .github/workflows/ci.yml.
 """
+
 from apiserver import database as db
 
 _initialized = False

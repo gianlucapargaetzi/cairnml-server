@@ -86,8 +86,16 @@ def assign_lanes(rows: List[dict], main_ids=frozenset()) -> int:
 NODE_FIELDS = ("type", "sha", "message", "author", "date", "newest", "first", "branches", "runs", "count", "lane")
 
 
-def condense(commits: List[dict], total: int, first: Optional[dict], runs: List[dict], tips: Optional[Dict[str, List[str]]] = None,
-             max_commits: int = MAX_COMMITS, max_tasks: int = MAX_TASKS, default_tip: Optional[str] = None) -> dict:
+def condense(
+    commits: List[dict],
+    total: int,
+    first: Optional[dict],
+    runs: List[dict],
+    tips: Optional[Dict[str, List[str]]] = None,
+    max_commits: int = MAX_COMMITS,
+    max_tasks: int = MAX_TASKS,
+    default_tip: Optional[str] = None,
+) -> dict:
     """``commits``: the commits of the branches that count, newest first in topological order, each with ``sha`` and
     ``parents``; ``total`` the number of those commits in the whole history, ``first`` the oldest one (it is only marked, never
     added), ``runs`` the runs of the repository with their ``commit`` and ``dirty``, ``tips`` the branch names by the commit they
@@ -106,8 +114,13 @@ def condense(commits: List[dict], total: int, first: Optional[dict], runs: List[
     shown = _shown(window, live, wanted, kept, children)
     rows = _rows(window, shown, kept, by_sha, by_commit, tips, first["sha"] if first else None)
     lane_count = assign_lanes(rows, _main_line(rows, default_tip))
-    return {"nodes": _nodes(rows), "lane_count": lane_count, "total_commits": total,
-            "outside_runs": _outside_runs(by_commit, by_sha), "limited": total > len(window)}
+    return {
+        "nodes": _nodes(rows),
+        "lane_count": lane_count,
+        "total_commits": total,
+        "outside_runs": _outside_runs(by_commit, by_sha),
+        "limited": total > len(window),
+    }
 
 
 def _window(commits: List[dict], by_commit: dict, max_commits: int, max_tasks: int) -> List[dict]:
@@ -124,8 +137,11 @@ def _window(commits: List[dict], by_commit: dict, max_commits: int, max_tasks: i
 
 def _wanted(window: List[dict], by_commit: dict, tips: Dict[str, List[str]]) -> set:
     """The commits that count: the newest, the ones a branch points at, and the ones a run was on."""
-    return {commit["sha"] for index, commit in enumerate(window)
-            if index == 0 or commit["sha"] in tips or _runs_of_commit(by_commit, commit["sha"])}
+    return {
+        commit["sha"]
+        for index, commit in enumerate(window)
+        if index == 0 or commit["sha"] in tips or _runs_of_commit(by_commit, commit["sha"])
+    }
 
 
 def _ancestors(sha: str, by_sha: Dict[str, dict]) -> set:
@@ -174,8 +190,12 @@ def _children(window: List[dict], live: set, kept: Dict[str, List[str]]) -> Dict
 
 def _shown(window: List[dict], live: set, wanted: set, kept: Dict[str, List[str]], children: Dict[str, int]) -> set:
     """The commits drawn as rows: the ones that count, and the ones where lines meet or split."""
-    return {commit["sha"] for commit in window
-            if commit["sha"] in live and (commit["sha"] in wanted or len(kept[commit["sha"]]) > 1 or children[commit["sha"]] > 1)}
+    return {
+        commit["sha"]
+        for commit in window
+        if commit["sha"] in live
+        and (commit["sha"] in wanted or len(kept[commit["sha"]]) > 1 or children[commit["sha"]] > 1)
+    }
 
 
 def _resolve_edge(parent: str, by_sha: Dict[str, dict], shown: set, kept: Dict[str, List[str]]):
@@ -194,12 +214,21 @@ def _resolve_edge(parent: str, by_sha: Dict[str, dict], shown: set, kept: Dict[s
 
 
 def _run_rows(by_commit: dict, sha: str) -> List[dict]:
-    return [{k: run.get(k) for k in ("id", "name", "status", "project", "created", "dirty")}
-            for run in _runs_of_commit(by_commit, sha)]
+    return [
+        {k: run.get(k) for k in ("id", "name", "status", "project", "created", "dirty")}
+        for run in _runs_of_commit(by_commit, sha)
+    ]
 
 
-def _rows(window: List[dict], shown: set, kept: Dict[str, List[str]], by_sha: Dict[str, dict], by_commit: dict,
-          tips: Dict[str, List[str]], first_sha: Optional[str]) -> List[dict]:
+def _rows(
+    window: List[dict],
+    shown: set,
+    kept: Dict[str, List[str]],
+    by_sha: Dict[str, dict],
+    by_commit: dict,
+    tips: Dict[str, List[str]],
+    first_sha: Optional[str],
+) -> List[dict]:
     """A row for each shown commit, followed by the gap rows its lines skip over."""
     rows: List[dict] = []
     for commit in window:
@@ -217,12 +246,21 @@ def _rows(window: List[dict], shown: set, kept: Dict[str, List[str]], by_sha: Di
                 parents.append(gap_id)
             else:
                 parents.append(target)
-        rows.append({
-            "id": commit["sha"], "type": "commit", "sha": commit["sha"], "message": commit.get("message", ""),
-            "author": commit.get("author", ""), "date": commit.get("date", ""),
-            "newest": commit is window[0], "first": commit["sha"] == first_sha,
-            "branches": tips.get(commit["sha"], []), "parents": parents, "runs": _run_rows(by_commit, commit["sha"]),
-        })
+        rows.append(
+            {
+                "id": commit["sha"],
+                "type": "commit",
+                "sha": commit["sha"],
+                "message": commit.get("message", ""),
+                "author": commit.get("author", ""),
+                "date": commit.get("date", ""),
+                "newest": commit is window[0],
+                "first": commit["sha"] == first_sha,
+                "branches": tips.get(commit["sha"], []),
+                "parents": parents,
+                "runs": _run_rows(by_commit, commit["sha"]),
+            }
+        )
         rows.extend(gaps)
     return rows
 
@@ -249,8 +287,11 @@ def _nodes(rows: List[dict]) -> List[dict]:
 
 def _outside_runs(by_commit: dict, by_sha: Dict[str, dict]) -> int:
     """The runs on commits that are not in the window (a short sha names a commit by its prefix)."""
-    return sum(len(items) for sha, items in by_commit.items()
-               if not any(sha == s or (len(sha) >= 7 and s.startswith(sha)) for s in by_sha))
+    return sum(
+        len(items)
+        for sha, items in by_commit.items()
+        if not any(sha == s or (len(sha) >= 7 and s.startswith(sha)) for s in by_sha)
+    )
 
 
 def history(company: str, user: str, is_admin: bool, repo) -> dict:
@@ -258,13 +299,21 @@ def history(company: str, user: str, is_admin: bool, repo) -> dict:
     runs = repository_runs.runs_of(company, user, is_admin, repo)
     reader = registry_bll.reader_for(repo, user)
     try:
-        info = reader.graph_history(repo.path, sorted({run["commit"] for run in runs if run.get("commit")}), MAX_COMMITS)
+        info = reader.graph_history(
+            repo.path, sorted({run["commit"] for run in runs if run.get("commit")}), MAX_COMMITS
+        )
     except GitHubError as exc:
         raise errors.bad_request.ValidationError(f"the history of {repo.path} could not be read ({exc})") from None
     finally:
         getattr(reader, "close", lambda: None)()
-    return condense(info["commits"], info["total"], info["first"], _resolved(runs, info["resolved"]), info["tips"],
-                    default_tip=info.get("default_tip"))
+    return condense(
+        info["commits"],
+        info["total"],
+        info["first"],
+        _resolved(runs, info["resolved"]),
+        info["tips"],
+        default_tip=info.get("default_tip"),
+    )
 
 
 def _resolved(runs: List[dict], resolved: Dict[str, str]) -> List[dict]:

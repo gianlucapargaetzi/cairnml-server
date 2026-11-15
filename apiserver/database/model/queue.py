@@ -23,7 +23,7 @@ from apiserver.database.model.task.task import Task
 
 
 class Entry(EmbeddedDocument, ProperDictMixin):
-    """ Entry representing a task waiting in the queue """
+    """Entry representing a task waiting in the queue"""
 
     task = StringField(required=True, reference_field=Task)
     """ Task ID """
@@ -42,7 +42,8 @@ class Queue(DbModelMixin, Document):
     }
 
     get_all_query_options = GetMixin.QueryParameterOptions(
-        pattern_fields=("name",), list_fields=("tags", "system_tags", "id", "metadata.*"),
+        pattern_fields=("name",),
+        list_fields=("tags", "system_tags", "id", "metadata.*"),
     )
 
     meta = {
@@ -51,21 +52,15 @@ class Queue(DbModelMixin, Document):
     }
 
     id = StringField(primary_key=True)
-    name = StrippedStringField(
-        required=True, unique_with="company", min_length=3, user_set_allowed=True
-    )
+    name = StrippedStringField(required=True, unique_with="company", min_length=3, user_set_allowed=True)
     display_name = StringField(user_set_allowed=True)
     company = StringField(required=True, reference_field=Company)
     created = DateTimeField(required=True)
-    tags = SafeSortedListField(
-        StringField(required=True), default=list, user_set_allowed=True
-    )
+    tags = SafeSortedListField(StringField(required=True), default=list, user_set_allowed=True)
     system_tags = SafeSortedListField(StringField(required=True), user_set_allowed=True)
     entries = EmbeddedDocumentListField(Entry, default=list)
     last_update = DateTimeField()
-    metadata = SafeMapField(
-        field=EmbeddedDocumentField(MetadataItem), user_set_allowed=True
-    )
+    metadata = SafeMapField(field=EmbeddedDocumentField(MetadataItem), user_set_allowed=True)
     resources = EmbeddedDocumentField(Resources)
     public = BooleanField(default=False, user_set_allowed=True)
     """ Every company user may use and allocate a public queue """

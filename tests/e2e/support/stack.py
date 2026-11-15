@@ -50,8 +50,13 @@ REUSE_FILE = REUSE_DIR / "stack.json"
 START_LOCK = REUSE_DIR / "start.lock"
 
 # Owners of the data folders inside the containers (the same as deploy/scripts/bootstrap.sh).
-DATA_OWNERS = {"idp": "1000:1000", "rustfs": "10001:10001", "mongo": "999:999", "redis": "999:999",
-               "elastic": "1000:1000"}
+DATA_OWNERS = {
+    "idp": "1000:1000",
+    "rustfs": "10001:10001",
+    "mongo": "999:999",
+    "redis": "999:999",
+    "elastic": "1000:1000",
+}
 
 
 class StackError(Exception):
@@ -129,8 +134,17 @@ class IsolatedStack:
             else:
                 self.state = Path(tempfile.mkdtemp(prefix="cairnml-e2e-stack-"))
             api, web, idp, idp_mgmt, storage, mongo, redis, es, es_transport = pick_ports(BIND)
-            self.ports = {"api": api, "web": web, "idp": idp, "idp_mgmt": idp_mgmt, "storage": storage,
-                          "mongo": mongo, "redis": redis, "es": es, "es_transport": es_transport}
+            self.ports = {
+                "api": api,
+                "web": web,
+                "idp": idp,
+                "idp_mgmt": idp_mgmt,
+                "storage": storage,
+                "mongo": mongo,
+                "redis": redis,
+                "es": es,
+                "es_transport": es_transport,
+            }
             self.admin_password = secrets.token_urlsafe(18)
             self.rustfs_password = secrets.token_urlsafe(18)
             self.s3_access = "e2e-server"
@@ -149,9 +163,15 @@ class IsolatedStack:
 
     def _save(self, fingerprint: str) -> None:
         REUSE_DIR.mkdir(parents=True, exist_ok=True)
-        record = {"state": str(self.state), "ports": self.ports, "admin_password": self.admin_password,
-                  "rustfs_password": self.rustfs_password, "s3_access": self.s3_access, "project": self.project,
-                  "fingerprint": fingerprint}
+        record = {
+            "state": str(self.state),
+            "ports": self.ports,
+            "admin_password": self.admin_password,
+            "rustfs_password": self.rustfs_password,
+            "s3_access": self.s3_access,
+            "project": self.project,
+            "fingerprint": fingerprint,
+        }
         REUSE_FILE.write_text(json.dumps(record))
         REUSE_FILE.chmod(0o600)
 
@@ -194,14 +214,29 @@ class IsolatedStack:
         return f"http://{self.host}:{self.ports['storage']}"
 
     def configure_settings(self) -> None:
-        settings.configure(api=self.api_url, web=self.web_url, idp=self.idp_url, storage=self.storage_url,
-                           admin_user=ADMIN_NAME, admin_password=self.admin_password, project=self.project)
+        settings.configure(
+            api=self.api_url,
+            web=self.web_url,
+            idp=self.idp_url,
+            storage=self.storage_url,
+            admin_user=ADMIN_NAME,
+            admin_password=self.admin_password,
+            project=self.project,
+        )
 
     # --- files -----------------------------------------------------------------------------------------------------
 
     def prepare(self) -> None:
-        for folder in ("data/idp", "data/rustfs", "data/mongo/db", "data/mongo/configdb", "data/redis",
-                       "data/elastic", "data/logs", "secrets"):
+        for folder in (
+            "data/idp",
+            "data/rustfs",
+            "data/mongo/db",
+            "data/mongo/configdb",
+            "data/redis",
+            "data/elastic",
+            "data/logs",
+            "secrets",
+        ):
             (self.state / folder).mkdir(parents=True, exist_ok=True)
         self._write_missing_secrets()
         shutil.copy(STORAGE_SCRIPT, self.state / "init.py")
@@ -214,7 +249,9 @@ class IsolatedStack:
     def _write_nginx_template(self) -> None:
         """The web server's nginx template, as the server image has it, listening on this stack's port."""
         text = NGINX_TEMPLATE.read_text()
-        text = text.replace("listen       8080 default_server;", f"listen       {BIND}:{self.ports['web']} default_server;")
+        text = text.replace(
+            "listen       8080 default_server;", f"listen       {BIND}:{self.ports['web']} default_server;"
+        )
         text = text.replace("listen       [::]:8080 default_server;", "")
         folder = self.state / "nginx"
         folder.mkdir(exist_ok=True)
@@ -253,8 +290,13 @@ class IsolatedStack:
     # --- compose ---------------------------------------------------------------------------------------------------
 
     def compose(self, *args, timeout=900) -> subprocess.CompletedProcess:
-        return subprocess.run(["docker", "compose", "-p", self.project, "-f", str(COMPOSE_FILE), *args],
-                              env=self._env(), capture_output=True, text=True, timeout=timeout)
+        return subprocess.run(
+            ["docker", "compose", "-p", self.project, "-f", str(COMPOSE_FILE), *args],
+            env=self._env(),
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
 
     def set_job_token_ttl(self, seconds: int) -> None:
         """Restarts only the API with another job token lifetime. The data and the other services are kept; the
@@ -262,30 +304,64 @@ class IsolatedStack:
         self.job_token_ttl_sec = seconds
         result = self.compose("up", "-d", "--no-deps", "apiserver", timeout=300)
         if result.returncode != 0:
-            raise StackError(f"cannot restart the API with a job token lifetime of {seconds} s:\n{result.stderr[-3000:]}")
+            raise StackError(
+                f"cannot restart the API with a job token lifetime of {seconds} s:\n{result.stderr[-3000:]}"
+            )
         self._wait(self._api_answers, 120, "the CairnML API after the restart")
 
     def _chown_data(self) -> None:
         """The containers run as their own users; the folders must be theirs. Done in a container, as bootstrap does."""
-        for folder, owner in (("idp", DATA_OWNERS["idp"]), ("rustfs", DATA_OWNERS["rustfs"]),
-                              ("mongo", DATA_OWNERS["mongo"]), ("redis", DATA_OWNERS["redis"]),
-                              ("elastic", DATA_OWNERS["elastic"])):
-            subprocess.run(["docker", "run", "--rm", "-v", f"{self.state}/data:/data", "alpine:3.20", "sh", "-c",
-                            f"chown -R {owner} /data/{folder}"], capture_output=True, timeout=300)
+        for folder, owner in (
+            ("idp", DATA_OWNERS["idp"]),
+            ("rustfs", DATA_OWNERS["rustfs"]),
+            ("mongo", DATA_OWNERS["mongo"]),
+            ("redis", DATA_OWNERS["redis"]),
+            ("elastic", DATA_OWNERS["elastic"]),
+        ):
+            subprocess.run(
+                [
+                    "docker",
+                    "run",
+                    "--rm",
+                    "-v",
+                    f"{self.state}/data:/data",
+                    "alpine:3.20",
+                    "sh",
+                    "-c",
+                    f"chown -R {owner} /data/{folder}",
+                ],
+                capture_output=True,
+                timeout=300,
+            )
 
     def _chown_for_server(self) -> None:
         """The server's containers run as uid 1000: their logs and secrets must be theirs. Done in a container, as bootstrap does."""
         for folder in ("data/logs", "secrets"):
-            subprocess.run(["docker", "run", "--rm", "-v", f"{self.state}/{folder}:/target", "alpine:3.20", "sh", "-c",
-                            "chown -R 1000:1000 /target"], capture_output=True, timeout=300)
+            subprocess.run(
+                [
+                    "docker",
+                    "run",
+                    "--rm",
+                    "-v",
+                    f"{self.state}/{folder}:/target",
+                    "alpine:3.20",
+                    "sh",
+                    "-c",
+                    "chown -R 1000:1000 /target",
+                ],
+                capture_output=True,
+                timeout=300,
+            )
 
     def healthy(self) -> bool:
         """Whether the stack answers now. Checked with short timeouts: a stack that is down fails at once."""
         checks = (
             lambda: requests.post(f"{self.api_url}/v2.8/login.supported_modes", json={}, timeout=3).status_code == 200,
             lambda: requests.get(self.web_url + "/", timeout=3).status_code == 200,
-            lambda: requests.get(f"{self.idp_url}/realms/cairnml/.well-known/openid-configuration",
-                                 timeout=3).status_code == 200,
+            lambda: (
+                requests.get(f"{self.idp_url}/realms/cairnml/.well-known/openid-configuration", timeout=3).status_code
+                == 200
+            ),
             lambda: requests.get(self.storage_url + "/health", timeout=3).status_code == 200,
         )
         for check in checks:
@@ -322,8 +398,16 @@ class IsolatedStack:
             result = self.compose("up", "-d", "idp")
             if result.returncode != 0:
                 raise StackError(f"cannot start the sign-in service:\n{result.stderr[-3000:]}")
-            self._wait(lambda: requests.get(f"{self.idp_url}/realms/cairnml/.well-known/openid-configuration",
-                                            timeout=10).status_code == 200, 240, "the sign-in service")
+            self._wait(
+                lambda: (
+                    requests.get(
+                        f"{self.idp_url}/realms/cairnml/.well-known/openid-configuration", timeout=10
+                    ).status_code
+                    == 200
+                ),
+                240,
+                "the sign-in service",
+            )
             self._identity()
             self._chown_for_server()  # after _identity, which writes the directory secret
             result = self.compose("up", "-d", "--build")
@@ -351,8 +435,9 @@ class IsolatedStack:
         service_user = kc._admin("GET", f"/clients/{client_uuid}/service-account-user").json()["id"]
         realm_management = kc._admin("GET", "/clients", params={"clientId": "realm-management"}).json()[0]["id"]
         view_users = kc._admin("GET", f"/clients/{realm_management}/roles/view-users").json()
-        kc._admin("POST", f"/users/{service_user}/role-mappings/clients/{realm_management}",
-                  json=[view_users]).raise_for_status()
+        kc._admin(
+            "POST", f"/users/{service_user}/role-mappings/clients/{realm_management}", json=[view_users]
+        ).raise_for_status()
         secret = kc._admin("GET", f"/clients/{client_uuid}/client-secret").json()["value"]
         (self.state / "secrets" / "idp_directory_secret").write_text(secret)
         (self.state / "secrets" / "idp_directory_secret").chmod(0o600)
@@ -377,8 +462,10 @@ class IsolatedStack:
 
     def stop(self) -> None:
         if self.reuse:
-            print(f"\nthe test stack is kept running for the next session: {self.api_url} "
-                  f"(stop it with: python -m support.stack --stop)")
+            print(
+                f"\nthe test stack is kept running for the next session: {self.api_url} "
+                f"(stop it with: python -m support.stack --stop)"
+            )
             return
         if self.keep:
             print(f"\nthe test stack is kept: {self.api_url} (state folder {self.state})")
@@ -402,8 +489,11 @@ class IsolatedStack:
 
     def _remove_networks(self) -> None:
         """Removes this stack's networks that no container uses. A run that failed early can leave them behind."""
-        subprocess.run(["docker", "network", "prune", "-f", "--filter",
-                        f"label=com.docker.compose.project={self.project}"], capture_output=True, timeout=120)
+        subprocess.run(
+            ["docker", "network", "prune", "-f", "--filter", f"label=com.docker.compose.project={self.project}"],
+            capture_output=True,
+            timeout=120,
+        )
 
     def _remove_state(self) -> None:
         self._remove_state_folder(self.state)
@@ -413,8 +503,21 @@ class IsolatedStack:
         """The containers wrote files as their own users; give them back to this user before removing them."""
         if not folder.exists():
             return
-        subprocess.run(["docker", "run", "--rm", "-v", f"{folder}:/state", "alpine:3.20", "sh", "-c",
-                        f"chown -R {os.getuid()}:{os.getgid()} /state"], capture_output=True, timeout=300)
+        subprocess.run(
+            [
+                "docker",
+                "run",
+                "--rm",
+                "-v",
+                f"{folder}:/state",
+                "alpine:3.20",
+                "sh",
+                "-c",
+                f"chown -R {os.getuid()}:{os.getgid()} /state",
+            ],
+            capture_output=True,
+            timeout=300,
+        )
         shutil.rmtree(folder, ignore_errors=True)
 
 

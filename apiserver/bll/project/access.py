@@ -28,9 +28,7 @@ class ProjectAccessBLL:
         if identity.role == Role.admin:
             return "admin"
 
-        root = Project.objects(id=root_id, company=identity.company).only(
-            "user", "visibility", "members"
-        ).first()
+        root = Project.objects(id=root_id, company=identity.company).only("user", "visibility", "members").first()
         if not root:
             return None
 
@@ -56,11 +54,7 @@ class ProjectAccessBLL:
             return Q()
         return (
             Q(company=identity.company)
-            & (
-                Q(user=identity.user)
-                | Q(visibility=ProjectVisibility.public)
-                | Q(members__user=identity.user)
-            )
+            & (Q(user=identity.user) | Q(visibility=ProjectVisibility.public) | Q(members__user=identity.user))
         ) | Q(company="")
 
     @staticmethod
@@ -73,10 +67,7 @@ class ProjectAccessBLL:
             return None
 
         root_ids = [
-            p.id
-            for p in Project.objects(
-                Q(parent=None) & ProjectAccessBLL.visible_projects_query(identity)
-            ).only("id")
+            p.id for p in Project.objects(Q(parent=None) & ProjectAccessBLL.visible_projects_query(identity)).only("id")
         ]
         visible = set(root_ids)
         if root_ids:
@@ -90,9 +81,7 @@ class ProjectAccessBLL:
         Used when a move changes whether the project is a root, since visibility and members
         only apply to roots
         """
-        Project.objects(id=project_id).update_one(
-            set__visibility=ProjectVisibility.private, set__members=[]
-        )
+        Project.objects(id=project_id).update_one(set__visibility=ProjectVisibility.private, set__members=[])
 
     @staticmethod
     def assert_can(
@@ -154,28 +143,20 @@ class ProjectAccessBLL:
 
         parts = name.split("/")
         for depth in range(len(parts), 0, -1):
-            found = _get_writable_project_from_name(
-                company, "/".join(parts[:depth]), identity
-            )
+            found = _get_writable_project_from_name(company, "/".join(parts[:depth]), identity)
             if found:
-                ProjectAccessBLL.assert_can(
-                    identity, found.id, capability, object_owner=identity.user
-                )
+                ProjectAccessBLL.assert_can(identity, found.id, capability, object_owner=identity.user)
                 return
 
     @staticmethod
-    def assert_can_admin_destination(
-        identity: Identity, company: str, location: Optional[str]
-    ) -> None:
+    def assert_can_admin_destination(identity: Identity, company: str, location: Optional[str]) -> None:
         """
         Admin on the project a move to `location` lands in
         """
         ProjectAccessBLL._assert_can_destination(identity, company, location, "admin")
 
     @staticmethod
-    def assert_can_write_destination(
-        identity: Identity, company: str, location: Optional[str]
-    ) -> None:
+    def assert_can_write_destination(identity: Identity, company: str, location: Optional[str]) -> None:
         """
         Write on the project that content created or placed at `location` lands in
         """

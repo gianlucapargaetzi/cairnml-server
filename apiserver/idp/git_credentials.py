@@ -34,7 +34,8 @@ def key_material() -> str:
     if not value:
         raise errors.server_error.ConfigError(
             reason=f"the secret {KEY_SECRET} is missing from the secrets directory: Git credentials cannot be "
-                   "stored or used without it")
+            "stored or used without it"
+        )
     return value
 
 
@@ -63,7 +64,8 @@ def normalise_host(host: str) -> str:
     value = (host or "").strip().lower()
     if not _HOST.match(value):
         raise errors.bad_request.ValidationError(
-            "host must be a host name, optionally with a port, such as gitlab.example.com")
+            "host must be a host name, optionally with a port, such as gitlab.example.com"
+        )
     return value
 
 
@@ -128,8 +130,16 @@ def set_credential(company: str, host: str, path: str, username: str, secret: st
     now = datetime.utcnow()
     entry = _company_tokens(company, host).filter(path=path).first()
     if entry is None:
-        entry = UserAccess(id=uuid.uuid4().hex, company=company, user=COMPANY_OWNER, scope="company", kind="token",
-                           host=host, path=path, created=now)
+        entry = UserAccess(
+            id=uuid.uuid4().hex,
+            company=company,
+            user=COMPANY_OWNER,
+            scope="company",
+            kind="token",
+            host=host,
+            path=path,
+            created=now,
+        )
     entry.label = f"{username}@{host}" + (f"/{path}" if path else "")
     entry.username = username
     entry.secret = encrypted
@@ -163,4 +173,5 @@ def secret_of(entry) -> str:
         return decrypt(entry.secret, key_material())
     except CredentialUnreadable:
         raise errors.server_error.ConfigError(
-            reason=f"the stored Git credential for {entry.host} cannot be read with the current {KEY_SECRET}") from None
+            reason=f"the stored Git credential for {entry.host} cannot be read with the current {KEY_SECRET}"
+        ) from None

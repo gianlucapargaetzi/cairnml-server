@@ -27,8 +27,13 @@ def company():
 
 def make_root(company, id_="root1", owner="owner1", visibility=ProjectVisibility.private):
     project = Project(
-        id=id_, company=company, user=owner, name=id_, basename=id_,
-        created=datetime.utcnow(), visibility=visibility,
+        id=id_,
+        company=company,
+        user=owner,
+        name=id_,
+        basename=id_,
+        created=datetime.utcnow(),
+        visibility=visibility,
     )
     project.save()
     return project
@@ -37,15 +42,27 @@ def make_root(company, id_="root1", owner="owner1", visibility=ProjectVisibility
 def make_public_queue(company, id_=None):
     # The use rule is checked before the task rule, so the queue must be usable by the stranger for the
     # task rule to be what refuses the request
-    queue = Queue(id=id_ or str(uuid4()), company=company, name=f"q-{uuid4().hex[:6]}", created=datetime.utcnow(), public=True)
+    queue = Queue(
+        id=id_ or str(uuid4()), company=company, name=f"q-{uuid4().hex[:6]}", created=datetime.utcnow(), public=True
+    )
     queue.save()
-    Share(id=uuid4().hex, company=company, resource_type="queue", resource_id=queue.id, scope="public", level="read",
-          granted_by="", created=datetime.utcnow()).save()
+    Share(
+        id=uuid4().hex,
+        company=company,
+        resource_type="queue",
+        resource_id=queue.id,
+        scope="public",
+        level="read",
+        granted_by="",
+        created=datetime.utcnow(),
+    ).save()
     return queue
 
 
 def make_task(company, project, owner, id_="task1"):
-    task = Task(id=id_, company=company, user=owner, name=id_, project=project, type="training", created=datetime.utcnow())
+    task = Task(
+        id=id_, company=company, user=owner, name=id_, project=project, type="training", created=datetime.utcnow()
+    )
     task.save()
     return task
 

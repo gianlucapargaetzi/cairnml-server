@@ -64,8 +64,7 @@ def main() -> None:
             continue
         artifact = stored[name]
         got = digest_of(kind, artifact)
-        results[name] = {"ok": got == want, "kind": kind, "hash": artifact.hash,
-                         "metadata": artifact.metadata or {}}
+        results[name] = {"ok": got == want, "kind": kind, "hash": artifact.hash, "metadata": artifact.metadata or {}}
     report({"task_id": args.task_id, "results": results, "names": sorted(stored.keys())})
 
 

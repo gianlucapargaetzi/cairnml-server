@@ -59,8 +59,7 @@ def _assert_hidden(error: ApiError, project_id: str):
 
 
 def _push(person: Person, project_id: str, label: str) -> str:
-    return person.api.authed("tasks.create", {"name": new_name(label), "type": TASK_TYPE,
-                                              "project": project_id})["id"]
+    return person.api.authed("tasks.create", {"name": new_name(label), "type": TASK_TYPE, "project": project_id})["id"]
 
 
 @pytest.fixture(scope="module")
@@ -105,8 +104,9 @@ def public_project(people):
     """A public project owned by OWNER, with one task in it."""
     owner = people[OWNER]
     project_id = workspace.create_project(owner.api, new_name("access-public"))
-    VersionedApi(owner.api, MEMBERSHIP_VERSION).authed("projects.set_visibility", {"project": project_id,
-                                                                                    "visibility": "public"})
+    VersionedApi(owner.api, MEMBERSHIP_VERSION).authed(
+        "projects.set_visibility", {"project": project_id, "visibility": "public"}
+    )
     yield project_id
     workspace.delete_project(owner.api, project_id)
 
@@ -177,8 +177,11 @@ def test_read_member_cannot_push_a_task(people, private_project):
 
     Expect: the push is refused with 403.
     """
-    error = _refused(people[READER].api, "tasks.create", {"name": new_name("access-reader-push"),
-                                                           "type": TASK_TYPE, "project": private_project})
+    error = _refused(
+        people[READER].api,
+        "tasks.create",
+        {"name": new_name("access-reader-push"), "type": TASK_TYPE, "project": private_project},
+    )
     _assert_forbidden(error)
 
 
@@ -239,8 +242,9 @@ def test_admin_pushes_and_deletes_in_a_private_project_it_is_not_on(client_home,
     Expect: the admin pushes a task into the private project and deletes it, with the project's members in place.
     """
     admin = workspace.device_api(client_home)
-    task_id = admin.authed("tasks.create", {"name": new_name("access-admin-push"), "type": TASK_TYPE,
-                                            "project": private_project})["id"]
+    task_id = admin.authed(
+        "tasks.create", {"name": new_name("access-admin-push"), "type": TASK_TYPE, "project": private_project}
+    )["id"]
     assert admin.authed("tasks.delete", {"task": task_id, "force": True})["deleted"] is True
 
 

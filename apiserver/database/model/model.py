@@ -100,13 +100,9 @@ class Model(AttributedDocument):
     last_update = DateTimeField()
     last_change = DateTimeField()
     last_changed_by = StringField()
-    ui_cache = SafeDictField(
-        default=dict, user_set_allowed=True, exclude_by_default=True
-    )
+    ui_cache = SafeDictField(default=dict, user_set_allowed=True, exclude_by_default=True)
     company_origin = StringField(exclude_by_default=True)
-    metadata = SafeMapField(
-        field=EmbeddedDocumentField(MetadataItem), user_set_allowed=True
-    )
+    metadata = SafeMapField(field=EmbeddedDocumentField(MetadataItem), user_set_allowed=True)
     last_iteration = IntField(default=0)
     last_metrics = SafeMapField(field=SafeMapField(EmbeddedDocumentField(MetricEvent)))
     unique_metrics = ListField(StringField(required=True), exclude_by_default=True)

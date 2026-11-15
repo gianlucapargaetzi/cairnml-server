@@ -1,4 +1,5 @@
-""" Command line tools for the API server """
+"""Command line tools for the API server"""
+
 from argparse import ArgumentParser
 
 import dpath
@@ -14,9 +15,7 @@ def setup():
 def gen_token(args):
     from apiserver.bll.auth import AuthBLL
 
-    resp = AuthBLL.get_token_for_user(
-        args.user_id, args.company_id, int(parse_timespan(args.expiration))
-    )
+    resp = AuthBLL.get_token_for_user(args.user_id, args.company_id, int(parse_timespan(args.expiration)))
     print("Token:\n%s" % resp.token)
 
 
@@ -34,9 +33,7 @@ if __name__ == "__main__":
 
     token = subparsers.add_parser("token")
     token_commands = token.add_subparsers(title="Commands")
-    token_create = token_commands.add_parser(
-        "generate", description="Generate a new token"
-    )
+    token_create = token_commands.add_parser("generate", description="Generate a new token")
     token_create.add_argument("--user-id", "-u", help="User ID", required=True)
     token_create.add_argument("--company-id", "-c", help="Company ID", required=True)
     token_create.add_argument(

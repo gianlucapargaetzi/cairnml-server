@@ -35,16 +35,23 @@ def owner():
 
 def exchange_as(monkeypatch, owner, kind):
     """Runs devices.exchange for a device of ``kind`` owned by ``owner``; returns the role given to the token."""
-    device = SimpleNamespace(id="dev_1", user="u1", company="c1", kind=kind, revoked=False,
-                             public_key="key", last_used=None, save=lambda: None)
+    device = SimpleNamespace(
+        id="dev_1",
+        user="u1",
+        company="c1",
+        kind=kind,
+        revoked=False,
+        public_key="key",
+        last_used=None,
+        save=lambda: None,
+    )
     issued = {}
 
     monkeypatch.setattr(devices, "unverified_issuer", lambda _assertion: "dev_1")
     monkeypatch.setattr(devices.Device, "objects", FakeCollection(device))
     monkeypatch.setattr(devices.AuthUser, "objects", FakeCollection(owner))
     monkeypatch.setattr(devices, "load_public_key", lambda _key: None)
-    monkeypatch.setattr(devices, "verify_assertion",
-                        lambda *_a, **_k: {"jti": "j1", "exp": 2e10})
+    monkeypatch.setattr(devices, "verify_assertion", lambda *_a, **_k: {"jti": "j1", "exp": 2e10})
     monkeypatch.setattr(devices, "claim_jti", lambda *_a, **_k: True)
     monkeypatch.setattr(devices, "public_origin", SimpleNamespace(api_url=lambda: "https://api"))
     monkeypatch.setattr(devices, "audit", lambda *_a, **_k: None)

@@ -25,23 +25,39 @@ def company():
 
 def make_root(company, id_="root1", owner="owner1", visibility=ProjectVisibility.private):
     project = Project(
-        id=id_, company=company, user=owner, name=id_, basename=id_,
-        created=datetime.utcnow(), visibility=visibility,
+        id=id_,
+        company=company,
+        user=owner,
+        name=id_,
+        basename=id_,
+        created=datetime.utcnow(),
+        visibility=visibility,
     )
     project.save()
     return project
 
 
 def make_task(company, project, owner, id_="task1"):
-    task = Task(id=id_, company=company, user=owner, name=id_, project=project, type="training", created=datetime.utcnow())
+    task = Task(
+        id=id_, company=company, user=owner, name=id_, project=project, type="training", created=datetime.utcnow()
+    )
     task.save()
     return task
 
 
 def make_stored_chunk(company, task, id_="chunk1"):
     chunk = Datachunk(
-        id=id_, company=company, task=task, kind=DatachunkKind.artifact, bucket="b", key="k",
-        name="art", size=1, sha256="0" * 64, state=DatachunkState.stored, created=datetime.utcnow(),
+        id=id_,
+        company=company,
+        task=task,
+        kind=DatachunkKind.artifact,
+        bucket="b",
+        key="k",
+        name="art",
+        size=1,
+        sha256="0" * 64,
+        state=DatachunkState.stored,
+        created=datetime.utcnow(),
     )
     chunk.save()
     return chunk

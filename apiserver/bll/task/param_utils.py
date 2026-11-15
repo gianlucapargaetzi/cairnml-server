@@ -70,15 +70,9 @@ def _get_legacy_params(data: dict, with_sections: bool = False) -> Sequence[dict
         return []
 
     if with_sections:
-        return list(
-            itertools.chain.from_iterable(
-                _get_legacy_params(section_data) for section_data in data.values()
-            )
-        )
+        return list(itertools.chain.from_iterable(_get_legacy_params(section_data) for section_data in data.values()))
 
-    return [
-        param for param in data.values() if param.get("type") == hyperparams_legacy_type
-    ]
+    return [param for param in data.values() if param.get("type") == hyperparams_legacy_type]
 
 
 def params_prepare_for_save(fields: dict, previous_task: Task = None):
@@ -94,15 +88,9 @@ def params_prepare_for_save(fields: dict, previous_task: Task = None):
         if legacy_params is None:
             continue
 
-        if (
-            not fields.get(new_params_field)
-            and previous_task
-            and previous_task[new_params_field]
-        ):
+        if not fields.get(new_params_field) and previous_task and previous_task[new_params_field]:
             previous_data = previous_task.to_proper_dict().get(new_params_field)
-            removed = _remove_legacy_params(
-                previous_data, with_sections=default_section is not None
-            )
+            removed = _remove_legacy_params(previous_data, with_sections=default_section is not None)
             if not legacy_params and not removed:
                 # if we only need to delete legacy fields from the db
                 # but they are not there then there is no point to proceed
@@ -123,17 +111,14 @@ def params_prepare_for_save(fields: dict, previous_task: Task = None):
 
     def ensure_non_empty(k: str, desc: str) -> str:
         if not k:
-            raise errors.bad_request.ValidationError(
-                f"Empty {desc} name is not allowed"
-            )
+            raise errors.bad_request.ValidationError(f"Empty {desc} name is not allowed")
         return k
 
     params = fields.get("hyperparams")
     if params:
         escaped_params = {
             ParameterKeyEscaper.escape(ensure_non_empty(key, "section")): {
-                ParameterKeyEscaper.escape(ensure_non_empty(k, "parameter")): v
-                for k, v in value.items()
+                ParameterKeyEscaper.escape(ensure_non_empty(k, "parameter")): v for k, v in value.items()
             }
             for key, value in params.items()
         }
@@ -142,8 +127,7 @@ def params_prepare_for_save(fields: dict, previous_task: Task = None):
     params = fields.get("configuration")
     if params:
         escaped_params = {
-            ParameterKeyEscaper.escape(ensure_non_empty(key, "configuration")): value
-            for key, value in params.items()
+            ParameterKeyEscaper.escape(ensure_non_empty(key, "configuration")): value for key, value in params.items()
         }
         fields["configuration"] = escaped_params
 
@@ -157,9 +141,7 @@ def params_unprepare_from_saved(fields, copy_to_legacy=False):
         params = fields.get(param_field)
         if params:
             unescaped_params = {
-                ParameterKeyEscaper.unescape(key): {
-                    ParameterKeyEscaper.unescape(k): v for k, v in value.items()
-                }
+                ParameterKeyEscaper.unescape(key): {ParameterKeyEscaper.unescape(k): v for k, v in value.items()}
                 if isinstance(value, dict)
                 else value
                 for key, value in params.items()
@@ -171,9 +153,7 @@ def params_unprepare_from_saved(fields, copy_to_legacy=False):
             ("hyperparams", ("execution", "parameters"), True),
             ("configuration", ("execution", "model_desc"), False),
         ):
-            legacy_params = _get_legacy_params(
-                fields.get(new_params_field), with_sections=use_sections
-            )
+            legacy_params = _get_legacy_params(fields.get(new_params_field), with_sections=use_sections)
             if legacy_params:
                 nested_set(
                     fields,
@@ -190,9 +170,7 @@ def _process_path(path: str):
     parts = path.split(".")
     if len(parts) < 2 or len(parts) > 4:
         raise errors.bad_request.ValidationError("invalid task field", path=path)
-    return ".".join(
-        ParameterKeyEscaper.escape(ParameterKeyEscaper.unescape(p)) for p in parts
-    )
+    return ".".join(ParameterKeyEscaper.escape(ParameterKeyEscaper.unescape(p)) for p in parts)
 
 
 def escape_paths(paths: Sequence[str]) -> Sequence[str]:
@@ -209,7 +187,5 @@ def escape_paths(paths: Sequence[str]) -> Sequence[str]:
         "configuration.",
         "-configuration.",
     ):
-        paths = [
-            _process_path(path) if path.startswith(prefix) else path for path in paths
-        ]
+        paths = [_process_path(path) if path.startswith(prefix) else path for path in paths]
     return paths

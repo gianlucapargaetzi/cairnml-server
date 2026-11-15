@@ -19,8 +19,13 @@ class FakeApp:
 
 
 def task(repository="https://github.com/acme/proj.git", commit="abc123"):
-    return SimpleNamespace(id="t1", company="c1", user="u1", project="p1",
-                           script=SimpleNamespace(repository=repository, version_num=commit))
+    return SimpleNamespace(
+        id="t1",
+        company="c1",
+        user="u1",
+        project="p1",
+        script=SimpleNamespace(repository=repository, version_num=commit),
+    )
 
 
 class TestSubmissionCheck(TestCase):
@@ -29,10 +34,12 @@ class TestSubmissionCheck(TestCase):
     def check(self, state=repositories.ASSIGNED, host="github.com", app=None, message="", **task_kwargs):
         repo = SimpleNamespace(host=host, path="acme/proj")
         resolution = repositories.Resolution(state, SimpleNamespace(kind="app") if app is not None else None, message)
-        with mock.patch.object(repositories, "record_use_quietly", return_value=repo), \
-                mock.patch.object(repositories, "resolve", return_value=resolution), \
-                mock.patch.object(repositories, "_app_of", return_value=app), \
-                mock.patch("apiserver.bll.membership.root_project", return_value="p1"):
+        with (
+            mock.patch.object(repositories, "record_use_quietly", return_value=repo),
+            mock.patch.object(repositories, "resolve", return_value=resolution),
+            mock.patch.object(repositories, "_app_of", return_value=app),
+            mock.patch("apiserver.bll.membership.root_project", return_value="p1"),
+        ):
             check_submission(task(**task_kwargs))
 
     def test_a_repository_read_with_a_credential_and_its_commit_is_accepted(self):
@@ -44,7 +51,9 @@ class TestSubmissionCheck(TestCase):
 
     def test_an_unreachable_repository_is_refused_with_the_reason_and_the_steps(self):
         with self.assertRaises(AccessRefused) as ctx:
-            self.check(state=repositories.UNREACHABLE, message="The repository is private and no credential is assigned")
+            self.check(
+                state=repositories.UNREACHABLE, message="The repository is private and no credential is assigned"
+            )
         self.assertIn("no credential is assigned", str(ctx.exception))
         self.assertIn(GITHUB_APP_DOCS, str(ctx.exception))
 

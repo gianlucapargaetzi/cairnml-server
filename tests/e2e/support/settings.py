@@ -32,8 +32,9 @@ except KeyError:  # the runner runs as the host's uid, which has no passwd entry
 BROWSERS_PATH = os.environ.get("PLAYWRIGHT_BROWSERS_PATH") or str(REAL_HOME / ".cache" / "ms-playwright")
 
 
-def configure(*, api: str, web: str, idp: str, storage: str, admin_user: str, admin_password: str,
-              project: str) -> None:
+def configure(
+    *, api: str, web: str, idp: str, storage: str, admin_user: str, admin_password: str, project: str
+) -> None:
     global API_URL, WEB_URL, IDP_URL, STORAGE_URL, ISSUER, ADMIN_USER, ADMIN_PASSWORD, STACK_PROJECT
     API_URL, WEB_URL, IDP_URL, STORAGE_URL = api, web, idp, storage
     STACK_PROJECT = project

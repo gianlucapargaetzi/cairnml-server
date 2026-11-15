@@ -100,18 +100,12 @@ class HistoryDebugImageIterator:
         return res
 
     @staticmethod
-    def _fill_res_and_update_state(
-        event: dict, res: VariantSampleResult, state: DebugImageSampleState
-    ):
+    def _fill_res_and_update_state(event: dict, res: VariantSampleResult, state: DebugImageSampleState):
         state.variant = event["variant"]
         state.metric = event["metric"]
         state.iteration = event["iter"]
         res.event = event
-        var_state = first(
-            vs
-            for vs in state.variant_states
-            if vs.name == state.variant and vs.metric == state.metric
-        )
+        var_state = first(vs for vs in state.variant_states if vs.name == state.variant and vs.metric == state.metric)
         if var_state:
             res.min_iteration = var_state.min_iteration
             res.max_iteration = var_state.max_iteration
@@ -156,11 +150,7 @@ class HistoryDebugImageIterator:
         Return None if no such variant or sample is found
         """
         if state.navigate_current_metric:
-            variants = [
-                var_state
-                for var_state in state.variant_states
-                if var_state.metric == state.metric
-            ]
+            variants = [var_state for var_state in state.variant_states if var_state.metric == state.metric]
         else:
             variants = state.variant_states
 
@@ -210,22 +200,14 @@ class HistoryDebugImageIterator:
         If no suitable sample is found then None is returned
         """
         if state.navigate_current_metric:
-            variants = [
-                var_state
-                for var_state in state.variant_states
-                if var_state.metric == state.metric
-            ]
+            variants = [var_state for var_state in state.variant_states if var_state.metric == state.metric]
         else:
             variants = state.variant_states
 
         if navigate_earlier:
             range_operator = "lt"
             order = "desc"
-            variants = [
-                var_state
-                for var_state in variants
-                if var_state.min_iteration < state.iteration
-            ]
+            variants = [var_state for var_state in variants if var_state.min_iteration < state.iteration]
         else:
             range_operator = "gt"
             order = "asc"
@@ -302,15 +284,13 @@ class HistoryDebugImageIterator:
 
         state: DebugImageSampleState
         with self.cache_manager.get_or_create_state(
-            state_id=state_id, init_state=init_state, validate_state=validate_state,
+            state_id=state_id,
+            init_state=init_state,
+            validate_state=validate_state,
         ) as state:
             res.scroll_id = state.id
 
-            var_state = first(
-                vs
-                for vs in state.variant_states
-                if vs.name == variant and vs.metric == metric
-            )
+            var_state = first(vs for vs in state.variant_states if vs.name == variant and vs.metric == metric)
             if not var_state:
                 return res
 
@@ -324,17 +304,9 @@ class HistoryDebugImageIterator:
                 {"exists": {"field": "url"}},
             ]
             if iteration is not None:
-                must_conditions.append(
-                    {
-                        "range": {
-                            "iter": {"lte": iteration, "gte": var_state.min_iteration}
-                        }
-                    }
-                )
+                must_conditions.append({"range": {"iter": {"lte": iteration, "gte": var_state.min_iteration}}})
             else:
-                must_conditions.append(
-                    {"range": {"iter": {"gte": var_state.min_iteration}}}
-                )
+                must_conditions.append({"range": {"iter": {"gte": var_state.min_iteration}}})
 
             es_req = {
                 "size": 1,
@@ -353,9 +325,7 @@ class HistoryDebugImageIterator:
             if not hits:
                 return res
 
-            self._fill_res_and_update_state(
-                event=hits[0]["_source"], res=res, state=state
-            )
+            self._fill_res_and_update_state(event=hits[0]["_source"], res=res, state=state)
             return res
 
     def _reset_variant_states(self, company_id: str, state: DebugImageSampleState):
@@ -376,7 +346,10 @@ class HistoryDebugImageIterator:
         ]
 
     def _get_metric_variant_iterations(
-        self, company_id: str, task: str, metric: str,
+        self,
+        company_id: str,
+        task: str,
+        metric: str,
     ) -> Mapping[str, Sequence[Tuple[str, int, int]]]:
         """
         Return valid min and max iterations that the task reported events of the required type
@@ -390,11 +363,11 @@ class HistoryDebugImageIterator:
         query = {"bool": {"must": must}}
 
         search_args = dict(
-            es=self.es, company_id=company_id, event_type=self.event_type,
+            es=self.es,
+            company_id=company_id,
+            event_type=self.event_type,
         )
-        max_metrics, max_variants = get_max_metric_and_variant_counts(
-            query=query, **search_args
-        )
+        max_metrics, max_variants = get_max_metric_and_variant_counts(query=query, **search_args)
         max_variants = int(max_variants // 2)
         es_req: dict = {
             "size": 0,
@@ -449,7 +422,5 @@ class HistoryDebugImageIterator:
                 get_variant_data(variant_bucket)
                 for variant_bucket in nested_get(metric_bucket, ("variants", "buckets"))
             ]
-            for metric_bucket in nested_get(
-                es_res, ("aggregations", "metrics", "buckets")
-            )
+            for metric_bucket in nested_get(es_res, ("aggregations", "metrics", "buckets"))
         }

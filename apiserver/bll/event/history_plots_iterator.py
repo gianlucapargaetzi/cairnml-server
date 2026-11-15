@@ -88,9 +88,7 @@ class HistoryPlotsIterator:
         if state.navigate_current_metric:
             must_conditions.append({"term": {"metric": state.metric}})
 
-        next_iteration_condition = {
-            "range": {"iter": {range_operator: state.iteration}}
-        }
+        next_iteration_condition = {"range": {"iter": {range_operator: state.iteration}}}
         if next_iteration or state.navigate_current_metric:
             must_conditions.append(next_iteration_condition)
         else:
@@ -102,9 +100,7 @@ class HistoryPlotsIterator:
                     ]
                 }
             }
-            must_conditions.append(
-                {"bool": {"should": [next_metric_condition, next_iteration_condition]}}
-            )
+            must_conditions.append({"bool": {"should": [next_metric_condition, next_iteration_condition]}})
 
         events = self._get_metric_events_for_condition(
             company_id=company_id,
@@ -159,7 +155,9 @@ class HistoryPlotsIterator:
 
         state: PlotsSampleState
         with self.cache_manager.get_or_create_state(
-            state_id=state_id, init_state=init_state, validate_state=validate_state,
+            state_id=state_id,
+            init_state=init_state,
+            validate_state=validate_state,
         ) as state:
             res.scroll_id = state.id
 
@@ -201,7 +199,10 @@ class HistoryPlotsIterator:
         ]
 
     def _get_metric_iterations(
-        self, company_id: str, task: str, metric: str,
+        self,
+        company_id: str,
+        task: str,
+        metric: str,
     ) -> Mapping[str, Tuple[int, int]]:
         """
         Return valid min and max iterations that the task reported events of the required type
@@ -243,23 +244,17 @@ class HistoryPlotsIterator:
                 int(metric_bucket["first_iter"]["value"]),
                 int(metric_bucket["last_iter"]["value"]),
             )
-            for metric_bucket in nested_get(
-                es_res, ("aggregations", "metrics", "buckets")
-            )
+            for metric_bucket in nested_get(es_res, ("aggregations", "metrics", "buckets"))
         }
 
     @staticmethod
-    def _fill_res_and_update_state(
-        events: Sequence[dict], res: MetricSamplesResult, state: PlotsSampleState
-    ):
+    def _fill_res_and_update_state(events: Sequence[dict], res: MetricSamplesResult, state: PlotsSampleState):
         for event in events:
             uncompress_plot(event)
         state.metric = events[0]["metric"]
         state.iteration = events[0]["iter"]
         res.events = events
-        metric_state = first(
-            ms for ms in state.metric_states if ms.name == state.metric
-        )
+        metric_state = first(ms for ms in state.metric_states if ms.name == state.metric)
         if metric_state:
             res.min_iteration = metric_state.min_iteration
             res.max_iteration = metric_state.max_iteration
@@ -310,7 +305,4 @@ class HistoryPlotsIterator:
                 return []
             aggs_result = level_data[0]
 
-        return [
-            hit["_source"]
-            for hit in nested_get(aggs_result, ("events", "hits", "hits"))
-        ]
+        return [hit["_source"] for hit in nested_get(aggs_result, ("events", "hits", "hits"))]

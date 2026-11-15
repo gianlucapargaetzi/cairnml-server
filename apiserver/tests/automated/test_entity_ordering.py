@@ -28,9 +28,7 @@ class TestEntityOrdering(TestService):
         self._assertGetTasksWithOrdering(order_by="comment")
 
         # sort by parameter which type is not part of db schema
-        self._assertGetTasksWithOrdering(
-            order_by="execution.parameters.test", valid_order=False
-        )
+        self._assertGetTasksWithOrdering(order_by="execution.parameters.test", valid_order=False)
 
     def test_order_with_paging(self):
         order_field = "started"
@@ -41,15 +39,11 @@ class TestEntityOrdering(TestService):
         page_size = 4
         num_pages = 5
         for page in range(num_pages):
-            paged_tasks = self._get_page_tasks(
-                order_by=order_field, page=page, page_size=page_size
-            )
+            paged_tasks = self._get_page_tasks(order_by=order_field, page=page, page_size=page_size)
             self.assertEqual(len(paged_tasks), page_size)
             field_vals.extend(t.get(order_field) for t in paged_tasks)
 
-        paged_tasks = self._get_page_tasks(
-            order_by=order_field, page=num_pages, page_size=page_size
-        )
+        paged_tasks = self._get_page_tasks(order_by=order_field, page=num_pages, page_size=page_size)
         self.assertTrue(not paged_tasks)
 
         self._assertSorted(field_vals)
@@ -99,9 +93,7 @@ class TestEntityOrdering(TestService):
 
         return val
 
-    def _assertGetTasksWithOrdering(
-        self, order_by: str = None, valid_order=True, **kwargs
-    ):
+    def _assertGetTasksWithOrdering(self, order_by: str = None, valid_order=True, **kwargs):
         tasks = self.api.tasks.get_all_ex(
             only_fields=self.only_fields,
             order_by=[order_by] if isinstance(order_by, str) else order_by,
@@ -112,9 +104,7 @@ class TestEntityOrdering(TestService):
         if order_by and valid_order:
             # test that the output is correctly ordered
             field_name = order_by if not order_by.startswith("-") else order_by[1:]
-            field_vals = [
-                self._get_value_for_path(t, field_name.split(".")) for t in tasks
-            ]
+            field_vals = [self._get_value_for_path(t, field_name.split(".")) for t in tasks]
             self._assertSorted(
                 field_vals,
                 ascending=not order_by.startswith("-"),
@@ -123,10 +113,7 @@ class TestEntityOrdering(TestService):
 
     def _create_tasks(self):
         tasks = [
-            self._temp_task(
-                **(dict(execution={"parameters": {"test": f"{i}"} if i >= 5 else {}}))
-            )
-            for i in range(20)
+            self._temp_task(**(dict(execution={"parameters": {"test": f"{i}"} if i >= 5 else {}}))) for i in range(20)
         ]
         for idx, task in zip(range(5), tasks):
             self.api.tasks.started(task=task)

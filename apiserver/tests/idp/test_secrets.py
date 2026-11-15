@@ -35,7 +35,10 @@ class TestSecrets(TestCase):
 
     def test_default_secret_is_refused(self):
         with self.assertRaises(ValueError):
-            refuse_default_secret("Rq8FW84sSqVgq7WvBB_4EzNl9y8z8IGiDXX3C345_a5AZfcwZcwCIA", "Rq8FW84sSqVgq7WvBB_4EzNl9y8z8IGiDXX3C345_a5AZfcwZcwCIA")
+            refuse_default_secret(
+                "Rq8FW84sSqVgq7WvBB_4EzNl9y8z8IGiDXX3C345_a5AZfcwZcwCIA",
+                "Rq8FW84sSqVgq7WvBB_4EzNl9y8z8IGiDXX3C345_a5AZfcwZcwCIA",
+            )
 
     def test_custom_secret_is_accepted(self):
         refuse_default_secret("a-real-secret", "Rq8FW84sSqVgq7WvBB_4EzNl9y8z8IGiDXX3C345_a5AZfcwZcwCIA")

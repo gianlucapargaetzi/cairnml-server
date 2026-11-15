@@ -63,9 +63,7 @@ def _get_child_project_ids(
 
 
 def validate_project_delete(company: str, project_id: str):
-    project = Project.get_for_writing(
-        company=company, id=project_id, _only=("id", "path", "system_tags")
-    )
+    project = Project.get_for_writing(company=company, id=project_id, _only=("id", "path", "system_tags"))
     if not project:
         raise errors.bad_request.InvalidProjectId(id=project_id)
 
@@ -93,18 +91,12 @@ def validate_project_delete(company: str, project_id: str):
     if project_ids:
         in_project_query = Q(project__in=project_ids)
         for cls in (Task, Model):
-            query = (
-                in_project_query & Q(system_tags__nin=[reports_tag])
-                if cls is Task
-                else in_project_query
-            )
+            query = in_project_query & Q(system_tags__nin=[reports_tag]) if cls is Task else in_project_query
             ret[f"{cls.__name__.lower()}s"] = cls.objects(query).count()
             ret[f"non_archived_{cls.__name__.lower()}s"] = cls.objects(
                 query & Q(system_tags__nin=[EntityVisibility.archived.value])
             ).count()
-        ret["reports"] = Task.objects(
-            in_project_query & Q(system_tags__in=[reports_tag])
-        ).count()
+        ret["reports"] = Task.objects(in_project_query & Q(system_tags__in=[reports_tag])).count()
         ret["non_archived_reports"] = Task.objects(
             in_project_query
             & Q(
@@ -130,15 +122,11 @@ def delete_project(
     delete_contents: bool,
     delete_external_artifacts: bool,
 ) -> Tuple[DeleteProjectResult, Set[str]]:
-    project = Project.get_for_writing(
-        company=company, id=project_id, _only=("id", "path", "system_tags")
-    )
+    project = Project.get_for_writing(company=company, id=project_id, _only=("id", "path", "system_tags"))
     if not project:
         raise errors.bad_request.InvalidProjectId(id=project_id)
 
-    delete_external_artifacts = delete_external_artifacts and config.get(
-        "services.async_urls_delete.enabled", True
-    )
+    delete_external_artifacts = delete_external_artifacts and config.get("services.async_urls_delete.enabled", True)
     project_ids, pipeline_ids, dataset_ids = _get_child_project_ids(project_id)
     if not force:
         if pipeline_ids:
@@ -179,17 +167,11 @@ def delete_project(
     if not delete_contents:
         disassociated = defaultdict(int)
         for cls in ProjectBLL.child_classes:
-            disassociated[cls] = cls.objects(project__in=project_ids).update(
-                project=None
-            )
+            disassociated[cls] = cls.objects(project__in=project_ids).update(project=None)
         res = DeleteProjectResult(disassociated_tasks=disassociated[Task])
     else:
-        deleted_models, model_event_urls, model_urls = _delete_models(
-            company=company, user=user, projects=project_ids
-        )
-        deleted_tasks, task_event_urls, artifact_urls = _delete_tasks(
-            company=company, user=user, projects=project_ids
-        )
+        deleted_models, model_event_urls, model_urls = _delete_models(company=company, user=user, projects=project_ids)
+        deleted_tasks, task_event_urls, artifact_urls = _delete_tasks(company=company, user=user, projects=project_ids)
         event_urls = task_event_urls | model_event_urls
         if delete_external_artifacts:
             scheduled = schedule_for_delete(
@@ -217,9 +199,7 @@ def delete_project(
     return res, affected
 
 
-def _delete_tasks(
-    company: str, user: str, projects: Sequence[str]
-) -> Tuple[int, Set, Set]:
+def _delete_tasks(company: str, user: str, projects: Sequence[str]) -> Tuple[int, Set, Set]:
     """
     Delete only the task themselves and their non published version.
     Child models under the same project are deleted separately.
@@ -247,24 +227,16 @@ def _delete_tasks(
     for task in tasks:
         if task.execution and task.execution.artifacts:
             artifact_urls.update(
-                {
-                    a.uri
-                    for a in task.execution.artifacts.values()
-                    if a.mode == ArtifactModes.output and a.uri
-                }
+                {a.uri for a in task.execution.artifacts.values() if a.mode == ArtifactModes.output and a.uri}
             )
 
-    event_urls = delete_task_events_and_collect_urls(
-        company=company, task_ids=task_ids, wait_for_delete=False
-    )
+    event_urls = delete_task_events_and_collect_urls(company=company, task_ids=task_ids, wait_for_delete=False)
     deleted = tasks.delete()
 
     return deleted, event_urls, artifact_urls
 
 
-def _delete_models(
-    company: str, user: str, projects: Sequence[str]
-) -> Tuple[int, Set[str], Set[str]]:
+def _delete_models(company: str, user: str, projects: Sequence[str]) -> Tuple[int, Set[str], Set[str]]:
     """
     Delete project models and update the tasks from other projects
     that reference them to reference None.

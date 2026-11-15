@@ -11,11 +11,15 @@ from apiserver.idp.git_reader import GitReader
 
 
 def _git(folder, *args):
-    subprocess.run(["git", "-C", str(folder), "-c", "user.name=t", "-c", "user.email=t@t", *args], check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-C", str(folder), "-c", "user.name=t", "-c", "user.email=t@t", *args], check=True, capture_output=True
+    )
 
 
 def _sha(folder):
-    return subprocess.run(["git", "-C", str(folder), "rev-parse", "HEAD"], capture_output=True, text=True, check=True).stdout.strip()
+    return subprocess.run(
+        ["git", "-C", str(folder), "rev-parse", "HEAD"], capture_output=True, text=True, check=True
+    ).stdout.strip()
 
 
 @pytest.fixture
@@ -25,7 +29,11 @@ def dataset(tmp_path, monkeypatch):
     work.mkdir()
     subprocess.run(["git", "init", "-q", "-b", "main", str(work)], check=True)
     commits = []
-    for message, manifest in (("first", {"samples": 100}), ("more", {"samples": 250, "splits": {"train": 200, "test": 50}}), ("no manifest", None)):
+    for message, manifest in (
+        ("first", {"samples": 100}),
+        ("more", {"samples": 250, "splits": {"train": 200, "test": 50}}),
+        ("no manifest", None),
+    ):
         manifest_file = work / "manifest.json"
         if manifest is None:
             manifest_file.unlink()
@@ -60,7 +68,9 @@ def test_a_commit_that_git_does_not_have_is_left_out_not_an_error(dataset):
     host, commits = dataset
     ghost = {"sha": "f" * 40, "message": "gone", "date": "2026-11-09T00:00:00+00:00"}
     with GitReader(host) as reader:
-        assert [v["commit"] for v in versions_of(reader, "owner/data", [ghost] + list(reversed(commits)))] == [c["sha"] for c in commits]
+        assert [v["commit"] for v in versions_of(reader, "owner/data", [ghost] + list(reversed(commits)))] == [
+            c["sha"] for c in commits
+        ]
 
 
 def test_a_manifest_that_is_not_json_counts_as_no_manifest(dataset, tmp_path):

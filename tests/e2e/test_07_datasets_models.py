@@ -23,16 +23,34 @@ def origin(tmp_path_factory):
 @pytest.fixture(scope="module")
 def dataset(client_home, origin, tmp_path_factory):
     work = tmp_path_factory.mktemp("dataset-source") / "cars-data"
-    made = run_json(client_home, "dataset_make.py", [
-        "--origin", str(origin), "--work", str(work), "--unpushed",
-    ], timeout=300)
+    made = run_json(
+        client_home,
+        "dataset_make.py",
+        [
+            "--origin",
+            str(origin),
+            "--work",
+            str(work),
+            "--unpushed",
+        ],
+        timeout=300,
+    )
     return {"made": made, "origin": str(origin)}
 
 
 def fetch(client_home, dataset, commit, extra=()):
-    return run_json(client_home, "dataset_fetch.py", [
-        "--repo", dataset["origin"], "--commit", commit, *extra,
-    ], timeout=300)
+    return run_json(
+        client_home,
+        "dataset_fetch.py",
+        [
+            "--repo",
+            dataset["origin"],
+            "--commit",
+            commit,
+            *extra,
+        ],
+        timeout=300,
+    )
 
 
 def test_dataset_is_published_in_two_versions(dataset):
@@ -72,8 +90,12 @@ def test_a_run_records_the_dataset_it_used(client_home, dataset, project):
     Expect: The run has the repository, the commit and the content hash of the files under its Datasets parameters.
     """
     made = dataset["made"]
-    ran = fetch(client_home, dataset, made["second"], ["--project", project, "--name", new_name("dataset-run"),
-                                                       "--alias", "cars"])
+    ran = fetch(
+        client_home,
+        dataset,
+        made["second"],
+        ["--project", project, "--name", new_name("dataset-run"), "--alias", "cars"],
+    )
     api = workspace.device_api(client_home)
     params = api.authed("tasks.get_by_id", {"task": ran["task_id"]})["task"]["hyperparams"]["Datasets"]
     assert params["cars/repo"]["value"] == dataset["origin"]
@@ -86,9 +108,16 @@ def test_a_commit_that_was_not_pushed_is_refused(client_home, dataset, tmp_path)
 
     Expect: Fetching a commit that only exists on the author's machine exits with a non-zero code.
     """
-    result = workspace.run_raw(client_home, "dataset_fetch.py", [
-        "--repo", dataset["origin"], "--commit", dataset["made"]["third"],
-    ])
+    result = workspace.run_raw(
+        client_home,
+        "dataset_fetch.py",
+        [
+            "--repo",
+            dataset["origin"],
+            "--commit",
+            dataset["made"]["third"],
+        ],
+    )
     assert result.returncode != 0
     assert "is not on" in result.output
 
@@ -105,9 +134,19 @@ def test_dataset_fetch_of_an_unknown_commit_fails(client_home, dataset):
 @pytest.fixture(scope="module")
 def model(client_home, project, tmp_path_factory):
     work = tmp_path_factory.mktemp("model-source")
-    published = run_json(client_home, "model_publish.py", [
-        "--project", project, "--name", new_name("model"), "--work", str(work),
-    ], timeout=300)
+    published = run_json(
+        client_home,
+        "model_publish.py",
+        [
+            "--project",
+            project,
+            "--name",
+            new_name("model"),
+            "--work",
+            str(work),
+        ],
+        timeout=300,
+    )
     return published
 
 

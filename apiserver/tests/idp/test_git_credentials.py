@@ -55,12 +55,14 @@ class TestEncryption(TestCase):
 
 class TestHostsAndPaths(TestCase):
     def test_a_repository_url_gives_its_host_and_path(self):
-        self.assertEqual(store.host_and_path("https://GitLab.Example.com/Team/Project.git"),
-                         ("gitlab.example.com", "team/project"))
+        self.assertEqual(
+            store.host_and_path("https://GitLab.Example.com/Team/Project.git"), ("gitlab.example.com", "team/project")
+        )
 
     def test_user_information_in_the_url_is_dropped(self):
-        self.assertEqual(store.host_and_path("https://user:secret@git.example.org:8443/a/b"),
-                         ("git.example.org:8443", "a/b"))
+        self.assertEqual(
+            store.host_and_path("https://user:secret@git.example.org:8443/a/b"), ("git.example.org:8443", "a/b")
+        )
 
     def test_a_url_without_a_scheme_is_taken_as_https(self):
         self.assertEqual(store.host_and_path("gitea.local/ops/repo"), ("gitea.local", "ops/repo"))
@@ -104,8 +106,9 @@ class TestCredentialStore(TestCase):
 
     def test_the_stored_value_is_encrypted_and_the_answers_never_carry_it(self):
         view = store.set_credential(self.company, "gitlab.example.com", "team", "ci-bot", SECRET, self.actor)
-        self.assertEqual(view, {"host": "gitlab.example.com", "path": "team", "username": "ci-bot",
-                                "updated": view["updated"]})
+        self.assertEqual(
+            view, {"host": "gitlab.example.com", "path": "team", "username": "ci-bot", "updated": view["updated"]}
+        )
         stored = UserAccess.objects(company=self.company).get()
         self.assertNotIn(SECRET, stored.secret)
         listed = store.list_credentials(self.company)
@@ -146,7 +149,9 @@ class TestCredentialStore(TestCase):
     def _task(self, repository):
         from types import SimpleNamespace
 
-        return SimpleNamespace(user=self.actor, project=None, execution=None, script=SimpleNamespace(repository=repository))
+        return SimpleNamespace(
+            user=self.actor, project=None, execution=None, script=SimpleNamespace(repository=repository)
+        )
 
     def _not_a_hosted_repository(self):
         from unittest import mock
@@ -161,8 +166,15 @@ class TestCredentialStore(TestCase):
         store.set_credential(self.company, "gitlab.example.com", "team", "ci-bot", SECRET, self.actor)
         task_id = f"task-{uuid.uuid4().hex}"
         with self._not_a_hosted_repository():
-            answer = git_access.issue_for_task(self.company, self.actor, None,
-                                               self._task("https://gitlab.example.com/team/project.git"), task_id, None, None)
+            answer = git_access.issue_for_task(
+                self.company,
+                self.actor,
+                None,
+                self._task("https://gitlab.example.com/team/project.git"),
+                task_id,
+                None,
+                None,
+            )
         self.assertEqual(answer, {"token": SECRET, "expires_at": None, "username": "ci-bot"})
         issued = AuditEvent.objects(actor=self.actor, action="git_token.issued").get()
         self.assertEqual(issued.detail["task"], task_id)
@@ -173,7 +185,14 @@ class TestCredentialStore(TestCase):
         from apiserver.bll import git_access
 
         with self._not_a_hosted_repository(), self.assertRaises(errors.bad_request.ValidationError) as ctx:
-            git_access.issue_for_task(self.company, self.actor, None, self._task("https://gitlab.example.com/team/project"),
-                                      "task-x", None, None)
+            git_access.issue_for_task(
+                self.company,
+                self.actor,
+                None,
+                self._task("https://gitlab.example.com/team/project"),
+                "task-x",
+                None,
+                None,
+            )
         self.assertIn("gitlab.example.com", str(ctx.exception))
         self.assertIn("git_credentials.set", str(ctx.exception))

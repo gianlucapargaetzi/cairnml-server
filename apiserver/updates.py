@@ -28,9 +28,7 @@ class CheckUpdatesThread(Thread):
         description: str = None
 
     def __init__(self):
-        super(CheckUpdatesThread, self).__init__(
-            target=self._check_updates, daemon=True
-        )
+        super(CheckUpdatesThread, self).__init__(target=self._check_updates, daemon=True)
 
     @property
     def update_interval(self):
@@ -38,7 +36,8 @@ class CheckUpdatesThread(Thread):
             seconds=max(
                 float(
                     config.get(
-                        "apiserver.check_for_updates.check_interval_sec", 60 * 60 * 24,
+                        "apiserver.check_for_updates.check_interval_sec",
+                        60 * 60 * 24,
                     )
                 ),
                 60 * 5,
@@ -53,13 +52,12 @@ class CheckUpdatesThread(Thread):
 
     @property
     def component_name(self) -> str:
-        return config.get(
-            "apiserver.check_for_updates.component_name", "cairnml-server"
-        )
+        return config.get("apiserver.check_for_updates.component_name", "cairnml-server")
 
     def _check_new_version_available(self) -> Optional[_VersionResponse]:
         url = config.get(
-            "apiserver.check_for_updates.url", "",
+            "apiserver.check_for_updates.url",
+            "",
         )
 
         uid = Settings.get_by_key("server.uuid")
@@ -67,9 +65,7 @@ class CheckUpdatesThread(Thread):
         response = requests.get(
             url,
             json={"versions": {self.component_name: str(get_version())}, "uid": uid},
-            timeout=float(
-                config.get("apiserver.check_for_updates.request_timeout_sec", 3.0)
-            ),
+            timeout=float(config.get("apiserver.check_for_updates.request_timeout_sec", 3.0)),
         )
 
         if not response.ok:
@@ -90,10 +86,7 @@ class CheckUpdatesThread(Thread):
 
         return self._VersionResponse(
             version=str(latest_version),
-            patch_upgrade=(
-                latest_version.major == cur_version.major
-                and latest_version.minor == cur_version.minor
-            ),
+            patch_upgrade=(latest_version.major == cur_version.major and latest_version.minor == cur_version.minor),
             description=response.get("description").split("\r\n"),
         )
 

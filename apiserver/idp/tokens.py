@@ -20,11 +20,11 @@ def _version_claims() -> dict:
     }
 
 
-def issue_access_token(user_id: str, company_id: str, device_id: str, kind: str, role: str,
-                       user_name: str = "", company_name: str = "") -> str:
+def issue_access_token(
+    user_id: str, company_id: str, device_id: str, kind: str, role: str, user_name: str = "", company_name: str = ""
+) -> str:
     """Token for a device (kind 'client' or 'agent'): carries the person's identity and the device."""
-    identity = Identity(user=user_id, company=company_id, role=role,
-                        user_name=user_name, company_name=company_name)
+    identity = Identity(user=user_id, company=company_id, role=role, user_name=user_name, company_name=company_name)
     ttl = config.get("apiserver.idp.access_token_ttl_sec")
     return Token.create_encoded_token(identity, expiration_sec=ttl, kind=kind, device=device_id, **_version_claims())
 
@@ -47,8 +47,13 @@ def renewed_web_token(encoded: str, now: float = None):
         return None
     identity = Identity.from_dict(claims.get("identity") or {})
     return issue_access_token(
-        identity.user, identity.company, "", kind="web", role=identity.role,
-        user_name=identity.user_name or "", company_name=identity.company_name or "",
+        identity.user,
+        identity.company,
+        "",
+        kind="web",
+        role=identity.role,
+        user_name=identity.user_name or "",
+        company_name=identity.company_name or "",
     )
 
 
@@ -57,7 +62,7 @@ def device_of_bearer(authorization):
     if not authorization or not authorization.startswith("Bearer "):
         return None
     try:
-        claims = Token.decode(authorization[len("Bearer "):])
+        claims = Token.decode(authorization[len("Bearer ") :])
     except jwt.PyJWTError:  # forged, expired or not a token at all
         return None
     return claims.get("device") if claims.get("kind") == "agent" else None

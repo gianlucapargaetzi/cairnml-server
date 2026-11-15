@@ -66,7 +66,7 @@ class ElasticErrorsHandler(object):
             if err_type == "cluster_block_exception":
                 raise errors.server_error.LowDiskSpace(
                     "metrics, logs and all indexed data is in read-only mode!",
-                    reason=re.sub(r"^index\s\[.*?\]\s", "", reason) if reason else ""
+                    reason=re.sub(r"^index\s\[.*?\]\s", "", reason) if reason else "",
                 )
             return
         except StopIteration:
@@ -121,16 +121,12 @@ class MongoEngineErrorsHandler(object):
             fields = "id"
         else:
             fields = cls.__index_sep_regex.split(index)[:-1]
-        raise errors.bad_request.ExpectedUniqueData(
-            message, **dict(zip(fields, values))
-        )
+        raise errors.bad_request.ExpectedUniqueData(message, **dict(zip(fields, values)))
 
     @classmethod
     def field_does_not_exist(cls, e, message, **kwargs):
         # Strict mode. Unknown fields encountered in loaded document(s)
-        field_does_not_exist_cls = kwargs.get(
-            "field_does_not_exist_cls", errors.server_error.InconsistentData
-        )
+        field_does_not_exist_cls = kwargs.get("field_does_not_exist_cls", errors.server_error.InconsistentData)
         m = cls.__not_exist_fields_regex.search(str(e))
         params = {}
         if m:

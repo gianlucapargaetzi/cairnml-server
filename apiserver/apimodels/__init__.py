@@ -91,7 +91,6 @@ class ListField(fields.ListField):
 
 
 class ScalarField(fields.BaseField):
-
     """String field."""
 
     types = (str, int, float, bool)
@@ -99,6 +98,7 @@ class ScalarField(fields.BaseField):
 
 class SafeStringField(fields.StringField):
     """String field that can also accept numbers as input"""
+
     def parse_value(self, value):
         if isinstance(value, Number):
             value = str(value)
@@ -129,10 +129,7 @@ class DictField(fields.BaseField):
         else:
             value_types = tuple()
 
-        return tuple(
-            _LazyType(type_) if isinstance(type_, six.string_types) else type_
-            for type_ in value_types
-        )
+        return tuple(_LazyType(type_) if isinstance(type_, six.string_types) else type_ for type_ in value_types)
 
     def parse_value(self, values):
         """Cast value to proper collection."""
@@ -175,8 +172,7 @@ class DictField(fields.BaseField):
 
         if not isinstance(item, self.value_types):
             raise jsonmodels.errors.ValidationError(
-                "All items must be instances "
-                'of "{types}", and not "{type}".'.format(
+                'All items must be instances of "{types}", and not "{type}".'.format(
                     types=", ".join([t.__name__ for t in self.value_types]),
                     type=type(item).__name__,
                 )
@@ -220,9 +216,7 @@ class EnumField(fields.StringField):
         choices = list(map(self.parse_value, values_or_type))
         validator_cls = EnumValidator if required else NullableEnumValidator
         kwargs.setdefault("validators", []).append(validator_cls(*choices))
-        super().__init__(
-            default=self.parse_value(default), required=required, *args, **kwargs
-        )
+        super().__init__(default=self.parse_value(default), required=required, *args, **kwargs)
 
     def parse_value(self, value):
         if isinstance(value, Enum):
@@ -333,8 +327,4 @@ class MongoengineFieldsDict(DictField):
 
     def parse_value(self, value):
         value = super(MongoengineFieldsDict, self).parse_value(value)
-        return {
-            k: v
-            for k, v in (self._normalize_mongo_field_path(*p) for p in value.items())
-            if k is not None
-        }
+        return {k: v for k, v in (self._normalize_mongo_field_path(*p) for p in value.items()) if k is not None}

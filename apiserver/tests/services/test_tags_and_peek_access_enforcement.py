@@ -32,8 +32,13 @@ def company():
 
 def make_root(company, id_="root1", owner="owner1", visibility=ProjectVisibility.private, members=()):
     project = Project(
-        id=id_, company=company, user=owner, name=id_, basename=id_,
-        created=datetime.utcnow(), visibility=visibility,
+        id=id_,
+        company=company,
+        user=owner,
+        name=id_,
+        basename=id_,
+        created=datetime.utcnow(),
+        visibility=visibility,
         members=[ProjectMember(user=u, role=r, added=datetime.utcnow(), added_by=owner) for u, r in members],
     )
     project.save()
@@ -42,8 +47,14 @@ def make_root(company, id_="root1", owner="owner1", visibility=ProjectVisibility
 
 def make_task(company, project, owner, id_="task1", task_type="training", tags=()):
     task = Task(
-        id=id_, company=company, user=owner, name=id_, project=project, type=task_type,
-        created=datetime.utcnow(), tags=list(tags),
+        id=id_,
+        company=company,
+        user=owner,
+        name=id_,
+        project=project,
+        type=task_type,
+        created=datetime.utcnow(),
+        tags=list(tags),
     )
     task.save()
     return task
@@ -66,14 +77,24 @@ def test_peek_task_reports_a_hidden_head_task_as_empty(company):
     make_root(company)
     make_task(company, "root1", "owner1")
     Queue(
-        id="q1", company=company, name="queue-one", created=datetime.utcnow(), public=True,
+        id="q1",
+        company=company,
+        name="queue-one",
+        created=datetime.utcnow(),
+        public=True,
         entries=[Entry(task="task1", added=datetime.utcnow())],
     ).save()
-    Share(id=uuid4().hex, company=company, resource_type="queue", resource_id="q1", scope="public", level="read",
-          granted_by="", created=datetime.utcnow()).save()
-    result = queues_svc.peek_task(
-        FakeCall(identity(company, "stranger")), company, QueueRequest(queue="q1")
-    )
+    Share(
+        id=uuid4().hex,
+        company=company,
+        resource_type="queue",
+        resource_id="q1",
+        scope="public",
+        level="read",
+        granted_by="",
+        created=datetime.utcnow(),
+    ).save()
+    result = queues_svc.peek_task(FakeCall(identity(company, "stranger")), company, QueueRequest(queue="q1"))
     assert result == {"task": None}
 
 
@@ -81,14 +102,24 @@ def test_peek_task_reports_the_head_task_to_a_member(company):
     make_root(company, members=[("u2", ProjectRole.read)])
     make_task(company, "root1", "owner1")
     Queue(
-        id="q1", company=company, name="queue-one", created=datetime.utcnow(), public=True,
+        id="q1",
+        company=company,
+        name="queue-one",
+        created=datetime.utcnow(),
+        public=True,
         entries=[Entry(task="task1", added=datetime.utcnow())],
     ).save()
-    Share(id=uuid4().hex, company=company, resource_type="queue", resource_id="q1", scope="public", level="read",
-          granted_by="", created=datetime.utcnow()).save()
-    result = queues_svc.peek_task(
-        FakeCall(identity(company, "u2")), company, QueueRequest(queue="q1")
-    )
+    Share(
+        id=uuid4().hex,
+        company=company,
+        resource_type="queue",
+        resource_id="q1",
+        scope="public",
+        level="read",
+        granted_by="",
+        created=datetime.utcnow(),
+    ).save()
+    result = queues_svc.peek_task(FakeCall(identity(company, "u2")), company, QueueRequest(queue="q1"))
     assert result == {"task": "task1"}
 
 

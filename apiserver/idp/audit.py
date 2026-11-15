@@ -13,7 +13,9 @@ def client_address(call) -> str:
     return (call.get_header(call.HEADER_REAL_IP) or call.real_ip)[:IP_MAX_LENGTH]
 
 
-def build_event(actor: str, action: str, ip: Optional[str] = None, company: Optional[str] = None, **detail) -> AuditEvent:
+def build_event(
+    actor: str, action: str, ip: Optional[str] = None, company: Optional[str] = None, **detail
+) -> AuditEvent:
     return AuditEvent(actor=actor, action=action, ip=ip, company=company, detail=detail)
 
 

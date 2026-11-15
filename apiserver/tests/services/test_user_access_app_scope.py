@@ -1,6 +1,7 @@
 # apiserver/tests/services/test_user_access_app_scope.py
 """Only an admin may add the company's GitHub App. A user who tries is refused as a forbidden role, not with an error
 of the server (the errors module must be imported where the refusal is raised)."""
+
 from types import SimpleNamespace
 
 import pytest

@@ -1,5 +1,6 @@
 """A reader sees a repository when the repository lookup answers 200, empty or not: an empty repository has no branch, so
 the branch lookup is not a test of access."""
+
 from types import SimpleNamespace
 
 import pytest

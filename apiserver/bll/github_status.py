@@ -54,8 +54,7 @@ def run_check() -> dict:
         return _result("refused", steps, f"GitHub App Access Refused: {exc}")
     if app is None:
         step("configured", False, "no GitHub App is added for the server")
-        return _result("not_configured", steps,
-                       "GitHub App is not configured: an admin adds it in Settings > Access")
+        return _result("not_configured", steps, "GitHub App is not configured: an admin adds it in Settings > Access")
     step("configured", True, "the server's GitHub App is stored")
 
     try:
@@ -80,8 +79,9 @@ def run_check() -> dict:
         # the entries are the ones stored when the registry was read: the check does not list them again
         count = RegistryEntry.objects(registry=record.id).count()
         if record.state != "ok":
-            registries.append({"repository": record.path, "ok": False, "datasets": 0,
-                               "detail": record.state_message or "no access"})
+            registries.append(
+                {"repository": record.path, "ok": False, "datasets": 0, "detail": record.state_message or "no access"}
+            )
             step(f"registry {record.path}", False, record.state_message or "no access")
             continue
         registries.append({"repository": record.path, "ok": True, "datasets": count, "detail": ""})
@@ -89,12 +89,15 @@ def run_check() -> dict:
         step(f"registry {record.path}", True, f"lists {_plural(count, 'dataset')}")
 
     readable = sum(1 for registry in registries if registry["ok"])
-    message = (f"GitHub App works. Registered {_plural(len(registries), 'dataset registry', 'dataset registries')} "
-               f"with {_plural(datasets_total, 'dataset')}")
+    message = (
+        f"GitHub App works. Registered {_plural(len(registries), 'dataset registry', 'dataset registries')} "
+        f"with {_plural(datasets_total, 'dataset')}"
+    )
     if registries and readable < len(registries):
         message += f" ({len(registries) - readable} could not be read)"
-    return _result("ok", steps, message + ".", app=info, repositories=repositories,
-                   registries=registries, datasets=datasets_total)
+    return _result(
+        "ok", steps, message + ".", app=info, repositories=repositories, registries=registries, datasets=datasets_total
+    )
 
 
 _CONTACT_ADMIN = "If something does not work, contact your admin."

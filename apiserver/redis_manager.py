@@ -37,11 +37,8 @@ class RedisManager(object):
     def __init__(self, redis_config_dict):
         self.aliases = {}
         for alias, alias_config in redis_config_dict.items():
-
             alias_config = alias_config.as_plain_ordered_dict()
-            alias_config["password"] = config.get(
-                f"secure.redis.{alias}.password", None
-            )
+            alias_config["password"] = config.get(f"secure.redis.{alias}.password", None)
 
             is_cluster = alias_config.get("cluster", False)
 
@@ -58,9 +55,7 @@ class RedisManager(object):
                 alias_config["password"] = password
 
             if not port or not host:
-                raise ConfigError(
-                    "Redis configuration is invalid. missing port or host", alias=alias
-                )
+                raise ConfigError("Redis configuration is invalid. missing port or host", alias=alias)
 
             if is_cluster:
                 del alias_config["cluster"]

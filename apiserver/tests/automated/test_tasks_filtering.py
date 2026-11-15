@@ -12,7 +12,7 @@ class TestTasksFiltering(TestService):
         param1 = ("Se$tion1", "pa__ram1", True)
         param2 = ("Section2", "param2", False)
         task_count = 5
-        for (section, name, unique_value) in (param1, param2):
+        for section, name, unique_value in (param1, param2):
             for idx in range(task_count):
                 t = self.temp_task(project=project)
                 self.api.tasks.edit_hyper_params(
@@ -26,19 +26,13 @@ class TestTasksFiltering(TestService):
                         }
                     ],
                 )
-        res = self.api.projects.get_hyperparam_values(
-            projects=[project], section=param1[0], name=param1[1]
-        )
+        res = self.api.projects.get_hyperparam_values(projects=[project], section=param1[0], name=param1[1])
         self.assertEqual(res.total, task_count)
         self.assertEqual(res["values"], [str(i) for i in range(task_count)])
-        res = self.api.projects.get_hyperparam_values(
-            projects=[project], section=param2[0], name=param2[1]
-        )
+        res = self.api.projects.get_hyperparam_values(projects=[project], section=param2[0], name=param2[1])
         self.assertEqual(res.total, 1)
         self.assertEqual(res["values"], ["Constant"])
-        res = self.api.projects.get_hyperparam_values(
-            projects=[project], section="missing", name="missing"
-        )
+        res = self.api.projects.get_hyperparam_values(projects=[project], section="missing", name="missing")
         self.assertEqual(res.total, 0)
         self.assertEqual(res["values"], [])
 
@@ -85,9 +79,7 @@ class TestTasksFiltering(TestService):
         res = self.api.tasks.get_all_ex(last_update=[now.isoformat(), None]).tasks
         self.assertTrue(set(tasks).issubset({t.id for t in res}))
 
-        res = self.api.tasks.get_all_ex(
-            last_update=[(now - timedelta(seconds=60)).isoformat(), now.isoformat()]
-        ).tasks
+        res = self.api.tasks.get_all_ex(last_update=[(now - timedelta(seconds=60)).isoformat(), now.isoformat()]).tasks
         self.assertFalse(set(tasks).issubset({t.id for t in res}))
 
         res = self.api.tasks.get_all_ex(
@@ -108,9 +100,7 @@ class TestTasksFiltering(TestService):
         res = self.api.tasks.get_all_ex(started=[now.isoformat(), None]).tasks
         self.assertTrue(set(tasks).issubset({t.id for t in res}))
 
-        res = self.api.tasks.get_all_ex(
-            started=[(now - timedelta(seconds=60)).isoformat(), now.isoformat()]
-        ).tasks
+        res = self.api.tasks.get_all_ex(started=[(now - timedelta(seconds=60)).isoformat(), now.isoformat()]).tasks
         self.assertFalse(set(tasks).issubset({t.id for t in res}))
 
     def temp_project(self, **kwargs) -> str:

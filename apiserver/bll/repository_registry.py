@@ -61,10 +61,14 @@ def list_entries(*, reader, registry: str) -> list:
             log.warning("the registry %s has an entry %s with source: repo; it is ignored", registry, name)
             continue
         metadata_file = f"{METADATA_DIR}/{name}.json"
-        entries.append({
-            "name": name, "source": source, "link": _entry_field(text, "link") or "",
-            "metadata": parse_metadata(reader.read_file(registry, metadata_file), metadata_file),
-        })
+        entries.append(
+            {
+                "name": name,
+                "source": source,
+                "link": _entry_field(text, "link") or "",
+                "metadata": parse_metadata(reader.read_file(registry, metadata_file), metadata_file),
+            }
+        )
     return entries
 
 
@@ -90,13 +94,24 @@ def _sync(company: str, repo: Repository, listed: list, now: datetime) -> dict:
     existing = {e.name: e for e in RegistryEntry.objects(company=company, registry=repo.id)}
     counts = {"added": 0, "updated": 0, "removed": 0}
     for item in listed:
-        content = {"source": item.get("source") or "", "link": item.get("link") or "",
-                   "metadata": _dump(item.get("metadata"))}
+        content = {
+            "source": item.get("source") or "",
+            "link": item.get("link") or "",
+            "metadata": _dump(item.get("metadata")),
+        }
         record = existing.get(item["name"])
         if record is None:
-            RegistryEntry(id=uuid.uuid4().hex, company=company, registry=repo.id, name=item["name"],
-                          reference=repos._reference_for(company, item["name"], f"{repo.path}/{item['name']}"),
-                          created=now, updated=now, read_at=now, **content).save()
+            RegistryEntry(
+                id=uuid.uuid4().hex,
+                company=company,
+                registry=repo.id,
+                name=item["name"],
+                reference=repos._reference_for(company, item["name"], f"{repo.path}/{item['name']}"),
+                created=now,
+                updated=now,
+                read_at=now,
+                **content,
+            ).save()
             counts["added"] += 1
             continue
         changed = any(getattr(record, key) != value for key, value in content.items())
@@ -128,7 +143,11 @@ def read_entries(company: str, repo: Repository, user: str, project_root: Option
         except GitHubError as exc:
             raise errors.bad_request.ValidationError(f"the registry {repo.path} could not be read ({exc})") from None
     except errors.bad_request.ValidationError as refused:
-        repo.state, repo.state_message, repo.updated = "no_access", f"the registry could not be read: {refused.msg}", datetime.utcnow()
+        repo.state, repo.state_message, repo.updated = (
+            "no_access",
+            f"the registry could not be read: {refused.msg}",
+            datetime.utcnow(),
+        )
         repo.save()
         raise
     now = datetime.utcnow()
@@ -148,7 +167,9 @@ def refresh(company: str, user: str, is_admin: bool, repository_id: str) -> dict
     return read_entries(company, repo, user)
 
 
-def ensure_registry(company: str, address: str, user: str, project_id: Optional[str], run_id: Optional[str] = None) -> Optional[Repository]:
+def ensure_registry(
+    company: str, address: str, user: str, project_id: Optional[str], run_id: Optional[str] = None
+) -> Optional[Repository]:
     """The registry a run read an external dataset from: recorded and linked like any repository, with the role registry, and
     read once so that every dataset it lists is there (the ones the run did not use too). A registry that cannot be read is
     kept with a state that says why, and its owner refreshes it later. Never raises."""

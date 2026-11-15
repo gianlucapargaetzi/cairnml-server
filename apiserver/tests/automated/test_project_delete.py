@@ -6,9 +6,7 @@ from apiserver.database.utils import id as db_id
 
 class TestProjectsDelete(TestService):
     def new_task(self, type="testing", **kwargs):
-        return self.create_temp(
-            "tasks", type=type, name=db_id(), **kwargs
-        )
+        return self.create_temp("tasks", type=type, name=db_id(), **kwargs)
 
     def new_model(self, **kwargs):
         return self.create_temp("models", uri="file:///a/b", name=db_id(), labels={}, **kwargs)

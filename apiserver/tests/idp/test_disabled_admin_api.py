@@ -19,8 +19,11 @@ ISSUER = config.get("apiserver.idp.issuer")
 
 
 def _public_pem(key):
-    return key.public_key().public_bytes(
-        serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo).decode()
+    return (
+        key.public_key()
+        .public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo)
+        .decode()
+    )
 
 
 class TestDisabledAdminCannotEnrolAnAgent(TestCase):
@@ -34,11 +37,17 @@ class TestDisabledAdminCannotEnrolAnAgent(TestCase):
         self.addCleanup(lambda: AuthUser.objects(id=self.user_id).delete())
 
     def test_a_disabled_admin_is_refused_for_an_agent(self):
-        first = call("devices.enroll", {"kind": "client", "public_key": _public_pem(Ed25519PrivateKey.generate())},
-                     token=idp_token(sub=self.sub, roles=("admin",)))
+        first = call(
+            "devices.enroll",
+            {"kind": "client", "public_key": _public_pem(Ed25519PrivateKey.generate())},
+            token=idp_token(sub=self.sub, roles=("admin",)),
+        )
         self.assertEqual(first.status_code, 200, first.text)
         AuthUser.objects(id=self.user_id).update_one(set__idp_disabled=True)
 
-        response = call("devices.enroll", {"kind": "agent", "public_key": _public_pem(Ed25519PrivateKey.generate())},
-                        token=idp_token(sub=self.sub, roles=("admin",)))
+        response = call(
+            "devices.enroll",
+            {"kind": "agent", "public_key": _public_pem(Ed25519PrivateKey.generate())},
+            token=idp_token(sub=self.sub, roles=("admin",)),
+        )
         self.assertNotEqual(response.status_code, 200, response.text)

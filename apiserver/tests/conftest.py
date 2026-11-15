@@ -43,5 +43,7 @@ def pytest_collection_modifyitems(items):
                 redis_up = _redis_is_up()
             if not redis_up:
                 item.add_marker(
-                    pytest.mark.skip(reason="needs a Redis server (CAIRNML_REDIS_SERVICE_HOST and _PORT, default localhost:6379)")
+                    pytest.mark.skip(
+                        reason="needs a Redis server (CAIRNML_REDIS_SERVICE_HOST and _PORT, default localhost:6379)"
+                    )
                 )

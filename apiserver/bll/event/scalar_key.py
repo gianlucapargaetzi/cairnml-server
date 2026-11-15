@@ -1,6 +1,7 @@
 """
 Module for polymorphism over different types of X axes in scalar aggregations
 """
+
 from abc import ABC, abstractmethod
 from enum import auto
 
@@ -70,9 +71,7 @@ class ScalarKey(ABC):
         if cls.enum_value not in ScalarKeyEnum:
             raise ValueError(f"{cls.enum_value!r} not in {ScalarKeyEnum.__name__}")
         if cls.enum_value in cls._enum_to_key:
-            log.warning(
-                f"'{cls.enum_value.value}' is already registered to {ScalarKey.__name__}"
-            )
+            log.warning(f"'{cls.enum_value.value}' is already registered to {ScalarKey.__name__}")
         cls._enum_to_key[cls.enum_value] = cls
 
     @classmethod
@@ -137,11 +136,7 @@ class IterKey(ScalarKey):
     enum_value = ScalarKeyEnum.iter
 
     def get_aggregation(self, interval: int) -> dict:
-        return {
-            self.name: {
-                "histogram": {"field": "iter", "interval": interval, "min_doc_count": 1}
-            }
-        }
+        return {self.name: {"histogram": {"field": "iter", "interval": interval, "min_doc_count": 1}}}
 
     def cast_value(self, value: Any) -> int:
         return int(value)

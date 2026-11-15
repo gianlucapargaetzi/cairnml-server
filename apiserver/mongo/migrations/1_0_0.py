@@ -34,11 +34,7 @@ def _migrate_task_models(db: Database):
                 name = TaskModelNames[mode]
                 model_item = {"model": value, "name": name, "updated": now}
                 existing_models = nested_get(doc, (models_field, mode), default=[])
-                existing_models = (
-                    m
-                    for m in existing_models
-                    if m.get("name") != name and m.get("model") != value
-                )
+                existing_models = (m for m in existing_models if m.get("name") != name and m.get("model") != value)
                 if mode == TaskModelTypes.input:
                     updated_models = [model_item, *existing_models]
                 else:

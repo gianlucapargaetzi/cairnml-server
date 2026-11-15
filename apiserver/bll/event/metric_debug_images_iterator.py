@@ -37,7 +37,7 @@ class MetricDebugImagesIterator(MetricEventsIterator):
             }
         }
 
-        def fill_variant_state_data(variant_bucket: dict,  state: VariantState):
+        def fill_variant_state_data(variant_bucket: dict, state: VariantState):
             """If the image urls get recycled then fill the last_invalid_iteration field"""
             top_iter_url = nested_get(variant_bucket, ("urls", "buckets"))[0]
             iters = nested_get(top_iter_url, ("iters", "hits", "hits"))

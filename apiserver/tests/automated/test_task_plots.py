@@ -7,9 +7,7 @@ from apiserver.tests.automated import TestService
 
 class TestTaskPlots(TestService):
     def _temp_task(self, name="test task events"):
-        task_input = dict(
-            name=name, type="training"
-        )
+        task_input = dict(name=name, type="training")
         return self.create_temp("tasks", **task_input)
 
     @staticmethod
@@ -64,7 +62,10 @@ class TestTaskPlots(TestService):
         # else from the specific iteration
         iteration = 3
         res = self.api.events.get_plot_sample(
-            task=task, metric=metric, iteration=iteration, scroll_id=res.scroll_id,
+            task=task,
+            metric=metric,
+            iteration=iteration,
+            scroll_id=res.scroll_id,
         )
         self._assertEqualEvents(
             res.events,
@@ -101,9 +102,7 @@ class TestTaskPlots(TestService):
         self._assertEqualEvents(res.events, events[-4:-2])
 
         # navigate forwards
-        res = self.api.events.next_plot_sample(
-            task=task, scroll_id=res.scroll_id, navigate_earlier=False
-        )
+        res = self.api.events.next_plot_sample(task=task, scroll_id=res.scroll_id, navigate_earlier=False)
         self.assertEqual(res.events, [])
 
         # navigate backwards
@@ -114,15 +113,11 @@ class TestTaskPlots(TestService):
 
         # all metrics navigation
         # init scroll
-        res = self.api.events.get_plot_sample(
-            task=task, metric=metric1, navigate_current_metric=False
-        )
+        res = self.api.events.get_plot_sample(task=task, metric=metric1, navigate_current_metric=False)
         self._assertEqualEvents(res.events, events[-4:-2])
 
         # navigate forwards
-        res = self.api.events.next_plot_sample(
-            task=task, scroll_id=res.scroll_id, navigate_earlier=False
-        )
+        res = self.api.events.next_plot_sample(task=task, scroll_id=res.scroll_id, navigate_earlier=False)
         self._assertEqualEvents(res.events, events[-2:])
 
         # navigate backwards
@@ -132,9 +127,7 @@ class TestTaskPlots(TestService):
         self._assertEqualEvents(res.events, events[-6:-4])
 
         # next_iteration
-        res = self.api.events.next_plot_sample(
-            task=task, scroll_id=res.scroll_id, next_iteration=True
-        )
+        res = self.api.events.next_plot_sample(task=task, scroll_id=res.scroll_id, next_iteration=True)
         self._assertEqualEvents(res.events, [])
         res = self.api.events.next_plot_sample(
             task=task,
@@ -152,9 +145,7 @@ class TestTaskPlots(TestService):
         )
         self._assertEqualEvents(res.events, [])
 
-    def _assertEqualEvents(
-        self, ev_source: Sequence[dict], ev_target: Sequence[Optional[dict]]
-    ):
+    def _assertEqualEvents(self, ev_source: Sequence[dict], ev_target: Sequence[Optional[dict]]):
         self.assertEqual(len(ev_source), len(ev_target))
 
         def compare_event(ev1, ev2):
@@ -170,9 +161,7 @@ class TestTaskPlots(TestService):
         # test empty
         res = self.api.events.plots(metrics=[{"task": task}], iters=5)
         self.assertFalse(res.metrics[0].iterations)
-        res = self.api.events.plots(
-            metrics=[{"task": task}], iters=5, scroll_id=res.scroll_id, refresh=True
-        )
+        res = self.api.events.plots(metrics=[{"task": task}], iters=5, scroll_id=res.scroll_id, refresh=True)
         self.assertFalse(res.metrics[0].iterations)
 
         # test not empty
@@ -192,9 +181,7 @@ class TestTaskPlots(TestService):
             for variant in variants
         ]
         self.send_batch(events)
-        scroll_id = self._assertTaskMetrics(
-            task=task, expected_metrics=metrics, iterations=1
-        )
+        scroll_id = self._assertTaskMetrics(task=task, expected_metrics=metrics, iterations=1)
 
         # test refresh
         update = {
@@ -214,9 +201,7 @@ class TestTaskPlots(TestService):
         ]
         self.send_batch(events)
         # without refresh the metric states are not updated
-        scroll_id = self._assertTaskMetrics(
-            task=task, expected_metrics=metrics, iterations=0, scroll_id=scroll_id
-        )
+        scroll_id = self._assertTaskMetrics(task=task, expected_metrics=metrics, iterations=0, scroll_id=scroll_id)
 
         # with refresh there are new metrics and existing ones are updated
         self._assertTaskMetrics(
@@ -235,16 +220,12 @@ class TestTaskPlots(TestService):
         scroll_id: str = None,
         refresh=False,
     ) -> str:
-        res = self.api.events.plots(
-            metrics=[{"task": task}], iters=1, scroll_id=scroll_id, refresh=refresh
-        )
+        res = self.api.events.plots(metrics=[{"task": task}], iters=1, scroll_id=scroll_id, refresh=refresh)
         if not iterations:
             self.assertTrue(all(m.iterations == [] for m in res.metrics))
             return res.scroll_id
 
-        expected_variants = set(
-            (m, var) for m, vars_ in expected_metrics.items() for var in vars_
-        )
+        expected_variants = set((m, var) for m, vars_ in expected_metrics.items() for var in vars_)
         for metric_data in res.metrics:
             self.assertEqual(len(metric_data.iterations), iterations)
             for it_data in metric_data.iterations:
@@ -263,7 +244,8 @@ class TestTaskPlots(TestService):
 
         # test empty
         res = self.api.events.plots(
-            metrics=[{"task": task, "metric": metric}], iters=5,
+            metrics=[{"task": task, "metric": metric}],
+            iters=5,
         )
         self.assertFalse(res.metrics[0].iterations)
 
@@ -296,9 +278,7 @@ class TestTaskPlots(TestService):
             scroll_id = assert_plots(scroll_id=scroll_id, expected_page=page)
 
         # test backwards navigation
-        scroll_id = assert_plots(
-            scroll_id=scroll_id, expected_page=0, navigate_earlier=False
-        )
+        scroll_id = assert_plots(scroll_id=scroll_id, expected_page=0, navigate_earlier=False)
 
         # beyond the latest iteration and back
         res = self.api.events.debug_images(

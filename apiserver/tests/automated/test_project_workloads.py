@@ -18,21 +18,15 @@ class TestProjectWorkloads(TestService):
         project = self._temp_project(project_name)
         child_project_name = f"{project_name}/Child1"
         child_project = self._temp_project(child_project_name)
-        task_root_running = self._create_temp_queued_task(
-            task_name="workloads test1", queue=queue, project=project
-        )
+        task_root_running = self._create_temp_queued_task(task_name="workloads test1", queue=queue, project=project)
         self.api.tasks.started(task=task_root_running)
         task_child_failed = self._create_temp_queued_task(
             task_name="workloads test2", queue=queue, project=child_project
         )
         self.api.tasks.started(task=task_child_failed)
-        task_child_completed = self._temp_task(
-            task_name="workloads test3", is_development=True, project=child_project
-        )
+        task_child_completed = self._temp_task(task_name="workloads test3", is_development=True, project=child_project)
         self.api.tasks.started(task=task_child_completed)
-        self._create_temp_queued_task(
-            task_name="workloads test4", queue=queue, project=child_project
-        )
+        self._create_temp_queued_task(task_name="workloads test4", queue=queue, project=child_project)
 
         sleep(5)
         self.api.tasks.failed(task=task_child_failed)

@@ -42,7 +42,9 @@ def test_the_refusal_says_what_to_do(monkeypatch):
     class Queue:
         @staticmethod
         def objects(**kwargs):
-            return SimpleNamespace(only=lambda *a: SimpleNamespace(first=lambda: SimpleNamespace(id=QUEUE, name="my-queue")))
+            return SimpleNamespace(
+                only=lambda *a: SimpleNamespace(first=lambda: SimpleNamespace(id=QUEUE, name="my-queue"))
+            )
 
     monkeypatch.setattr("apiserver.database.model.queue.Queue", Queue)
     bll = SimpleNamespace(worker_bll=SimpleNamespace(get_all=lambda company: [worker([QUEUE], JOB)]))

@@ -76,11 +76,18 @@ def record_script(company: str, user: str, task) -> None:
 
 # --- the badges and the warning before a dispatch ---------------------------------------------------------------------------------
 
+
 def _row(repo, address: str, project_root: Optional[str], resolution, can_assign: bool) -> dict:
     return {
-        "repository": address, "url": f"https://{repo.host}/{repo.path}", "id": repo.id, "project": project_root,
-        "state": resolution.state, "via": resolution.entry.label if resolution.entry is not None else "",
-        "message": resolution.message, "warning": resolution.warning, "can_assign": can_assign,
+        "repository": address,
+        "url": f"https://{repo.host}/{repo.path}",
+        "id": repo.id,
+        "project": project_root,
+        "state": resolution.state,
+        "via": resolution.entry.label if resolution.entry is not None else "",
+        "message": resolution.message,
+        "warning": resolution.warning,
+        "can_assign": can_assign,
         "ask": resolution.state in NEEDS_DECISION,
     }
 
@@ -108,7 +115,9 @@ def requirement(company: str, user: str, task_ids: list, is_admin: bool) -> list
     whether the user may assign a credential (their own) and the credentials they may choose from."""
     mine = membership.my_root_ids(company, user)
     rows: dict = {}
-    for task in Task.objects(company=company, id__in=task_ids).only("script.repository", "user", "project", "hyperparams"):
+    for task in Task.objects(company=company, id__in=task_ids).only(
+        "script.repository", "user", "project", "hyperparams"
+    ):
         root = membership.root_project(company, task.project) if task.project else None
         if not (is_admin or task.user == user or root in mine):
             continue
@@ -122,7 +131,9 @@ def requirement(company: str, user: str, task_ids: list, is_admin: bool) -> list
             key = repo_address.key_of(address)
             if key is None:
                 continue
-            repo = repos.find(company, address) or repos.record_use_quietly(company, address, kind, task.user, task.project)
+            repo = repos.find(company, address) or repos.record_use_quietly(
+                company, address, kind, task.user, task.project
+            )
             if repo is None:
                 continue
             row_key = (key, root)
@@ -134,14 +145,23 @@ def requirement(company: str, user: str, task_ids: list, is_admin: bool) -> list
             resolution = repos.resolve(repo, root, user)
             can_assign = repos.can_see(company, user, is_admin, repo)
             row = _row(repo, address, root, resolution, can_assign)
-            row["assignable"] = [{"id": e.id, "name": e.label, "kind": e.kind, "company": e.scope == "company"}
-                                 for e in repos.credential_choices(company, user, repo)] if can_assign else []
+            row["assignable"] = (
+                [
+                    {"id": e.id, "name": e.label, "kind": e.kind, "company": e.scope == "company"}
+                    for e in repos.credential_choices(company, user, repo)
+                ]
+                if can_assign
+                else []
+            )
             row["anonymous"] = repo.anonymous
             row["tasks"] = [str(task.id)]
             row["kinds"] = [kind]
             rows[row_key] = row
     result = list(rows.values())
-    names = {p.id: p.name for p in Project.objects(company=company, id__in=[r["project"] for r in result if r["project"]]).only("name")}
+    names = {
+        p.id: p.name
+        for p in Project.objects(company=company, id__in=[r["project"] for r in result if r["project"]]).only("name")
+    }
     for row in result:
         row["project_name"] = names.get(row["project"]) if row["project"] else None
     return result
@@ -179,10 +199,23 @@ def runs_of(company: str, user: str, is_admin: bool, repo: Repository) -> list:
     project_ids = set(roots)
     for project in Project.objects(company=company, path__in=list(roots)).only("id"):
         project_ids.add(project.id)
-    tasks = Task.objects(company=company, project__in=list(project_ids)).only(
-        "id", "name", "status", "project", "user", "created", "hyperparams", "script.repository", "script.version_num",
-        "last_update"
-    ).order_by("-created").limit(MAX_SCANNED)
+    tasks = (
+        Task.objects(company=company, project__in=list(project_ids))
+        .only(
+            "id",
+            "name",
+            "status",
+            "project",
+            "user",
+            "created",
+            "hyperparams",
+            "script.repository",
+            "script.version_num",
+            "last_update",
+        )
+        .order_by("-created")
+        .limit(MAX_SCANNED)
+    )
     found, users, names = [], {}, {}
     for task in tasks:
         role = _uses(task, repo)
@@ -194,14 +227,26 @@ def runs_of(company: str, user: str, is_admin: bool, repo: Repository) -> list:
         if task.project not in names:
             project = Project.objects(company=company, id=task.project).only("name").first()
             names[task.project] = project.name if project is not None else task.project
-        found.append({"id": task.id, "name": task.name, "status": task.status, "project": task.project,
-                      "project_name": names[task.project], "user": task.user, "user_name": users[task.user],
-                      "created": task.created.isoformat() if task.created else None, "as": role,
-                      "commit": _commit_of(task, repo, role)})
+        found.append(
+            {
+                "id": task.id,
+                "name": task.name,
+                "status": task.status,
+                "project": task.project,
+                "project_name": names[task.project],
+                "user": task.user,
+                "user_name": users[task.user],
+                "created": task.created.isoformat() if task.created else None,
+                "as": role,
+                "commit": _commit_of(task, repo, role),
+            }
+        )
         if len(found) >= MAX_RUNS:
             break
     # a run that was started with changes that were not committed holds them as a diff
-    dirty = set(Task.objects(company=company, id__in=[run["id"] for run in found], script__diff__nin=[None, ""]).scalar("id"))
+    dirty = set(
+        Task.objects(company=company, id__in=[run["id"] for run in found], script__diff__nin=[None, ""]).scalar("id")
+    )
     for run in found:
         run["dirty"] = run["id"] in dirty and run["as"] == "code"
     return found

@@ -34,7 +34,9 @@ def upsert_idp_user(issuer: str, subject: str, username: str, idp_roles, admin_r
     """Create the CairnML user for this identity on first sight; keep its role in step with the IdP."""
     user_id = user_id_for(issuer, subject)
     user = AuthUser.objects(id=user_id).first()
-    role = single_admin(user_id, role_for(idp_roles, admin_role), user.company if user is not None else get_default_company())
+    role = single_admin(
+        user_id, role_for(idp_roles, admin_role), user.company if user is not None else get_default_company()
+    )
     if user is None:
         user = AuthUser(
             id=user_id,

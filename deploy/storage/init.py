@@ -85,10 +85,7 @@ def signed_request(method, path, query=None, body=b""):
     for part in (REGION, "s3", "aws4_request"):
         key = _hmac(key, part)
     signature = hmac.new(key, string_to_sign.encode(), hashlib.sha256).hexdigest()
-    auth = (
-        f"AWS4-HMAC-SHA256 Credential={ROOT_USER}/{scope}, "
-        f"SignedHeaders={signed}, Signature={signature}"
-    )
+    auth = f"AWS4-HMAC-SHA256 Credential={ROOT_USER}/{scope}, SignedHeaders={signed}, Signature={signature}"
     url = f"{ENDPOINT}{quote(path, safe='/')}" + (f"?{canonical_query}" if canonical_query else "")
     request = urllib.request.Request(
         url,

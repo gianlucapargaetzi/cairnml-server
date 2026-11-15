@@ -1,6 +1,7 @@
 """
 Objects representing schema entities
 """
+
 import fcntl
 import json
 import re
@@ -63,8 +64,7 @@ class EndpointSchema:
             }
         else:
             raise RuntimeError(
-                f"endpoint {self.full_name} version {self.version} "
-                "has no request or batch_request schema",
+                f"endpoint {self.full_name} version {self.version} has no request or batch_request schema",
                 schema,
             )
         self.response_schema = {
@@ -80,10 +80,7 @@ class EndpointVersionsGroup:
     authorize: bool
 
     def __repr__(self):
-        return (
-            f"{type(self).__name__}<{self.full_name}, "
-            f"versions={tuple(e.version for e in self.endpoints)}>"
-        )
+        return f"{type(self).__name__}<{self.full_name}, versions={tuple(e.version for e in self.endpoints)}>"
 
     def __init__(
         self,
@@ -115,9 +112,7 @@ class EndpointVersionsGroup:
 
         def parse_version(version):
             if not re.match(r"^\d+\.\d+$", version):
-                raise ValueError(
-                    f"Encountered unrecognized key {version!r} in {self.service_name}.{self.action_name}"
-                )
+                raise ValueError(f"Encountered unrecognized key {version!r} in {self.service_name}.{self.action_name}")
             return PartialVersion(version)
 
         self.endpoints = sorted(
@@ -149,13 +144,10 @@ class EndpointVersionsGroup:
         for endpoint in self.endpoints:
             if min_version <= endpoint.version:
                 return endpoint
-        raise ValueError(
-            f"min_version {min_version} is higher than highest version in group {self}"
-        )
+        raise ValueError(f"min_version {min_version} is higher than highest version in group {self}")
 
 
 class Service:
-
     endpoint_groups: Mapping[str, EndpointVersionsGroup]
 
     def __init__(self, name: str, conf: dict, api_defaults: dict):
@@ -191,10 +183,7 @@ class Schema:
         :param api_defaults: default values of service configuration
         """
         self.api_defaults = api_defaults
-        self.services = {
-            name: Service(name, conf, api_defaults=self.api_defaults)
-            for name, conf in services.items()
-        }
+        self.services = {name: Service(name, conf, api_defaults=self.api_defaults) for name, conf in services.items()}
 
 
 @attr.s()
@@ -241,11 +230,7 @@ class SchemaReader:
         Parse the API schema to schema object.
         Load from config files and write to cache file if possible.
         """
-        services = [
-            service
-            for service in self.root.glob("*.conf")
-            if not service.name.startswith("_")
-        ]
+        services = [service for service in self.root.glob("*.conf") if not service.name.startswith("_")]
 
         current_services_names = {path.stem for path in services}
 

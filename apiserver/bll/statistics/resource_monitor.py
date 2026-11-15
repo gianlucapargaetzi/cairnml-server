@@ -20,12 +20,7 @@ class Sample:
 
     @classmethod
     def _apply(cls, op, *samples):
-        return cls(
-            **{
-                field: op(*(getattr(sample, field) for sample in samples))
-                for field in attr.fields_dict(cls)
-            }
-        )
+        return cls(**{field: op(*(getattr(sample, field) for sample in samples)) for field in attr.fields_dict(cls)})
 
     def min(self, sample):
         return self._apply(min, self, sample)
@@ -43,8 +38,8 @@ class Sample:
     def get_current_sample(cls) -> "Sample":
         return cls(
             cpu_usage=psutil.cpu_percent(),
-            mem_used_gb=psutil.virtual_memory().used / (1024 ** 3),
-            mem_free_gb=psutil.virtual_memory().free / (1024 ** 3),
+            mem_used_gb=psutil.virtual_memory().used / (1024**3),
+            mem_free_gb=psutil.virtual_memory().free / (1024**3),
         )
 
 
@@ -79,7 +74,7 @@ class ResourceMonitor:
 
     @classmethod
     def get_stats(cls) -> dict:
-        """ Returns current resource statistics and clears internal resource statistics """
+        """Returns current resource statistics and clears internal resource statistics"""
         with cls._lock:
             min_ = attr.asdict(cls.accumulator.min)
             max_ = attr.asdict(cls.accumulator.max)
@@ -90,8 +85,5 @@ class ResourceMonitor:
         return {
             "interval_sec": interval.total_seconds(),
             "num_cores": psutil.cpu_count(),
-            **{
-                k: {"min": v, "max": max_[k], "avg": avg[k]}
-                for k, v in min_.items()
-            }
+            **{k: {"min": v, "max": max_[k], "avg": avg[k]} for k, v in min_.items()},
         }

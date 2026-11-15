@@ -32,11 +32,25 @@ ADVERTISEMENT = "application/x-git-upload-pack-advertisement"
 # Always refused, whatever the configuration: loopback, link-local (including the cloud metadata address),
 # private (RFC1918) and unique-local (fc00::/7), and the IPv6 equivalents. ipaddress also reports them through
 # is_private, but they are listed so the rule is visible here.
-ALWAYS_BLOCKED = tuple(ipaddress.ip_network(net) for net in (
-    "0.0.0.0/8", "10.0.0.0/8", "100.64.0.0/10", "127.0.0.0/8", "169.254.0.0/16", "172.16.0.0/12",
-    "192.168.0.0/16", "224.0.0.0/4", "240.0.0.0/4", "::/128", "::1/128", "fc00::/7", "fe80::/10",
-    "ff00::/8",
-))
+ALWAYS_BLOCKED = tuple(
+    ipaddress.ip_network(net)
+    for net in (
+        "0.0.0.0/8",
+        "10.0.0.0/8",
+        "100.64.0.0/10",
+        "127.0.0.0/8",
+        "169.254.0.0/16",
+        "172.16.0.0/12",
+        "192.168.0.0/16",
+        "224.0.0.0/4",
+        "240.0.0.0/4",
+        "::/128",
+        "::1/128",
+        "fc00::/7",
+        "fe80::/10",
+        "ff00::/8",
+    )
+)
 
 
 class ProbeBlocked(Exception):
@@ -184,4 +198,5 @@ def check_readable(company: str, repository: str) -> None:
     raise AccessRefused(
         f"the repository on {host} is private or cannot be checked, and no Git credentials are stored for {host}: "
         "an admin adds them with the git_credentials.set call (the web app's Settings page), or the repository "
-        "must be public and reachable from the server")
+        "must be public and reachable from the server"
+    )

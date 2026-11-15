@@ -7,5 +7,6 @@ def migrate_backend(db: Database):
     query = {featured: {"$exists": False}}
     for doc in collection.find(filter=query, projection=()):
         collection.update_one(
-            {"_id": doc["_id"]}, {"$set": {featured: 9999}},
+            {"_id": doc["_id"]},
+            {"$set": {featured: 9999}},
         )

@@ -19,10 +19,8 @@ def get_fields(cls, of_type=BaseField, return_instance=False, subfields=False):
 
 
 def get_fields_attr(cls, attr):
-    """ get field names from a class containing mongoengine fields """
-    return dict(
-        _get_fields(cls, with_attr=attr, selector=lambda k, v: (k, getattr(v, attr)))
-    )
+    """get field names from a class containing mongoengine fields"""
+    return dict(_get_fields(cls, with_attr=attr, selector=lambda k, v: (k, getattr(v, attr))))
 
 
 def get_fields_choices(cls, attr):
@@ -65,14 +63,14 @@ def _get_fields(
 
 
 def get_items(cls):
-    """ get key/value items from an enum-like class (members represent enumeration key/value) """
+    """get key/value items from an enum-like class (members represent enumeration key/value)"""
 
     res = {k: v for k, v in getmembers(cls) if not (k.startswith("_") or ismethod(v))}
     return res
 
 
 def get_options(cls):
-    """ get options from an enum-like class (members represent enumeration key/value) """
+    """get options from an enum-like class (members represent enumeration key/value)"""
     return list(get_items(cls).values())
 
 
@@ -107,9 +105,7 @@ def parse_from_call(call_data, fields, cls_fields, discard_none_values=True):
 
                         if desc is Project:
                             raise errors.bad_request.InvalidProjectId(id=value)
-                        raise ParseCallError(
-                            "expecting %s id" % desc.__name__, id=value, field=field
-                        )
+                        raise ParseCallError("expecting %s id" % desc.__name__, id=value, field=field)
                 elif callable(desc):
                     try:
                         desc(value)
@@ -134,9 +130,7 @@ def field_does_not_exist(field: str, empty_value=None, is_list=False) -> Q:
                     the length of the array will be used (len==0 means empty)
     :return:
     """
-    query = Q(**{f"{field}__exists": False}) | Q(
-        **{f"{field}__in": {empty_value, None}}
-    )
+    query = Q(**{f"{field}__exists": False}) | Q(**{f"{field}__in": {empty_value, None}})
     if is_list:
         query |= Q(**{f"{field}__size": 0})
     return query
@@ -151,9 +145,7 @@ def field_exists(field: str, empty_value=None, is_list=False) -> Q:
                     the length of the array will be used (len==0 means empty)
     :return:
     """
-    query = Q(**{f"{field}__exists": True}) & Q(
-        **{f"{field}__nin": {empty_value, None}}
-    )
+    query = Q(**{f"{field}__exists": True}) & Q(**{f"{field}__nin": {empty_value, None}})
     if is_list:
         query &= Q(**{f"{field}__not__size": 0})
     return query
@@ -164,7 +156,7 @@ def id():
 
 
 def hash_field_name(s):
-    """ Hash field name into a unique safe string """
+    """Hash field name into a unique safe string"""
     return hashlib.md5(s.encode()).hexdigest()
 
 

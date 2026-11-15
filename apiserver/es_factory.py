@@ -10,8 +10,8 @@ from elasticsearch import Elasticsearch
 from apiserver.config_repo import config
 
 log = config.logger(__file__)
-logging.getLogger('elasticsearch').setLevel(logging.WARNING)
-logging.getLogger('elastic_transport').setLevel(logging.WARNING)
+logging.getLogger("elasticsearch").setLevel(logging.WARNING)
+logging.getLogger("elastic_transport").setLevel(logging.WARNING)
 
 OVERRIDE_HOST_ENV_KEY = (
     "CAIRNML_ELASTIC_SERVICE_HOST",
@@ -87,9 +87,7 @@ class ESFactory:
             http_auth = cls.get_credentials(cluster_name)
 
             args = cluster_config.get("args", {})
-            _instances[cluster_name] = Elasticsearch(
-                hosts=hosts, http_auth=http_auth, **args
-            )
+            _instances[cluster_name] = Elasticsearch(hosts=hosts, http_auth=http_auth, **args)
 
         return _instances[cluster_name]
 
@@ -103,13 +101,9 @@ class ESFactory:
         if not elastic_user:
             return None
 
-        elastic_password = OVERRIDE_PASSWORD or config.get(
-            "secure.elastic.password", None
-        )
+        elastic_password = OVERRIDE_PASSWORD or config.get("secure.elastic.password", None)
         if not elastic_password:
-            raise MissingPasswordForElasticUser(
-                f"cluster={cluster_name}, username={elastic_user}"
-            )
+            raise MissingPasswordForElasticUser(f"cluster={cluster_name}, username={elastic_user}")
 
         return elastic_user, elastic_password
 
@@ -174,9 +168,7 @@ class ESFactory:
     @classmethod
     def get_es_timestamp_str(cls):
         now = datetime.utcnow()
-        return (
-            now.strftime("%Y-%m-%dT%H:%M:%S") + ".%03d" % (now.microsecond / 1000) + "Z"
-        )
+        return now.strftime("%Y-%m-%dT%H:%M:%S") + ".%03d" % (now.microsecond / 1000) + "Z"
 
 
 es_factory = ESFactory()

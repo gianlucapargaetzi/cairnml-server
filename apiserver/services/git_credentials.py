@@ -10,7 +10,8 @@ from apiserver.service_repo import APICall, endpoint
 def set_credential(call: APICall, company: str, request: SetGitCredentialRequest):
     call.result.data = {
         "credential": store.set_credential(
-            company, request.host, request.path, request.username, request.secret, actor=call.identity.user)
+            company, request.host, request.path, request.username, request.secret, actor=call.identity.user
+        )
     }
 
 

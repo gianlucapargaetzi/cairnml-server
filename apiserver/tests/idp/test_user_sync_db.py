@@ -40,13 +40,22 @@ class TestUserSyncAgainstTheDatabase(TestCase):
 
     def test_disabled_in_the_idp_is_disabled_here_and_its_devices_are_refused(self):
         from apiserver.database.model.device import Device
-        device = Device(id=f"dev_{uuid.uuid4().hex}", user=self.leaver.id, company=self.leaver.company,
-                        kind="client", name="t", public_key="pem").save()
+
+        device = Device(
+            id=f"dev_{uuid.uuid4().hex}",
+            user=self.leaver.id,
+            company=self.leaver.company,
+            kind="client",
+            name="t",
+            public_key="pem",
+        ).save()
         self.addCleanup(device.delete)
-        directory = StubDirectory({
-            "leaver": DirectoryUser(False, ()),
-            "stayer": DirectoryUser(True, (ADMIN,)),
-        })
+        directory = StubDirectory(
+            {
+                "leaver": DirectoryUser(False, ()),
+                "stayer": DirectoryUser(True, (ADMIN,)),
+            }
+        )
         sync_once(directory, ADMIN)
         leaver = AuthUser.objects(id=self.leaver.id).get()
         stayer = AuthUser.objects(id=self.stayer.id).get()
@@ -62,16 +71,24 @@ class TestUserSyncAgainstTheDatabase(TestCase):
 
         class ListingDirectory(StubDirectory):
             def list_users(self):
-                return [("leaver", "leaver", True), ("stayer", "stayer", True),
-                        (newcomer, "newcomer", True), (retired, "retired", False)]
+                return [
+                    ("leaver", "leaver", True),
+                    ("stayer", "stayer", True),
+                    (newcomer, "newcomer", True),
+                    (retired, "retired", False),
+                ]
 
-        directory = ListingDirectory({
-            "leaver": DirectoryUser(True, ()),
-            "stayer": DirectoryUser(True, ()),
-            newcomer: DirectoryUser(True, (ADMIN,)),
-            retired: DirectoryUser(False, ()),
-        })
-        self.addCleanup(lambda: AuthUser.objects(idp_subject__in=[f"{self.issuer}|{newcomer}", f"{self.issuer}|{retired}"]).delete())
+        directory = ListingDirectory(
+            {
+                "leaver": DirectoryUser(True, ()),
+                "stayer": DirectoryUser(True, ()),
+                newcomer: DirectoryUser(True, (ADMIN,)),
+                retired: DirectoryUser(False, ()),
+            }
+        )
+        self.addCleanup(
+            lambda: AuthUser.objects(idp_subject__in=[f"{self.issuer}|{newcomer}", f"{self.issuer}|{retired}"]).delete()
+        )
         created = import_missing(directory, self.issuer, ADMIN)
         self.assertEqual(created, 1)
         user = AuthUser.objects(idp_subject=f"{self.issuer}|{newcomer}").get()
@@ -84,16 +101,32 @@ class TestUserSyncAgainstTheDatabase(TestCase):
     def test_disabling_an_owner_audits_its_live_devices(self):
         from apiserver.database.model.audit import AuditEvent
         from apiserver.database.model.device import Device
-        live = Device(id=f"dev_{uuid.uuid4().hex}", user=self.leaver.id, company=self.leaver.company,
-                      kind="agent", name="live", public_key="pem").save()
-        revoked = Device(id=f"dev_{uuid.uuid4().hex}", user=self.leaver.id, company=self.leaver.company,
-                         kind="agent", name="revoked", public_key="pem", revoked=True).save()
+
+        live = Device(
+            id=f"dev_{uuid.uuid4().hex}",
+            user=self.leaver.id,
+            company=self.leaver.company,
+            kind="agent",
+            name="live",
+            public_key="pem",
+        ).save()
+        revoked = Device(
+            id=f"dev_{uuid.uuid4().hex}",
+            user=self.leaver.id,
+            company=self.leaver.company,
+            kind="agent",
+            name="revoked",
+            public_key="pem",
+            revoked=True,
+        ).save()
         self.addCleanup(lambda: [d.delete() for d in (live, revoked)])
         self.addCleanup(lambda: AuditEvent.objects(actor=self.leaver.id, action="owner.disabled").delete())
-        directory = StubDirectory({
-            "leaver": DirectoryUser(False, ()),
-            "stayer": DirectoryUser(True, (ADMIN,)),
-        })
+        directory = StubDirectory(
+            {
+                "leaver": DirectoryUser(False, ()),
+                "stayer": DirectoryUser(True, (ADMIN,)),
+            }
+        )
         sync_once(directory, ADMIN)
         event = AuditEvent.objects(actor=self.leaver.id, action="owner.disabled").get()
         self.assertEqual(event.detail["devices"], [live.id])

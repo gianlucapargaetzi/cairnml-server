@@ -15,7 +15,7 @@ log = config.logger(__file__)
 
 
 def validate_data(call: APICall, endpoint: Endpoint):
-    """ Perform all required call/endpoint validation, update call result appropriately """
+    """Perform all required call/endpoint validation, update call result appropriately"""
     try:
         # todo: remove validate_required_fields once all endpoints have json schema
         validate_required_fields(endpoint, call)
@@ -34,9 +34,7 @@ def validate_data(call: APICall, endpoint: Endpoint):
     except CallParsingError as ex:
         raise errors.bad_request.ValidationError(str(ex)) from ex
     except jsonmodels.errors.ValidationError as ex:
-        raise errors.bad_request.ValidationError(
-            " ".join(map(str.lower, map(str, ex.args)))
-        ) from ex
+        raise errors.bad_request.ValidationError(" ".join(map(str.lower, map(str, ex.args)))) from ex
     except fastjsonschema.exceptions.JsonSchemaException as ex:
         log.exception(f"{endpoint.name}: fastjsonschema exception")
         raise errors.bad_request.ValidationError(ex.args[0]) from ex
@@ -46,45 +44,47 @@ def validate_data(call: APICall, endpoint: Endpoint):
 # may therefore call only the endpoints the cairnml-agent calls (tests/e2e_support/agent_calls.txt lists them with
 # their source locations). Every other endpoint, including people, devices, projects, queue administration, storage,
 # credentials and datasets, is refused for agent tokens.
-AGENT_ALLOWED_ENDPOINTS = frozenset({
-    "async.result",
-    "auth.login",
-    "devices.exchange",
-    "devices.git_token",
-    "devices.idp_settings",
-    "devices.job_token",
-    "events.add_batch",
-    "projects.get_all",
-    "queues.add_task",
-    "queues.get_all",
-    "queues.get_by_id",
-    "queues.get_default",
-    "queues.get_next_task",
-    "queues.move_task_to_front",
-    "tasks.clone",
-    "tasks.completed",
-    "tasks.dequeue",
-    "tasks.edit",
-    "tasks.edit_hyper_params",
-    "tasks.enqueue",
-    "tasks.failed",
-    "tasks.get_all",
-    "tasks.get_by_id",
-    "tasks.get_hyper_params",
-    "tasks.ping",
-    "tasks.set_requirements",
-    "tasks.started",
-    "tasks.stopped",
-    "tasks.update",
-    "workers.cluster_report",
-    "workers.cluster_unregister",
-    "workers.get_all",
-    "workers.get_runtime_properties",
-    "workers.register",
-    "workers.set_runtime_properties",
-    "workers.status_report",
-    "workers.unregister",
-})
+AGENT_ALLOWED_ENDPOINTS = frozenset(
+    {
+        "async.result",
+        "auth.login",
+        "devices.exchange",
+        "devices.git_token",
+        "devices.idp_settings",
+        "devices.job_token",
+        "events.add_batch",
+        "projects.get_all",
+        "queues.add_task",
+        "queues.get_all",
+        "queues.get_by_id",
+        "queues.get_default",
+        "queues.get_next_task",
+        "queues.move_task_to_front",
+        "tasks.clone",
+        "tasks.completed",
+        "tasks.dequeue",
+        "tasks.edit",
+        "tasks.edit_hyper_params",
+        "tasks.enqueue",
+        "tasks.failed",
+        "tasks.get_all",
+        "tasks.get_by_id",
+        "tasks.get_hyper_params",
+        "tasks.ping",
+        "tasks.set_requirements",
+        "tasks.started",
+        "tasks.stopped",
+        "tasks.update",
+        "workers.cluster_report",
+        "workers.cluster_unregister",
+        "workers.get_all",
+        "workers.get_runtime_properties",
+        "workers.register",
+        "workers.set_runtime_properties",
+        "workers.status_report",
+        "workers.unregister",
+    }
+)
 
 
 def _agent_refused(endpoint) -> bool:
@@ -93,22 +93,24 @@ def _agent_refused(endpoint) -> bool:
 
 # Sensitive endpoints that do not authorise their callers (authorize: false) still refuse an agent token. Such an
 # endpoint ignores the token, so the token is read only to learn whether it belongs to an agent.
-AGENT_SENSITIVE_ENDPOINTS = frozenset({
-    "devices.enroll",
-    "devices.revoke",
-    "devices.get_all",
-    "audit.get_all",
-    "git_credentials.set",
-    "git_credentials.delete",
-    "git_credentials.get_all",
-    "repositories.add",
-    "repositories.delete",
-    "repositories.set_shared",
-    "repositories.link",
-    "repositories.unlink",
-    "repositories.assign",
-    "repositories.unassign",
-})
+AGENT_SENSITIVE_ENDPOINTS = frozenset(
+    {
+        "devices.enroll",
+        "devices.revoke",
+        "devices.get_all",
+        "audit.get_all",
+        "git_credentials.set",
+        "git_credentials.delete",
+        "git_credentials.get_all",
+        "repositories.add",
+        "repositories.delete",
+        "repositories.set_shared",
+        "repositories.link",
+        "repositories.unlink",
+        "repositories.assign",
+        "repositories.unassign",
+    }
+)
 AGENT_SENSITIVE_PREFIXES = ("storage.", "user_access.", "users.")
 
 
@@ -175,8 +177,8 @@ def validate_auth(endpoint: Endpoint, call: "APICall"):
 
 
 def validate_impersonation(endpoint, call):
-    """ Validate impersonation headers and set impersonated identity and authorization data accordingly.
-        :return: True if impersonating, False otherwise
+    """Validate impersonation headers and set impersonated identity and authorization data accordingly.
+    :return: True if impersonating, False otherwise
     """
     try:
         act_as = call.act_as
@@ -192,9 +194,7 @@ def validate_impersonation(endpoint, call):
 
         # verify this user is allowed to impersonate at all
         if identity.role not in Role.get_system_roles() | {Role.admin}:
-            raise errors.bad_request.ImpersonationError(
-                "impersonation not allowed", role=identity.role
-            )
+            raise errors.bad_request.ImpersonationError("impersonation not allowed", role=identity.role)
 
         # get the impersonated user's info
         user_id = act_as or impersonate_as

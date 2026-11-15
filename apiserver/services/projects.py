@@ -103,11 +103,7 @@ def get_by_id(call: APICall, company: str, request: ProjectRequest):
     project_id = request.project
 
     with translate_errors_context():
-        query = (
-            Q(id=project_id)
-            & get_company_or_none_constraint(company)
-            & _visible_ids_filter(call.identity)
-        )
+        query = Q(id=project_id) & get_company_or_none_constraint(company) & _visible_ids_filter(call.identity)
         project = Project.objects(query).first()
         if not project:
             raise errors.bad_request.InvalidProjectId(id=project_id)
@@ -233,11 +229,7 @@ def get_all_ex(call: APICall, company_id: str, request: ProjectsGetRequest):
 
     if request.search_hidden:
         for p in projects:
-            system_tags = (
-                p.pop("system_tags", [])
-                if remove_system_tags
-                else p.get("system_tags", [])
-            )
+            system_tags = p.pop("system_tags", []) if remove_system_tags else p.get("system_tags", [])
             if EntityVisibility.hidden.value in system_tags:
                 p["hidden"] = True
 
@@ -325,9 +317,7 @@ def get_all(call: APICall, company: str, _):
     projects = Project.get_many(
         company=company,
         query_dict=data,
-        query=_hidden_query(
-            search_hidden=data.get("search_hidden"), ids=data.get("id")
-        )
+        query=_hidden_query(search_hidden=data.get("search_hidden"), ids=data.get("id"))
         & _visible_ids_filter(call.identity),
         parameters=data,
         allow_public=True,
@@ -370,9 +360,7 @@ def update(call: APICall, company: str, request: ProjectRequest):
              fields - `[string]` - updated fields
     """
     ProjectAccessBLL.assert_can(call.identity, request.project, "admin")
-    fields = parse_from_call(
-        call.data, create_fields, Project.get_fields(), discard_none_values=False
-    )
+    fields = parse_from_call(call.data, create_fields, Project.get_fields(), discard_none_values=False)
     conform_tag_fields(call, fields, validate=True)
     if "notification_webhook" in fields:
         # an empty value clears the webhook
@@ -400,12 +388,8 @@ def move(call: APICall, company: str, request: MoveRequest):
     # Moving a root changes who governs it from here on (role resolution always follows the
     # current root), so demoting someone's independently-owned root under another tree needs the
     # same owner_only bar delete/merge use, not just admin, which a collaborator also has
-    ProjectAccessBLL.assert_can(
-        identity, request.project, "owner_only" if was_root else "admin"
-    )
-    ProjectAccessBLL.assert_can_admin_destination(
-        identity, company, request.new_location
-    )
+    ProjectAccessBLL.assert_can(identity, request.project, "owner_only" if was_root else "admin")
+    ProjectAccessBLL.assert_can_admin_destination(identity, company, request.new_location)
 
     moved, affected_projects = ProjectBLL.move_project(
         company=company,
@@ -447,9 +431,7 @@ def merge(call: APICall, company: str, request: MergeRequest):
 @endpoint("projects.validate_delete")
 def validate_delete(call: APICall, company_id: str, request: ProjectRequest):
     ProjectAccessBLL.assert_can(call.identity, request.project, "owner_only")
-    call.result.data = validate_project_delete(
-        company=company_id, project_id=request.project
-    )
+    call.result.data = validate_project_delete(company=company_id, project_id=request.project)
 
 
 @endpoint("projects.delete", request_data_model=DeleteRequest)
@@ -468,16 +450,10 @@ def delete(call: APICall, company_id: str, request: DeleteRequest):
     call.result.data = {**attr.asdict(res)}
 
 
-@endpoint(
-    "projects.get_unique_metric_variants", request_data_model=GetUniqueMetricsRequest
-)
-def get_unique_metric_variants(
-    call: APICall, company_id: str, request: GetUniqueMetricsRequest
-):
+@endpoint("projects.get_unique_metric_variants", request_data_model=GetUniqueMetricsRequest)
+def get_unique_metric_variants(call: APICall, company_id: str, request: GetUniqueMetricsRequest):
     _assert_can_read(call.identity, [request.project])
-    effective = _effective_projects(
-        call.identity, [request.project] if request.project else None
-    )
+    effective = _effective_projects(call.identity, [request.project] if request.project else None)
     if effective == []:
         call.result.data = {"metrics": []}
         return
@@ -495,9 +471,7 @@ def get_unique_metric_variants(
 @endpoint("projects.get_model_metadata_keys")
 def get_model_metadata_keys(call: APICall, company_id: str, request: GetParamsRequest):
     _assert_can_read(call.identity, [request.project])
-    effective = _effective_projects(
-        call.identity, [request.project] if request.project else None
-    )
+    effective = _effective_projects(call.identity, [request.project] if request.project else None)
     if effective == []:
         call.result.data = {"total": 0, "remaining": 0, "keys": []}
         return
@@ -517,9 +491,7 @@ def get_model_metadata_keys(call: APICall, company_id: str, request: GetParamsRe
 
 
 @endpoint("projects.get_model_metadata_values")
-def get_model_metadata_values(
-    call: APICall, company_id: str, request: ProjectModelMetadataValuesRequest
-):
+def get_model_metadata_values(call: APICall, company_id: str, request: ProjectModelMetadataValuesRequest):
     _assert_can_read(call.identity, request.projects)
     effective = _effective_projects(call.identity, request.projects)
     if effective == []:
@@ -547,9 +519,7 @@ def get_model_metadata_values(
 )
 def get_hyper_parameters(call: APICall, company_id: str, request: GetParamsRequest):
     _assert_can_read(call.identity, [request.project])
-    effective = _effective_projects(
-        call.identity, [request.project] if request.project else None
-    )
+    effective = _effective_projects(call.identity, [request.project] if request.project else None)
     if effective == []:
         call.result.data = {"total": 0, "remaining": 0, "parameters": []}
         return
@@ -573,9 +543,7 @@ def get_hyper_parameters(call: APICall, company_id: str, request: GetParamsReque
     min_version="2.13",
     request_data_model=ProjectHyperparamValuesRequest,
 )
-def get_hyperparam_values(
-    call: APICall, company_id: str, request: ProjectHyperparamValuesRequest
-):
+def get_hyperparam_values(call: APICall, company_id: str, request: ProjectHyperparamValuesRequest):
     _assert_can_read(call.identity, request.projects)
     effective = _effective_projects(call.identity, request.projects)
     if effective == []:
@@ -614,9 +582,7 @@ def get_project_tags(call: APICall, company, request: ProjectTagsRequest):
     call.result.data = sort_tags_response({"tags": tags, "system_tags": system_tags})
 
 
-@endpoint(
-    "projects.get_task_tags", min_version="2.8", request_data_model=ProjectTagsRequest
-)
+@endpoint("projects.get_task_tags", min_version="2.8", request_data_model=ProjectTagsRequest)
 def get_task_tags(call: APICall, company, request: ProjectTagsRequest):
     _assert_can_read(call.identity, request.projects)
     effective = _effective_projects(call.identity, request.projects)
@@ -633,9 +599,7 @@ def get_task_tags(call: APICall, company, request: ProjectTagsRequest):
     call.result.data = sort_tags_response(ret)
 
 
-@endpoint(
-    "projects.get_model_tags", min_version="2.8", request_data_model=ProjectTagsRequest
-)
+@endpoint("projects.get_model_tags", min_version="2.8", request_data_model=ProjectTagsRequest)
 def get_model_tags(call: APICall, company, request: ProjectTagsRequest):
     _assert_can_read(call.identity, request.projects)
     effective = _effective_projects(call.identity, request.projects)
@@ -652,9 +616,7 @@ def get_model_tags(call: APICall, company, request: ProjectTagsRequest):
     call.result.data = sort_tags_response(ret)
 
 
-@endpoint(
-    "projects.make_public", min_version="2.9", request_data_model=MakePublicRequest
-)
+@endpoint("projects.make_public", min_version="2.9", request_data_model=MakePublicRequest)
 def make_public(call: APICall, company_id, request: MakePublicRequest):
     # changing visibility (here, the older cross-company "public" mechanism) is Owner/Collaborator
     # only, same bar the role matrix gives projects.set_visibility; check every id before any of
@@ -670,9 +632,7 @@ def make_public(call: APICall, company_id, request: MakePublicRequest):
     )
 
 
-@endpoint(
-    "projects.make_private", min_version="2.9", request_data_model=MakePublicRequest
-)
+@endpoint("projects.make_private", min_version="2.9", request_data_model=MakePublicRequest)
 def make_private(call: APICall, company_id, request: MakePublicRequest):
     for project_id in request.ids:
         ProjectAccessBLL.assert_can(call.identity, project_id, "admin")
@@ -690,9 +650,7 @@ def make_private(call: APICall, company_id, request: MakePublicRequest):
     min_version="2.12",
     request_data_model=ProjectTaskParentsRequest,
 )
-def get_task_parents(
-    call: APICall, company_id: str, request: ProjectTaskParentsRequest
-):
+def get_task_parents(call: APICall, company_id: str, request: ProjectTaskParentsRequest):
     _assert_can_read(call.identity, request.projects)
     effective = _effective_projects(call.identity, request.projects)
     if effective == []:
@@ -710,9 +668,7 @@ def get_task_parents(
 
 
 @endpoint("projects.get_contributions")
-def get_contributions(
-    call: APICall, company_id: str, request: ProjectContributionsRequest
-):
+def get_contributions(call: APICall, company_id: str, request: ProjectContributionsRequest):
     ProjectAccessBLL.assert_can(call.identity, request.project, "read")
     call.result.data = ProjectBLL.get_contributions(
         company_id,

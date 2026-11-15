@@ -18,7 +18,9 @@ class TestDeviceOfBearer(TestCase):
         self.assertIsNone(device_of_bearer("Bearer a.b.c"))
 
     def test_a_token_signed_with_another_secret_is_no_device(self):
-        forged = jwt.encode({"kind": "agent", "device": "d1"}, "some-other-secret-that-is-long-enough-32b", algorithm="HS256")
+        forged = jwt.encode(
+            {"kind": "agent", "device": "d1"}, "some-other-secret-that-is-long-enough-32b", algorithm="HS256"
+        )
         self.assertIsNone(device_of_bearer(f"Bearer {forged}"))
 
     def test_a_token_with_an_unsupported_algorithm_is_no_device(self):

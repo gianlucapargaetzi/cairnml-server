@@ -57,8 +57,9 @@ def build_parser() -> argparse.ArgumentParser:
 def open_task(args: argparse.Namespace) -> Task:
     """The task of one job, with its arguments connected to it. On an agent the connection gives back the values the
     job was recorded with, so the body runs with them."""
-    task = Task.init(project_name=args.project, task_name=args.name, reuse_last_task_id=False,
-                     auto_connect_arg_parser=False)
+    task = Task.init(
+        project_name=args.project, task_name=args.name, reuse_last_task_id=False, auto_connect_arg_parser=False
+    )
     task.set_base_docker(args.base_image)
     shaped = {key: value for key, value in vars(args).items() if key not in NAMING}
     shaped = task.connect(shaped, name="Args")

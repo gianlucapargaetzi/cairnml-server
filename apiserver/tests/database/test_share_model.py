@@ -7,8 +7,17 @@ from apiserver.database.model.share import Share
 
 
 def make(**overrides) -> Share:
-    values = dict(id="s1", company="c1", resource_type="queue", resource_id="q1", scope="projects", project="p1",
-                  level="read", granted_by="u1", created=datetime.utcnow())
+    values = dict(
+        id="s1",
+        company="c1",
+        resource_type="queue",
+        resource_id="q1",
+        scope="projects",
+        project="p1",
+        level="read",
+        granted_by="u1",
+        created=datetime.utcnow(),
+    )
     values.update(overrides)
     return Share(**values)
 
@@ -46,13 +55,16 @@ def test_the_resource_types_of_the_old_model_are_gone(resource_type):
         make(resource_type=resource_type, level="read").validate()
 
 
-@pytest.mark.parametrize("resource_type, level", [
-    ("queue", "read"),
-    ("queue", "read_write"),
-    ("queue", "collaborator"),
-    ("repository", "read"),
-    ("repository", "collaborator"),
-])
+@pytest.mark.parametrize(
+    "resource_type, level",
+    [
+        ("queue", "read"),
+        ("queue", "read_write"),
+        ("queue", "collaborator"),
+        ("repository", "read"),
+        ("repository", "collaborator"),
+    ],
+)
 def test_the_levels_allowed_per_resource_type_are_accepted(resource_type, level):
     make(resource_type=resource_type, level=level).validate()
 

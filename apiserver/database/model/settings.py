@@ -30,14 +30,14 @@ class Settings(DbModelMixin, Document):
 
     @classmethod
     def set_or_add_value(cls, key: str, value: Any, sep: str = ".") -> bool:
-        """ Sets a new value or adds a new key/value setting (if key does not exist) """
+        """Sets a new value or adds a new key/value setting (if key does not exist)"""
         key = key.strip(sep)
         res = Settings.objects(key=key).update(key=key, value=value, upsert=True)
         return bool(res)
 
     @classmethod
     def add_value(cls, key: str, value: Any, sep: str = ".") -> bool:
-        """ Adds a new key/value settings. Fails if key already exists. """
+        """Adds a new key/value settings. Fails if key already exists."""
         key = key.strip(sep)
         try:
             res = cls(key=key, value=value).save(force_insert=True)

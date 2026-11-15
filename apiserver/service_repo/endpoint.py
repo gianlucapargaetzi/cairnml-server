@@ -46,18 +46,12 @@ class Endpoint(object):
         self.response_data_model = response_data_model
         service, _, endpoint_name = self.name.partition(".")
         try:
-            self.endpoint_group = schema.services[service].endpoint_groups[
-                endpoint_name
-            ]
+            self.endpoint_group = schema.services[service].endpoint_groups[endpoint_name]
         except KeyError:
-            raise RuntimeError(
-                f"schema for endpoint {service}.{endpoint_name} not found"
-            ) from None
+            raise RuntimeError(f"schema for endpoint {service}.{endpoint_name} not found") from None
         if validate_schema:
             if self.required_fields:
-                raise ValueError(
-                    f"endpoint {self.name}: can not use 'required_fields' with 'validate_schema'"
-                )
+                raise ValueError(f"endpoint {self.name}: can not use 'required_fields' with 'validate_schema'")
             endpoint = self.endpoint_group.get_for_version(self.min_version)
             request_schema = endpoint.request_schema
             response_schema = endpoint.response_schema

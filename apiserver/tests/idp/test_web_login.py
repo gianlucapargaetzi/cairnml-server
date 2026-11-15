@@ -20,8 +20,9 @@ class TestWebLoginPieces(TestCase):
         self.assertGreaterEqual(len(a["verifier"]), 43)
 
     def test_authorize_url_carries_the_pkce_state_and_nonce(self):
-        url = authorize_url("http://idp/realms/cairnml", "cairnml-web", "http://srv/callback",
-                            state="s1", nonce="n1", challenge="c1")
+        url = authorize_url(
+            "http://idp/realms/cairnml", "cairnml-web", "http://srv/callback", state="s1", nonce="n1", challenge="c1"
+        )
         query = parse_qs(urlparse(url).query)
         self.assertTrue(url.startswith("http://idp/realms/cairnml/protocol/openid-connect/auth?"))
         self.assertEqual(query["client_id"], ["cairnml-web"])

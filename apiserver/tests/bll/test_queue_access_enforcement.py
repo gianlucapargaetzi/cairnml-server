@@ -24,8 +24,13 @@ def company():
 
 def make_root(company, id_="root1", owner="owner1", visibility=ProjectVisibility.private, members=()):
     project = Project(
-        id=id_, company=company, user=owner, name=id_, basename=id_,
-        created=datetime.utcnow(), visibility=visibility,
+        id=id_,
+        company=company,
+        user=owner,
+        name=id_,
+        basename=id_,
+        created=datetime.utcnow(),
+        visibility=visibility,
         members=[ProjectMember(user=u, role=r, added=datetime.utcnow(), added_by=owner) for u, r in members],
     )
     project.save()
@@ -33,14 +38,26 @@ def make_root(company, id_="root1", owner="owner1", visibility=ProjectVisibility
 
 
 def make_task(company, project, owner, id_="task1"):
-    task = Task(id=id_, company=company, user=owner, name="real-task-name", display_name="real label", project=project, type="training", created=datetime.utcnow())
+    task = Task(
+        id=id_,
+        company=company,
+        user=owner,
+        name="real-task-name",
+        display_name="real label",
+        project=project,
+        type="training",
+        created=datetime.utcnow(),
+    )
     task.save()
     return task
 
 
 def make_queue(company, task_id, id_="queue1"):
     queue = Queue(
-        id=id_, company=company, name=id_, created=datetime.utcnow(),
+        id=id_,
+        company=company,
+        name=id_,
+        created=datetime.utcnow(),
         entries=[Entry(task=task_id, added=datetime.utcnow())],
     )
     queue.save()
@@ -57,9 +74,7 @@ def test_get_queue_infos_redacts_a_hidden_tasks_name_from_a_stranger(company):
     make_task(company, "root1", "owner1")
     make_queue(company, "task1")
 
-    [queue] = queue_bll.get_queue_infos(
-        company_id=company, query_dict={}, identity=identity(company, "stranger")
-    )
+    [queue] = queue_bll.get_queue_infos(company_id=company, query_dict={}, identity=identity(company, "stranger"))
     assert queue["entries"][0]["task"]["name"] is None
     assert queue["entries"][0]["task"]["display_name"] is None
 
@@ -70,8 +85,6 @@ def test_get_queue_infos_shows_the_name_to_a_member(company):
     make_task(company, "root1", "owner1")
     make_queue(company, "task1")
 
-    [queue] = queue_bll.get_queue_infos(
-        company_id=company, query_dict={}, identity=identity(company, "u2")
-    )
+    [queue] = queue_bll.get_queue_infos(company_id=company, query_dict={}, identity=identity(company, "u2"))
     assert queue["entries"][0]["task"]["name"] == "real-task-name"
     assert queue["entries"][0]["task"]["display_name"] == "real label"

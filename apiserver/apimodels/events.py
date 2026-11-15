@@ -48,9 +48,7 @@ class MultiTaskScalarMetricsIterHistogramRequest(HistogramRequestBase):
         validators=[
             Length(
                 minimum_value=1,
-                maximum_value=config.get(
-                    "services.tasks.multi_task_histogram_limit", 100
-                ),
+                maximum_value=config.get("services.tasks.multi_task_histogram_limit", 100),
             )
         ],
     )
@@ -71,9 +69,7 @@ class LegacyMetricEventsRequest(TaskRequest):
 
 
 class MetricEventsRequest(Base):
-    metrics: Sequence[TaskMetric] = ListField(
-        items_types=TaskMetric, validators=[Length(minimum_value=1)]
-    )
+    metrics: Sequence[TaskMetric] = ListField(items_types=TaskMetric, validators=[Length(minimum_value=1)])
     iters: int = IntField(default=1, validators=validators.Min(1))
     navigate_earlier: bool = BoolField(default=True)
     refresh: bool = BoolField(default=False)
@@ -174,9 +170,7 @@ class MetricEventsResponse(Base):
 
 
 class MultiTasksRequestBase(Base):
-    tasks: Sequence[str] = ListField(
-        items_types=str, validators=[Length(minimum_value=1)]
-    )
+    tasks: Sequence[str] = ListField(items_types=str, validators=[Length(minimum_value=1)])
     model_events: bool = BoolField(default=False)
 
 

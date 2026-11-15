@@ -53,8 +53,9 @@ def test_a_list_naming_another_task_is_refused():
         validate_job_scope(_endpoint("tasks.get_all_ex"), _call({"tasks": [JOB_TASK, "other"]}))
 
 
-@pytest.mark.parametrize("name", ["users.get_current_user", "devices.revoke",
-                                  "queues.get_default", "auth.login", "workers.status_report"])
+@pytest.mark.parametrize(
+    "name", ["users.get_current_user", "devices.revoke", "queues.get_default", "auth.login", "workers.status_report"]
+)
 def test_other_services_are_refused(name):
     with pytest.raises(errors.forbidden.NoWritePermission):
         validate_job_scope(_endpoint(name), _call({"task": JOB_TASK}))
@@ -95,7 +96,6 @@ def test_a_job_may_not_change_projects(monkeypatch):
         validate_job_scope(_endpoint("projects.update"), _call({"project": "its-project"}))
 
 
-
 def test_a_plain_body_is_checked_through_its_chunk_not_as_an_event(monkeypatch):
     # a commit body names the chunk by id and has no task of its own; it is not a batch of events
     monkeypatch.setattr(job_scope, "_chunk_task_id", lambda chunk_id: JOB_TASK)
@@ -112,15 +112,13 @@ def test_a_job_may_not_create_a_model_for_another_task():
 
 
 def test_a_job_may_read_and_edit_a_model_of_its_own_task(monkeypatch):
-    monkeypatch.setattr(job_scope, "_model_belongs_to_job",
-                        lambda model_id, job_task, owner: model_id == "mine")
+    monkeypatch.setattr(job_scope, "_model_belongs_to_job", lambda model_id, job_task, owner: model_id == "mine")
     validate_job_scope(_endpoint("models.get_by_id"), _call({"model": "mine"}))
     validate_job_scope(_endpoint("models.edit"), _call({"model": "mine", "comment": "x"}))
 
 
 def test_a_job_may_not_read_or_edit_another_tasks_model(monkeypatch):
-    monkeypatch.setattr(job_scope, "_model_belongs_to_job",
-                        lambda model_id, job_task, owner: model_id == "mine")
+    monkeypatch.setattr(job_scope, "_model_belongs_to_job", lambda model_id, job_task, owner: model_id == "mine")
     with pytest.raises(errors.bad_request.InvalidTaskId):
         validate_job_scope(_endpoint("models.get_by_id"), _call({"model": "theirs"}))
     with pytest.raises(errors.bad_request.InvalidTaskId):
@@ -258,7 +256,9 @@ def test_a_step_may_read_but_not_change_the_step_next_to_it():
 
 
 def test_a_step_may_download_the_artifact_of_the_step_next_to_it(monkeypatch):
-    validate_job_scope(_endpoint("datachunks.prepare_download"), _call({"task": "sibling-step", "kind": "artifact", "name": "w"}))
+    validate_job_scope(
+        _endpoint("datachunks.prepare_download"), _call({"task": "sibling-step", "kind": "artifact", "name": "w"})
+    )
     monkeypatch.setattr(job_scope, "_chunk_task_id", lambda chunk_id: "sibling-step")
     validate_job_scope(_endpoint("datachunks.prepare_download"), _call({"id": "chunk-1"}))
     with pytest.raises(errors.bad_request.InvalidTaskId):

@@ -40,8 +40,13 @@ JOB_PROJECT_TREE_ENDPOINTS = {"projects.get_all", "projects.get_all_ex", "projec
 JOB_QUEUE_LOOKUP_ENDPOINTS = {"queues.get_all", "queues.get_all_ex"}
 
 # Reads of the steps next to the job: a step of a pipeline reads the task (and so the artifacts) of the step before it.
-JOB_SIBLING_READ_ENDPOINTS = {"tasks.get_by_id", "tasks.get_by_id_ex", "tasks.get_all", "tasks.get_all_ex",
-                              "datachunks.prepare_download"}
+JOB_SIBLING_READ_ENDPOINTS = {
+    "tasks.get_by_id",
+    "tasks.get_by_id_ex",
+    "tasks.get_all",
+    "tasks.get_all_ex",
+    "datachunks.prepare_download",
+}
 
 # The one read of the projects service a job needs: the project of its own task, which the SDK reads when it starts.
 JOB_PROJECT_READ = "projects.get_by_id"
@@ -162,7 +167,11 @@ def validate_job_scope(endpoint, call) -> None:
         # a task the job starts: in the job's project (or below it). The server makes the job's task its parent,
         # whatever the body says, so the job can reach the tasks it starts and no others.
         data = call.data
-        if endpoint.name == "tasks.clone" and data.get("task") != job_task and not _is_child(data.get("task"), job_task):
+        if (
+            endpoint.name == "tasks.clone"
+            and data.get("task") != job_task
+            and not _is_child(data.get("task"), job_task)
+        ):
             raise errors.bad_request.InvalidTaskId(id="", company="")
         project = data.get("project") or (_task_project_id(job_task) if endpoint.name == "tasks.clone" else None)
         if not _project_in_tree(project, job_task):

@@ -6,9 +6,7 @@ from apiserver.tests.automated import TestService
 class TestProjectTags(TestService):
     def test_project_own_tags(self):
         p1_tags = ["Tag 1", "Tag 2"]
-        p1 = self.create_temp(
-            "projects", name="Test project tags1", description="test", tags=p1_tags
-        )
+        p1 = self.create_temp("projects", name="Test project tags1", description="test", tags=p1_tags)
         p2_tags = ["Tag 1", "Tag 3"]
         p2 = self.create_temp(
             "projects",
@@ -21,9 +19,7 @@ class TestProjectTags(TestService):
         res = self.api.projects.get_project_tags(projects=[p1, p2])
         self.assertEqual(set(res.tags), set(p1_tags) | set(p2_tags))
 
-        res = self.api.projects.get_project_tags(
-            projects=[p1, p2], filter={"system_tags": ["__$not", "hidden"]}
-        )
+        res = self.api.projects.get_project_tags(projects=[p1, p2], filter={"system_tags": ["__$not", "hidden"]})
         self.assertEqual(res.tags, p1_tags)
 
     def test_project_entities_tags(self):
@@ -81,9 +77,7 @@ class TestProjectTags(TestService):
         self.assertTrue({tag1, tag2}.issubset(set(data.tags)))
         self.assertTrue(system_tag in data.system_tags)
 
-        data = self.api.organization.get_tags(
-            filter={"system_tags": ["__$not", system_tag]}
-        )
+        data = self.api.organization.get_tags(filter={"system_tags": ["__$not", system_tag]})
         self.assertTrue(tag1 in data.tags)
         self.assertFalse(tag2 in data.tags)
 
@@ -116,9 +110,7 @@ class TestProjectTags(TestService):
         self.assertEqual(set(data.tags), {*new_tags, *initial_tags})
 
     def new_task(self, **kwargs):
-        self.update_missing(
-            kwargs, type="testing", name="test project tags"
-        )
+        self.update_missing(kwargs, type="testing", name="test project tags")
         return self.create_temp("tasks", **kwargs)
 
     def new_model(self, **kwargs):

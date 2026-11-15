@@ -25,9 +25,7 @@ class ArtifactTypeData(models.Base):
 class Artifact(models.Base):
     key = StringField(required=True)
     type = StringField(required=True)
-    mode = StringField(
-        validators=Enum(*get_options(ArtifactModes)), default=DEFAULT_ARTIFACT_MODE
-    )
+    mode = StringField(validators=Enum(*get_options(ArtifactModes)), default=DEFAULT_ARTIFACT_MODE)
     uri = StringField()
     hash = StringField()
     content_size = IntField()
@@ -197,9 +195,7 @@ class AddOrUpdateArtifactsRequest(TaskUpdateRequest):
 
 class ArtifactId(models.Base):
     key = StringField(required=True)
-    mode = StringField(
-        validators=Enum(*get_options(ArtifactModes)), default=DEFAULT_ARTIFACT_MODE
-    )
+    mode = StringField(validators=Enum(*get_options(ArtifactModes)), default=DEFAULT_ARTIFACT_MODE)
 
 
 class DeleteArtifactsRequest(TaskUpdateRequest):
@@ -236,9 +232,7 @@ class ReplaceHyperparams(object):
 
 
 class EditHyperParamsRequest(TaskUpdateRequest):
-    hyperparams: Sequence[HyperParamItem] = ListField(
-        [HyperParamItem], validators=Length(minimum_value=1)
-    )
+    hyperparams: Sequence[HyperParamItem] = ListField([HyperParamItem], validators=Length(minimum_value=1))
     replace_hyperparams = StringField(
         validators=Enum(*get_options(ReplaceHyperparams)),
         default=ReplaceHyperparams.none,
@@ -251,9 +245,7 @@ class HyperParamKey(models.Base):
 
 
 class DeleteHyperParamsRequest(TaskUpdateRequest):
-    hyperparams: Sequence[HyperParamKey] = ListField(
-        [HyperParamKey], validators=Length(minimum_value=1)
-    )
+    hyperparams: Sequence[HyperParamKey] = ListField([HyperParamKey], validators=Length(minimum_value=1))
 
 
 class GetConfigurationsRequest(MultiTaskRequest):
@@ -272,9 +264,7 @@ class Configuration(models.Base):
 
 
 class EditConfigurationRequest(TaskUpdateRequest):
-    configuration: Sequence[Configuration] = ListField(
-        [Configuration], validators=Length(minimum_value=1)
-    )
+    configuration: Sequence[Configuration] = ListField([Configuration], validators=Length(minimum_value=1))
     replace_configuration = BoolField(default=False)
 
 
@@ -357,9 +347,7 @@ class ModelItemKey(models.Base):
 
 
 class DeleteModelsRequest(TaskRequest):
-    models: Sequence[ModelItemKey] = ListField(
-        [ModelItemKey], validators=Length(minimum_value=1)
-    )
+    models: Sequence[ModelItemKey] = ListField([ModelItemKey], validators=Length(minimum_value=1))
 
 
 class GetAllReq(models.Base):

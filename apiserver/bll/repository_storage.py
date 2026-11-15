@@ -107,7 +107,9 @@ def _authorize(company: str, user: str, repository: str, level: str, is_admin: b
     if level not in LEVELS:
         raise errors.bad_request.ValidationError("the level is read or read_write")
     if not _valid_repository(repository):
-        raise errors.bad_request.ValidationError("the repository is owner/name on GitHub, with letters, digits, dots, dashes and underscores")
+        raise errors.bad_request.ValidationError(
+            "the repository is owner/name on GitHub, with letters, digits, dots, dashes and underscores"
+        )
     if not SEGMENT.fullmatch(company or ""):
         raise errors.bad_request.ValidationError("the company id is not a valid key segment")
     repo = repos.find(company, f"https://github.com/{repository}")

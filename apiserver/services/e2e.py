@@ -40,14 +40,17 @@ def e2e_deletions(call: APICall, company_id, _):
     pending = []
     if urls:
         for record in UrlToDelete.objects(company=company_id, url__in=urls).only(
-                "url", "status", "retry_count", "last_failure_reason", "storage_type"):
-            pending.append({
-                "url": record.url,
-                "status": str(record.status),
-                "retry_count": record.retry_count or 0,
-                "last_failure_reason": record.last_failure_reason or "",
-                "storage_type": str(record.storage_type),
-            })
+            "url", "status", "retry_count", "last_failure_reason", "storage_type"
+        ):
+            pending.append(
+                {
+                    "url": record.url,
+                    "status": str(record.status),
+                    "retry_count": record.retry_count or 0,
+                    "last_failure_reason": record.last_failure_reason or "",
+                    "storage_type": str(record.storage_type),
+                }
+            )
     call.result.data = {"pending": pending}
 
 
@@ -56,8 +59,9 @@ def e2e_reset(call: APICall, company_id, _):
     prefix = _check_allowed(call)
     body = call.data or {}
     if body.get("prefix", prefix) != prefix:
-        raise errors.bad_request.ValidationError(reason="the reset only removes objects with the configured prefix",
-                                                 prefix=prefix)
+        raise errors.bad_request.ValidationError(
+            reason="the reset only removes objects with the configured prefix", prefix=prefix
+        )
 
     removed_projects = 0
     affected_projects = set()

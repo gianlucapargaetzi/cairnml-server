@@ -88,19 +88,13 @@ def update_report(call: APICall, company_id: str, request: UpdateReportRequest):
         only_fields=("status",),
     )
 
-    partial_update_dict = {
-        field: value for field, value in call.data.items() if field in update_fields
-    }
+    partial_update_dict = {field: value for field, value in call.data.items() if field in update_fields}
     if not partial_update_dict:
         return UpdateResponse(updated=0)
 
-    allowed_for_published = set(partial_update_dict.keys()).issubset(
-        {"tags", "name", "comment"}
-    )
+    allowed_for_published = set(partial_update_dict.keys()).issubset({"tags", "name", "comment"})
     if task.status != TaskStatus.created and not allowed_for_published:
-        raise errors.bad_request.InvalidTaskStatus(
-            expected=TaskStatus.created, status=task.status
-        )
+        raise errors.bad_request.InvalidTaskStatus(expected=TaskStatus.created, status=task.status)
 
     now = datetime.utcnow()
     more_updates = {
@@ -146,19 +140,13 @@ def create_report(call: APICall, company_id: str, request: CreateReportRequest):
     if request.project:
         # A report lands in the reports project under this one, so it needs write here; checked
         # before the name is read, so a hidden project's name is never read or revealed
-        ProjectAccessBLL.assert_can(
-            call.identity, request.project, "write", object_owner=user_id
-        )
-        project = Project.get_for_writing(
-            company=company_id, id=project_id, _only=("name",)
-        )
+        ProjectAccessBLL.assert_can(call.identity, request.project, "write", object_owner=user_id)
+        project = Project.get_for_writing(company=company_id, id=project_id, _only=("name",))
         project_name = project.name
     else:
         project_name = ""
 
-    project_id = _ensure_reports_project(
-        company=company_id, user=user_id, identity=call.identity, name=project_name
-    )
+    project_id = _ensure_reports_project(company=company_id, user=user_id, identity=call.identity, name=project_name)
     task = task_bll.create(
         company=company_id,
         user=user_id,
@@ -178,11 +166,7 @@ def create_report(call: APICall, company_id: str, request: CreateReportRequest):
 
 def _delete_reports_project_if_empty(project_id):
     project = Project.objects(id=project_id).only("basename").first()
-    if (
-        project
-        and project.basename == reports_project_name
-        and Task.objects(project=project_id).count() == 0
-    ):
+    if project and project.basename == reports_project_name and Task.objects(project=project_id).count() == 0:
         project.delete()
 
 
@@ -198,9 +182,7 @@ def get_all_ex(call: APICall, company_id, request: GetAllRequest):
             project_ids = [project_ids]
 
         query = Q(parent__in=project_ids) | Q(id__in=project_ids)
-        project_ids = Project.objects(query & Q(basename=reports_project_name)).scalar(
-            "id"
-        )
+        project_ids = Project.objects(query & Q(basename=reports_project_name)).scalar("id")
         if not project_ids:
             return {"tasks": []}
         call_data["project"] = list(project_ids)
@@ -218,9 +200,7 @@ def get_all_ex(call: APICall, company_id, request: GetAllRequest):
     call.result.data = {"tasks": tasks, **ret_params}
 
 
-def _get_task_metrics_from_request(
-    task_ids: Sequence[str], request: EventsRequest
-) -> dict:
+def _get_task_metrics_from_request(task_ids: Sequence[str], request: EventsRequest) -> dict:
     task_metrics = {}
     for task in task_ids:
         task_dict = {}
@@ -259,10 +239,7 @@ def get_task_data(call: APICall, company_id, request: GetTasksDataRequest):
     conform_data(call, tasks)
     res = {"tasks": tasks, **ret_params}
     if not (
-        request.debug_images
-        or request.plots
-        or request.scalar_metrics_iter_histogram
-        or request.single_value_metrics
+        request.debug_images or request.plots or request.scalar_metrics_iter_histogram or request.single_value_metrics
     ):
         return res
 
@@ -275,15 +252,11 @@ def get_task_data(call: APICall, company_id, request: GetTasksDataRequest):
     )
     if request.debug_images:
         result = event_bll.debug_images_iterator.get_task_events(
-            companies={
-                t.id: t.company for t in chain.from_iterable(companies.values())
-            },
+            companies={t.id: t.company for t in chain.from_iterable(companies.values())},
             task_metrics=_get_task_metrics_from_request(task_ids, request.debug_images),
             iter_count=request.debug_images.iters,
         )
-        res["debug_images"] = [
-            r.to_struct() for r in _get_metrics_response(result.metric_events)
-        ]
+        res["debug_images"] = [r.to_struct() for r in _get_metrics_response(result.metric_events)]
 
     if request.plots:
         res["plots"] = _get_multitask_plots(
@@ -294,24 +267,18 @@ def get_task_data(call: APICall, company_id, request: GetTasksDataRequest):
         )[0]
 
     if request.scalar_metrics_iter_histogram:
-        res[
-            "scalar_metrics_iter_histogram"
-        ] = event_bll.metrics.compare_scalar_metrics_average_per_iter(
+        res["scalar_metrics_iter_histogram"] = event_bll.metrics.compare_scalar_metrics_average_per_iter(
             companies=companies,
             samples=request.scalar_metrics_iter_histogram.samples,
             key=request.scalar_metrics_iter_histogram.key,
-            metric_variants=_get_metric_variants_from_request(
-                request.scalar_metrics_iter_histogram.metrics
-            ),
+            metric_variants=_get_metric_variants_from_request(request.scalar_metrics_iter_histogram.metrics),
             model_events=request.model_events,
         )
 
     if request.single_value_metrics:
         res["single_value_metrics"] = _get_single_value_metrics_response(
             companies=companies,
-            value_metrics=event_bll.metrics.get_task_single_value_metrics(
-                companies=companies
-            ),
+            value_metrics=event_bll.metrics.get_task_single_value_metrics(companies=companies),
         )
 
     call.result.data = res
@@ -320,9 +287,7 @@ def get_task_data(call: APICall, company_id, request: GetTasksDataRequest):
 @endpoint("reports.move")
 def move(call: APICall, company_id: str, request: MoveReportRequest):
     if not ("project" in call.data or request.project_name):
-        raise errors.bad_request.MissingRequiredFields(
-            "project or project_name is required"
-        )
+        raise errors.bad_request.MissingRequiredFields("project or project_name is required")
 
     task = _assert_report(
         company_id=company_id,
@@ -335,23 +300,17 @@ def move(call: APICall, company_id: str, request: MoveReportRequest):
     user_id = call.identity.user
     project_name = request.project_name
     if project_name:
-        ProjectAccessBLL.assert_can_admin_destination(
-            call.identity, company_id, project_name
-        )
+        ProjectAccessBLL.assert_can_admin_destination(call.identity, company_id, project_name)
     elif request.project:
         ProjectAccessBLL.assert_can(call.identity, request.project, "admin")
     if not project_name:
         if request.project:
-            project = Project.get_for_writing(
-                company=company_id, id=request.project, _only=("name",)
-            )
+            project = Project.get_for_writing(company=company_id, id=request.project, _only=("name",))
             project_name = project.name
         else:
             project_name = ""
 
-    project_id = _ensure_reports_project(
-        company=company_id, user=user_id, identity=call.identity, name=project_name
-    )
+    project_id = _ensure_reports_project(company=company_id, user=user_id, identity=call.identity, name=project_name)
 
     project_bll.move_under_project(
         entity_cls=Task,
@@ -372,9 +331,7 @@ def move(call: APICall, company_id: str, request: MoveReportRequest):
     response_data_model=UpdateResponse,
 )
 def publish(call: APICall, company_id, request: PublishReportRequest):
-    task = _assert_report(
-        company_id=company_id, task_id=request.task, identity=call.identity
-    )
+    task = _assert_report(company_id=company_id, task_id=request.task, identity=call.identity)
     updates = ChangeStatusRequest(
         task=task,
         new_status=TaskStatus.published,
@@ -389,9 +346,7 @@ def publish(call: APICall, company_id, request: PublishReportRequest):
 
 @endpoint("reports.archive")
 def archive(call: APICall, company_id, request: ArchiveReportRequest):
-    task = _assert_report(
-        company_id=company_id, task_id=request.task, identity=call.identity
-    )
+    task = _assert_report(company_id=company_id, task_id=request.task, identity=call.identity)
     archived = task.update(
         status_message=request.message,
         status_reason="",
@@ -405,9 +360,7 @@ def archive(call: APICall, company_id, request: ArchiveReportRequest):
 
 @endpoint("reports.unarchive")
 def unarchive(call: APICall, company_id, request: ArchiveReportRequest):
-    task = _assert_report(
-        company_id=company_id, task_id=request.task, identity=call.identity
-    )
+    task = _assert_report(company_id=company_id, task_id=request.task, identity=call.identity)
     unarchived = task.update(
         status_message=request.message,
         status_reason="",
@@ -458,9 +411,7 @@ def delete(call: APICall, company_id, request: DeleteReportRequest):
 
 @endpoint("reports.get_tags")
 def get_tags(call: APICall, company_id: str, _):
-    tags = Task.objects(
-        _scope_tasks_query(
-            Q(company=company_id) & Q(type=TaskType.report), call.identity
-        )
-    ).distinct(field="tags")
+    tags = Task.objects(_scope_tasks_query(Q(company=company_id) & Q(type=TaskType.report), call.identity)).distinct(
+        field="tags"
+    )
     call.result.data = sort_tags_response({"tags": tags})

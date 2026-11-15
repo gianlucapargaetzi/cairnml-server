@@ -38,9 +38,7 @@ class ServingBLL:
         return f"serving_container_{company}_{container_id}"
 
     def _save_serving_container_entry(self, entry: ServingContainerEntry):
-        self.redis.setex(
-            entry.key, timedelta(seconds=entry.register_timeout), entry.to_json()
-        )
+        self.redis.setex(entry.key, timedelta(seconds=entry.register_timeout), entry.to_json())
 
         url_key = self._get_url_key(entry.company_id, entry.endpoint_url)
         expiration = int(time()) + entry.register_timeout
@@ -50,9 +48,7 @@ class ServingBLL:
         # indefinitely in case no more containers report to it
         self.redis.expire(url_key, max(3600, entry.register_timeout))
 
-    def _get_serving_container_entry(
-        self, company_id: str, container_id: str
-    ) -> Optional[ServingContainerEntry]:
+    def _get_serving_container_entry(self, company_id: str, container_id: str) -> Optional[ServingContainerEntry]:
         """
         Get a container entry for the provided container ID.
         """
@@ -133,9 +129,7 @@ class ServingBLL:
                 raise errors.bad_request.ContainerNotRegistered(container=container_id)
             ip = ip
             register_time = now
-            register_timeout = int(
-                self.conf.get("default_container_timeout_sec", 10 * 60)
-            )
+            register_timeout = int(self.conf.get("default_container_timeout_sec", 10 * 60))
 
         key = self._get_container_key(company_id, container_id)
         entry = ServingContainerEntry(
@@ -209,9 +203,7 @@ class ServingBLL:
             if not self._count:
                 return None
             avg = self._total / self._count
-            return (
-                round(avg, self.float_precision) if self.float_precision else round(avg)
-            )
+            return round(avg, self.float_precision) if self.float_precision else round(avg)
 
     def _get_summary(self, entries: Sequence[ServingContainerEntry]) -> dict:
         counters = [
@@ -267,9 +259,7 @@ class ServingBLL:
         by_url.pop(None, None)
         return [self._get_summary(url_entries) for url_entries in by_url.values()]
 
-    def _get_endpoint_entries(
-        self, company_id, endpoint_url: Union[str, None]
-    ) -> Sequence[ServingContainerEntry]:
+    def _get_endpoint_entries(self, company_id, endpoint_url: Union[str, None]) -> Sequence[ServingContainerEntry]:
         url_key = self._get_url_key(company_id, endpoint_url)
         timestamp = int(time())
         self.redis.zremrangebyscore(url_key, min=0, max=timestamp)

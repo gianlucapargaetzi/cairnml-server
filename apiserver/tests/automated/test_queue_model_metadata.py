@@ -9,17 +9,13 @@ class TestQueueAndModelMetadata(TestService):
 
     def test_queue_metas(self):
         queue_id = self._temp_queue("TestMetadata", metadata=self.meta1)
-        self._test_meta_operations(
-            service=self.api.queues, entity="queue", _id=queue_id
-        )
+        self._test_meta_operations(service=self.api.queues, entity="queue", _id=queue_id)
 
     def test_models_metas(self):
         service = self.api.models
         entity = "model"
         model_id = self._temp_model("TestMetadata", metadata=self.meta1)
-        self._test_meta_operations(
-            service=self.api.models, entity="model", _id=model_id
-        )
+        self._test_meta_operations(service=self.api.models, entity="model", _id=model_id)
 
         model_id = self._temp_model("TestMetadata1")
         self.api.models.edit(model=model_id, metadata=self.meta1)
@@ -46,9 +42,7 @@ class TestQueueAndModelMetadata(TestService):
         self.assertTrue(test_key in res["keys"])
         self.assertFalse(test_key2 in res["keys"])
 
-        model = self.api.models.get_all_ex(
-            id=[model_id], only_fields=["metadata.test_key"]
-        ).models[0]
+        model = self.api.models.get_all_ex(id=[model_id], only_fields=["metadata.test_key"]).models[0]
         self.assertTrue(test_key in model.metadata)
         self.assertFalse(test_key2 in model.metadata)
 
@@ -57,7 +51,10 @@ class TestQueueAndModelMetadata(TestService):
         self.assertEqual(res["values"], [test_value])
 
     def _test_meta_operations(
-        self, service: APIClient.Service, entity: str, _id: str,
+        self,
+        service: APIClient.Service,
+        entity: str,
+        _id: str,
     ):
         assert_meta = partial(self._assertMeta, service=service, entity=entity)
         assert_meta(_id=_id, meta=self.meta1)
@@ -80,16 +77,12 @@ class TestQueueAndModelMetadata(TestService):
         self.assertEqual(res.updated, 1)
         assert_meta(_id=_id, meta={**meta2, **{u["key"]: u for u in updates}})
 
-        res = service.delete_metadata(
-            **{entity: _id, "keys": [f"test{idx}" for idx in range(2, 6)]}
-        )
+        res = service.delete_metadata(**{entity: _id, "keys": [f"test{idx}" for idx in range(2, 6)]})
         self.assertEqual(res.updated, 1)
         # noinspection PyTypeChecker
         assert_meta(_id=_id, meta=dict(list(meta2.items())[:1]))
 
-    def _assertMeta(
-        self, service: APIClient.Service, entity: str, _id: str, meta: dict
-    ):
+    def _assertMeta(self, service: APIClient.Service, entity: str, _id: str, meta: dict):
         res = service.get_all_ex(id=[_id])[f"{entity}s"][0]
         self.assertEqual(res.metadata, meta)
 
@@ -97,9 +90,7 @@ class TestQueueAndModelMetadata(TestService):
         return self.create_temp("queues", name=name, **kwargs)
 
     def _temp_model(self, name: str, **kwargs):
-        return self.create_temp(
-            "models", uri="file://test", name=name, labels={}, **kwargs
-        )
+        return self.create_temp("models", uri="file://test", name=name, labels={}, **kwargs)
 
     def temp_project(self, **kwargs) -> str:
         self.update_missing(

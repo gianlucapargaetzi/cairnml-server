@@ -126,15 +126,10 @@ class TaskBLL:
         remove: List[str],
         force: bool,
     ) -> int:
-        task = get_task_for_update(
-            company_id=company_id, task_id=task_id, force=force, identity=identity
-        )
+        task = get_task_for_update(company_id=company_id, task_id=task_id, force=force, identity=identity)
 
         update_cmds = {
-            **{
-                f"set__runtime__{mongoengine_safe(name)}": value
-                for name, value in add_or_update.items()
-            },
+            **{f"set__runtime__{mongoengine_safe(name)}": value for name, value in add_or_update.items()},
             **{f"unset__runtime__{mongoengine_safe(name)}": 1 for name in remove},
         }
 
@@ -188,18 +183,14 @@ class TaskBLL:
 
         company = None if allow_only_public else task.company
         model_ids = set(m.model for m in task.models.input)
-        models = Model.objects(
-            Q(id__in=model_ids) & get_company_or_none_constraint(company)
-        ).only("id")
+        models = Model.objects(Q(id__in=model_ids) & get_company_or_none_constraint(company)).only("id")
         missing = model_ids - {m.id for m in models}
         if missing:
             raise errors.bad_request.InvalidModelId(models=missing)
 
         return
 
-    task_script_stripped_fields = set(
-        [f for f, v in get_fields_attr(Script, "strip").items() if v]
-    )
+    task_script_stripped_fields = set([f for f, v in get_fields_attr(Script, "strip").items() if v])
 
     @classmethod
     def strip_script_fields(cls, script: dict):
@@ -216,16 +207,12 @@ class TaskBLL:
         cls, company_id: str, user_id: str, identity: Identity, spec: CloneSpec
     ) -> Tuple[Task, Optional[dict]]:
         validate_tags(spec.tags, spec.system_tags)
-        task: Task = cls.get_by_id(
-            company_id=company_id, task_id=spec.task_id, allow_public=True
-        )
+        task: Task = cls.get_by_id(company_id=company_id, task_id=spec.task_id, allow_public=True)
 
         params_dict = merged_params(task, spec)
         now = datetime.now(timezone.utc)
         input_models = stamped_input_models(spec.input_models, now)
-        script_dict = script_with_overrides(
-            task, spec.script_overrides, cls.strip_script_fields
-        )
+        script_dict = script_with_overrides(task, spec.script_overrides, cls.strip_script_fields)
 
         execution_dict = task.execution.to_proper_dict() if task.execution else {}
         execution_dict, input_models, container, legacy_params = apply_execution_overrides(
@@ -237,9 +224,7 @@ class TaskBLL:
         params_prepare_for_save(params_dict, previous_task=task)
         drop_queue_and_output_artifacts(execution_dict)
 
-        project, new_project_data = resolve_target_project(
-            spec, company_id, user_id, identity
-        )
+        project, new_project_data = resolve_target_project(spec, company_id, user_id, identity)
         pieces = ClonePieces(
             project=project,
             parent=cls._clone_parent(company_id, task, spec.parent),
@@ -305,9 +290,7 @@ class TaskBLL:
             validate_parent
             and task.parent
             and not task.parent.startswith(deleted_prefix)
-            and not Task.get(
-                company=task.company, id=task.parent, _only=("id",), include_public=True
-            )
+            and not Task.get(company=task.company, id=task.parent, _only=("id",), include_public=True)
         ):
             raise errors.bad_request.InvalidTaskId("invalid parent", parent=task.parent)
 
@@ -327,17 +310,13 @@ class TaskBLL:
         last_update: datetime,
         **extra_updates,
     ):
-        tasks = Task.objects(id__in=task_ids, company=company_id).only(
-            "status", "started"
-        )
+        tasks = Task.objects(id__in=task_ids, company=company_id).only("status", "started")
         count = 0
         for task in tasks:
             updates = extra_updates
             if task.status == TaskStatus.in_progress and task.started:
                 updates = {
-                    "active_duration": (
-                        datetime.utcnow() - task.started
-                    ).total_seconds(),
+                    "active_duration": (datetime.utcnow() - task.started).total_seconds(),
                     **extra_updates,
                 }
             count += Task.objects(id=task.id, company=company_id).update(
@@ -395,8 +374,7 @@ class TaskBLL:
 
             def events_per_type(metric_data_: Dict[str, dict]) -> Dict[str, EventStats]:
                 return {
-                    event_type: EventStats(last_update=event["timestamp"])
-                    for event_type, event in metric_data_.items()
+                    event_type: EventStats(last_update=event["timestamp"]) for event_type, event in metric_data_.items()
                 }
 
             metric_stats = {
@@ -420,9 +398,7 @@ class TaskBLL:
         return ret
 
     @staticmethod
-    def remove_task_from_all_queues(
-        company_id: str, task_id: str, exclude: str = None
-    ) -> int:
+    def remove_task_from_all_queues(company_id: str, task_id: str, exclude: str = None) -> int:
         more = {}
         if exclude:
             more["id__ne"] = exclude
@@ -481,16 +457,12 @@ class TaskBLL:
         if task.status not in (TaskStatus.queued,):
             if silent_fail:
                 return
-            raise errors.bad_request.InvalidTaskId(
-                status=task.status, expected=TaskStatus.queued
-            )
+            raise errors.bad_request.InvalidTaskId(status=task.status, expected=TaskStatus.queued)
 
         if not task.execution or not task.execution.queue:
             if silent_fail:
                 return
-            raise errors.bad_request.MissingRequiredFields(
-                "task has no queue value", field="execution.queue"
-            )
+            raise errors.bad_request.MissingRequiredFields("task has no queue value", field="execution.queue")
 
         return {
             "removed": queue_bll.remove_task(

@@ -39,7 +39,6 @@ def session_secret() -> str:
     """The web session key: read from the secrets folder. The configuration value is used only when
     CAIRNML_ALLOW_CONFIG_SECRET=1 (tests), and the repository default is refused otherwise."""
     if os.environ.get("CAIRNML_ALLOW_CONFIG_SECRET") == "1":
-
         return config.get("secure.http.session_secret.apiserver")
     value = read_secret("session_secret")
     refuse_default_secret(value, DEFAULT_SESSION_SECRET)

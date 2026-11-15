@@ -47,10 +47,7 @@ def make_root(company, id_="root1", owner="owner1", visibility=ProjectVisibility
         basename=f"Project-{id_}",
         created=datetime.utcnow(),
         visibility=visibility,
-        members=[
-            ProjectMember(user=u, role=r, added=datetime.utcnow(), added_by=owner)
-            for u, r in members
-        ],
+        members=[ProjectMember(user=u, role=r, added=datetime.utcnow(), added_by=owner) for u, r in members],
     )
     project.save()
     return project
@@ -135,9 +132,7 @@ def test_get_by_id_hides_a_model_in_a_private_project_from_a_stranger(company):
     make_root(company)
     make_model(company, "root1", "owner1")
     with pytest.raises(errors.bad_request.InvalidModelId):
-        svc.get_by_id(
-            FakeCall(identity(company, "stranger")), company, ModelRequest(model="model1")
-        )
+        svc.get_by_id(FakeCall(identity(company, "stranger")), company, ModelRequest(model="model1"))
 
 
 def test_get_all_lists_only_models_in_visible_projects(company):
@@ -398,8 +393,13 @@ def test_get_by_task_id_refuses_a_task_in_a_private_project_to_a_stranger(compan
     make_root(company, id_="root1")
     make_model(company, "root1", "owner1", id_="out-model")
     task = Task(
-        id="task1", company=company, user="owner1", name="task1", project="root1",
-        type="training", created=datetime.utcnow(),
+        id="task1",
+        company=company,
+        user="owner1",
+        name="task1",
+        project="root1",
+        type="training",
+        created=datetime.utcnow(),
         models=Models(output=[ModelItem(name="output", model="out-model", updated=datetime.utcnow())]),
     )
     task.save()

@@ -77,7 +77,10 @@ class EventsIterator:
 
         with translate_errors_context():
             es_result = count_company_events(
-                self.es, company_id=company_id, event_type=event_type, body=es_req,
+                self.es,
+                company_id=company_id,
+                event_type=event_type,
+                body=es_req,
             )
 
             return es_result["count"]
@@ -114,7 +117,10 @@ class EventsIterator:
 
         with translate_errors_context():
             es_result = search_company_events(
-                self.es, company_id=company_id, event_type=event_type, body=es_req,
+                self.es,
+                company_id=company_id,
+                event_type=event_type,
+                body=es_req,
             )
             hits = es_result["hits"]["hits"]
             hits_total = es_result["hits"]["total"]["value"]
@@ -127,14 +133,13 @@ class EventsIterator:
             # but did not make it into the previous call due to batch_size limitation
             es_req = {
                 "size": 10000,
-                "query": {
-                    "bool": {
-                        "must": must + [{"term": {key.field: events[-1][key.field]}}]
-                    }
-                },
+                "query": {"bool": {"must": must + [{"term": {key.field: events[-1][key.field]}}]}},
             }
             es_result = search_company_events(
-                self.es, company_id=company_id, event_type=event_type, body=es_req,
+                self.es,
+                company_id=company_id,
+                event_type=event_type,
+                body=es_req,
             )
             last_second_hits = es_result["hits"]["hits"]
             if not last_second_hits or len(last_second_hits) < 2:
@@ -143,11 +148,7 @@ class EventsIterator:
                 return events, hits_total
 
             already_present_ids = set(hit["_id"] for hit in hits)
-            last_second_events = [
-                hit["_source"]
-                for hit in last_second_hits
-                if hit["_id"] not in already_present_ids
-            ]
+            last_second_events = [hit["_source"] for hit in last_second_hits if hit["_id"] not in already_present_ids]
 
             # return the list merged from original query results +
             # leftovers from the last timestamp
@@ -176,9 +177,7 @@ class Scroll(jsonmodels.models.Base):
     def get_scroll_id(self) -> str:
         return jwt.encode(
             self.to_struct(),
-            key=config.get(
-                "services.events.events_retrieval.scroll_id_key", "1234567890"
-            ),
+            key=config.get("services.events.events_retrieval.scroll_id_key", "1234567890"),
         )
 
     @classmethod
@@ -187,9 +186,7 @@ class Scroll(jsonmodels.models.Base):
             return cls(
                 **jwt.decode(
                     scroll_id,
-                    key=config.get(
-                        "services.events.events_retrieval.scroll_id_key", "1234567890"
-                    ),
+                    key=config.get("services.events.events_retrieval.scroll_id_key", "1234567890"),
                     algorithms=get_default_algorithms(),
                 )
             )

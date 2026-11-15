@@ -48,7 +48,9 @@ def _require_task_read_access(identity: Identity, company: str, task_id: str, jo
     """A job token reads only its own task's data; anyone else needs read access to the task."""
     if job_task is not None:
         if not may_read_task_data(job_task, task_id):
-            raise errors.unauthorized.InvalidToken("a job token only reads the data of its own task and its pipeline's steps")
+            raise errors.unauthorized.InvalidToken(
+                "a job token only reads the data of its own task and its pipeline's steps"
+            )
         return
     task = Task.objects(id=task_id, company=company).only("id", "project", "user").first()
     if not task:
@@ -68,9 +70,11 @@ def download(kind: str, task_id: str, name: str) -> Response:
     except errors.BaseError as error:
         return Response(error.msg, status=error.code, mimetype="text/plain")
 
-    chunk = Datachunk.objects(
-        company=company, task=task_id, kind=kind, name=name, state=DatachunkState.stored
-    ).order_by("-stored").first()
+    chunk = (
+        Datachunk.objects(company=company, task=task_id, kind=kind, name=name, state=DatachunkState.stored)
+        .order_by("-stored")
+        .first()
+    )
     if not chunk:
         return Response("not found", status=404, mimetype="text/plain")
 

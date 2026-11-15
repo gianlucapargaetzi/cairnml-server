@@ -80,8 +80,9 @@ class TestWebLoginFlow(TestCase):
 
     def finish(self, state, token, status=200):
         body = {"id_token": token, "access_token": token}
-        return finish_login(self.store, FakeHttp(Reply(status, body)), get_verifier(), ISSUER, WEB,
-                            REDIRECT, state, "code-1", "admin")
+        return finish_login(
+            self.store, FakeHttp(Reply(status, body)), get_verifier(), ISSUER, WEB, REDIRECT, state, "code-1", "admin"
+        )
 
     def test_sign_in_creates_the_user(self):
         state, nonce = self.start()

@@ -72,9 +72,7 @@ class SingleValueMetrics(Base):
 class GetTasksDataRequest(Base):
     debug_images: EventsRequest = EmbeddedField(EventsRequest)
     plots: PlotEventsRequest = EmbeddedField(PlotEventsRequest)
-    scalar_metrics_iter_histogram: ScalarMetricsIterHistogram = EmbeddedField(
-        ScalarMetricsIterHistogram
-    )
+    scalar_metrics_iter_histogram: ScalarMetricsIterHistogram = EmbeddedField(ScalarMetricsIterHistogram)
     single_value_metrics: SingleValueMetrics = EmbeddedField(SingleValueMetrics)
     allow_public = BoolField(default=True)
     model_events: bool = BoolField(default=False)

@@ -15,7 +15,6 @@ class ForEach(object):
 
 
 class Hostname(object):
-
     def validate(self, value):
         if validators.domain(value) is not True:
             raise ValidationError(f"Value '{value}' is not a valid hostname")
@@ -25,7 +24,6 @@ class Hostname(object):
 
 
 class Email(object):
-
     def validate(self, value):
         if validators.email(value) is not True:
             raise ValidationError(f"Value '{value}' is not a valid email address")

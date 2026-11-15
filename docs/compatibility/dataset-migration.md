@@ -40,10 +40,12 @@ a CairnML repository; push the existing data to a repository once and use the re
    ```python
    # upstream
    from clearml import Dataset
+
    path = Dataset.get(dataset_id="3f2a...").get_local_copy()
 
    # CairnML
    from cairnml.datasets import Dataset
+
    path = Dataset.get("https://github.com/acme/cars-data.git", "3f2a9c1").path
    ```
 

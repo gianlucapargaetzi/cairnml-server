@@ -52,8 +52,8 @@ class TestLoggingSetup(TestCase):
         parsed = ConfigFactory.parse_string(
             'handlers { console { class: "logging.StreamHandler" }, text_file { class: "logging.handlers.RotatingFileHandler", '
             'filename: "/proc/no-such-folder/api.log" } }\n'
-            'root { handlers: [console, text_file], level: INFO }\n'
-            'loggers { quiet { level: WARN } }'
+            "root { handlers: [console, text_file], level: INFO }\n"
+            "loggers { quiet { level: WARN } }"
         )
         result = without_unwritable_file_handlers(parsed)
         self.assertEqual(set(result["handlers"]), {"console"})

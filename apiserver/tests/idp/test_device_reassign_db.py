@@ -43,8 +43,14 @@ class TestReassignDevice(TestCase):
         self.admin_b = upsert_idp_user(issuer, "b", "b", ("admin",), "admin")
         self.user = upsert_idp_user(issuer, "c", "c", (), "admin")
         self.addCleanup(lambda: [u.delete() for u in (self.admin_a, self.admin_b, self.user)])
-        self.device = Device(id=f"dev_{uuid.uuid4().hex}", user=self.admin_a.id, company=self.admin_a.company,
-                             kind="agent", name="gpu-box", public_key="pem").save()
+        self.device = Device(
+            id=f"dev_{uuid.uuid4().hex}",
+            user=self.admin_a.id,
+            company=self.admin_a.company,
+            kind="agent",
+            name="gpu-box",
+            public_key="pem",
+        ).save()
         self.addCleanup(self.device.delete)
 
     def _call(self, ident, user_id):

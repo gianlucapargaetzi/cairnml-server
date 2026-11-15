@@ -32,16 +32,18 @@ def main() -> None:
     summary = task.get_last_scalar_metrics()
     console = task.get_reported_console_output(number_of_reports=5000)
     samples = task.get_debug_samples(title="debug", series="gradient")
-    report({
-        "task_id": args.task_id,
-        "status": str(task.get_status()),
-        "series": series,
-        "params": {k: v for k, v in params.items() if k.startswith("General/")},
-        "single_values": summary.get("Summary", {}),
-        "console_has_example_line": any("console line from the example run" in line for line in console),
-        "console_lines": len(console),
-        "debug_samples": len(samples),
-    })
+    report(
+        {
+            "task_id": args.task_id,
+            "status": str(task.get_status()),
+            "series": series,
+            "params": {k: v for k, v in params.items() if k.startswith("General/")},
+            "single_values": summary.get("Summary", {}),
+            "console_has_example_line": any("console line from the example run" in line for line in console),
+            "console_lines": len(console),
+            "debug_samples": len(samples),
+        }
+    )
 
 
 if __name__ == "__main__":

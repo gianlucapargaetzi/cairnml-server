@@ -21,7 +21,7 @@ class EventType(Enum):
     all = "*"
 
 
-SINGLE_SCALAR_ITERATION = -(2 ** 31)
+SINGLE_SCALAR_ITERATION = -(2**31)
 MetricVariants = Mapping[str, Sequence[str]]
 TaskCompanies = Mapping[str, Sequence[Task]]
 
@@ -35,9 +35,7 @@ class EventSettings:
 
     @classproperty
     def state_expiration_sec(self):
-        return config.get(
-            "services.events.events_retrieval.state_expiration_sec", 3600
-        )
+        return config.get("services.events.events_retrieval.state_expiration_sec", 3600)
 
     @classproperty
     def max_es_buckets(self):
@@ -80,16 +78,12 @@ def search_company_events(
     return es.search(index=es_index, body=body, **kwargs)
 
 
-def delete_company_events(
-    es: Elasticsearch, company_id: str, event_type: EventType, body: dict, **kwargs
-) -> dict:
+def delete_company_events(es: Elasticsearch, company_id: str, event_type: EventType, body: dict, **kwargs) -> dict:
     es_index = get_index_name(company_id, event_type.value)
     return es.delete_by_query(index=es_index, body=body, conflicts="proceed", **kwargs)
 
 
-def count_company_events(
-    es: Elasticsearch, company_id: str, event_type: EventType, body: dict, **kwargs
-) -> dict:
+def count_company_events(es: Elasticsearch, company_id: str, event_type: EventType, body: dict, **kwargs) -> dict:
     es_index = get_index_name(company_id, event_type.value)
     return es.count(index=es_index, body=body, **kwargs)
 
@@ -101,15 +95,9 @@ def get_max_metric_and_variant_counts(
     query: dict,
     **kwargs,
 ) -> Tuple[int, int]:
-    dynamic = config.get(
-        "services.events.events_retrieval.dynamic_metrics_count", False
-    )
-    max_metrics_count = config.get(
-        "services.events.events_retrieval.max_metrics_count", 100
-    )
-    max_variants_count = config.get(
-        "services.events.events_retrieval.max_variants_count", 100
-    )
+    dynamic = config.get("services.events.events_retrieval.dynamic_metrics_count", False)
+    max_metrics_count = config.get("services.events.events_retrieval.max_metrics_count", 100)
+    max_variants_count = config.get("services.events.events_retrieval.max_variants_count", 100)
     if not dynamic:
         return max_metrics_count, max_variants_count
 
@@ -120,19 +108,23 @@ def get_max_metric_and_variant_counts(
     }
     with translate_errors_context():
         es_res = search_company_events(
-            es, company_id=company_id, event_type=event_type, body=es_req, **kwargs,
+            es,
+            company_id=company_id,
+            event_type=event_type,
+            body=es_req,
+            **kwargs,
         )
 
-    metrics_count = nested_get(
-        es_res, ("aggregations", "metrics_count", "value"), max_metrics_count
-    )
+    metrics_count = nested_get(es_res, ("aggregations", "metrics_count", "value"), max_metrics_count)
     if not metrics_count:
         return max_metrics_count, max_variants_count
 
     return metrics_count, int(EventSettings.max_es_buckets / metrics_count)
 
 
-def get_metric_variants_condition(metric_variants: MetricVariants,) -> Sequence:
+def get_metric_variants_condition(
+    metric_variants: MetricVariants,
+) -> Sequence:
     conditions = [
         {
             "bool": {
@@ -161,6 +153,4 @@ class PlotFields:
 def uncompress_plot(event: dict):
     plot_data = event.pop(PlotFields.plot_data, None)
     if plot_data and event.get(PlotFields.plot_str) is None:
-        event[PlotFields.plot_str] = zlib.decompress(
-            base64.b64decode(plot_data)
-        ).decode()
+        event[PlotFields.plot_str] = zlib.decompress(base64.b64decode(plot_data)).decode()

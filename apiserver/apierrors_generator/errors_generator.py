@@ -16,7 +16,8 @@ class ErrorsGenerator:
         return {
             (k, v.pop("_")): v
             for k, v in reduce(
-                ConfigTree.merge_configs, map(ConfigFactory.parse_file, cls._files),
+                ConfigTree.merge_configs,
+                map(ConfigFactory.parse_file, cls._files),
             ).items()
         }
 
@@ -26,6 +27,4 @@ class ErrorsGenerator:
 
     @classmethod
     def generate_python_files(cls):
-        Generator(cls._apierrors_path / "errors", format_pep8=False).make_errors(
-            cls._get_codes()
-        )
+        Generator(cls._apierrors_path / "errors", format_pep8=False).make_errors(cls._get_codes())

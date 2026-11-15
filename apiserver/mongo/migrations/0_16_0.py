@@ -26,9 +26,7 @@ def migrate_backend(db: Database):
                 new_path = list(filter(None, (new_field, section, name)))
                 # if safe_get(doc, new_path) is not None:
                 #    continue
-                new_value = dict(
-                    name=name, type=hyperparams_legacy_type, value=str(value)
-                )
+                new_value = dict(name=name, type=hyperparams_legacy_type, value=str(value))
                 if section is not None:
                     new_value["section"] = section
                 set_commands[".".join(new_path)] = new_value

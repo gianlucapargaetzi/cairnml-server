@@ -26,9 +26,7 @@ def artifacts_prepare_for_save(fields: dict):
     if artifacts is None:
         return
 
-    nested_set(
-        fields, artifacts_field, value={get_artifact_id(a): a for a in artifacts}
-    )
+    nested_set(fields, artifacts_field, value={get_artifact_id(a): a for a in artifacts})
 
 
 def artifacts_unprepare_from_saved(fields):
@@ -54,18 +52,14 @@ class Artifacts:
         artifacts: Sequence[ApiArtifact],
         force: bool,
     ) -> int:
-        task = get_task_for_update(
-            company_id=company_id, task_id=task_id, force=force, identity=identity
-        )
+        task = get_task_for_update(company_id=company_id, task_id=task_id, force=force, identity=identity)
 
         artifacts = {
-            get_artifact_id(a): Artifact(**a)
-            for a in (api_artifact.to_struct() for api_artifact in artifacts)
+            get_artifact_id(a): Artifact(**a) for a in (api_artifact.to_struct() for api_artifact in artifacts)
         }
 
         update_cmds = {
-            f"set__execution__artifacts__{mongoengine_safe(name)}": value
-            for name, value in artifacts.items()
+            f"set__execution__artifacts__{mongoengine_safe(name)}": value for name, value in artifacts.items()
         }
         return update_task(task, user_id=identity.user, update_cmds=update_cmds)
 
@@ -78,16 +72,9 @@ class Artifacts:
         artifact_ids: Sequence[ArtifactId],
         force: bool,
     ) -> int:
-        task = get_task_for_update(
-            company_id=company_id, task_id=task_id, force=force, identity=identity
-        )
+        task = get_task_for_update(company_id=company_id, task_id=task_id, force=force, identity=identity)
 
-        artifact_ids = [
-            get_artifact_id(a)
-            for a in (artifact_id.to_struct() for artifact_id in artifact_ids)
-        ]
-        delete_cmds = {
-            f"unset__execution__artifacts__{id_}": 1 for id_ in set(artifact_ids)
-        }
+        artifact_ids = [get_artifact_id(a) for a in (artifact_id.to_struct() for artifact_id in artifact_ids)]
+        delete_cmds = {f"unset__execution__artifacts__{id_}": 1 for id_ in set(artifact_ids)}
 
         return update_task(task, user_id=identity.user, update_cmds=delete_cmds)

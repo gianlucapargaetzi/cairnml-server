@@ -30,27 +30,21 @@ class TestTaskModels(TestService):
         self.assertModels(task, input_models, output_models)
 
         # add_or_update existing model
-        res = self.api.tasks.add_or_update_model(
-            task=task, name="input1", type="input", model="Test"
-        )
+        res = self.api.tasks.add_or_update_model(task=task, name="input1", type="input", model="Test")
         self.assertEqual(res.updated, 1)
         modified_input = deepcopy(input_models)
         modified_input[0]["model"] = "Test"
         self.assertModels(task, modified_input, output_models)
 
         # add_or_update new mode
-        res = self.api.tasks.add_or_update_model(
-            task=task, name="output3", type="output", model="TestOutput"
-        )
+        res = self.api.tasks.add_or_update_model(task=task, name="output3", type="output", model="TestOutput")
         self.assertEqual(res.updated, 1)
         modified_output = deepcopy(output_models)
         modified_output.append({"name": "output3", "model": "TestOutput"})
         self.assertModels(task, modified_input, modified_output)
 
         # task editing
-        self.api.tasks.edit(
-            task=task, models={"input": input_models, "output": output_models}
-        )
+        self.api.tasks.edit(task=task, models={"input": input_models, "output": output_models})
         self.assertModels(task, input_models, output_models)
 
         # delete models
@@ -61,13 +55,16 @@ class TestTaskModels(TestService):
                 {"name": "input2", "type": "input"},
                 {"name": "output1", "type": "output"},
                 {"name": "not_existing", "type": "output"},
-            ]
+            ],
         )
         self.assertEqual(res.updated, 1)
         self.assertModels(task, [], output_models[1:])
 
     def assertModels(
-        self, task_id: str, input_models: Sequence[dict], output_models: Sequence[dict],
+        self,
+        task_id: str,
+        input_models: Sequence[dict],
+        output_models: Sequence[dict],
     ):
         def get_model_id(model: dict) -> Optional[str]:
             if not model:
@@ -103,12 +100,8 @@ class TestTaskModels(TestService):
                 )
 
     def new_task(self, **kwargs):
-        self.update_missing(
-            kwargs, type="testing", name="test task models"
-        )
+        self.update_missing(kwargs, type="testing", name="test task models")
         return self.create_temp("tasks", **kwargs)
 
     def new_model(self, name: str, **kwargs):
-        return self.create_temp(
-            "models", uri="file://test", name=name, labels={}, **kwargs
-        )
+        return self.create_temp("models", uri="file://test", name=name, labels={}, **kwargs)

@@ -38,7 +38,9 @@ def pytest_collection_modifyitems(config, items):
     e2e_report.collect(items)
     if settings.github_tests_enabled():
         return
-    skip = pytest.mark.skip(reason="needs a reachable GitHub repository: set CAIRNML_E2E_GITHUB_REPO (docs/e2e_testing/E2E.md)")
+    skip = pytest.mark.skip(
+        reason="needs a reachable GitHub repository: set CAIRNML_E2E_GITHUB_REPO (docs/e2e_testing/E2E.md)"
+    )
     for item in items:
         if "github" in item.keywords:
             item.add_marker(skip)
@@ -58,7 +60,9 @@ def isolated_stack(request):
     """Starts the suite's own stack, and removes it (containers, volumes, state folder) when the session ends, unless
     it is reused. With pytest-xdist every worker needs the same stack, so the workers require a reused one."""
     if hasattr(request.config, "workerinput") and not reuse_requested():
-        pytest.exit("Parallel runs (-n) need CAIRNML_E2E_REUSE_STACK=1: every worker must find the same stack.", returncode=2)
+        pytest.exit(
+            "Parallel runs (-n) need CAIRNML_E2E_REUSE_STACK=1: every worker must find the same stack.", returncode=2
+        )
     stack = IsolatedStack(keep=bool(os.environ.get("CAIRNML_E2E_KEEP_STACK")))
     try:
         stack.start()
@@ -189,8 +193,9 @@ def job_agent(tmp_path_factory, admin_account, client_home):
     assert agent.init(machine.home, admin_account).returncode == 0
     machine.start()
     api = workspace.device_api(client_home)
-    assert machine.wait_until(lambda: worker_record(api, machine.worker_name), timeout=REGISTRATION_TIMEOUT), \
+    assert machine.wait_until(lambda: worker_record(api, machine.worker_name), timeout=REGISTRATION_TIMEOUT), (
         machine.log()[-2000:]
+    )
     yield machine
     machine.stop()
 

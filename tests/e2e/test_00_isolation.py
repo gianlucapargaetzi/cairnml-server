@@ -34,12 +34,26 @@ def test_the_api_is_served_by_this_suites_compose_project(isolated_stack):
     Expect: Exactly one API container runs in this suite's project, listening on the suite's loopback port.
     """
     names = subprocess.run(
-        ["docker", "ps", "--filter", f"label=com.docker.compose.project={settings.STACK_PROJECT}", "--format", "{{.Names}}"],
-        capture_output=True, text=True, timeout=60).stdout.split()
+        [
+            "docker",
+            "ps",
+            "--filter",
+            f"label=com.docker.compose.project={settings.STACK_PROJECT}",
+            "--format",
+            "{{.Names}}",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    ).stdout.split()
     apiservers = [n for n in names if "apiserver" in n]
     assert len(apiservers) == 1, names
-    env = subprocess.run(["docker", "inspect", apiservers[0], "--format", "{{range .Config.Env}}{{println .}}{{end}}"],
-                         capture_output=True, text=True, timeout=60).stdout.splitlines()
+    env = subprocess.run(
+        ["docker", "inspect", apiservers[0], "--format", "{{range .Config.Env}}{{println .}}{{end}}"],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    ).stdout.splitlines()
     assert f"CAIRNML__apiserver__listen__port={isolated_stack.ports['api']}" in env
     assert f"CAIRNML__apiserver__listen__ip={BIND}" in env
     assert settings.API_URL.startswith(f"http://{HOST}:")

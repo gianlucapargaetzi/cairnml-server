@@ -15,8 +15,12 @@ COMPANY = "c1"
 
 def make_project() -> Project:
     project = Project(
-        id="utils-p1", company=COMPANY, user="owner1", name="Utils",
-        basename="Utils", created=datetime.utcnow(),
+        id="utils-p1",
+        company=COMPANY,
+        user="owner1",
+        name="Utils",
+        basename="Utils",
+        created=datetime.utcnow(),
     )
     project.save()
     return project

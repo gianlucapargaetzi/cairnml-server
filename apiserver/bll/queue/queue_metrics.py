@@ -61,10 +61,7 @@ class QueueMetrics:
         Calculate and write queue statistics (avg waiting time and queue length) to Elastic
         :return: True if the write to es was successful, false otherwise
         """
-        es_index = (
-            self._queue_metrics_prefix_for_company(company_id)
-            + self._get_es_index_suffix()
-        )
+        es_index = self._queue_metrics_prefix_for_company(company_id) + self._get_es_index_suffix()
 
         timestamp = es_factory.get_timestamp_millis()
 
@@ -98,7 +95,8 @@ class QueueMetrics:
     def _search_company_metrics(self, company_id: str, es_req: dict) -> dict:
         # noinspection PyTypeChecker
         return self.es.search(
-            index=f"{self._queue_metrics_prefix_for_company(company_id)}*", body=es_req,
+            index=f"{self._queue_metrics_prefix_for_company(company_id)}*",
+            body=es_req,
         )
 
     @classmethod
@@ -245,8 +243,7 @@ class QueueMetrics:
             total_length = sum(m["queue_length"] for m in queue_metrics.values())
             if total_length:
                 total_average = sum(
-                    m["avg_waiting_time"] * m["queue_length"] / total_length
-                    for m in queue_metrics.values()
+                    m["avg_waiting_time"] * m["queue_length"] / total_length for m in queue_metrics.values()
                 )
             else:
                 total_average = 0
@@ -309,14 +306,9 @@ class MetricsRefresher:
                             queue_doc = json.loads(data)
                             doc_time = int(queue_doc.get(EsKeys.TIMESTAMP_FIELD))
                     except Exception as ex:
-                        log.exception(
-                            f"Error reading queue metrics data for queue {queue.id}: {str(ex)}"
-                        )
+                        log.exception(f"Error reading queue metrics data for queue {queue.id}: {str(ex)}")
 
-                    if (
-                        not doc_time
-                        or (timestamp - doc_time) > cls.watch_interval_sec * 1000
-                    ):
+                    if not doc_time or (timestamp - doc_time) > cls.watch_interval_sec * 1000:
                         queue_metrics.log_queue_metrics_to_es(queue.company, [queue])
             except Exception as ex:
                 log.exception(f"Failed collecting queue metrics: {str(ex)}")

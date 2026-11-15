@@ -10,10 +10,6 @@ def migrate_auth(db: Database):
 
 def migrate_backend(db: Database):
     collection: Collection = db["user"]
-    users = collection.find(
-        {"preferences": {"$exists": True, "$ne": None, "$type": "object"}}
-    )
+    users = collection.find({"preferences": {"$exists": True, "$ne": None, "$type": "object"}})
     for doc in users:
-        collection.update_one(
-            {"_id": doc["_id"]}, {"$set": {"preferences": json.dumps(doc["preferences"])}}
-        )
+        collection.update_one({"_id": doc["_id"]}, {"$set": {"preferences": json.dumps(doc["preferences"])}})

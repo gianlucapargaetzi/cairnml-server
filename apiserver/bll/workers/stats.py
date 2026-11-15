@@ -31,9 +31,7 @@ class WorkerStats:
             body=es_req,
         )
 
-    def get_worker_stats_keys(
-        self, company_id: str, worker_ids: Optional[Sequence[str]]
-    ) -> dict:
+    def get_worker_stats_keys(self, company_id: str, worker_ids: Optional[Sequence[str]]) -> dict:
         """
         Get dictionary of metric types grouped by categories
         :param company_id: company id
@@ -61,9 +59,7 @@ class WorkerStats:
             )
 
         return {
-            category["key"]: [
-                metric["key"] for metric in category["metrics"]["buckets"]
-            ]
+            category["key"]: [metric["key"] for metric in category["metrics"]["buckets"]]
             for category in res["aggregations"]["categories"]["buckets"]
         }
 
@@ -84,7 +80,7 @@ class WorkerStats:
         }
         agg = {
             metric_item.aggregation.value: {
-                agg_types_to_es[metric_item.aggregation]: {"field": "value", "missing": 0.0 }
+                agg_types_to_es[metric_item.aggregation]: {"field": "value", "missing": 0.0}
             }
         }
         split_by_resource = split_by_resource and metric_item.key.startswith("gpu_")
@@ -129,12 +125,8 @@ class WorkerStats:
         with translate_errors_context():
             data = self.search_company_stats(company_id, es_req)
 
-        cutoff_date = (
-            to_date - 0.9 * interval
-        ) * 1000  # do not return the point for the incomplete last interval
-        return self._extract_results(
-            data, metric_item, split_by_resource, cutoff_date
-        )
+        cutoff_date = (to_date - 0.9 * interval) * 1000  # do not return the point for the incomplete last interval
+        return self._extract_results(data, metric_item, split_by_resource, cutoff_date)
 
     def get_worker_stats(self, company_id: str, request: GetStatsRequest) -> dict:
         """
@@ -147,9 +139,7 @@ class WorkerStats:
         from_date = request.from_date
         to_date = request.to_date
         if from_date >= to_date:
-            raise errors.bad_request.FieldsValueError(
-                "from_date must be less than to_date"
-            )
+            raise errors.bad_request.FieldsValueError("from_date must be less than to_date")
 
         interval = max(request.interval, self.min_chart_interval)
         with ThreadPoolExecutor(self._max_metrics_concurrency) as pool:
@@ -220,17 +210,11 @@ class WorkerStats:
             return {
                 "dates": dates,
                 "values": agg_values,
-                **(
-                    {"resource_series": resource_series} if resource_series else {}
-                ),
+                **({"resource_series": resource_series} if resource_series else {}),
             }
 
         return {
-            worker["key"]: {
-                metric_item.key: {
-                    metric_item.aggregation.value: extract_metric_results(worker)
-                }
-            }
+            worker["key"]: {metric_item.key: {metric_item.aggregation.value: extract_metric_results(worker)}}
             for worker in data["aggregations"]["workers"]["buckets"]
         }
 
@@ -264,9 +248,9 @@ class WorkerStats:
                         "field": "timestamp",
                         "fixed_interval": f"{interval}s",
                         "extended_bounds": {
-                          "min": int(from_date) * 1000,
-                          "max": int(to_date) * 1000,
-                        }
+                            "min": int(from_date) * 1000,
+                            "max": int(to_date) * 1000,
+                        },
                     },
                     "aggs": {"workers_count": {"cardinality": {"field": "worker"}}},
                 }

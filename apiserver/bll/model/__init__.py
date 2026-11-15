@@ -15,9 +15,7 @@ from .metadata import Metadata
 
 class ModelBLL:
     @classmethod
-    def get_company_model_by_id(
-        cls, company_id: str, model_id: str, only_fields=None
-    ) -> Model:
+    def get_company_model_by_id(cls, company_id: str, model_id: str, only_fields=None) -> Model:
         query = dict(company=company_id, id=model_id)
         qs = Model.objects(**query)
         if only_fields:
@@ -29,7 +27,11 @@ class ModelBLL:
 
     @staticmethod
     def assert_exists(
-        company_id, model_ids, only=None, allow_public=False, return_models=True,
+        company_id,
+        model_ids,
+        only=None,
+        allow_public=False,
+        return_models=True,
     ) -> Optional[Sequence[Model]]:
         model_ids = [model_ids] if isinstance(model_ids, str) else model_ids
         ids = set(model_ids)
@@ -66,18 +68,10 @@ class ModelBLL:
         user_id = identity.user
         published_task = None
         if model.task and publish_task_func:
-            task = (
-                Task.objects(id=model.task, company=company_id)
-                .only("id", "status")
-                .first()
-            )
+            task = Task.objects(id=model.task, company=company_id).only("id", "status").first()
             if task and task.status != TaskStatus.published:
-                task_publish_res = publish_task_func(
-                    model.task, company_id, identity, force_publish_task
-                )
-                published_task = ModelTaskPublishResponse(
-                    id=model.task, data=task_publish_res
-                )
+                task_publish_res = publish_task_func(model.task, company_id, identity, force_publish_task)
+                published_task = ModelTaskPublishResponse(id=model.task, data=task_publish_res)
 
         now = datetime.utcnow()
         updated = model.update(
@@ -90,9 +84,7 @@ class ModelBLL:
         return updated, published_task
 
     @classmethod
-    def delete_model(
-        cls, model_id: str, company_id: str, user_id: str, force: bool
-    ) -> Tuple[int, Model]:
+    def delete_model(cls, model_id: str, company_id: str, user_id: str, force: bool) -> Tuple[int, Model]:
         model = cls.get_company_model_by_id(
             company_id=company_id,
             model_id=model_id,
@@ -149,9 +141,7 @@ class ModelBLL:
 
     @classmethod
     def archive_model(cls, model_id: str, company_id: str, user_id: str):
-        cls.get_company_model_by_id(
-            company_id=company_id, model_id=model_id, only_fields=("id",)
-        )
+        cls.get_company_model_by_id(company_id=company_id, model_id=model_id, only_fields=("id",))
         now = datetime.utcnow()
         archived = Model.objects(company=company_id, id=model_id).update(
             add_to_set__system_tags=EntityVisibility.archived.value,
@@ -163,9 +153,7 @@ class ModelBLL:
 
     @classmethod
     def unarchive_model(cls, model_id: str, company_id: str, user_id: str):
-        cls.get_company_model_by_id(
-            company_id=company_id, model_id=model_id, only_fields=("id",)
-        )
+        cls.get_company_model_by_id(company_id=company_id, model_id=model_id, only_fields=("id",))
         now = datetime.utcnow()
         unarchived = Model.objects(company=company_id, id=model_id).update(
             pull__system_tags=EntityVisibility.archived.value,
@@ -177,7 +165,9 @@ class ModelBLL:
 
     @classmethod
     def get_model_stats(
-        cls, company: str, model_ids: Sequence[str],
+        cls,
+        company: str,
+        model_ids: Sequence[str],
     ) -> Dict[str, dict]:
         if not model_ids:
             return {}
@@ -190,11 +180,7 @@ class ModelBLL:
                         "_id": {"$in": model_ids},
                     }
                 },
-                {
-                    "$addFields": {
-                        "labels_count": {"$size": {"$objectToArray": "$labels"}}
-                    }
-                },
+                {"$addFields": {"labels_count": {"$size": {"$objectToArray": "$labels"}}}},
                 {"$project": {"labels_count": 1}},
             ]
         )
@@ -235,6 +221,7 @@ class ModelBLL:
             Model.objects(id=model_id).update_one(__raw__=[{"$set": raw_updates}])
 
         return ret
+
 
 # re-exported: imported from this package by other modules (or for their side effects)
 __all__ = ["Metadata"]

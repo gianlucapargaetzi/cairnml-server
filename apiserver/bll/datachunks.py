@@ -56,7 +56,7 @@ def is_location(url: str) -> bool:
 
 def parse_location(url: str) -> tuple:
     """(kind, task id, name) of a datachunk://<kind>/<task>/<name> location. Segments may be percent-encoded."""
-    kind, task_id, name = url[len(LOCATION_PREFIX):].split("/", 2)
+    kind, task_id, name = url[len(LOCATION_PREFIX) :].split("/", 2)
     return unquote(kind), unquote(task_id), unquote(name)
 
 
@@ -199,13 +199,23 @@ def prepare_part(*, company: str, chunk_id: str, part: int) -> dict:
     length = min(part_bytes, chunk.size - (part - 1) * part_bytes)
     url = _signer().generate_presigned_url(
         "upload_part",
-        Params={"Bucket": chunk.bucket, "Key": chunk.key, "UploadId": chunk.upload_id,
-                "PartNumber": part, "ContentLength": length},
+        Params={
+            "Bucket": chunk.bucket,
+            "Key": chunk.key,
+            "UploadId": chunk.upload_id,
+            "PartNumber": part,
+            "ContentLength": length,
+        },
         ExpiresIn=_ttl(),
     )
-    return {"id": chunk.id, "part": part, "method": "PUT", "url": url,
-            "headers": {"Content-Length": str(length)},
-            "expires_at": (datetime.utcnow() + timedelta(seconds=_ttl())).isoformat()}
+    return {
+        "id": chunk.id,
+        "part": part,
+        "method": "PUT",
+        "url": url,
+        "headers": {"Content-Length": str(length)},
+        "expires_at": (datetime.utcnow() + timedelta(seconds=_ttl())).isoformat(),
+    }
 
 
 def commit(*, company: str, chunk_id: str, parts=None) -> Datachunk:
@@ -259,8 +269,12 @@ def _complete_multipart(client, chunk: Datachunk, parts) -> None:
             Bucket=chunk.bucket,
             Key=chunk.key,
             UploadId=chunk.upload_id,
-            MultipartUpload={"Parts": [{"PartNumber": int(p["number"]), "ETag": p["etag"]} for p in
-                                       sorted(parts, key=lambda p: int(p["number"]))]},
+            MultipartUpload={
+                "Parts": [
+                    {"PartNumber": int(p["number"]), "ETag": p["etag"]}
+                    for p in sorted(parts, key=lambda p: int(p["number"]))
+                ]
+            },
         )
     except ClientError as error:
         raise errors.bad_request.ValidationError("the parts could not be assembled", reason=str(error)) from None

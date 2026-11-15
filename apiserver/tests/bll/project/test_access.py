@@ -7,6 +7,7 @@ from apiserver.database.model.auth import Role
 from apiserver.database.model.project import Project, ProjectMember, ProjectRole, ProjectVisibility
 from apiserver.service_repo.auth import Identity
 from apiserver.tests.db import ensure_db
+
 ensure_db()
 
 COMPANY = "c1"
@@ -14,8 +15,13 @@ COMPANY = "c1"
 
 def make_root(visibility=ProjectVisibility.private, members=()):
     project = Project(
-        id="root1", company=COMPANY, user="owner1", name="Root",
-        basename="Root", created=datetime.utcnow(), visibility=visibility,
+        id="root1",
+        company=COMPANY,
+        user="owner1",
+        name="Root",
+        basename="Root",
+        created=datetime.utcnow(),
+        visibility=visibility,
         members=[ProjectMember(user=u, role=r, added=datetime.utcnow(), added_by="owner1") for u, r in members],
     )
     project.save()
@@ -24,8 +30,14 @@ def make_root(visibility=ProjectVisibility.private, members=()):
 
 def make_sub(root):
     sub = Project(
-        id="sub1", company=COMPANY, user="someone", name="Root/Sub", basename="Sub",
-        created=datetime.utcnow(), parent=root.id, path=[root.id],
+        id="sub1",
+        company=COMPANY,
+        user="someone",
+        name="Root/Sub",
+        basename="Sub",
+        created=datetime.utcnow(),
+        parent=root.id,
+        path=[root.id],
     )
     sub.save()
     return sub
@@ -110,7 +122,9 @@ class TestAssertCan:
     def test_admin_passes_every_capability_on_a_private_project_with_no_membership(self):
         make_root(visibility=ProjectVisibility.private)
         for capability in ("read", "write", "delete", "admin", "owner_only"):
-            ProjectAccessBLL.assert_can(identity("someone", role=Role.admin), "root1", capability, object_owner="anyone")
+            ProjectAccessBLL.assert_can(
+                identity("someone", role=Role.admin), "root1", capability, object_owner="anyone"
+            )
 
 
 class TestAssertCanCoverage:

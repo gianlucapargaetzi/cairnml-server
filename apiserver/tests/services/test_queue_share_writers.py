@@ -1,5 +1,6 @@
 # apiserver/tests/services/test_queue_share_writers.py
 """Who may use a queue, and the share records that the queue writers keep in step with the old fields."""
+
 from datetime import datetime
 from types import SimpleNamespace
 from uuid import uuid4
@@ -47,7 +48,12 @@ def make_user(company, user_id):
 
 def make_root(company, id_, owner, members=()):
     project = Project(
-        id=id_, company=company, user=owner, name=id_, basename=id_, created=datetime.utcnow(),
+        id=id_,
+        company=company,
+        user=owner,
+        name=id_,
+        basename=id_,
+        created=datetime.utcnow(),
         members=[ProjectMember(user=u, role=r, added=datetime.utcnow(), added_by=owner) for u, r in members],
     )
     project.save()
@@ -55,7 +61,9 @@ def make_root(company, id_, owner, members=()):
 
 
 def _save_queue(company, owner, id_, public):
-    queue = Queue(id=id_, company=company, name=f"queue {id_}", created=datetime.utcnow(), created_by=owner, public=public)
+    queue = Queue(
+        id=id_, company=company, name=f"queue {id_}", created=datetime.utcnow(), created_by=owner, public=public
+    )
     queue.save()
     return queue
 
@@ -103,25 +111,30 @@ def test_a_public_queue_is_usable_by_every_user_until_it_is_made_private(company
 
 
 def test_an_allocation_lets_the_members_of_the_project_use_the_queue_until_it_is_removed(company, setup):
-    project_svc.add_queues(FakeCall(identity(company, "owner1")), company,
-                           AddQueuesRequest(project="root1", queues=["q1"]))
+    project_svc.add_queues(
+        FakeCall(identity(company, "owner1")), company, AddQueuesRequest(project="root1", queues=["q1"])
+    )
     assert can_use(company, "u2", "q1")
     assert not can_use(company, "stranger", "q1")
 
-    project_svc.remove_queue(FakeCall(identity(company, "owner1")), company,
-                             RemoveQueueRequest(project="root1", queue="q1"))
+    project_svc.remove_queue(
+        FakeCall(identity(company, "owner1")), company, RemoveQueueRequest(project="root1", queue="q1")
+    )
     assert not can_use(company, "u2", "q1")
 
 
 def test_removing_a_grant_takes_back_the_allocations_the_user_made(company, setup):
     svc.add_user(FakeCall(identity(company, "owner1")), company, UserRequest(queue="q1", user="u2"))
-    project_svc.add_queues(FakeCall(identity(company, "u2")), company,
-                           AddQueuesRequest(project="root2", queues=["q1"]))
+    project_svc.add_queues(FakeCall(identity(company, "u2")), company, AddQueuesRequest(project="root2", queues=["q1"]))
     assert can_use(company, "u2", "q1")
 
     svc.remove_user(FakeCall(identity(company, "owner1")), company, UserRequest(queue="q1", user="u2"))
-    assert Share.objects(company=company, resource_type="queue", resource_id="q1", scope="projects",
-                         project="root2").count() == 0
+    assert (
+        Share.objects(
+            company=company, resource_type="queue", resource_id="q1", scope="projects", project="root2"
+        ).count()
+        == 0
+    )
 
 
 # --- consistency: after each writer, the public flag and the users listed by the queue match its share records
@@ -159,23 +172,26 @@ def test_the_queue_shares_follow_every_queue_writer(company, setup):
     svc.update(FakeCall(identity(company, "owner1"), {"public": True}), company, UpdateRequest(queue="q1"))
     assert_consistent(company, "q1")
 
-    project_svc.add_queues(FakeCall(identity(company, "owner1")), company,
-                           AddQueuesRequest(project="root1", queues=["q1"]))
+    project_svc.add_queues(
+        FakeCall(identity(company, "owner1")), company, AddQueuesRequest(project="root1", queues=["q1"])
+    )
     assert_consistent(company, "q1")
 
     svc.remove_user(FakeCall(identity(company, "owner1")), company, UserRequest(queue="q1", user="u3"))
     assert_consistent(company, "q1")
 
-    project_svc.remove_queue(FakeCall(identity(company, "owner1")), company,
-                             RemoveQueueRequest(project="root1", queue="q1"))
+    project_svc.remove_queue(
+        FakeCall(identity(company, "owner1")), company, RemoveQueueRequest(project="root1", queue="q1")
+    )
     svc.update(FakeCall(identity(company, "owner1"), {"public": False}), company, UpdateRequest(queue="q1"))
     assert_consistent(company, "q1")
 
 
 def test_the_grant_and_the_allocation_are_granted_by_the_right_user(company, setup):
     svc.add_user(FakeCall(identity(company, "owner1")), company, UserRequest(queue="q1", user="u2"))
-    project_svc.add_queues(FakeCall(identity(company, "owner1")), company,
-                           AddQueuesRequest(project="root1", queues=["q1"]))
+    project_svc.add_queues(
+        FakeCall(identity(company, "owner1")), company, AddQueuesRequest(project="root1", queues=["q1"])
+    )
 
     granted = {s.scope: s.granted_by for s in Share.objects(company=company, resource_type="queue", resource_id="q1")}
     assert granted == {"user": "owner1", "projects": "owner1"}
@@ -189,8 +205,9 @@ def test_a_public_queue_created_public_has_a_public_share(company):
 
 def test_a_queue_is_not_deleted_by_hand_and_keeps_its_shares(company, setup):
     svc.add_user(FakeCall(identity(company, "owner1")), company, UserRequest(queue="q1", user="u2"))
-    project_svc.add_queues(FakeCall(identity(company, "owner1")), company,
-                           AddQueuesRequest(project="root1", queues=["q1"]))
+    project_svc.add_queues(
+        FakeCall(identity(company, "owner1")), company, AddQueuesRequest(project="root1", queues=["q1"])
+    )
     with pytest.raises(errors.bad_request.ValidationError, match="not deleted by hand"):
         svc.delete(FakeCall(identity(company, "owner1")), company, DeleteRequest(queue="q1", force=True))
     assert Share.objects(company=company, resource_type="queue", resource_id="q1").count() > 0
@@ -198,14 +215,19 @@ def test_a_queue_is_not_deleted_by_hand_and_keeps_its_shares(company, setup):
 
 def test_transferring_a_project_regrants_its_queues_from_the_new_owner(company, setup):
     make_user(company, "u9")
-    project_svc.add_queues(FakeCall(identity(company, "owner1")), company,
-                           AddQueuesRequest(project="root1", queues=["q1"]))
+    project_svc.add_queues(
+        FakeCall(identity(company, "owner1")), company, AddQueuesRequest(project="root1", queues=["q1"])
+    )
     svc.add_user(FakeCall(identity(company, "owner1")), company, UserRequest(queue="q1", user="u9"))
-    Project.objects(id="root1").update_one(push__members=ProjectMember(
-        user="u9", role=ProjectRole.collaborator, added=datetime.utcnow(), added_by="owner1"))
+    Project.objects(id="root1").update_one(
+        push__members=ProjectMember(
+            user="u9", role=ProjectRole.collaborator, added=datetime.utcnow(), added_by="owner1"
+        )
+    )
 
-    project_svc.transfer_ownership(FakeCall(identity(company, "owner1")), company,
-                                   TransferOwnershipRequest(project="root1", new_owner="u9"))
+    project_svc.transfer_ownership(
+        FakeCall(identity(company, "owner1")), company, TransferOwnershipRequest(project="root1", new_owner="u9")
+    )
     assert_consistent(company, "q1")
     granted = Share.objects(company=company, resource_type="queue", resource_id="q1", scope="projects").first()
     assert granted.granted_by == "u9"

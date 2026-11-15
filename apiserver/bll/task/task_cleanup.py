@@ -60,9 +60,7 @@ class CleanupResult:
             remove_fields.append("urls")
 
         # noinspection PyTypeChecker
-        res = attr.asdict(
-            self, filter=lambda attrib, value: attrib.name not in remove_fields
-        )
+        res = attr.asdict(self, filter=lambda attrib, value: attrib.name not in remove_fields)
         if not return_file_urls:
             res["urls"] = None
 
@@ -90,9 +88,7 @@ class CleanupResult:
         )
 
 
-def collect_plot_image_urls(
-    company: str, task_or_model: Union[str, Sequence[str]]
-) -> Set[str]:
+def collect_plot_image_urls(company: str, task_or_model: Union[str, Sequence[str]]) -> Set[str]:
     urls = set()
     task_ids = task_or_model if isinstance(task_or_model, list) else [task_or_model]
     for tasks in chunked_iter(task_ids, 100):
@@ -111,9 +107,7 @@ def collect_plot_image_urls(
     return urls
 
 
-def collect_debug_image_urls(
-    company: str, task_or_model: Union[str, Sequence[str]]
-) -> Set[str]:
+def collect_debug_image_urls(company: str, task_or_model: Union[str, Sequence[str]]) -> Set[str]:
     """
     Return the set of unique image urls
     Uses DebugImagesIterator to make sure that we do not retrieve recycled urls
@@ -148,11 +142,7 @@ def schedule_for_delete(
 ) -> Set[str]:
     urls_per_storage = bucketize(
         urls,
-        key=lambda u: first(
-            type_
-            for prefix, type_ in supported_storage_types.items()
-            if u.startswith(prefix)
-        ),
+        key=lambda u: first(type_ for prefix, type_ in supported_storage_types.items() if u.startswith(prefix)),
     )
     urls_per_storage.pop(None, None)
 
@@ -195,13 +185,9 @@ def schedule_for_delete(
 def delete_task_events_and_collect_urls(
     company: str, task_ids: Sequence[str], wait_for_delete: bool, model=False
 ) -> Set[str]:
-    event_urls = collect_debug_image_urls(company, task_ids) | collect_plot_image_urls(
-        company, task_ids
-    )
+    event_urls = collect_debug_image_urls(company, task_ids) | collect_plot_image_urls(company, task_ids)
 
-    event_bll.delete_task_events(
-        company, task_ids, model=model, wait_for_delete=wait_for_delete
-    )
+    event_bll.delete_task_events(company, task_ids, model=model, wait_for_delete=wait_for_delete)
 
     return event_urls
 
@@ -220,15 +206,9 @@ def cleanup_task(
     :param force: whether to delete task with published outputs
     :return: count of delete and modified items
     """
-    published_models, draft_models, in_use_model_ids = verify_task_children_and_ouptuts(
-        task, force
-    )
+    published_models, draft_models, in_use_model_ids = verify_task_children_and_ouptuts(task, force)
     artifact_urls = (
-        {
-            a.uri
-            for a in task.execution.artifacts.values()
-            if a.mode == ArtifactModes.output and a.uri
-        }
+        {a.uri for a in task.execution.artifacts.values() if a.mode == ArtifactModes.output and a.uri}
         if task.execution and task.execution.artifacts
         else {}
     )
@@ -289,13 +269,9 @@ def cleanup_task(
     )
 
 
-def verify_task_children_and_ouptuts(
-    task, force: bool
-) -> Tuple[Sequence[Model], Sequence[Model], Set[str]]:
+def verify_task_children_and_ouptuts(task, force: bool) -> Tuple[Sequence[Model], Sequence[Model], Set[str]]:
     if not force:
-        published_children_count = Task.objects(
-            parent=task.id, status=TaskStatus.published
-        ).count()
+        published_children_count = Task.objects(parent=task.id, status=TaskStatus.published).count()
         if published_children_count:
             raise errors.bad_request.TaskCannotBeDeleted(
                 "has children, use force=True",
@@ -332,14 +308,9 @@ def verify_task_children_and_ouptuts(
     in_use_model_ids = {}
     if draft_models:
         model_ids = {m.id for m in draft_models}
-        dependent_tasks = Task.objects(models__input__model__in=list(model_ids)).only(
-            "id", "models"
-        )
+        dependent_tasks = Task.objects(models__input__model__in=list(model_ids)).only("id", "models")
         in_use_model_ids = model_ids & {
-            m.model
-            for m in chain.from_iterable(
-                t.models.input for t in dependent_tasks if t.models
-            )
+            m.model for m in chain.from_iterable(t.models.input for t in dependent_tasks if t.models)
         }
 
     return published_models, draft_models, in_use_model_ids

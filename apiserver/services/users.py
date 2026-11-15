@@ -72,9 +72,7 @@ def get_all_ex2_8(call: APICall, company_id, _):
         data = call.data
         active_in_projects = call.data.get("active_in_projects", None)
         if active_in_projects is not None:
-            active_users = project_bll.get_active_users(
-                company_id, active_in_projects, call.data.get("id")
-            )
+            active_users = project_bll.get_active_users(company_id, active_in_projects, call.data.get("id"))
             active_users.discard(None)
             if not active_users:
                 call.result.data = {"users": []}
@@ -90,9 +88,7 @@ def get_all_ex2_8(call: APICall, company_id, _):
 @endpoint("users.get_all")
 def get_all(call: APICall, company_id, _):
     with translate_errors_context("retrieving users"):
-        res = UserProfile.get_many(
-            company=company_id, parameters=call.data, query_dict=call.data
-        )
+        res = UserProfile.get_many(company=company_id, parameters=call.data, query_dict=call.data)
 
         call.result.data = {"users": res}
 
@@ -101,9 +97,7 @@ def get_all(call: APICall, company_id, _):
 def get_current_user(call: APICall, company_id, _):
     user_id = call.identity.user
 
-    projection = (
-        {"company.name"}.union(UserProfile.get_fields()).difference(UserProfile.get_exclude_fields())
-    )
+    projection = {"company.name"}.union(UserProfile.get_fields()).difference(UserProfile.get_exclude_fields())
     res = UserProfile.get_many_with_join(
         query=Q(id=user_id),
         company=company_id,
@@ -116,13 +110,9 @@ def get_current_user(call: APICall, company_id, _):
     user = res[0]
     user["role"] = call.identity.role
 
-    resp = dict(
-        user=user, getting_started=config.get("apiserver.getting_started_info", None)
-    )
+    resp = dict(user=user, getting_started=config.get("apiserver.getting_started_info", None))
     resp["settings"] = {
-        "max_download_items": int(
-            config.get("services.organization.download.max_download_items", 1000)
-        )
+        "max_download_items": int(config.get("services.organization.download.max_download_items", 1000))
     }
     call.result.data = resp
 
@@ -155,16 +145,12 @@ def update_user(user_id, company_id, data: dict) -> Tuple[int, dict]:
     :param data: mapping to update user by
     :return: (updated fields count, updated fields) pair
     """
-    update_fields = {
-        k: v for k, v in create_fields.items() if k in UserProfile.user_set_allowed()
-    }
+    update_fields = {k: v for k, v in create_fields.items() if k in UserProfile.user_set_allowed()}
     auth_user_update_fields = ("name",)
     partial_update_dict = parse_from_call(data, update_fields, UserProfile.get_fields())
     with translate_errors_context("updating user"):
         ret = UserProfile.safe_update(company_id, user_id, partial_update_dict)
-        auth_update = {
-            k: v for k, v in partial_update_dict.items() if k in auth_user_update_fields
-        }
+        auth_update = {k: v for k, v in partial_update_dict.items() if k in auth_user_update_fields}
         if auth_update:
             AuthUser.objects(id=user_id).update(**auth_update)
 
@@ -180,9 +166,7 @@ def update(call, company_id, request: UserRequest):
 
 def get_user_preferences(call: APICall, company_id):
     user_id = call.identity.user
-    preferences = get_user(call, company_id, user_id, only=["preferences"]).get(
-        "preferences"
-    )
+    preferences = get_user(call, company_id, user_id, only=["preferences"]).get("preferences")
     if preferences and isinstance(preferences, str):
         preferences = loads(preferences)
     return preferences or {}

@@ -24,7 +24,9 @@ def blocks_its_own_steps(workers: Sequence, queue_id: str, job_task: str) -> boo
     return len(serving) == 1 and bool(serving[0].task) and serving[0].task.id == job_task
 
 
-def assert_not_deadlocked(call, queue_bll, company_id: str, task_id: str, queue_id: Optional[str], queue_name: Optional[str]) -> None:
+def assert_not_deadlocked(
+    call, queue_bll, company_id: str, task_id: str, queue_id: Optional[str], queue_name: Optional[str]
+) -> None:
     """Refuse the enqueue of a task by a job when it would wait for the agent that runs the job. No effect otherwise."""
     job_task = getattr(call.auth, "job_task", None) if call.auth is not None else None
     if not job_task:

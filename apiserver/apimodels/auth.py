@@ -9,29 +9,27 @@ from apiserver.database.utils import get_options
 
 
 class GetTokenRequest(Base):
-    """ User requests a token """
+    """User requests a token"""
 
-    expiration_sec = IntField(
-        validators=Max(config.get("apiserver.auth.max_expiration_sec")), nullable=True
-    )
+    expiration_sec = IntField(validators=Max(config.get("apiserver.auth.max_expiration_sec")), nullable=True)
     """ Expiration time for token in seconds. """
 
 
 class GetTaskTokenRequest(GetTokenRequest):
-    """ User requests a task token """
+    """User requests a task token"""
 
     task = StringField(required=True)
 
 
 class GetTokenForUserRequest(GetTokenRequest):
-    """ System requests a token for a user """
+    """System requests a token for a user"""
 
     user = StringField(required=True)
     company = StringField()
 
 
 class GetTaskTokenForUserRequest(GetTokenForUserRequest):
-    """ System requests a token for a user, for a specific task """
+    """System requests a token for a user, for a specific task"""
 
     task = StringField(required=True)
 

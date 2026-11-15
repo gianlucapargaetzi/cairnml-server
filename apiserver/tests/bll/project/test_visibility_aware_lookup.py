@@ -35,8 +35,13 @@ def clean_fixture_projects():
 
 def test_creating_a_project_with_a_name_that_collides_with_an_invisible_private_project_forks_a_new_one():
     Project(
-        id="hidden1", company=COMPANY, user="owner1", name="Foo", basename="Foo",
-        created=datetime.utcnow(), visibility=ProjectVisibility.private,
+        id="hidden1",
+        company=COMPANY,
+        user="owner1",
+        name="Foo",
+        basename="Foo",
+        created=datetime.utcnow(),
+        visibility=ProjectVisibility.private,
     ).save()
 
     new_id = ProjectBLL.create(user="owner2", company=COMPANY, name="Foo", identity=identity("owner2"))
@@ -49,8 +54,13 @@ def test_creating_a_project_with_a_name_that_collides_with_an_invisible_private_
 
 def test_creating_a_project_with_a_name_that_collides_with_a_visible_project_is_refused():
     Project(
-        id="public1", company=COMPANY, user="owner1", name="Bar", basename="Bar",
-        created=datetime.utcnow(), visibility=ProjectVisibility.public,
+        id="public1",
+        company=COMPANY,
+        user="owner1",
+        name="Bar",
+        basename="Bar",
+        created=datetime.utcnow(),
+        visibility=ProjectVisibility.public,
     ).save()
 
     with pytest.raises(errors.bad_request.ExpectedUniqueData):
@@ -60,13 +70,21 @@ def test_creating_a_project_with_a_name_that_collides_with_a_visible_project_is_
 def test_find_or_create_reuses_a_visible_project_with_the_same_name():
     # The caller needs write on the project it reuses. A public project alone gives read only
     Project(
-        id="public1", company=COMPANY, user="owner1", name="Bar", basename="Bar",
-        created=datetime.utcnow(), visibility=ProjectVisibility.public,
+        id="public1",
+        company=COMPANY,
+        user="owner1",
+        name="Bar",
+        basename="Bar",
+        created=datetime.utcnow(),
+        visibility=ProjectVisibility.public,
         members=[ProjectMember(user="owner2", role=ProjectRole.read_write, added=datetime.utcnow(), added_by="owner1")],
     ).save()
 
     found_id = ProjectBLL.find_or_create(
-        user="owner2", company=COMPANY, project_name="Bar", description="",
+        user="owner2",
+        company=COMPANY,
+        project_name="Bar",
+        description="",
         identity=identity("owner2"),
     )
 
@@ -75,8 +93,13 @@ def test_find_or_create_reuses_a_visible_project_with_the_same_name():
 
 def test_pushing_a_task_into_a_new_sub_project_path_still_forks_on_an_invisible_root():
     Project(
-        id="hidden2", company=COMPANY, user="owner1", name="Baz", basename="Baz",
-        created=datetime.utcnow(), visibility=ProjectVisibility.private,
+        id="hidden2",
+        company=COMPANY,
+        user="owner1",
+        name="Baz",
+        basename="Baz",
+        created=datetime.utcnow(),
+        visibility=ProjectVisibility.private,
     ).save()
 
     new_id = ProjectBLL.create(user="owner2", company=COMPANY, name="Baz/Sub", identity=identity("owner2"))
@@ -89,12 +112,20 @@ def test_pushing_a_task_into_a_new_sub_project_path_still_forks_on_an_invisible_
 
 def test_find_or_create_forks_on_an_invisible_collision_too():
     Project(
-        id="hidden3", company=COMPANY, user="owner1", name="Qux", basename="Qux",
-        created=datetime.utcnow(), visibility=ProjectVisibility.private,
+        id="hidden3",
+        company=COMPANY,
+        user="owner1",
+        name="Qux",
+        basename="Qux",
+        created=datetime.utcnow(),
+        visibility=ProjectVisibility.private,
     ).save()
 
     found_id = ProjectBLL.find_or_create(
-        user="owner2", company=COMPANY, project_name="Qux", description="",
+        user="owner2",
+        company=COMPANY,
+        project_name="Qux",
+        description="",
         identity=identity("owner2"),
     )
 

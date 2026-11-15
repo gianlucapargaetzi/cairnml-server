@@ -14,9 +14,7 @@ def typed_attrs(cls):
         except AttributeError:
             continue
         instance_of = attr.validators.instance_of(attrib.type)
-        attrib._validator = (
-            attr.validators.and_(validator, instance_of) if validator else instance_of
-        )
+        attrib._validator = attr.validators.and_(validator, instance_of) if validator else instance_of
         if attrib._default != attr.NOTHING:
 
             def converter(default):

@@ -4,7 +4,14 @@ bll/repositories. The only service for them."""
 from apiserver.apierrors import errors
 from apiserver.apimodels import repositories as models
 from apiserver.bll import repositories as bll
-from apiserver.bll import dataset_versions, repository_details, repository_history, repository_registry, repository_runs, membership
+from apiserver.bll import (
+    dataset_versions,
+    repository_details,
+    repository_history,
+    repository_registry,
+    repository_runs,
+    membership,
+)
 from apiserver.database.model.auth import Role
 from apiserver.database.model.repository import Repository
 from apiserver.database.model.task.task import Task
@@ -33,20 +40,38 @@ def _repository_of(call: APICall, company: str, request: models.RepositoryRefReq
 
 @endpoint("repositories.get_all")
 def get_all(call: APICall, company: str, request: models.GetAllRequest):
-    call.result.data = {"repositories": bll.list_for(company, call.identity.user, _is_admin(call), request.project or None)}
+    call.result.data = {
+        "repositories": bll.list_for(company, call.identity.user, _is_admin(call), request.project or None)
+    }
 
 
 @endpoint("repositories.add")
 def add(call: APICall, company: str, request: models.AddRequest):
-    repo = bll.add(company, call.identity.user, _is_admin(call), request.url, request.role, shared=bool(request.shared),
-                   project_id=request.project or None, credential=request.credential or None,
-                   none_needed=bool(request.none_needed))
-    audit(call.identity.user, "repository.added", ip=client_address(call), company=company, repo=repo.key,
-          role=request.role, shared=bool(request.shared))
+    repo = bll.add(
+        company,
+        call.identity.user,
+        _is_admin(call),
+        request.url,
+        request.role,
+        shared=bool(request.shared),
+        project_id=request.project or None,
+        credential=request.credential or None,
+        none_needed=bool(request.none_needed),
+    )
+    audit(
+        call.identity.user,
+        "repository.added",
+        ip=client_address(call),
+        company=company,
+        repo=repo.key,
+        role=request.role,
+        shared=bool(request.shared),
+    )
     if "registry" in repo.roles and repo.read_at is None:
         try:  # its entries are there the moment it is listed; one that cannot be read yet says why on its record
             repository_registry.read_entries(
-                company, repo, call.identity.user, membership.root_project(company, request.project))
+                company, repo, call.identity.user, membership.root_project(company, request.project)
+            )
         except errors.bad_request.ValidationError:
             pass
         repo = bll.get(company, repo.id)
@@ -65,10 +90,23 @@ def delete(call: APICall, company: str, request: models.DeleteRequest):
 def set_shared(call: APICall, company: str, request: models.SetSharedRequest):
     repo = _repository_of(call, company, request, "repositories.set_shared")
     shared = bool(request.shared)
-    repo = bll.set_shared(company, call.identity.user, _is_admin(call), repo.id, shared,
-                          credential=request.credential or None, none_needed=bool(request.none_needed), confirm=shared)
-    audit(call.identity.user, "repository.shared" if shared else "repository.unshared",
-          ip=client_address(call), company=company, repo=repo.key)
+    repo = bll.set_shared(
+        company,
+        call.identity.user,
+        _is_admin(call),
+        repo.id,
+        shared,
+        credential=request.credential or None,
+        none_needed=bool(request.none_needed),
+        confirm=shared,
+    )
+    audit(
+        call.identity.user,
+        "repository.shared" if shared else "repository.unshared",
+        ip=client_address(call),
+        company=company,
+        repo=repo.key,
+    )
     call.result.data = {"repository": _view(call, company, repo)}
 
 
@@ -77,8 +115,9 @@ def check_sharing(call: APICall, company: str, request: models.CheckSharingReque
     """Whether a company credential (or None needed) reads the repository, so that it may be shared: ``ok`` and the reason."""
     repo = _repository_of(call, company, request, "repositories.check_sharing")
     try:
-        bll.verify_for_sharing(company, call.identity.user, _is_admin(call), repo.id, request.credential or None,
-                               bool(request.none_needed))
+        bll.verify_for_sharing(
+            company, call.identity.user, _is_admin(call), repo.id, request.credential or None, bool(request.none_needed)
+        )
     except errors.bad_request.ValidationError as refused:
         call.result.data = {"ok": False, "message": refused.msg}
         return
@@ -111,9 +150,18 @@ def assign(call: APICall, company: str, request: models.AssignRequest):
         repo = bll.add(company, call.identity.user, _is_admin(call), reference, request.role or "dataset")
     if repo is None:
         raise errors.bad_request.ValidationError(f"no such repository: {reference}")
-    bll.assign(company, call.identity.user, repo.id, request.credential or None, bool(request.none_needed), _is_admin(call))
-    audit(call.identity.user, "repository.credential_set", ip=client_address(call), company=company, repo=repo.key,
-          credential=request.credential or "", none_needed=bool(request.none_needed))
+    bll.assign(
+        company, call.identity.user, repo.id, request.credential or None, bool(request.none_needed), _is_admin(call)
+    )
+    audit(
+        call.identity.user,
+        "repository.credential_set",
+        ip=client_address(call),
+        company=company,
+        repo=repo.key,
+        credential=request.credential or "",
+        none_needed=bool(request.none_needed),
+    )
     call.result.data = {"repository": _view(call, company, repo)}
 
 
@@ -130,8 +178,14 @@ def check(call: APICall, company: str, request: models.CheckRequest):
     repo = _repository_of(call, company, request, "repositories.check")
     repo = bll.check(company, call.identity.user, _is_admin(call), repo.id)
     row = _view(call, company, repo)  # the caller's own result: what the audit records too
-    audit(call.identity.user, "repository.checked", ip=client_address(call), company=company, repo=repo.key,
-          state=row["state"])
+    audit(
+        call.identity.user,
+        "repository.checked",
+        ip=client_address(call),
+        company=company,
+        repo=repo.key,
+        state=row["state"],
+    )
     call.result.data = {"repository": row}
 
 
@@ -145,8 +199,13 @@ def refresh(call: APICall, company: str, request: models.RefreshRequest):
 @endpoint("repositories.get_details")
 def get_details(call: APICall, company: str, request: models.GetDetailsRequest):
     call.result.data = repository_details.details(
-        company, call.identity.user, _is_admin(call), repository=request.reference("repositories.get_details"),
-        entry=request.entry, commit=request.commit)
+        company,
+        call.identity.user,
+        _is_admin(call),
+        repository=request.reference("repositories.get_details"),
+        entry=request.entry,
+        commit=request.commit,
+    )
 
 
 def _job_user(call: APICall, company: str):
@@ -170,7 +229,8 @@ def _may_read(call: APICall, company: str, repo: Repository) -> bool:
         return bll.can_see(company, call.identity.user, _is_admin(call), repo)
     root = membership.root_project(company, project) if project else None
     return bll.can_see(company, job_user, False, repo) or (
-        root is not None and bll.access.find_share(company, "repository", repo.id, "projects", root) is not None)
+        root is not None and bll.access.find_share(company, "repository", repo.id, "projects", root) is not None
+    )
 
 
 @endpoint("repositories.get_runs")
@@ -234,7 +294,9 @@ def git_token(call: APICall, company: str, request: models.GitTokenRequest):
     token for a read: ``token`` is null."""
     kind = getattr(call.auth, "token_kind", None)
     if kind in ("job", "agent"):
-        raise errors.forbidden.NoWritePermission(f"a {kind} cannot get a repository token here: a person's machine does")
+        raise errors.forbidden.NoWritePermission(
+            f"a {kind} cannot get a repository token here: a person's machine does"
+        )
     level = request.level
     if level not in ("read", "read_write"):
         raise errors.bad_request.ValidationError("level must be read or read_write")
@@ -244,19 +306,33 @@ def git_token(call: APICall, company: str, request: models.GitTokenRequest):
     if repo is None or not bll.can_see(company, call.identity.user, _is_admin(call), repo):
         if parsed is not None and level == "read" and bll.is_private(parsed.url) is False:
             # a public repository nobody listed yet needs no token and no record: a run lists it when it records what it used
-            audit(call.identity.user, "git_token.public", ip=client_address(call), company=company, repo=parsed.key, level=level)
+            audit(
+                call.identity.user,
+                "git_token.public",
+                ip=client_address(call),
+                company=company,
+                repo=parsed.key,
+                level=level,
+            )
             call.result.data = {"token": None, "expires_at": None, "username": None}
             return
         raise errors.bad_request.ValidationError(NO_SUCH_REPOSITORY_HINT)
     answer = bll.token_for_person(company, call.identity.user, _is_admin(call), repo, write=level == "read_write")
-    audit(call.identity.user, "git_token.issued" if answer["token"] else "git_token.public", ip=client_address(call),
-          company=company, repo=repo.key, level=level)
+    audit(
+        call.identity.user,
+        "git_token.issued" if answer["token"] else "git_token.public",
+        ip=client_address(call),
+        company=company,
+        repo=repo.key,
+        level=level,
+    )
     call.result.data = {"token": answer["token"], "expires_at": answer["expires_at"], "username": answer["username"]}
 
 
 NO_SUCH_REPOSITORY_HINT = (
     "no such repository: make sure it is listed and readable by assigning a valid credential to it "
-    "(web app: Repositories and Datasets, Add)")
+    "(web app: Repositories and Datasets, Add)"
+)
 
 
 @endpoint("repositories.resolve")
@@ -265,8 +341,11 @@ def resolve(call: APICall, company: str, request: models.ResolveRequest):
     repositories = request.references("repositories.resolve")
     if len(repositories) > MAX_REPOSITORIES:
         raise errors.bad_request.ValidationError(f"give a list of at most {MAX_REPOSITORIES} repositories")
-    call.result.data = {"repositories": repository_runs.resolve_many(
-        company, repositories, call.identity.user, request.project or None, _is_admin(call))}
+    call.result.data = {
+        "repositories": repository_runs.resolve_many(
+            company, repositories, call.identity.user, request.project or None, _is_admin(call)
+        )
+    }
 
 
 @endpoint("repositories.requirement")
@@ -275,4 +354,6 @@ def requirement(call: APICall, company: str, request: models.RequirementRequest)
     tasks = list(request.tasks)
     if len(tasks) > 500:
         raise errors.bad_request.ValidationError("give a list of at most 500 tasks")
-    call.result.data = {"repositories": repository_runs.requirement(company, call.identity.user, tasks, _is_admin(call))}
+    call.result.data = {
+        "repositories": repository_runs.requirement(company, call.identity.user, tasks, _is_admin(call))
+    }

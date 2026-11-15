@@ -15,22 +15,17 @@ class TestSubProjects(TestService):
     def test_dataset_stats(self):
         project = self._temp_project(name="Dataset test", system_tags=["dataset"])
         res = self.api.organization.get_entities_count(
-            datasets={"system_tags": ["dataset"]}, allow_public=False,
+            datasets={"system_tags": ["dataset"]},
+            allow_public=False,
         )
         self.assertEqual(res.datasets, 1)
 
         task = self._temp_task(project=project)
-        data = self.api.projects.get_all_ex(
-            id=[project], include_dataset_stats=True
-        ).projects[0]
+        data = self.api.projects.get_all_ex(id=[project], include_dataset_stats=True).projects[0]
         self.assertIsNone(data.dataset_stats)
 
-        self.api.tasks.edit(
-            task=task, runtime={"ds_file_count": 2, "ds_total_size": 1000}
-        )
-        data = self.api.projects.get_all_ex(
-            id=[project], include_dataset_stats=True
-        ).projects[0]
+        self.api.tasks.edit(task=task, runtime={"ds_file_count": 2, "ds_total_size": 1000})
+        data = self.api.projects.get_all_ex(id=[project], include_dataset_stats=True).projects[0]
         self.assertEqual(data.dataset_stats, {"file_count": 2, "total_size": 1000})
 
     def test_query_children_system_tags(self):
@@ -160,9 +155,7 @@ class TestSubProjects(TestService):
             project=dataset_project,
         )
         self._temp_task(name="regular task", project=dataset_project)
-        pipeline_project = self._temp_project(
-            name=f"{test_root_name}/Project2/Pipeline", system_tags=["pipeline"]
-        )
+        pipeline_project = self._temp_project(name=f"{test_root_name}/Project2/Pipeline", system_tags=["pipeline"])
         self._temp_task(
             name="pipeline task",
             type="controller",
@@ -174,12 +167,8 @@ class TestSubProjects(TestService):
         self._temp_report(name="test report", project=report_project)
         self._temp_task(name="regular task", project=report_project)
 
-        projects = self.api.projects.get_all_ex(
-            parent=[test_root], shallow_search=True, include_stats=True
-        ).projects
-        self.assertEqual(
-            {p.basename for p in projects}, {f"Project{idx+1}" for idx in range(3)}
-        )
+        projects = self.api.projects.get_all_ex(parent=[test_root], shallow_search=True, include_stats=True).projects
+        self.assertEqual({p.basename for p in projects}, {f"Project{idx + 1}" for idx in range(3)})
         for p in projects:
             self.assertEqual(
                 p.stats.active.total_tasks,
@@ -194,7 +183,7 @@ class TestSubProjects(TestService):
                 include_stats=True,
                 check_own_contents=True,
             ).projects
-            self.assertEqual({p.basename for p in projects}, {f"Project{i+1}"})
+            self.assertEqual({p.basename for p in projects}, {f"Project{i + 1}"})
             p = projects[0]
             if type_ in ("dataset",):
                 self.assertEqual(p.own_datasets, 1)
@@ -235,9 +224,7 @@ class TestSubProjects(TestService):
         self.assertEqual(res.parents, [])
         res = self.api.projects.get_user_names(projects=[project])
         self.assertEqual(res.users, [])
-        res = self.api.organization.get_entities_count(
-            projects={"id": [project]}, active_users=[user]
-        )
+        res = self.api.organization.get_entities_count(projects={"id": [project]}, active_users=[user])
         self.assertEqual(res.projects, 0)
 
         # test aggregations with non-empty subprojects
@@ -251,9 +238,7 @@ class TestSubProjects(TestService):
         res = self.api.projects.get_all_ex(id=[project], include_stats=True)
         self._assert_ids(res.projects, [project])
         self.assertEqual(res.projects[0].stats.active.total_tasks, 3)
-        res = self.api.projects.get_all_ex(
-            id=[project], active_users=[user], include_stats=True
-        )
+        res = self.api.projects.get_all_ex(id=[project], active_users=[user], include_stats=True)
         self._assert_ids(res.projects, [project])
         self.assertEqual(res.projects[0].stats.active.total_tasks, 2)
         res = self.api.projects.get_task_parents(projects=[project])
@@ -264,9 +249,7 @@ class TestSubProjects(TestService):
         self.assertEqual(res.frameworks, [framework])
         res = self.api.tasks.get_types(projects=[project])
         self.assertEqual(res.types, ["testing"])
-        res = self.api.organization.get_entities_count(
-            projects={"id": [project]}, active_users=[user]
-        )
+        res = self.api.organization.get_entities_count(projects={"id": [project]}, active_users=[user])
         self.assertEqual(res.projects, 1)
 
     def _assert_ids(self, actual: Sequence[dict], expected: Sequence[str]):
@@ -300,9 +283,7 @@ class TestSubProjects(TestService):
         self.assertEqual(res.project.basename, "Pr2")
 
         # merge
-        project_with_task, (active, archived) = self._temp_project_with_tasks(
-            "Root1/Pr3/Pr4"
-        )
+        project_with_task, (active, archived) = self._temp_project_with_tasks("Root1/Pr3/Pr4")
         project1_parent = self._getProjectParent(project1)
         self._assertTags(project1_parent, tags=[], system_tags=[])
         self._assertTags(project1_parent, tags=[], system_tags=[])
@@ -310,12 +291,8 @@ class TestSubProjects(TestService):
         self._assertTags(project_with_task_parent)
         # self._assertTags(project_id=None)
 
-        merge_source = self.api.projects.get_by_id(
-            project=project_with_task
-        ).project.parent
-        res = self.api.projects.merge(
-            project=merge_source, destination_project=project1
-        )
+        merge_source = self.api.projects.get_by_id(project=project_with_task).project.parent
+        res = self.api.projects.merge(project=merge_source, destination_project=project1)
         self.assertEqual(res.moved_entities, 0)
         self.assertEqual(res.moved_projects, 1)
         res = self.api.projects.get_by_id(project=project_with_task)
@@ -354,9 +331,7 @@ class TestSubProjects(TestService):
         system_tags: Sequence[str] = (EntityVisibility.archived.value,),
     ):
         if project_id:
-            res = self.api.projects.get_task_tags(
-                projects=[project_id], include_system=True
-            )
+            res = self.api.projects.get_task_tags(projects=[project_id], include_system=True)
         else:
             res = self.api.organization.get_tags(include_system=True)
 
@@ -369,16 +344,12 @@ class TestSubProjects(TestService):
         self._temp_project(name="project3")
 
         # local search finds only at the specified level
-        res = self.api.projects.get_all_ex(
-            name="project1", shallow_search=True
-        ).projects
+        res = self.api.projects.get_all_ex(name="project1", shallow_search=True).projects
         self.assertEqual([p.id for p in res], [project1])
         res = self.api.projects.get_all_ex(name="project1", parent=[project1]).projects
         self.assertEqual([p.id for p in res], [project2])
         # basename search
-        res = self.api.projects.get_all_ex(
-            basename="project2", shallow_search=True
-        ).projects
+        res = self.api.projects.get_all_ex(basename="project2", shallow_search=True).projects
         self.assertEqual(res, [])
 
         # global search finds all or below the specified level
@@ -403,9 +374,7 @@ class TestSubProjects(TestService):
         self.assertEqual(len(res), 2)
         res = self.api.tasks.get_all(project=project1).tasks
         self.assertEqual(len(res), 2)
-        res = self.api.tasks.get_all_ex(
-            project=project1, include_subprojects=True
-        ).tasks
+        res = self.api.tasks.get_all_ex(project=project1, include_subprojects=True).tasks
         self.assertEqual(len(res), 4)
         res = self.api.tasks.get_all(project=project1, include_subprojects=True).tasks
         self.assertEqual(len(res), 4)
@@ -415,9 +384,7 @@ class TestSubProjects(TestService):
         self.assertEqual(len(res), 1)
         res = self.api.models.get_all(project=project1).models
         self.assertEqual(len(res), 1)
-        res = self.api.models.get_all_ex(
-            project=project1, include_subprojects=True
-        ).models
+        res = self.api.models.get_all_ex(project=project1, include_subprojects=True).models
         self.assertEqual(len(res), 2)
         res = self.api.models.get_all(project=project1, include_subprojects=True).models
         self.assertEqual(len(res), 2)
@@ -428,9 +395,7 @@ class TestSubProjects(TestService):
         self._temp_project_with_tasks(name="project2x/project22")
         self._temp_model(project=project1)
 
-        res = self.api.projects.get_all_ex(
-            id=[project1, project2], check_own_contents=True
-        ).projects
+        res = self.api.projects.get_all_ex(id=[project1, project2], check_own_contents=True).projects
         res1 = next(p for p in res if p.id == project1)
         self.assertEqual(res1.own_tasks, 1)
         self.assertEqual(res1.own_models, 1)
@@ -457,9 +422,7 @@ class TestSubProjects(TestService):
         self.assertFalse(any(p for p in res if p.id in [project4, project5]))
 
         project1 = first(p.id for p in res if p.name == "project1")
-        res = self.api.projects.get_all_ex(
-            id=[project1, project2], include_stats=True
-        ).projects
+        res = self.api.projects.get_all_ex(id=[project1, project2], include_stats=True).projects
         self.assertEqual(set(p.id for p in res), {project1, project2})
         res1 = next(p for p in res if p.id == project1)
         self.assertEqual(res1.stats["active"]["status_count"]["created"], 0)
@@ -496,9 +459,7 @@ class TestSubProjects(TestService):
     def _temp_project_with_tasks(self, name) -> Tuple[str, Tuple[str, str]]:
         pr_id = self._temp_project(name=name)
         task_active = self._temp_task(project=pr_id)
-        task_archived = self._temp_task(
-            project=pr_id, system_tags=[EntityVisibility.archived.value], tags=["test"]
-        )
+        task_archived = self._temp_task(project=pr_id, system_tags=[EntityVisibility.archived.value], tags=["test"])
         self._run_tasks(task_active, task_archived)
         return pr_id, (task_active, task_archived)
 

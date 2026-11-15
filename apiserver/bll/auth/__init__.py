@@ -41,9 +41,7 @@ class AuthBLL:
             company_id = company_id or user.company
             company = Company.objects(id=company_id).only("id", "name").first()
             if not company:
-                raise errors.bad_request.InvalidId(
-                    "invalid company associated with user", company=company
-                )
+                raise errors.bad_request.InvalidId("invalid company associated with user", company=company)
 
             identity = Identity(
                 user=user_id,
@@ -102,16 +100,12 @@ class AuthBLL:
                 UserBLL.create(users_create_request)
             except Exception as ex:
                 user.delete()
-                raise errors.server_error.GeneralError(
-                    "failed adding new user", ex=str(ex)
-                ) from ex
+                raise errors.server_error.GeneralError("failed adding new user", ex=str(ex)) from ex
 
             return user.id
 
     @staticmethod
-    def delete_user(
-        identity: Identity, user_id: str, company_id: str = None, call: APICall = None
-    ):
+    def delete_user(identity: Identity, user_id: str, company_id: str = None, call: APICall = None):
         """
         Delete an existing user from both the auth database and the backend database
         :param identity: Calling user identity
@@ -121,17 +115,12 @@ class AuthBLL:
         will be performed using a new call in the same transaction.
         """
         if user_id == identity.user:
-            raise errors.bad_request.FieldsValueError(
-                "cannot delete yourself", user=user_id
-            )
+            raise errors.bad_request.FieldsValueError("cannot delete yourself", user=user_id)
 
         if not company_id:
             company_id = identity.company
 
-        if (
-            identity.role not in Role.get_system_roles()
-            and company_id != identity.company
-        ):
+        if identity.role not in Role.get_system_roles() and company_id != identity.company:
             raise errors.bad_request.FieldsNotAllowedForRole(
                 "must be empty or your own company", role=identity.role, field="company"
             )
@@ -145,4 +134,3 @@ class AuthBLL:
             UserBLL.delete(user_id)
         except Exception as ex:
             log.error(f"Exception calling users.delete: {str(ex)}")
-

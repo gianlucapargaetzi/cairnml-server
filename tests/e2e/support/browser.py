@@ -33,6 +33,7 @@ if __name__ == "__main__":
         sign_in(sys.argv[1], os.environ["E2E_LOGIN_USER"], os.environ["E2E_LOGIN_PASSWORD"])
     except Exception as exc:  # the caller sees the failure through the exit code and its own timeout
         # the message tells the cause (a page that never showed, a refused connection); the password is never printed
-        print(f"sign-in failed: {exc.__class__.__name__}: {str(exc).splitlines()[0] if str(exc) else ''}",
-              file=sys.stderr)
+        print(
+            f"sign-in failed: {exc.__class__.__name__}: {str(exc).splitlines()[0] if str(exc) else ''}", file=sys.stderr
+        )
         sys.exit(1)

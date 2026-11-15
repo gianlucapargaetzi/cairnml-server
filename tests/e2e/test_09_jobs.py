@@ -34,7 +34,8 @@ def machine(job_agent):
 
 # The job records of this module, by label: each one's arguments (the scalars default to 2).
 JOB_SPECS = {
-    "twice": [], "after-get": [],
+    "twice": [],
+    "after-get": [],
     "missing-image": ["--base-image", MISSING_IMAGE],
     "completes": ["--scalars", "5"],
     "fails": ["--scalars", "5", "--fail-after", "2"],
@@ -54,8 +55,10 @@ def recorded(client_home, project, tmp_path_factory):
     """
     folder = tmp_path_factory.mktemp("job-records")
     labels = list(JOB_SPECS)
-    entries = [{"argv": ["--project", project, "--name", new_name(label), *DEFAULT_ARGS, *JOB_SPECS[label]]}
-               for label in labels]
+    entries = [
+        {"argv": ["--project", project, "--name", new_name(label), *DEFAULT_ARGS, *JOB_SPECS[label]]}
+        for label in labels
+    ]
     (folder / "jobs.json").write_text(json.dumps(entries))
     result = cli.python(JOB_SCRIPT, client_home, args=["--batch", folder / "jobs.json"], timeout=300)
     assert result.returncode == 0, result.output[-3000:]
@@ -65,6 +68,7 @@ def recorded(client_home, project, tmp_path_factory):
 
 
 # --- scheduling -------------------------------------------------------------------------------------------------
+
 
 def test_enqueueing_a_queued_task_again_leaves_it_queued_once(client_home, project, machine, recorded):
     """Enqueueing a task that is already queued is refused: it stays queued, once.
@@ -104,6 +108,7 @@ def test_job_with_a_missing_image_fails_once_and_is_not_rescheduled(client_home,
 
 # --- execution ----------------------------------------------------------------------------------
 
+
 def test_job_runs_to_completion_with_its_scalars_and_artifact(client_home, project, machine, recorded):
     """A job runs to completion, with its scalars and artifact.
 
@@ -115,7 +120,9 @@ def test_job_runs_to_completion_with_its_scalars_and_artifact(client_home, proje
     # takes minutes, so it is the one job wait with a longer ceiling. Localhost does not make a package download faster
     # (docs/e2e_testing/E2E.md, speed section, item 8).
     record = jobs.wait_for(api, task_id, jobs.FINAL, timeout=300)
-    assert record["status"] == "completed", jobs.explain(api, task_id, record) + "\n" + "\n".join(jobs.console(api, task_id, size=300))
+    assert record["status"] == "completed", (
+        jobs.explain(api, task_id, record) + "\n" + "\n".join(jobs.console(api, task_id, size=300))
+    )
     assert "result" in [a["key"] for a in record["execution"]["artifacts"]]
 
 
@@ -131,7 +138,8 @@ def test_failing_job_is_failed_with_its_traceback_and_the_agent_is_free(client_h
     assert record["status"] == "failed"
     # the traceback is printed just before the agent's own "Process failed" line: look through the last events
     recent = workspace.device_api(client_home).authed(
-        "events.get_task_log", {"task": task_id, "order": "desc", "size": 50})["events"]
+        "events.get_task_log", {"task": task_id, "order": "desc", "size": 50}
+    )["events"]
     assert any("deliberate failure" in event["msg"] for event in recent), "the traceback must be in the job's log"
 
 
@@ -162,8 +170,9 @@ def test_agent_reports_no_running_job_once_a_job_completes(client_home, project,
     api = workspace.device_api(client_home)
     record = jobs.wait_for(api, task_id, jobs.FINAL)
     assert record["status"] == "completed", jobs.explain(api, task_id, record)
-    assert machine.wait_until(lambda: not worker_record(api, machine.worker_name).get("task"), timeout=30), \
+    assert machine.wait_until(lambda: not worker_record(api, machine.worker_name).get("task"), timeout=30), (
         "the agent must report no running job once the job has completed"
+    )
 
 
 def test_job_registers_a_model_under_its_own_task(client_home, project, machine, recorded):
@@ -175,7 +184,9 @@ def test_job_registers_a_model_under_its_own_task(client_home, project, machine,
     api = workspace.device_api(client_home)
     jobs.enqueue(client_home, task_id)
     record = jobs.wait_for(api, task_id, jobs.FINAL, timeout=300)
-    assert record["status"] == "completed", jobs.explain(api, task_id, record) + "\n" + "\n".join(jobs.console(api, task_id, size=300))
+    assert record["status"] == "completed", (
+        jobs.explain(api, task_id, record) + "\n" + "\n".join(jobs.console(api, task_id, size=300))
+    )
     task = api.authed("tasks.get_by_id", {"task": task_id})["task"]
     output = (task.get("models") or {}).get("output") or []
     assert output and output[0].get("model"), "\n".join(jobs.console(api, task_id, size=300))

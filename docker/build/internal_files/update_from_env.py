@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-""" Update json configuration file from environment variables """
+"""Update json configuration file from environment variables"""
+
 from argparse import ArgumentParser, FileType
 import json
 from os import environ
@@ -12,7 +13,11 @@ class PathConflictError(Exception):
 
 
 def scan(
-    obj: Any, path_: str = None, sep: str = ".", parent_=None, key_=None,
+    obj: Any,
+    path_: str = None,
+    sep: str = ".",
+    parent_=None,
+    key_=None,
 ) -> Generator[Tuple[str, Any, Optional[dict], str], None, None]:
     if not isinstance(obj, dict):
         yield path_.lower(), obj, parent_, key_
@@ -34,22 +39,32 @@ def set_path(p: List[str], obj: dict, v: Any):
         return set_path(rest, obj[key_], v)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     parser = ArgumentParser(description=__doc__)
     parser.add_argument("input_file", type=FileType(), help="Input JSON file")
     parser.add_argument("output_file", type=FileType("w"), help="Output JSON file")
     parser.add_argument(
-        "--env-prefix", "-p", default="WEBSERVER", help="Environment variables prefix (default=%(default)s)",
-        dest="prefix", required=False
+        "--env-prefix",
+        "-p",
+        default="WEBSERVER",
+        help="Environment variables prefix (default=%(default)s)",
+        dest="prefix",
+        required=False,
     )
     parser.add_argument(
-        "--env-separator", "-s", default="__", help="Environment variable name separator (default=%(default)s)",
-        dest="sep"
+        "--env-separator",
+        "-s",
+        default="__",
+        help="Environment variable name separator (default=%(default)s)",
+        dest="sep",
     )
     parser.add_argument("--verbose", "-v", action="store_true", default=False)
     parser.add_argument(
-        "--disable-parse-env-value", action="store_false", default=True, help="Don't parse env value as JSON",
-        dest="parse_env"
+        "--disable-parse-env-value",
+        action="store_false",
+        default=True,
+        help="Don't parse env value as JSON",
+        dest="parse_env",
     )
 
     args = parser.parse_args()
@@ -75,8 +90,7 @@ if __name__ == '__main__':
     prefix = args.prefix + args.sep
 
     env_vars = {
-        k.lstrip(prefix): parse_value(k, v) if args.parse_env else v
-        for k, v in environ.items() if k.startswith(prefix)
+        k.lstrip(prefix): parse_value(k, v) if args.parse_env else v for k, v in environ.items() if k.startswith(prefix)
     }
 
     for path, value, parent, key in scan(data, sep=args.sep):
@@ -95,7 +109,7 @@ if __name__ == '__main__':
         try:
             set_path(path, data, v)
         except PathConflictError as ex:
-            print(f"Error: failed setting value into {k}: {path[:-len(ex.path)]} is not a dictionary")
+            print(f"Error: failed setting value into {k}: {path[: -len(ex.path)]} is not a dictionary")
 
     try:
         json.dump(data, args.output_file, sort_keys=True, indent=2)

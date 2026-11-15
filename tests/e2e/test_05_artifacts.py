@@ -23,10 +23,20 @@ KINDS = ["file", "folder", "dict", "frame", "array", "image", "pickled", "with_m
 def uploaded(client_home, project, tmp_path_factory):
     work = tmp_path_factory.mktemp("artifacts")
     expect = work / "expect.json"
-    upload = run_json(client_home, "artifact_upload.py", [
-        "--project", project, "--name", new_name("artifacts"),
-        "--work", str(work / "sources"), "--expect", str(expect),
-    ])
+    upload = run_json(
+        client_home,
+        "artifact_upload.py",
+        [
+            "--project",
+            project,
+            "--name",
+            new_name("artifacts"),
+            "--work",
+            str(work / "sources"),
+            "--expect",
+            str(expect),
+        ],
+    )
     check = run_json(client_home, "artifact_check.py", ["--task-id", upload["task_id"], "--expect", str(expect)])
     return {"task_id": upload["task_id"], "check": check, "expect": json.loads(expect.read_text()), "work": work}
 
@@ -83,12 +93,26 @@ def test_large_file_uploads_and_downloads_intact(client_home, project, tmp_path)
     Expect: a 10 MB file uploaded in parts reads back intact, with the sha256 it was uploaded with.
     """
     expect = tmp_path / "expect.json"
-    upload = run_json(client_home, "artifact_upload.py", [
-        "--project", project, "--name", new_name("large"), "--work", str(tmp_path / "sources"),
-        "--expect", str(expect), "--big-mb", "10",
-    ], timeout=300)
-    check = run_json(client_home, "artifact_check.py", ["--task-id", upload["task_id"], "--expect", str(expect)],
-                     timeout=300)
+    upload = run_json(
+        client_home,
+        "artifact_upload.py",
+        [
+            "--project",
+            project,
+            "--name",
+            new_name("large"),
+            "--work",
+            str(tmp_path / "sources"),
+            "--expect",
+            str(expect),
+            "--big-mb",
+            "10",
+        ],
+        timeout=300,
+    )
+    check = run_json(
+        client_home, "artifact_check.py", ["--task-id", upload["task_id"], "--expect", str(expect)], timeout=300
+    )
     assert check["results"]["big"]["ok"], check["results"]["big"]
 
 
@@ -101,7 +125,7 @@ def test_download_link_serves_the_stored_bytes_from_object_storage(client_home, 
     api = workspace.device_api(client_home)
     record = api.authed("tasks.get_by_id", {"task": uploaded["task_id"]})["task"]
     uri = next(a["uri"] for a in record["execution"]["artifacts"] if a["key"] == "file")
-    kind, task_id, name = (unquote(part) for part in uri[len("datachunk://"):].split("/", 2))
+    kind, task_id, name = (unquote(part) for part in uri[len("datachunk://") :].split("/", 2))
     assert kind == "artifact" and task_id == uploaded["task_id"]
     link = api.authed("datachunks.prepare_download", {"task": task_id, "kind": kind, "name": name})
     url = link.get("url")
@@ -122,8 +146,9 @@ def test_a_member_who_is_not_the_owner_cannot_delete_the_run(client_home, member
     from support import client
     from support.api import Api, ApiError
 
-    owner_run = run_json(client_home, "track_example.py", ["--project", project, "--name", new_name("owned"),
-                                                           "--steps", "1"])
+    owner_run = run_json(
+        client_home, "track_example.py", ["--project", project, "--name", new_name("owned"), "--steps", "1"]
+    )
     home = tmp_path / "member-home"
     home.mkdir()
     result = client.init(home, member_account, name="e2e-member")
@@ -137,8 +162,9 @@ def test_a_member_who_is_not_the_owner_cannot_delete_the_run(client_home, member
             member_api.authed("tasks.delete", {"task": missing_id, "force": True})
         assert refused.value.status == missing.value.status == 400
         # the two messages differ only in the id each request named
-        assert refused.value.message.replace(owner_run["task_id"], "<id>") == \
-            missing.value.message.replace(missing_id, "<id>")
+        assert refused.value.message.replace(owner_run["task_id"], "<id>") == missing.value.message.replace(
+            missing_id, "<id>"
+        )
     finally:
         client.logout(home)
 
@@ -152,5 +178,8 @@ def test_a_downloaded_artifact_is_identical_on_a_second_download(client_home, up
     first = run_json(client_home, "artifact_check.py", ["--task-id", uploaded["task_id"], "--expect", str(expect)])
     second = run_json(client_home, "artifact_check.py", ["--task-id", uploaded["task_id"], "--expect", str(expect)])
     assert first["results"]["file"]["ok"] and second["results"]["file"]["ok"]
-    assert first["results"]["file"]["hash"] == second["results"]["file"]["hash"] == \
-        uploaded["expect"]["artifacts"]["file"][1]
+    assert (
+        first["results"]["file"]["hash"]
+        == second["results"]["file"]["hash"]
+        == uploaded["expect"]["artifacts"]["file"][1]
+    )

@@ -79,8 +79,10 @@ class TestUpgradeNotice(object):
 
     def test_the_same_notice_is_logged_once(self):
         client_versions._logged.clear()
-        with mock.patch.object(client_versions, "_minimum", side_effect=minima), \
-                mock.patch.object(client_versions.log, "warning") as warning:
+        with (
+            mock.patch.object(client_versions, "_minimum", side_effect=minima),
+            mock.patch.object(client_versions.log, "warning") as warning,
+        ):
             note({"X-CairnML-Client": "cairnml-0.0.9"})
             note({"X-CairnML-Client": "cairnml-0.0.9"})
         assert warning.call_count == 1

@@ -99,13 +99,9 @@ class EventMetrics:
         )
         if run_parallel:
             with ThreadPoolExecutor(max_workers=EventSettings.max_workers) as pool:
-                metrics = itertools.chain.from_iterable(
-                    pool.map(get_scalar_average, interval_groups)
-                )
+                metrics = itertools.chain.from_iterable(pool.map(get_scalar_average, interval_groups))
         else:
-            metrics = itertools.chain.from_iterable(
-                get_scalar_average(group) for group in interval_groups
-            )
+            metrics = itertools.chain.from_iterable(get_scalar_average(group) for group in interval_groups)
 
         ret = defaultdict(dict)
         if not metrics:
@@ -144,9 +140,7 @@ class EventMetrics:
         companies = {
             company_id: tasks
             for company_id, tasks in companies.items()
-            if not check_empty_data(
-                self.es, company_id=company_id, event_type=event_type
-            )
+            if not check_empty_data(self.es, company_id=company_id, event_type=event_type)
         }
         if not companies:
             return {}
@@ -160,20 +154,11 @@ class EventMetrics:
             run_parallel=False,
             model_events=model_events,
         )
-        task_ids, company_ids = zip(
-            *(
-                (t.id, t.company)
-                for t in itertools.chain.from_iterable(companies.values())
-            )
-        )
+        task_ids, company_ids = zip(*((t.id, t.company) for t in itertools.chain.from_iterable(companies.values())))
         with ThreadPoolExecutor(max_workers=EventSettings.max_workers) as pool:
-            task_metrics = zip(
-                task_ids, pool.map(get_scalar_average_per_iter, task_ids, company_ids)
-            )
+            task_metrics = zip(task_ids, pool.map(get_scalar_average_per_iter, task_ids, company_ids))
 
-        task_names = {
-            t.id: task_label(t) for t in itertools.chain.from_iterable(companies.values())
-        }
+        task_names = {t.id: task_label(t) for t in itertools.chain.from_iterable(companies.values())}
         res = defaultdict(lambda: defaultdict(dict))
         for task_id, task_data in task_metrics:
             task_name = task_names[task_id]
@@ -195,9 +180,7 @@ class EventMetrics:
         companies = {
             company_id: [t.id for t in tasks]
             for company_id, tasks in companies.items()
-            if not check_empty_data(
-                self.es, company_id=company_id, event_type=EventType.metrics_scalar
-            )
+            if not check_empty_data(self.es, company_id=company_id, event_type=EventType.metrics_scalar)
         }
         if not companies:
             return {}
@@ -216,14 +199,10 @@ class EventMetrics:
             )
 
         def _get_value(event: dict):
-            return {
-                field: event.get(field)
-                for field in ("metric", "variant", "value", "timestamp")
-            }
+            return {field: event.get(field) for field in ("metric", "variant", "value", "timestamp")}
 
         return {
-            task: [_get_value(e) for e in events]
-            for task, events in bucketize(task_events, itemgetter("task")).items()
+            task: [_get_value(e) for e in events] for task, events in bucketize(task_events, itemgetter("task")).items()
         }
 
     def _get_task_single_value_metrics(
@@ -257,9 +236,7 @@ class EventMetrics:
     MetricIntervalGroup = Tuple[int, Sequence[Tuple[str, str]]]
 
     @classmethod
-    def _group_task_metric_intervals(
-        cls, intervals: Sequence[MetricInterval]
-    ) -> Sequence[MetricIntervalGroup]:
+    def _group_task_metric_intervals(cls, intervals: Sequence[MetricInterval]) -> Sequence[MetricIntervalGroup]:
         """
         Group task metric intervals so that the following conditions are meat:
             - All the metrics in the same group have the same interval (with 10% rounding)
@@ -357,9 +334,7 @@ class EventMetrics:
         ]
 
     @staticmethod
-    def _build_metric_interval(
-        metric: str, variant: str, data: dict, samples: int
-    ) -> Tuple[str, str, int, int]:
+    def _build_metric_interval(metric: str, variant: str, data: dict, samples: int) -> Tuple[str, str, int, int]:
         """
         Calculate index interval per metric_variant variant so that the
         total amount of intervals does not exceeds the samples
@@ -452,10 +427,7 @@ class EventMetrics:
     @staticmethod
     def _add_aggregation_average(aggregation):
         average_agg = {"avg_val": {"avg": {"field": "value"}}}
-        return {
-            key: {**value, "aggs": {**value.get("aggs", {}), **average_agg}}
-            for key, value in aggregation.items()
-        }
+        return {key: {**value, "aggs": {**value.get("aggs", {}), **average_agg}} for key, value in aggregation.items()}
 
     @staticmethod
     def _task_conditions(task_id: str) -> list:
@@ -491,10 +463,7 @@ class EventMetrics:
         """
         For the requested tasks return reported metrics and variants
         """
-        tasks_ids = {
-            company: [t.id for t in tasks]
-            for company, tasks in companies.items()
-        }
+        tasks_ids = {company: [t.id for t in tasks] for company, tasks in companies.items()}
         with ThreadPoolExecutor(EventSettings.max_workers) as pool:
             companies_res: Sequence = list(
                 pool.map(
@@ -514,10 +483,7 @@ class EventMetrics:
             for m, vars_ in c_res.items():
                 res[m].update(vars_)
 
-        return {
-            k: list(v)
-            for k, v in res.items()
-        }
+        return {k: list(v) for k, v in res.items()}
 
     def _get_multi_task_metrics(
         self, company_tasks: Tuple[str, Sequence[str]], event_type: EventType
@@ -554,7 +520,7 @@ class EventMetrics:
                                 "order": {"_key": "asc"},
                             },
                         }
-                    }
+                    },
                 }
             },
         }
@@ -567,14 +533,9 @@ class EventMetrics:
         if not aggs_result:
             return {}
 
-        return {
-            mb["key"]: [vb["key"] for vb in mb["variants"]["buckets"]]
-            for mb in aggs_result["metrics"]["buckets"]
-        }
+        return {mb["key"]: [vb["key"] for vb in mb["variants"]["buckets"]] for mb in aggs_result["metrics"]["buckets"]}
 
-    def get_task_metrics(
-        self, company_id, task_ids: Sequence, event_type: EventType
-    ) -> Sequence:
+    def get_task_metrics(self, company_id, task_ids: Sequence, event_type: EventType) -> Sequence:
         """
         For the requested tasks return reported metrics per task
         """
@@ -592,9 +553,7 @@ class EventMetrics:
             )
         return list(zip(task_ids, res))
 
-    def _get_task_metrics(
-        self, task_id: str, company_id: str, event_type: EventType
-    ) -> Sequence:
+    def _get_task_metrics(self, task_id: str, company_id: str, event_type: EventType) -> Sequence:
         es_req = {
             "size": 0,
             "query": {"bool": {"must": self._task_conditions(task_id)}},
@@ -609,11 +568,6 @@ class EventMetrics:
             },
         }
 
-        es_res = search_company_events(
-            self.es, company_id=company_id, event_type=event_type, body=es_req
-        )
+        es_res = search_company_events(self.es, company_id=company_id, event_type=event_type, body=es_req)
 
-        return [
-            metric["key"]
-            for metric in nested_get(es_res, ("aggregations", "metrics", "buckets"), default=[])
-        ]
+        return [metric["key"] for metric in nested_get(es_res, ("aggregations", "metrics", "buckets"), default=[])]

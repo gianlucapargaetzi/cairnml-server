@@ -38,9 +38,7 @@ log = config.logger(__file__)
 queue_bll = QueueBLL()
 
 
-def _get_pipeline_steps_for_controller_task(
-    task: Task, company_id: str, only: Sequence[str] = None
-) -> Sequence[Task]:
+def _get_pipeline_steps_for_controller_task(task: Task, company_id: str, only: Sequence[str] = None) -> Sequence[Task]:
     if not task or task.type != TaskType.controller:
         return []
 
@@ -106,9 +104,7 @@ def archive_task(
         )
 
     if include_pipeline_steps and (
-        step_tasks := _get_pipeline_steps_for_controller_task(
-            task, company_id, only=fields
-        )
+        step_tasks := _get_pipeline_steps_for_controller_task(task, company_id, only=fields)
     ):
         for step in step_tasks:
             archive_task_core(step)
@@ -145,9 +141,7 @@ def unarchive_task(
         )
 
     if include_pipeline_steps and (
-        step_tasks := _get_pipeline_steps_for_controller_task(
-            task, company_id, only=fields
-        )
+        step_tasks := _get_pipeline_steps_for_controller_task(task, company_id, only=fields)
     ):
         for step in step_tasks:
             unarchive_task_core(step)
@@ -243,13 +237,9 @@ def enqueue_task(
     update_execution_queue: bool = True,
 ) -> Tuple[int, dict]:
     if queue_id and queue_name:
-        raise errors.bad_request.ValidationError(
-            "Either queue id or queue name should be provided"
-        )
+        raise errors.bad_request.ValidationError("Either queue id or queue name should be provided")
 
-    task = get_task_with_write_access(
-        task_id=task_id, company_id=company_id, identity=identity
-    )
+    task = get_task_with_write_access(task_id=task_id, company_id=company_id, identity=identity)
     if queue_id:
         QueueAccessBLL.assert_can_use(identity, company_id, queue_id)
     if queue_id or queue_name:
@@ -271,28 +261,24 @@ def enqueue_task(
             ).execute()
             return 0, {"status": TaskStatus.failed, "updated": 0}
     if not update_execution_queue:
-        if not (
-            task.status == TaskStatus.queued and task.execution and task.execution.queue
-        ):
+        if not (task.status == TaskStatus.queued and task.execution and task.execution.queue):
             raise errors.bad_request.ValidationError(
                 "Cannot skip setting execution queue for a task "
                 "that is not enqueued or does not have execution queue set"
             )
 
     if queue_name:
-        queue = queue_bll.get_by_name(
-            company_id=company_id, queue_name=queue_name, only=("id",)
-        )
+        queue = queue_bll.get_by_name(company_id=company_id, queue_name=queue_name, only=("id",))
         if not queue:
             # the caller creates the queue, so they own it
-            queue = queue_bll.create(
-                company_id=company_id, name=queue_name, created_by=identity.user
-            )
+            queue = queue_bll.create(company_id=company_id, name=queue_name, created_by=identity.user)
         queue_id = queue.id
 
     if not queue_id:
         # no queue named: the project's queue pool (the queues allocated to it), else the default queue
-        queue_id = pick_pool_queue(company_id, identity, task.project, queue_bll) or queue_bll.get_default(company_id).id
+        queue_id = (
+            pick_pool_queue(company_id, identity, task.project, queue_bll) or queue_bll.get_default(company_id).id
+        )
     QueueAccessBLL.assert_can_use(identity, company_id, queue_id)
 
     user_id = identity.user
@@ -332,15 +318,11 @@ def enqueue_task(
         if task.execution:
             Task.objects(id=task_id).update(execution__queue=queue_id, multi=False)
         else:
-            Task.objects(id=task_id).update(
-                execution=Execution(queue=queue_id), multi=False
-            )
+            Task.objects(id=task_id).update(execution=Execution(queue=queue_id), multi=False)
         nested_set(res, ("fields", "execution.queue"), queue_id)
 
     # make sure that the task is not queued in any other queue
-    TaskBLL.remove_task_from_all_queues(
-        company_id=company_id, task_id=task_id, exclude=queue_id
-    )
+    TaskBLL.remove_task_from_all_queues(company_id=company_id, task_id=task_id, exclude=queue_id)
     return 1, res
 
 
@@ -382,11 +364,7 @@ def delete_task(
     user_id = identity.user
     task = get_task_with_write_access(task_id, company_id=company_id, identity=identity)
 
-    if (
-        task.status != TaskStatus.created
-        and EntityVisibility.archived.value not in task.system_tags
-        and not force
-    ):
+    if task.status != TaskStatus.created and EntityVisibility.archived.value not in task.system_tags and not force:
         raise errors.bad_request.TaskCannotBeDeleted(
             "due to status, use force=True",
             task=task.id,
@@ -428,9 +406,7 @@ def delete_task(
 
     task_ids = [task.id]
     cleanup_res = CleanupResult.empty()
-    if include_pipeline_steps and (
-        step_tasks := _get_pipeline_steps_for_controller_task(task, company_id)
-    ):
+    if include_pipeline_steps and (step_tasks := _get_pipeline_steps_for_controller_task(task, company_id)):
         for step in step_tasks:
             cleanup_res += delete_task_core(step, True)
             task_ids.append(step.id)
@@ -461,9 +437,7 @@ def reset_task(
     updates = {}
 
     try:
-        dequeued = TaskBLL.dequeue(
-            task, company_id=company_id, user_id=user_id, silent_fail=True
-        )
+        dequeued = TaskBLL.dequeue(task, company_id=company_id, user_id=user_id, silent_fail=True)
     except APIError:
         # dequeue may fail if the task was not enqueued
         pass
@@ -553,11 +527,7 @@ def publish_task(
         # publish task models
         if task.models and task.models.output and publish_model_func:
             model_id = task.models.output[-1].model
-            model = (
-                Model.objects(id=model_id, company=company_id)
-                .only("id", "ready")
-                .first()
-            )
+            model = Model.objects(id=model_id, company=company_id).only("id", "ready").first()
             if model and not model.ready:
                 publish_model_func(model.id, company_id, identity)
 
@@ -618,26 +588,16 @@ def stop_task(
     def is_run_by_worker(t: Task) -> bool:
         """Checks if there is an active worker running the task"""
         update_timeout = config.get("apiserver.workers.task_update_timeout", 600)
-        return (
-            t.last_worker
-            and t.last_update
-            and (datetime.utcnow() - t.last_update).total_seconds() < update_timeout
-        )
+        return t.last_worker and t.last_update and (datetime.utcnow() - t.last_update).total_seconds() < update_timeout
 
     def stop_task_core(task_: Task, force_: bool):
         is_queued = task_.status == TaskStatus.queued
-        set_stopped = (
-            is_queued
-            or TaskSystemTags.development in task_.system_tags
-            or not is_run_by_worker(task_)
-        )
+        set_stopped = is_queued or TaskSystemTags.development in task_.system_tags or not is_run_by_worker(task_)
 
         if set_stopped:
             if is_queued:
                 try:
-                    TaskBLL.dequeue(
-                        task_, company_id=company_id, user_id=user_id, silent_fail=True
-                    )
+                    TaskBLL.dequeue(task_, company_id=company_id, user_id=user_id, silent_fail=True)
                 except APIError:
                     # dequeue may fail if the task was not enqueued
                     pass
@@ -658,9 +618,7 @@ def stop_task(
         ).execute()
 
     if include_pipeline_steps and (
-        step_tasks := _get_pipeline_steps_for_controller_task(
-            task, company_id, only=fields
-        )
+        step_tasks := _get_pipeline_steps_for_controller_task(task, company_id, only=fields)
     ):
         for step in step_tasks:
             stop_task_core(step, True)

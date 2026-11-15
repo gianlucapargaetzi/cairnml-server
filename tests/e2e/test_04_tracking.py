@@ -15,9 +15,18 @@ from support.workspace import new_name, run_json
 @pytest.fixture(scope="module")
 def tracked_run(client_home, project):
     name = new_name("tracking")
-    recorded = run_json(client_home, "track_example.py", [
-        "--project", project, "--name", name, "--steps", "100",
-    ])
+    recorded = run_json(
+        client_home,
+        "track_example.py",
+        [
+            "--project",
+            project,
+            "--name",
+            name,
+            "--steps",
+            "100",
+        ],
+    )
     readback = run_json(client_home, "track_read.py", ["--task-id", recorded["task_id"]])
     return {"name": name, "task_id": recorded["task_id"], "read": readback}
 
@@ -126,8 +135,9 @@ def test_two_runs_of_one_name_are_two_experiments(client_home, project, tmp_path
     name = new_name("repeated")
     # both runs are recorded by one process, one after another (docs/e2e_testing/E2E.md, speed section, item 12)
     (tmp_path / "runs.json").write_text(json.dumps([{"name": name, "steps": 3}, {"name": name, "steps": 3}]))
-    first, second = workspace.run_json_lines(client_home, "track_example.py",
-                                             ["--project", project, "--batch", tmp_path / "runs.json"])
+    first, second = workspace.run_json_lines(
+        client_home, "track_example.py", ["--project", project, "--batch", tmp_path / "runs.json"]
+    )
     assert first["task_id"] != second["task_id"]
     api = workspace.device_api(client_home)
     project_id = api.authed("projects.get_all", {"name": f"^{project}$"})["projects"][0]["id"]
@@ -140,7 +150,9 @@ def test_run_without_a_project_name_goes_to_the_default_project(client_home):
 
     Expect: The run succeeds and its task has a project.
     """
-    result = workspace.run_raw(client_home, "track_example.py", ["--project", "", "--name", "no-project", "--steps", "1"])
+    result = workspace.run_raw(
+        client_home, "track_example.py", ["--project", "", "--name", "no-project", "--steps", "1"]
+    )
     assert result.returncode == 0, result.output
     import json
 

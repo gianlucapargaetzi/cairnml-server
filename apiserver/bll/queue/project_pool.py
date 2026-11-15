@@ -27,7 +27,9 @@ def choose_queue(stats: Dict[str, Tuple[int, int, int]]) -> Optional[str]:
     return min(order, key=rank)
 
 
-def pool_queue_stats(queue_ids: Sequence[str], workers: Sequence, queues: Dict[str, int]) -> Dict[str, Tuple[int, int, int]]:
+def pool_queue_stats(
+    queue_ids: Sequence[str], workers: Sequence, queues: Dict[str, int]
+) -> Dict[str, Tuple[int, int, int]]:
     """For each pool queue: its idle workers, all its workers and the number of tasks waiting in it."""
     stats = {}
     for queue_id in queue_ids:
@@ -63,5 +65,7 @@ def pick_pool_queue(company_id: str, identity, project_id: Optional[str], queue_
         usable.append(queue_id)
     if not usable:
         return None
-    waiting = {q.id: len(q.entries or []) for q in Queue.objects(company=company_id, id__in=usable).only("id", "entries")}
+    waiting = {
+        q.id: len(q.entries or []) for q in Queue.objects(company=company_id, id__in=usable).only("id", "entries")
+    }
     return choose_queue(pool_queue_stats(usable, queue_bll.worker_bll.get_all(company_id), waiting))

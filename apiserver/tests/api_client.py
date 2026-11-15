@@ -83,9 +83,7 @@ class AttrDict(dict):
                 {**(dct or {}), **kwargs},
                 lambda _, key, value: (
                     key,
-                    type(self)(value)
-                    if isinstance(value, dict) and not isinstance(value, type(self))
-                    else value,
+                    type(self)(value) if isinstance(value, dict) and not isinstance(value, type(self)) else value,
                 ),
             )
         )
@@ -104,27 +102,15 @@ class APIClient:
         session_token=None,
     ):
         if not session_token:
-            self.api_key = (
-                api_key
-                or os.environ.get("SM_API_KEY")
-                or config.get("apiclient.api_key")
-            )
+            self.api_key = api_key or os.environ.get("SM_API_KEY") or config.get("apiclient.api_key")
             if not self.api_key:
                 raise ValueError("APIClient requires api_key in constructor or config")
 
-            self.secret_key = (
-                secret_key
-                or os.environ.get("SM_API_SECRET")
-                or config.get("apiclient.secret_key")
-            )
+            self.secret_key = secret_key or os.environ.get("SM_API_SECRET") or config.get("apiclient.secret_key")
             if not self.secret_key:
-                raise ValueError(
-                    "APIClient requires secret_key in constructor or config"
-                )
+                raise ValueError("APIClient requires secret_key in constructor or config")
 
-        self.base_url = (
-            base_url or os.environ.get("SM_API_URL") or config.get("apiclient.base_url")
-        )
+        self.base_url = base_url or os.environ.get("SM_API_URL") or config.get("apiclient.base_url")
         if not self.base_url:
             raise ValueError("APIClient requires base_url in constructor or config")
 
@@ -161,10 +147,7 @@ class APIClient:
     def impersonate(self, user_id):
         return type(self)(
             impersonated_user_id=user_id,
-            **{
-                key: getattr(self, key)
-                for key in ("api_key", "secret_key", "base_url", "session_token")
-            },
+            **{key: getattr(self, key) for key in ("api_key", "secret_key", "base_url", "session_token")},
         )
 
     def send_batch(
@@ -240,9 +223,7 @@ class APIClient:
             async_res_headers.pop("X-CairnML-Async")
             while not got_result:
                 log.info("Got 202. Checking async result for %s (%s)" % (url, call_id))
-                http_res = self.http_session.get(
-                    async_res_url, headers=async_res_headers
-                )
+                http_res = self.http_session.get(async_res_url, headers=async_res_headers)
                 if http_res.status_code == 202:
                     time.sleep(5)
                 else:
@@ -257,9 +238,7 @@ class APIClient:
             if raise_errors:
                 raise error
         else:
-            msg = "APIClient got {} from {}{}".format(
-                res.meta.result_code, url, format_duration(duration)
-            )
+            msg = "APIClient got {} from {}{}".format(res.meta.result_code, url, format_duration(duration))
             log.info(msg)
             if log_response:
                 log.debug(res.as_dict())
@@ -275,9 +254,7 @@ class APIClient:
             self.name = name
 
         def __getattr__(self, item):
-            return lambda **kwargs: AttrDict(
-                self.api.send("{}.{}".format(self.name, item), kwargs)[1]
-            )
+            return lambda **kwargs: AttrDict(self.api.send("{}.{}".format(self.name, item), kwargs)[1])
 
     def __getattr__(self, item):
         return self.Service(self, item)

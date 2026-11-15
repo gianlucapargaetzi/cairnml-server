@@ -11,9 +11,7 @@ def _add_active_duration(db: Database):
     active_duration_key = "active_duration"
     query = {"$or": [{active_duration_key: {"$eq": None}}, {active_duration_key: {"$eq": 0}}]}
     collection = db["task"]
-    for doc in collection.find(
-        filter=query, projection=[active_duration_key, "status", "started", "completed"]
-    ):
+    for doc in collection.find(filter=query, projection=[active_duration_key, "status", "started", "completed"]):
         started = doc.get("started")
         completed = doc.get("completed")
         running = doc.get("status") == "running"
@@ -30,9 +28,7 @@ def _add_active_duration(db: Database):
             )
 
 
-def _get_active_duration(
-    completed: datetime, running: bool, started: datetime
-) -> Optional[float]:
+def _get_active_duration(completed: datetime, running: bool, started: datetime) -> Optional[float]:
     if running:
         return (datetime.utcnow() - started).total_seconds()
     elif completed:
@@ -51,9 +47,7 @@ def migrate_backend(db: Database):
             continue
 
         new_artifacts = {get_artifact_id(a): a for a in artifacts}
-        collection.update_one(
-            {"_id": doc["_id"]}, {"$set": {artifacts_field: new_artifacts}}
-        )
+        collection.update_one({"_id": doc["_id"]}, {"$set": {artifacts_field: new_artifacts}})
 
     _add_active_duration(db)
 

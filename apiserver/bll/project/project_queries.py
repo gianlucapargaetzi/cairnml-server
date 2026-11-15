@@ -25,9 +25,7 @@ class ProjectQueries:
         self.redis: StrictRedis = redis or redman.connection("apiserver")
 
     @staticmethod
-    def _get_project_constraint(
-        project_ids: Sequence[str], include_subprojects: bool
-    ) -> dict:
+    def _get_project_constraint(project_ids: Sequence[str], include_subprojects: bool) -> dict:
         """
         If passed projects is None means top level projects
         If passed projects is empty means no project filtering
@@ -102,12 +100,8 @@ class ProjectQueries:
             total = int(result.get("total", -1))
             results = [
                 {
-                    "section": ParameterKeyEscaper.unescape(
-                        nested_get(r, ("_id", "section"))
-                    ),
-                    "name": ParameterKeyEscaper.unescape(
-                        nested_get(r, ("_id", "name"))
-                    ),
+                    "section": ParameterKeyEscaper.unescape(nested_get(r, ("_id", "section"))),
+                    "name": ParameterKeyEscaper.unescape(nested_get(r, ("_id", "name"))),
                 }
                 for r in result.get("results", [])
             ]
@@ -117,9 +111,7 @@ class ProjectQueries:
 
     ParamValues = Tuple[int, Sequence[str]]
 
-    def _get_cached_param_values(
-        self, key: str, last_update: datetime, allowed_delta_sec=0
-    ) -> Optional[ParamValues]:
+    def _get_cached_param_values(self, key: str, last_update: datetime, allowed_delta_sec=0) -> Optional[ParamValues]:
         try:
             cached = self.redis.get(key)
             if not cached:
@@ -147,9 +139,7 @@ class ProjectQueries:
         page = max(0, page)
         page_size = max(1, page_size)
         company_constraint = self._get_company_constraint(company_id, allow_public)
-        project_constraint = self._get_project_constraint(
-            project_ids, include_subprojects
-        )
+        project_constraint = self._get_project_constraint(project_ids, include_subprojects)
         key_path = f"hyperparams.{ParameterKeyEscaper.escape(section)}.{ParameterKeyEscaper.escape(name)}"
         last_updated_task = (
             Task.objects(
@@ -183,9 +173,7 @@ class ProjectQueries:
         cached_res = self._get_cached_param_values(
             key=redis_key,
             last_update=last_update,
-            allowed_delta_sec=config.get(
-                "services.tasks.hyperparam_values.cache_allowed_outdate_sec", 60
-            ),
+            allowed_delta_sec=config.get("services.tasks.hyperparam_values.cache_allowed_outdate_sec", 60),
         )
         if cached_res:
             return cached_res
@@ -324,10 +312,7 @@ class ProjectQueries:
 
         if result:
             total = int(result.get("total", -1))
-            results = [
-                ParameterKeyEscaper.unescape(r.get("_id"))
-                for r in result.get("results", [])
-            ]
+            results = [ParameterKeyEscaper.unescape(r.get("_id")) for r in result.get("results", [])]
             remaining = max(0, total - (len(results) + page * page_size))
 
         return total, remaining, results
@@ -345,9 +330,7 @@ class ProjectQueries:
         page = max(0, page)
         page_size = max(1, page_size)
         company_constraint = self._get_company_constraint(company_id, allow_public)
-        project_constraint = self._get_project_constraint(
-            project_ids, include_subprojects
-        )
+        project_constraint = self._get_project_constraint(project_ids, include_subprojects)
         key_path = f"metadata.{ParameterKeyEscaper.escape(key)}"
         last_updated_model = (
             Model.objects(
@@ -365,9 +348,7 @@ class ProjectQueries:
 
         redis_key = f"modelmetadata_values_{company_id}_{'_'.join(project_ids)}_{key}_{allow_public}_{page}_{page_size}"
         last_update = last_updated_model.last_update or datetime.utcnow()
-        cached_res = self._get_cached_param_values(
-            key=redis_key, last_update=last_update
-        )
+        cached_res = self._get_cached_param_values(key=redis_key, last_update=last_update)
         if cached_res:
             return cached_res
 

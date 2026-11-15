@@ -9,9 +9,7 @@ class TestTasksDiff(TestService):
         super(TestTasksDiff, self).setUp(version=version)
 
     def new_task(self, **kwargs):
-        return self.create_temp(
-            "tasks", name="test", type="testing", **kwargs
-        )
+        return self.create_temp("tasks", name="test", type="testing", **kwargs)
 
     def _compare_script(self, task_id, script):
         task = self.api.tasks.get_by_id(task=task_id).task
@@ -19,9 +17,7 @@ class TestTasksDiff(TestService):
             self.assertTrue(
                 task.get(
                     "script",
-                    dict(
-                        binary="python", repository="", entry_point="", requirements={}
-                    ),
+                    dict(binary="python", repository="", entry_point="", requirements={}),
                 )
             )
         else:
