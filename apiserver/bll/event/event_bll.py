@@ -209,30 +209,37 @@ class EventBLL(object):
         )
 
         batch = EventBatch()
-        errors_per_type = batch.errors_per_type
-        actions = batch.actions
-        used_task_ids = batch.used_task_ids
-        used_model_ids = batch.used_model_ids
-        task_iteration = batch.task_iteration
-        task_last_scalar_events = batch.task_last_scalar_events
-        task_last_events = batch.task_last_events
-
         for event in events:
             x_axis_label = event.pop("x_axis_label", None)
             error, event_type = check_event(event, valid_tasks, valid_models)
             if error:
-                errors_per_type[error] += 1
+                batch.errors_per_type[error] += 1
                 continue
 
             try:
                 iter = normalise_event(event, event_type, worker)
             except IterationOutOfRange:
-                errors_per_type[INVALID_ITERATION_ERROR] += 1
+                batch.errors_per_type[INVALID_ITERATION_ERROR] += 1
                 continue
 
             es_action = make_action(company_id, event, event_type, self._get_event_id)
             self._record_event(batch, es_action, iter, x_axis_label)
 
+        self._compress_plots(batch.actions)
+
+        with translate_errors_context():
+            added = self._bulk_index(batch.actions, batch.errors_per_type)
+            self._update_entities_after_write(company_id, user_id, batch)
+            self._raise_for_invalid_iterations(batch.errors_per_type)
+
+        if not added:
+            raise errors.bad_request.EventsNotAdded(**batch.errors_per_type)
+
+        errors_count = sum(batch.errors_per_type.values())
+        return added, errors_count, batch.errors_per_type
+
+    def _compress_plots(self, actions: Sequence[dict]):
+        """Validate (when configured) and compress the plot events among the actions, in place."""
         plot_actions = [
             action["_source"]
             for action in actions
@@ -247,75 +254,79 @@ class EventBLL(object):
                 ),
             )
 
+    def _bulk_index(self, actions: Sequence[dict], errors_per_type: dict) -> int:
+        """Index the actions in Elasticsearch (the only write of events) and return how many were added; a failed
+        item is counted under its own error."""
         added = 0
-        with translate_errors_context():
-            if actions:
-                chunk_size = 500
-                # TODO: replace it with helpers.parallel_bulk in the future once the parallel pool leak is fixed
-                # noinspection PyTypeChecker
-                with closing(
-                    elasticsearch.helpers.streaming_bulk(
-                        self.es,
-                        actions,
-                        chunk_size=chunk_size,
-                        # thread_count=8,
-                        refresh=True,
-                    )
-                ) as it:
-                    for success, info in it:
-                        if success:
-                            added += 1
-                        else:
-                            errors_per_type["Error when indexing events batch"] += 1
+        if not actions:
+            return added
 
-            now = datetime.utcnow()
-            for model_id in used_model_ids:
-                ModelBLL.update_statistics(
-                    company_id=company_id,
-                    user_id=user_id,
-                    model_id=model_id,
-                    last_update=now,
-                    last_iteration_max=task_iteration.get(model_id),
-                    last_scalar_events=task_last_scalar_events.get(model_id),
-                )
-            remaining_tasks = set()
-            for task_id in used_task_ids:
-                # Update related tasks. For reasons of performance, we prefer to update
-                # all of them and not only those who's events were successful
-                updated = self._update_task(
-                    company_id=company_id,
-                    user_id=user_id,
-                    task_id=task_id,
-                    now=now,
-                    iter_max=task_iteration.get(task_id),
-                    last_scalar_events=task_last_scalar_events.get(task_id),
-                    last_events=task_last_events.get(task_id),
-                )
-                if not updated:
-                    remaining_tasks.add(task_id)
-                    continue
+        chunk_size = 500
+        # TODO: replace it with helpers.parallel_bulk in the future once the parallel pool leak is fixed
+        # noinspection PyTypeChecker
+        with closing(
+            elasticsearch.helpers.streaming_bulk(
+                self.es,
+                actions,
+                chunk_size=chunk_size,
+                # thread_count=8,
+                refresh=True,
+            )
+        ) as it:
+            for success, info in it:
+                if success:
+                    added += 1
+                else:
+                    errors_per_type["Error when indexing events batch"] += 1
+        return added
 
-            if remaining_tasks:
-                TaskBLL.set_last_update(
-                    remaining_tasks,
-                    company_id=company_id,
-                    user_id=user_id,
-                    last_update=now,
-                )
+    def _update_entities_after_write(
+        self, company_id: str, user_id: str, batch: EventBatch
+    ):
+        """Update the models and tasks the events belong to with the iteration and the last values."""
+        now = datetime.utcnow()
+        for model_id in batch.used_model_ids:
+            ModelBLL.update_statistics(
+                company_id=company_id,
+                user_id=user_id,
+                model_id=model_id,
+                last_update=now,
+                last_iteration_max=batch.task_iteration.get(model_id),
+                last_scalar_events=batch.task_last_scalar_events.get(model_id),
+            )
+        remaining_tasks = set()
+        for task_id in batch.used_task_ids:
+            # Update related tasks. For reasons of performance, we prefer to update
+            # all of them and not only those who's events were successful
+            updated = self._update_task(
+                company_id=company_id,
+                user_id=user_id,
+                task_id=task_id,
+                now=now,
+                iter_max=batch.task_iteration.get(task_id),
+                last_scalar_events=batch.task_last_scalar_events.get(task_id),
+                last_events=batch.task_last_events.get(task_id),
+            )
+            if not updated:
+                remaining_tasks.add(task_id)
 
-            # this is for backwards compatibility with streaming bulk throwing exception on those
-            invalid_iterations_count = errors_per_type.get(INVALID_ITERATION_ERROR)
-            if invalid_iterations_count:
-                raise BulkIndexError(
-                    f"{invalid_iterations_count} document(s) failed to index.",
-                    [{"_index": INVALID_ITERATION_ERROR}],
-                )
+        if remaining_tasks:
+            TaskBLL.set_last_update(
+                remaining_tasks,
+                company_id=company_id,
+                user_id=user_id,
+                last_update=now,
+            )
 
-        if not added:
-            raise errors.bad_request.EventsNotAdded(**errors_per_type)
-
-        errors_count = sum(errors_per_type.values())
-        return added, errors_count, errors_per_type
+    @staticmethod
+    def _raise_for_invalid_iterations(errors_per_type: dict):
+        # this is for backwards compatibility with streaming bulk throwing exception on those
+        invalid_iterations_count = errors_per_type.get(INVALID_ITERATION_ERROR)
+        if invalid_iterations_count:
+            raise BulkIndexError(
+                f"{invalid_iterations_count} document(s) failed to index.",
+                [{"_index": INVALID_ITERATION_ERROR}],
+            )
 
     @parallel_chunked_decorator(chunk_size=10)
     def validate_and_compress_plots(
