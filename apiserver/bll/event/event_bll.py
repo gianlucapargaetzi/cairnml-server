@@ -26,6 +26,7 @@ from apiserver.bll.event.event_common import (
     get_max_metric_and_variant_counts,
     PlotFields,
 )
+from apiserver.bll.event.event_prepare import collect_entity_ids
 from apiserver.bll.event.events_iterator import EventsIterator, TaskEventsResult
 from apiserver.bll.event.history_debug_image_iterator import HistoryDebugImageIterator
 from apiserver.bll.event.history_plots_iterator import HistoryPlotsIterator
@@ -192,37 +193,7 @@ class EventBLL(object):
         worker: str,
     ) -> Tuple[int, int, dict]:
         user_id = identity.user
-        task_ids = {}
-        model_ids = {}
-        for event in events:
-            if event.get("model_event", False):
-                model = event.pop("model", None)
-                if model is not None:
-                    event["task"] = model
-                entity_ids = model_ids
-            else:
-                event["model_event"] = False
-                entity_ids = task_ids
-
-            id_ = event.get("task")
-            allow_locked = event.pop("allow_locked", False)
-            if not id_:
-                continue
-
-            allowed_for_entity = entity_ids.get(id_)
-            if allowed_for_entity is None:
-                entity_ids[id_] = allow_locked
-            elif allowed_for_entity != allow_locked:
-                raise errors.bad_request.ValidationError(
-                    f"Inconsistent allow_locked setting in the passed events for {id_}"
-                )
-
-        found_in_both = set(task_ids).intersection(set(model_ids))
-        if found_in_both:
-            raise errors.bad_request.ValidationError(
-                "Inconsistent model_event setting in the passed events",
-                tasks=found_in_both,
-            )
+        task_ids, model_ids = collect_entity_ids(events)
         valid_models = self._get_valid_entities(
             company_id, ids=model_ids, identity=identity, model=True
         )

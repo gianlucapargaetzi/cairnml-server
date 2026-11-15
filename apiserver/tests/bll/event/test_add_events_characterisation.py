@@ -567,3 +567,34 @@ def test_a_model_event_with_a_task_id_set_uses_the_task_field_when_model_is_abse
     model = make_model(company)
     event = dict(type="training_stats_scalar", task=model, model_event=True, value=1)
     assert add(company, [event]) == (1, 0, {})
+
+
+# --- collect_entity_ids alone (no database) -------------------------------
+
+
+def test_collect_entity_ids_alone():
+    from apiserver.bll.event.event_prepare import collect_entity_ids
+
+    events = [
+        {"task": "t1"},
+        {"task": "t1", "allow_locked": False},
+        {"task": "t2", "allow_locked": True},
+        {"model": "m1", "model_event": True, "allow_locked": True},
+        {"task": "m2", "model_event": True},
+        {"allow_locked": True},
+    ]
+    tasks, models = collect_entity_ids(events)
+    assert tasks == {"t1": False, "t2": True}
+    assert models == {"m1": True, "m2": False}
+    assert events[3] == {"task": "m1", "model_event": True}
+    assert events[0] == {"task": "t1", "model_event": False}
+    assert events[5] == {"model_event": False}
+
+
+def test_collect_entity_ids_refuses_inconsistent_input():
+    from apiserver.bll.event.event_prepare import collect_entity_ids
+
+    with pytest.raises(errors.bad_request.ValidationError):
+        collect_entity_ids([{"task": "a"}, {"task": "a", "allow_locked": True}])
+    with pytest.raises(errors.bad_request.ValidationError):
+        collect_entity_ids([{"task": "a"}, {"task": "a", "model_event": True}])
