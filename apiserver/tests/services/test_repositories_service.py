@@ -18,6 +18,7 @@ from apiserver.idp import git_credentials as store
 from apiserver.service_repo import ServiceRepo
 from apiserver.services import repositories as svc
 from apiserver.tests.db import ensure_db
+from apiserver.utilities.partial_version import PartialVersion
 
 ensure_db()
 URL = "https://github.com/acme/cars"
@@ -54,8 +55,17 @@ def call(user, data, role="user", token_kind="client", job_task=None):
 
 
 def run(endpoint, world, user, data, **kwargs):
+    """Run a handler as the call machinery does: with the request class of its endpoint built from the body."""
     c = call(user, data, **kwargs)
-    endpoint(c, world.company, None)
+    name = next(n for n in ServiceRepo.endpoint_names() if n.startswith("repositories.") and getattr(svc, n.split(".")[1]) is endpoint)
+    model = ServiceRepo._get_endpoint(name, PartialVersion("2.40")).request_data_model
+    try:
+        request = model(**data) if model else None
+        if request is not None:
+            request.validate()  # as APICall does before the handler
+    except (TypeError, ValueError) as refused:
+        raise errors.bad_request.ValidationError(str(refused)) from refused
+    endpoint(c, world.company, request)
     return c.result.data
 
 

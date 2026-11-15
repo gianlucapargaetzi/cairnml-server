@@ -9,6 +9,7 @@ CairnML keeps, which it changes, which it removed and what to use instead.
 - [Dataset migration](dataset-migration.md): the ID-based dataset workflow and the repository-based one.
 - [Auth and storage](auth-and-storage.md): sign-in, access keys, accounts, and how files reach the object storage.
 - [Agent metering](agent-metering.md): the decision on the upstream app metering and proxy path (not supported).
+- [Repository identifier names](repository-identifier.md): `ref` names a repository in the repositories API; the older names are deprecated.
 
 ## Policy
 
