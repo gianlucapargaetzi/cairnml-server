@@ -37,11 +37,19 @@ def main(argv=None) -> int:
     target = TARGETS.get(args.target)
     if target is None:
         return _usage(f"unknown target {args.target!r} (known: {', '.join(TARGETS)})")
-    schema = load_schema(args.schema)
+    try:
+        schema = load_schema(args.schema)
+    except (OSError, ValueError) as error:
+        return _usage(f"cannot read the schema in {args.schema}: {error}")
 
     if args.command == "check-callers":
-        allow = read_allow(args.allow) if args.allow else None
-        findings = check_callers(args.root, schema, set(target.services), allow or Allow())
+        if not args.root.exists():
+            return _usage(f"{args.root} does not exist")
+        try:
+            allow = read_allow(args.allow) if args.allow else Allow()
+            findings = check_callers(args.root, schema, set(target.services), allow)
+        except (OSError, ValueError, SyntaxError) as error:
+            return _usage(str(error))
         for finding in findings:
             print(finding)
         return 1 if findings else 0
@@ -52,12 +60,14 @@ def main(argv=None) -> int:
             return _usage(f"{name!r} is not a service of the target {args.target!r} ({', '.join(target.services)})")
         if name not in schema:
             return _usage(f"{name!r} is not in the schema folder {args.schema}")
-    stale = 0
-    for name in services:
+    rendered = {}
+    for name in services:  # render everything first, so a failure writes nothing
         try:
-            text = render_service(schema[name], target.session_package)
-        except Unsupported as error:
+            rendered[name] = render_service(schema[name], target.session_package)
+        except (Unsupported, ValueError) as error:
             return _usage(f"{name}: {error}")
+    stale = 0
+    for name, text in rendered.items():
         path = args.out / f"{name}.py"
         if args.check:
             if not path.is_file():

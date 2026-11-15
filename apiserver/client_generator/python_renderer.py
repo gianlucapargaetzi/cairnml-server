@@ -243,6 +243,8 @@ def _build_class(*, name, base, description, fields, required, schema, definitio
             params.append(f"{n}: {kinds[n].hint}")
         else:
             default = fields[n].get("default")
+            if isinstance(default, (list, dict)):
+                raise Unsupported(f"{where}.{n}: a list or object default is not supported (mutable default)")
             hint = kinds[n].hint
             params.append(f"{n}: {hint if hint == 'Any' else f'Optional[{hint}]'} = {_inline(default)}")
     params.append("**kwargs: Any")
@@ -273,7 +275,7 @@ def _build_class(*, name, base, description, fields, required, schema, definitio
 
 def _request_fields(action: Action):
     if not action.request:
-        raise Unsupported(f"{action.full_name}: batch requests are not supported yet")
+        raise Unsupported(f"{action.full_name}: no `request` (batch requests are not supported yet)")
     request = action.request
     if "properties" not in request and request.get("type", "object") != "object":
         raise Unsupported(f"{action.full_name}: the request is not an object")

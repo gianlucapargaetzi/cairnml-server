@@ -59,3 +59,31 @@ def test_unknown_service_or_target_is_a_usage_error(schema, tmp_path):
     assert bad_service.returncode == 2
     bad_target = _run("generate", "--target", "nope", "--schema", str(schema), "--out", str(out))
     assert bad_target.returncode == 2
+
+
+CALLERS = Path(__file__).parent / "fixtures" / "callers"
+
+
+def _check_callers(schema, root, *extra):
+    return _run("check-callers", "--target", "sdk", "--schema", str(schema), "--root", str(root), *extra)
+
+
+def test_check_callers_exit_codes(schema, tmp_path):
+    # the fixture schema is installed as `queues`, the one service of the sdk target
+    clean = tmp_path / "clean.py"
+    clean.write_text("from backend_api.services import queues\nqueues.GetByIdRequest(queue='q')\n")
+    assert _check_callers(schema, clean).returncode == 0
+
+    bad = tmp_path / "bad.py"
+    bad.write_text("from backend_api.services import queues\nqueues.CreateRequest(name='x')\n")
+    result = _check_callers(schema, bad)
+    assert result.returncode == 1
+    assert "queues.create is not in the schema" in result.stdout
+
+    allow = tmp_path / "allow.txt"
+    allow.write_text("exempt queues.create a test exemption\n")
+    assert _check_callers(schema, bad, "--allow", str(allow)).returncode == 0
+
+    allow.write_text("exempt queues.create\n")
+    assert _check_callers(schema, bad, "--allow", str(allow)).returncode == 2
+    assert _check_callers(schema, tmp_path / "missing").returncode == 2

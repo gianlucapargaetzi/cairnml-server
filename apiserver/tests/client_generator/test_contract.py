@@ -25,11 +25,11 @@ def handlers(services_dir=ROOT / "services"):
         for node in ast.walk(ast.parse(path.read_text())):
             if not (isinstance(node, ast.Call) and getattr(node.func, "id", None) == "endpoint" and node.args):
                 continue
-            if not isinstance(node.args[0], ast.Constant):
-                continue
+            assert isinstance(node.args[0], ast.Constant), f"{path}:{node.lineno}: the endpoint name is not a literal"
             min_version = "1.0"
             for keyword in node.keywords:
                 if keyword.arg == "min_version":
+                    assert isinstance(keyword.value, ast.Constant), f"{path}:{node.lineno}: min_version is not a literal"
                     min_version = keyword.value.value
             found[node.args[0].value].append(min_version)
     return found

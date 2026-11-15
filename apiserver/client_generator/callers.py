@@ -9,6 +9,7 @@ The allow file has one line per exception, `exempt <service.action> <reason>` (t
 lines starting with `#` are ignored.
 """
 import ast
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Set
@@ -65,7 +66,7 @@ class _Visitor(ast.NodeVisitor):
     def visit_ImportFrom(self, node):
         if node.module and node.module.split(".")[-1] == "services":
             for alias in node.names:
-                if alias.name in self.generated:
+                if alias.name in self.requests:
                     self.aliases[alias.asname or alias.name] = alias.name
         self.generic_visit(node)
 
@@ -83,9 +84,7 @@ class _Visitor(ast.NodeVisitor):
             return
         action = self.requests[service].get(class_name)
         if action is None:
-            from re import sub
-
-            snake = sub(r"(?<!^)(?=[A-Z])", "_", class_name[: -len("Request")]).lower()
+            snake = re.sub(r"(?<!^)(?=[A-Z])", "_", class_name[: -len("Request")]).lower()
             if f"{service}.{snake}" not in self.allow.exempt:
                 self.report(node, f"{service}.{snake} is not in the schema ({service}.{class_name})")
             return
