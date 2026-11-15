@@ -31,7 +31,7 @@ from apiserver.bll.access import (
     shared_project_ids,
 )
 from apiserver.bll.membership import my_projects
-from apiserver.database.model.auth import Role, User
+from apiserver.database.model.auth import Role, AuthUser
 from apiserver.database.model.project import Project
 from apiserver.database.model.queue import Queue
 from apiserver.database.model.task.task import Task
@@ -147,7 +147,7 @@ class QueueAccessBLL:
             from apiserver.database.model.device import Device, DeviceKind
 
             device = Device.objects(id=device_id, company=company_id).first()
-            owner_disabled = User.objects(id=device.user, idp_disabled=True).first() is not None if device else False
+            owner_disabled = AuthUser.objects(id=device.user, idp_disabled=True).first() is not None if device else False
             if device is None or device.kind != DeviceKind.agent or device.revoked or not device.queue or owner_disabled:
                 raise errors.bad_request.InvalidQueueId(ids=sorted(queue_ids))
             own = Queue.objects(id=device.queue, company=company_id, created_by=device.user).first()
@@ -157,7 +157,7 @@ class QueueAccessBLL:
                 queue.id
                 for queue in Queue.objects(company=company_id, id__in=list(queue_ids), created_by=identity.user)
             }
-            if User.objects(id=identity.user, idp_disabled=True).first() is not None:
+            if AuthUser.objects(id=identity.user, idp_disabled=True).first() is not None:
                 owned = set()  # a deactivated user serves nothing, not even their own queues (R25)
             invalid = queue_ids - owned
         if invalid:

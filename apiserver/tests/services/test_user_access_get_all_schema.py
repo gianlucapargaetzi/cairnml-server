@@ -6,7 +6,7 @@ from uuid import uuid4
 
 import pytest
 
-from apiserver.database.model.auth import User
+from apiserver.database.model.auth import AuthUser
 from apiserver.database.model.project import Project
 from apiserver.database.model.user_access import UserAccess
 from apiserver.schema import SchemaReader
@@ -22,7 +22,7 @@ ensure_db()
 def company():
     company = f"c-ua-{uuid4().hex[:8]}"
     now = datetime.utcnow()
-    User(id="u1", name="U", company=company, role="user", created=now).save()
+    AuthUser(id="u1", name="U", company=company, role="user", created=now).save()
     Project(id=f"p-{company}", company=company, user="u1", name="P", basename="P", created=now, last_update=now).save()
     UserAccess(
         id=f"a-{company}",
@@ -38,7 +38,7 @@ def company():
         created=now,
     ).save()
     yield company
-    for model in (UserAccess, Project, User):
+    for model in (UserAccess, Project, AuthUser):
         model.objects(company=company).delete()
 
 

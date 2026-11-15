@@ -5,7 +5,7 @@ import uuid
 from unittest import TestCase
 
 from apiserver import database as db
-from apiserver.database.model.auth import User
+from apiserver.database.model.auth import AuthUser
 from apiserver.idp.checks import AccessDenied, check_device
 from apiserver.idp.directory import DirectoryError, DirectoryUser
 from apiserver.idp.user_sync import import_missing, sync_once
@@ -48,13 +48,13 @@ class TestUserSyncAgainstTheDatabase(TestCase):
             "stayer": DirectoryUser(True, (ADMIN,)),
         })
         sync_once(directory, ADMIN)
-        leaver = User.objects(id=self.leaver.id).get()
-        stayer = User.objects(id=self.stayer.id).get()
+        leaver = AuthUser.objects(id=self.leaver.id).get()
+        stayer = AuthUser.objects(id=self.stayer.id).get()
         self.assertTrue(leaver.idp_disabled)
         self.assertFalse(stayer.idp_disabled)
         self.assertEqual(stayer.role, "admin")
         with self.assertRaises(AccessDenied):
-            check_device(Device.objects(id=device.id).get(), User.objects(id=leaver.id).get())
+            check_device(Device.objects(id=device.id).get(), AuthUser.objects(id=leaver.id).get())
 
     def test_directory_users_without_a_cairnml_user_are_created_and_the_others_are_not(self):
         newcomer = f"newcomer-{uuid.uuid4().hex}"
@@ -71,14 +71,14 @@ class TestUserSyncAgainstTheDatabase(TestCase):
             newcomer: DirectoryUser(True, (ADMIN,)),
             retired: DirectoryUser(False, ()),
         })
-        self.addCleanup(lambda: User.objects(idp_subject__in=[f"{self.issuer}|{newcomer}", f"{self.issuer}|{retired}"]).delete())
+        self.addCleanup(lambda: AuthUser.objects(idp_subject__in=[f"{self.issuer}|{newcomer}", f"{self.issuer}|{retired}"]).delete())
         created = import_missing(directory, self.issuer, ADMIN)
         self.assertEqual(created, 1)
-        user = User.objects(idp_subject=f"{self.issuer}|{newcomer}").get()
+        user = AuthUser.objects(idp_subject=f"{self.issuer}|{newcomer}").get()
         self.assertEqual(user.name, "newcomer")
         self.assertEqual(user.role, "admin")
-        self.assertFalse(User.objects(idp_subject=f"{self.issuer}|{retired}").first())
-        self.assertEqual(User.objects(idp_subject=f"{self.issuer}|stayer").count(), 1)
+        self.assertFalse(AuthUser.objects(idp_subject=f"{self.issuer}|{retired}").first())
+        self.assertEqual(AuthUser.objects(idp_subject=f"{self.issuer}|stayer").count(), 1)
         self.assertEqual(import_missing(directory, self.issuer, ADMIN), 0)
 
     def test_disabling_an_owner_audits_its_live_devices(self):

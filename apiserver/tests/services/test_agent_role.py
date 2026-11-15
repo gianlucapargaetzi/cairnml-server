@@ -19,7 +19,7 @@ class FakeQuery:
 
 
 class FakeCollection:
-    """Stands in for Device.objects / User.objects: returns the one given object for any lookup."""
+    """Stands in for Device.objects / AuthUser.objects: returns the one given object for any lookup."""
 
     def __init__(self, obj):
         self.obj = obj
@@ -41,7 +41,7 @@ def exchange_as(monkeypatch, owner, kind):
 
     monkeypatch.setattr(devices, "unverified_issuer", lambda _assertion: "dev_1")
     monkeypatch.setattr(devices.Device, "objects", FakeCollection(device))
-    monkeypatch.setattr(devices.User, "objects", FakeCollection(owner))
+    monkeypatch.setattr(devices.AuthUser, "objects", FakeCollection(owner))
     monkeypatch.setattr(devices, "load_public_key", lambda _key: None)
     monkeypatch.setattr(devices, "verify_assertion",
                         lambda *_a, **_k: {"jti": "j1", "exp": 2e10})

@@ -12,7 +12,7 @@ from apiserver.database.model import EntityVisibility
 from apiserver.database.model.auth import Role
 from apiserver.database.model.project import Project, ProjectMember, ProjectRole, ProjectVisibility
 from apiserver.database.model.task.task import Task, TaskStatus
-from apiserver.database.model.user import User
+from apiserver.database.model.user import UserProfile
 from apiserver.service_repo.auth import Identity
 from apiserver.services import projects as svc
 from apiserver.tests.db import ensure_db
@@ -63,7 +63,7 @@ def make_project(company, id_, owner="owner1", parent=None, visibility=ProjectVi
 
 
 def make_user(company, id_, name):
-    User(id=id_, company=company, name=name).save()
+    UserProfile(id=id_, company=company, name=name).save()
 
 
 def make_task(company, project_id, user, created, status=TaskStatus.completed, id_=None, system_tags=None):

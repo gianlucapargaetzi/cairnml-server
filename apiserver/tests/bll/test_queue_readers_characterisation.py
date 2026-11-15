@@ -15,7 +15,7 @@ from apiserver.bll.access import resource_ids_shared_with
 from apiserver.bll.queue.queue_access import QueueAccessBLL
 from apiserver.database.model.share import Share
 from apiserver.apierrors import errors
-from apiserver.database.model.auth import Role, User
+from apiserver.database.model.auth import Role, AuthUser
 from apiserver.database.model.project import Project, ProjectMember, ProjectRole, ProjectVisibility
 from apiserver.database.model.queue import Queue
 from apiserver.service_repo.auth import Identity
@@ -70,7 +70,7 @@ def company():
 def world(company):
     """ Five users, a root project of the owner with the member in it, and six queues covering every way of access """
     for user in (OWNER, GRANTEE, MEMBER, STRANGER, ADMIN):
-        User(id=user, name=user, company=company, created=datetime.utcnow()).save()
+        AuthUser(id=user, name=user, company=company, created=datetime.utcnow()).save()
     root = Project(
         id=uuid4().hex, company=company, user=OWNER, name="root", basename="root", created=datetime.utcnow(),
         visibility=ProjectVisibility.private,

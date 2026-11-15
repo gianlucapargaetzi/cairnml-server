@@ -36,8 +36,8 @@ from apiserver.bll.event.event_common import EventType
 from apiserver.bll.project import project_ids_with_children
 from apiserver.config_repo import config
 from apiserver.config.info import get_default_company
-from apiserver.database.model import EntityVisibility, User
-from apiserver.database.model.auth import Role, User as AuthUser
+from apiserver.database.model import EntityVisibility, UserProfile
+from apiserver.database.model.auth import Role, AuthUser
 from apiserver.database.model.model import Model
 from apiserver.database.model.project import Project
 from apiserver.database.model.task.task import (
@@ -71,7 +71,7 @@ class PrePopulate:
     task_cls: Type[Task]
     project_cls: Type[Project]
     model_cls: Type[Model]
-    user_cls: Type[User]
+    user_cls: Type[UserProfile]
     auth_user_cls: Type[AuthUser]
 
     @attr.s(auto_attribs=True)
@@ -89,9 +89,9 @@ class PrePopulate:
         if not hasattr(cls, "project_cls"):
             cls.project_cls = cls._get_entity_type("database.model.project.Project")
         if not hasattr(cls, "user_cls"):
-            cls.user_cls = cls._get_entity_type("database.model.User")
+            cls.user_cls = cls._get_entity_type("database.model.UserProfile")
         if not hasattr(cls, "auth_user_cls"):
-            cls.auth_user_cls = cls._get_entity_type("database.model.auth.User")
+            cls.auth_user_cls = cls._get_entity_type("database.model.auth.AuthUser")
 
     class JsonLinesWriter:
         def __init__(self, file: BinaryIO):
@@ -540,7 +540,7 @@ class PrePopulate:
         return user
 
     @classmethod
-    def _cleanup_be_user(cls, user: User):
+    def _cleanup_be_user(cls, user: UserProfile):
         user.company = ""
         user.preferences = None
         return user

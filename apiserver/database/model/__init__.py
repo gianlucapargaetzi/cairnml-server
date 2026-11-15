@@ -5,7 +5,7 @@ from mongoengine import Document, StringField
 from apiserver.apierrors import errors
 from apiserver.database.model.base import DbModelMixin, ABSTRACT_FLAG
 from apiserver.database.model.company import Company
-from apiserver.database.model.user import User
+from apiserver.database.model.user import UserProfile
 
 
 class AttributedDocument(DbModelMixin, Document):
@@ -15,7 +15,7 @@ class AttributedDocument(DbModelMixin, Document):
     """
     meta = ABSTRACT_FLAG
     company = StringField(required=True, reference_field=Company)
-    user = StringField(reference_field=User)
+    user = StringField(reference_field=UserProfile)
 
 
 def validate_id(cls, company, **kwargs):

@@ -12,7 +12,7 @@ import pytest
 from apiserver.apierrors import errors
 from apiserver.apimodels.tasks import DequeueRequest
 from apiserver.bll.queue.queue_access import QueueAccessBLL
-from apiserver.database.model.auth import Role, User
+from apiserver.database.model.auth import Role, AuthUser
 from apiserver.database.model.queue import Entry, Queue
 from apiserver.database.model.share import Share
 from apiserver.database.model.task.task import Execution, Task, TaskStatus
@@ -35,7 +35,7 @@ def agent_of(company, owner):
 
 
 def make_user(company, user_id, role=Role.user, idp_disabled=False):
-    User(id=user_id, name=user_id, company=company, created=datetime.utcnow(), role=role,
+    AuthUser(id=user_id, name=user_id, company=company, created=datetime.utcnow(), role=role,
          idp_disabled=idp_disabled).save()
 
 

@@ -22,7 +22,7 @@ from apiserver.bll.model import Metadata
 from apiserver.bll.organization import OrgBLL, Tags
 from apiserver.bll.project import ProjectBLL, ProjectWorkloads
 from apiserver.config_repo import config
-from apiserver.database.model import User, AttributedDocument, EntityVisibility
+from apiserver.database.model import UserProfile, AttributedDocument, EntityVisibility
 from apiserver.database.model.model import Model
 from apiserver.database.model.project import Project
 from apiserver.database.model.task.task import Task, TaskType
@@ -75,7 +75,7 @@ def get_tags(call: APICall, company, request: TagsRequest):
 def get_user_companies(call: APICall, company_id: str, _):
     users = [
         {"id": u.id, "name": u.name, "avatar": u.avatar}
-        for u in User.objects(company=company_id).only("avatar", "name", "company")
+        for u in UserProfile.objects(company=company_id).only("avatar", "name", "company")
     ]
 
     call.result.data = {
@@ -327,7 +327,7 @@ def download_for_get_all(call: APICall, company, request: DownloadForGetAllReque
         call_data = json.loads(request_data)
         request = PrepareDownloadForGetAllRequest(**call_data)
     except Exception as ex:
-        raise errors.server_error.DataError("failed parsing prepared data", ex=ex)
+        raise errors.server_error.DataError("failed parsing prepared data", ex=ex) from ex
 
     class SingleLine:
         @staticmethod

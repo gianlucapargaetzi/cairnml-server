@@ -11,7 +11,7 @@ from apiserver.bll.user import UserBLL
 from apiserver.config_repo import config
 from apiserver.config.info import get_version, get_build_number
 from apiserver.database.errors import translate_errors_context
-from apiserver.database.model.auth import User, Role
+from apiserver.database.model.auth import AuthUser, Role
 from apiserver.database.model.company import Company
 from apiserver.service_repo import APICall, ServiceRepo
 from apiserver.service_repo.auth import Identity, Token
@@ -34,7 +34,7 @@ class AuthBLL:
             if company_id:
                 query.update(company=company_id)
 
-            user = User.objects(**query).first()
+            user = AuthUser.objects(**query).first()
             if not user:
                 raise errors.bad_request.InvalidUserId(**query)
 
@@ -78,7 +78,7 @@ class AuthBLL:
             if not Company.objects(id=request.company).only("id"):
                 raise errors.bad_request.InvalidId(company=request.company)
 
-            user = User(
+            user = AuthUser(
                 id=database.utils.id(),
                 name=request.name,
                 company=request.company,
@@ -104,7 +104,7 @@ class AuthBLL:
                 user.delete()
                 raise errors.server_error.GeneralError(
                     "failed adding new user", ex=str(ex)
-                )
+                ) from ex
 
             return user.id
 
@@ -138,7 +138,7 @@ class AuthBLL:
 
         with translate_errors_context():
             query = dict(id=user_id, company=company_id)
-            res = User.objects(**query).delete()
+            res = AuthUser.objects(**query).delete()
             if not res:
                 raise errors.bad_request.InvalidUserId(**query)
         try:

@@ -8,7 +8,7 @@ from typing import Optional
 
 from mongoengine import Q
 
-from apiserver.database.model.auth import User
+from apiserver.database.model.auth import AuthUser
 from apiserver.database.model.project import Project
 
 
@@ -31,7 +31,7 @@ def is_member(company: str, project_id: str, user: str) -> bool:
 
 
 def is_active(user: str) -> bool:
-    return bool(user) and User.objects(id=user, idp_disabled=True).only("id").first() is None
+    return bool(user) and AuthUser.objects(id=user, idp_disabled=True).only("id").first() is None
 
 
 def grant_applies(

@@ -38,7 +38,7 @@ from apiserver.bll.queue.queue_access import QueueAccessBLL
 from apiserver.bll.queue.queue_bll import MOVE_FIRST, MOVE_LAST
 from apiserver.bll.workers import WorkerBLL
 from apiserver.config_repo import config
-from apiserver.database.model.auth import User
+from apiserver.database.model.auth import AuthUser
 from apiserver.database.model.queue import Queue
 from apiserver.database.model.share import Share
 from apiserver.database.model.project import Project
@@ -515,7 +515,7 @@ def add_user(call: APICall, company_id: str, request: UserRequest):
     QueueAccessBLL.assert_can_manage(call.identity, company_id, request.queue)
     refuse_inactive(call.identity.user)
     _get_queue_or_fail(company_id, request.queue)
-    if not User.objects(id=request.user, company=company_id).only("id").first():
+    if not AuthUser.objects(id=request.user, company=company_id).only("id").first():
         raise errors.bad_request.InvalidUserId(id=request.user)
 
     if find_share(company_id, "queue", request.queue, "user", user=request.user):
