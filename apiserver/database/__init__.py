@@ -6,7 +6,6 @@ from jsonmodels import models
 from jsonmodels.errors import ValidationError
 from jsonmodels.fields import StringField
 from mongoengine import register_connection
-from mongoengine.connection import get_connection, disconnect
 
 from apiserver.config_repo import config
 from .defs import Database
@@ -123,20 +122,6 @@ class DatabaseFactory:
     @classmethod
     def get_hosts(cls):
         return [entry.host for entry in cls.get_entries()]
-
-    @classmethod
-    def get_aliases(cls):
-        return [entry.alias for entry in cls.get_entries()]
-
-    @classmethod
-    def reconnect(cls):
-        for entry in cls.get_entries():
-            # there is bug in the current implementation that prevents
-            # reconnection from work so workaround this
-            # get_connection(entry.alias, reconnect=True)
-            disconnect(entry.alias)
-            register_connection(**entry.to_struct())
-            get_connection(entry.alias)
 
 
 db = DatabaseFactory()
