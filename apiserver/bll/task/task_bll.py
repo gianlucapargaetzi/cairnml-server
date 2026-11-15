@@ -45,6 +45,7 @@ from apiserver.service_repo.auth import Identity
 from apiserver.utilities.dicts import nested_set
 from apiserver.utilities.parameter_key_escaper import mongoengine_safe
 from .artifacts import artifacts_prepare_for_save
+from .clone import merged_configuration, merged_hyperparams
 from .param_utils import params_prepare_for_save
 from .utils import (
     ChangeStatusRequest,
@@ -241,26 +242,12 @@ class TaskBLL:
         )
 
         params_dict = {}
-        if hyperparams:
-            params_dict["hyperparams"] = hyperparams
-        elif hyperparams_overrides:
-            updated_hyperparams = {
-                sec: {k: value for k, value in sec_data.items()}
-                for sec, sec_data in (task.hyperparams or {}).items()
-            }
-            for section, section_data in hyperparams_overrides.items():
-                for key, value in section_data.items():
-                    nested_set(updated_hyperparams, (section, key), value)
+        updated_hyperparams = merged_hyperparams(task, hyperparams, hyperparams_overrides)
+        if updated_hyperparams:
             params_dict["hyperparams"] = updated_hyperparams
 
-        if configuration:
-            params_dict["configuration"] = configuration
-        elif configuration_overrides:
-            updated_configuration = {
-                k: value for k, value in (task.configuration or {}).items()
-            }
-            for key, value in configuration_overrides.items():
-                updated_configuration[key] = value
+        updated_configuration = merged_configuration(task, configuration, configuration_overrides)
+        if updated_configuration:
             params_dict["configuration"] = updated_configuration
 
         now = datetime.now(timezone.utc)

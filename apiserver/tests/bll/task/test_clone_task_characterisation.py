@@ -640,3 +640,36 @@ def test_nothing_is_tagged_or_touched_when_validation_fails(company, stubs):
         clone(src, project="no-project")
     stubs.org.update_tags.assert_not_called()
     stubs.project_time.assert_not_called()
+
+
+# --- the merge stages alone (no database) ---------------------------------
+
+
+def _task(**kw):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(hyperparams=kw.get("hyperparams"), configuration=kw.get("configuration"))
+
+
+def test_merged_hyperparams_alone():
+    from apiserver.bll.task.clone import merged_hyperparams
+
+    task = _task(hyperparams={"A": {"x": 1, "y": 2}})
+    assert merged_hyperparams(task, None, None) is None
+    assert merged_hyperparams(task, {"B": 1}, {"A": {"x": 9}}) == {"B": 1}
+    assert merged_hyperparams(task, None, {"A": {"x": 9}, "C": {"z": 3}}) == {
+        "A": {"x": 9, "y": 2},
+        "C": {"z": 3},
+    }
+    assert task.hyperparams == {"A": {"x": 1, "y": 2}}
+    assert merged_hyperparams(_task(), None, {"A": {"x": 9}}) == {"A": {"x": 9}}
+
+
+def test_merged_configuration_alone():
+    from apiserver.bll.task.clone import merged_configuration
+
+    task = _task(configuration={"a": 1, "b": 2})
+    assert merged_configuration(task, None, None) is None
+    assert merged_configuration(task, {"g": 1}, {"a": 9}) == {"g": 1}
+    assert merged_configuration(task, None, {"a": 9, "c": 3}) == {"a": 9, "b": 2, "c": 3}
+    assert task.configuration == {"a": 1, "b": 2}
