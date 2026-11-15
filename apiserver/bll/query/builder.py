@@ -1,4 +1,4 @@
-from typing import Optional, Sequence, Iterable, Union
+from typing import Optional, Iterable, Union
 
 from apiserver.config_repo import config
 
@@ -38,14 +38,3 @@ class Builder:
     @staticmethod
     def term(field: str, value) -> dict:
         return {"term": {field: value}}
-
-    @staticmethod
-    def normalize_range(
-        range_: Sequence[Union[int, float]],
-        ignore_value: Union[int, float] = RANGE_IGNORE_VALUE,
-    ) -> Optional[Sequence[Union[int, float]]]:
-        if not range_ or set(range_) == {ignore_value}:
-            return None
-        if len(range_) < 2:
-            return [range_[0]] * 2
-        return range_
