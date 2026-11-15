@@ -15,21 +15,18 @@ from apiserver.apimodels.devices import (
     ReassignRequest,
     RevokeRequest,
 )
-from apiserver.bll import repositories as repositories_bll
+from apiserver.bll import git_access
 from apiserver.bll.queue.agent_queue import allocate_agent_queue
-from apiserver.bll.dataset_layout import verify_dataset
 from apiserver.config_repo import config
 from apiserver.database.model.auth import Role, AuthUser
 from apiserver.database.model.device import Device, DeviceKind
 from apiserver.database.model.queue import Queue
 from apiserver.database.model.task.task import Task
-from apiserver.idp.git_reader import GitReader
 from apiserver.idp.assertion import AssertionInvalid, unverified_issuer, verify_assertion
 from apiserver.idp.audit import client_address, record as audit
 from apiserver.idp.checks import AccessDenied, check_device, check_job_issue
 from apiserver.bll import user_access
 from apiserver.idp.keys import load_public_key
-from apiserver.idp import git_credentials as store
 from apiserver.idp import public_origin
 from apiserver.idp.oidc import OidcError
 from apiserver.idp.replay import claim_jti
@@ -265,33 +262,8 @@ def git_token(call: APICall, company, request: GitTokenRequest):
     actor = claims.get("device") or claims.get("sub") or "unknown"
     if task is None:
         raise errors.bad_request.InvalidId("task not found")
-    # The repository of the task's code, or a dataset it names, is recorded for the task's project and read as
-    # bll/repositories.resolve says for the user who queued the task: the project owner's assignment, else the user's own, else
-    # without a credential if the host allows it, else the company's access.
-    repository = request.repository or (task.script.repository if task.script else None)
-    if not repository:
-        raise errors.bad_request.ValidationError("the task has no repository")
-    repo = repositories_bll.record_use_quietly(company, repository, "dataset" if request.repository else "code", task.user,
-                                               task.project)
-    if repo is None:
-        if request.repository:
-            raise errors.bad_request.ValidationError("the repository is not a hosted git repository")
-        return _stored_token(company, actor, request.task, repository, client_address(call))
-    user = (getattr(getattr(task, "execution", None), "enqueued_by", None)) or task.user
-    try:
-        answer, resolution = repositories_bll.token_for_job(company, repo, task.project, user)
-        if request.repository and "registry" not in repo.roles and resolution.entry is not None \
-                and resolution.entry.kind == "app":
-            with GitReader(repo.host, answer.get("token"), answer.get("username")) as reader:
-                verify_dataset(reader, repo.path)
-    except errors.bad_request.ValidationError as refused:
-        audit(actor, "git_token.refused", ip=client_address(call), company=company, device=claims.get("device"),
-              task=request.task, reason=str(refused))
-        raise
-    audit(actor, "git_token.issued" if answer["token"] else "git_token.public", ip=client_address(call), company=company,
-          device=claims.get("device"), task=request.task, repo=f"{repo.host}/{repo.path}", via="assignment",
-          access=resolution.entry.id if resolution.entry is not None else "", fallback=resolution.warning)
-    return answer
+    return git_access.issue_for_task(company, actor, claims.get("device"), task, request.task, request.repository,
+                                     client_address(call))
 
 
 
@@ -310,14 +282,3 @@ AGENT_NOTICE = (
 
 
 
-def _stored_token(company: str, actor: str, task_id: str, repository: str, ip=None) -> dict:
-    """The Git credential stored for the repository's host (and path prefix). Refused when none is stored."""
-    host, _path = store.host_and_path(repository)
-    entry = store.find_credential(company, repository)
-    if entry is None:
-        audit(actor, "git_token.refused", ip=ip, company=company, task=task_id, host=host, reason="no Git credentials stored")
-        raise errors.bad_request.ValidationError(
-            f"no Git credentials are stored for {host}: an admin adds them with the git_credentials.set call")
-    secret = store.secret_of(entry)
-    audit(actor, "git_token.issued", ip=ip, company=company, task=task_id, host=entry.host, path=entry.path)
-    return {"token": secret, "expires_at": None, "username": entry.username}

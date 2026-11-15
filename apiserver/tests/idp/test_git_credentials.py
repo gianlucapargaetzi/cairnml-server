@@ -143,12 +143,26 @@ class TestCredentialStore(TestCase):
         self.assertEqual([event.action for event in events], ["git_credential.set", "git_credential.deleted"])
         self.assertNotIn(SECRET, repr([event.to_mongo().to_dict() for event in events]))
 
+    def _task(self, repository):
+        from types import SimpleNamespace
+
+        return SimpleNamespace(user=self.actor, project=None, execution=None, script=SimpleNamespace(repository=repository))
+
+    def _not_a_hosted_repository(self):
+        from unittest import mock
+
+        from apiserver.bll import repositories as repositories_bll
+
+        return mock.patch.object(repositories_bll, "record_use_quietly", lambda *args, **kwargs: None)
+
     def test_a_stored_credential_is_handed_out_for_the_task_and_audited(self):
-        from apiserver.services.devices import _stored_token
+        from apiserver.bll import git_access
 
         store.set_credential(self.company, "gitlab.example.com", "team", "ci-bot", SECRET, self.actor)
         task_id = f"task-{uuid.uuid4().hex}"
-        answer = _stored_token(self.company, self.actor, task_id, "https://gitlab.example.com/team/project.git")
+        with self._not_a_hosted_repository():
+            answer = git_access.issue_for_task(self.company, self.actor, None,
+                                               self._task("https://gitlab.example.com/team/project.git"), task_id, None, None)
         self.assertEqual(answer, {"token": SECRET, "expires_at": None, "username": "ci-bot"})
         issued = AuditEvent.objects(actor=self.actor, action="git_token.issued").get()
         self.assertEqual(issued.detail["task"], task_id)
@@ -156,9 +170,10 @@ class TestCredentialStore(TestCase):
         self.assertNotIn(SECRET, repr(issued.to_mongo().to_dict()))
 
     def test_a_host_without_a_credential_is_refused_and_named(self):
-        from apiserver.services.devices import _stored_token
+        from apiserver.bll import git_access
 
-        with self.assertRaises(errors.bad_request.ValidationError) as ctx:
-            _stored_token(self.company, self.actor, "task-x", "https://gitlab.example.com/team/project")
+        with self._not_a_hosted_repository(), self.assertRaises(errors.bad_request.ValidationError) as ctx:
+            git_access.issue_for_task(self.company, self.actor, None, self._task("https://gitlab.example.com/team/project"),
+                                      "task-x", None, None)
         self.assertIn("gitlab.example.com", str(ctx.exception))
         self.assertIn("git_credentials.set", str(ctx.exception))
