@@ -11,6 +11,7 @@ from apiserver.bll.project import ProjectBLL
 from apiserver.bll.queue import QueueBLL
 from apiserver.bll.task import TaskBLL
 from apiserver.bll.task.task_operations import enqueue_task, delete_task
+from apiserver.bll.task.clone import CloneSpec
 from apiserver.bll.util import run_batch_operation
 from apiserver.database.model.project import Project
 from apiserver.database.model.task.task import Task, TaskType
@@ -120,8 +121,7 @@ def start_pipeline(call: APICall, company_id: str, request: StartPipelineRequest
         company_id=company_id,
         user_id=call.identity.user,
         identity=call.identity,
-        task_id=request.task,
-        hyperparams_overrides=hyperparams,
+        spec=CloneSpec(task_id=request.task, hyperparams_overrides=hyperparams),
     )
 
     _update_task_name(task)

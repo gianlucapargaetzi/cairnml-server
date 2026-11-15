@@ -15,6 +15,7 @@ import pytest
 from apiserver.apierrors import errors
 from apiserver.apimodels.tasks import TaskInputModel
 from apiserver.bll.task import task_bll as task_bll_module
+from apiserver.bll.task.clone import CloneSpec
 from apiserver.bll.task.task_bll import TaskBLL
 from apiserver.database.model.model import Model
 from apiserver.database.model.project import Project
@@ -131,8 +132,7 @@ def clone(source, company=None, **kw):
         company_id=company,
         user_id="cloner",
         identity=identity(company),
-        task_id=source.id,
-        **kw,
+        spec=CloneSpec(task_id=source.id, **kw),
     )
 
 
@@ -673,3 +673,40 @@ def test_merged_configuration_alone():
     assert merged_configuration(task, {"g": 1}, {"a": 9}) == {"g": 1}
     assert merged_configuration(task, None, {"a": 9, "c": 3}) == {"a": 9, "b": 2, "c": 3}
     assert task.configuration == {"a": 1, "b": 2}
+
+
+# --- the request object ---------------------------------------------------
+
+
+def test_from_request_maps_every_clone_request_field():
+    from apiserver.apimodels.tasks import CloneRequest
+
+    pairs = {
+        "new_task_name": "name", "new_task_comment": "comment", "new_task_parent": "parent",
+        "new_task_project": "project", "new_task_tags": "tags", "new_task_system_tags": "system_tags",
+        "new_task_hyperparams": "hyperparams", "new_task_configuration": "configuration",
+        "new_task_container": "container", "execution_overrides": "execution_overrides",
+        "script_overrides": "script_overrides", "validate_references": "validate_references",
+        "new_project_name": "new_project_name",
+    }
+    values = {
+        "new_task_name": "n", "new_task_comment": "c", "new_task_parent": "p", "new_task_project": "pr",
+        "new_task_tags": ["t"], "new_task_system_tags": ["s"], "new_task_hyperparams": {"h": 1},
+        "new_task_configuration": {"c": 1}, "new_task_container": {"i": 1}, "execution_overrides": {"e": 1},
+        "script_overrides": {"s": 1}, "validate_references": True, "new_project_name": "np",
+    }
+    request = CloneRequest(task="t1", new_task_input_models=[TaskInputModel(name="a", model="m")], **values)
+    spec = CloneSpec.from_request(request)
+    assert spec.task_id == "t1"
+    for request_field, spec_field in pairs.items():
+        assert getattr(spec, spec_field) == values[request_field], request_field
+    assert [(m.name, m.model) for m in spec.input_models] == [("a", "m")]
+    assert spec.hyperparams_overrides is None and spec.configuration_overrides is None
+
+
+def test_the_pipeline_spec_carries_only_the_task_and_the_hyperparams_overrides(company, stubs):
+    src = make_source(company)
+    new, _ = clone(src, hyperparams_overrides={"S": {"k": {"section": "S", "name": "k", "value": "v"}}})
+    row = stored(new)
+    assert row.hyperparams["S"]["k"].value == "v" and row.hyperparams["General"]["lr"].value == "0.1"
+    assert row.name == "source name"
