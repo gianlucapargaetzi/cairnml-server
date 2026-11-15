@@ -11,7 +11,7 @@ import jwt
 from cryptography.hazmat.primitives import serialization
 
 from apiserver import database as db
-from apiserver.database.model.auth import User
+from apiserver.database.model.auth import AuthUser
 from apiserver.idp.verifier import get_verifier
 from apiserver.idp.web_login import LoginRefused, finish_login, start_login
 
@@ -67,7 +67,7 @@ class TestWebLoginFlow(TestCase):
     def setUp(self):
         self.sub = f"web-{uuid.uuid4().hex}"
         self.store = Store()
-        self.addCleanup(lambda: User.objects(idp_subject=f"{ISSUER}|{self.sub}").delete())
+        self.addCleanup(lambda: AuthUser.objects(idp_subject=f"{ISSUER}|{self.sub}").delete())
 
     def login(self, nonce):
         return _sign({"sub": self.sub, "preferred_username": "webuser", "nonce": nonce, "typ": "ID"})
@@ -89,7 +89,7 @@ class TestWebLoginFlow(TestCase):
         user, identity = self.finish(state, token)
         self.assertEqual(identity.subject, self.sub)
         self.assertEqual(identity.id_token, token)  # kept for the logout, which ends this sign-in's session
-        self.assertTrue(User.objects(id=user.id).first().idp_subject.endswith(self.sub))
+        self.assertTrue(AuthUser.objects(id=user.id).first().idp_subject.endswith(self.sub))
 
     def test_a_state_can_be_used_only_once(self):
         state, nonce = self.start()
@@ -114,7 +114,7 @@ class TestWebLoginFlow(TestCase):
     def test_disabled_user_cannot_sign_in(self):
         state, nonce = self.start()
         user, _ = self.finish(state, self.login(nonce))
-        User.objects(id=user.id).update_one(set__idp_disabled=True)
+        AuthUser.objects(id=user.id).update_one(set__idp_disabled=True)
         state2, nonce2 = self.start()
         with self.assertRaises(LoginRefused):
             self.finish(state2, self.login(nonce2))

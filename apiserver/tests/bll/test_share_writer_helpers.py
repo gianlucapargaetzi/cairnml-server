@@ -7,7 +7,7 @@ import pytest
 
 from apiserver.apierrors import errors
 from apiserver.bll import access
-from apiserver.database.model.auth import User
+from apiserver.database.model.auth import AuthUser
 from apiserver.database.model.share import Share
 from apiserver.tests.db import ensure_db
 
@@ -21,8 +21,8 @@ def company():
 
 @pytest.fixture
 def users(company):
-    User(id="active", name="active", company=company, created=datetime.utcnow()).save()
-    User(id="gone", name="gone", company=company, created=datetime.utcnow(), idp_disabled=True).save()
+    AuthUser(id="active", name="active", company=company, created=datetime.utcnow()).save()
+    AuthUser(id="gone", name="gone", company=company, created=datetime.utcnow(), idp_disabled=True).save()
 
 
 def count(company):

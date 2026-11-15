@@ -8,7 +8,7 @@ import pytest
 
 from apiserver.apierrors import errors
 from apiserver.bll.queue.queue_bll import QueueBLL
-from apiserver.database.model.auth import Role, User
+from apiserver.database.model.auth import Role, AuthUser
 from apiserver.database.model.project import Project, ProjectMember, ProjectRole
 from apiserver.database.model.share import Share
 from apiserver.service_repo.auth import Identity
@@ -39,7 +39,7 @@ class FakeCall:
 @pytest.fixture
 def setup(company):
     for user in ("owner1", "u2", "stranger"):
-        User(id=user, name=user, company=company, created=datetime.utcnow()).save()
+        AuthUser(id=user, name=user, company=company, created=datetime.utcnow()).save()
     Project(id="root1", company=company, user="owner1", name="root1", basename="root1", created=datetime.utcnow(),
             members=[ProjectMember(user="u2", role=ProjectRole.read, added=datetime.utcnow(), added_by="owner1")]).save()
     return QueueBLL.create(company, name="queue endpoints", created_by="owner1")

@@ -23,7 +23,7 @@ from apiserver.apierrors import errors
 from apiserver.apimodels.projects import ProjectChildrenType
 from apiserver.bll.project.access import ProjectAccessBLL
 from apiserver.config_repo import config
-from apiserver.database.model import EntityVisibility, AttributedDocument, User
+from apiserver.database.model import EntityVisibility, AttributedDocument, UserProfile
 from apiserver.database.model.base import GetMixin
 from apiserver.database.model.model import Model
 from apiserver.database.model.project import Project
@@ -999,7 +999,7 @@ class ProjectBLL:
         user_ids = entity_cls.objects(query).distinct(field="user")
         if not user_ids:
             return []
-        users = User.objects(id__in=user_ids).only("id", "name")
+        users = UserProfile.objects(id__in=user_ids).only("id", "name")
         return [{"id": u.id, "name": u.name} for u in users]
 
     @classmethod
@@ -1068,7 +1068,7 @@ class ProjectBLL:
         users = result.get("users", [])
         names = {
             u.id: u.name
-            for u in User.objects(id__in=[group["_id"] for group in users[:limit] if group["_id"]]).only("id", "name")
+            for u in UserProfile.objects(id__in=[group["_id"] for group in users[:limit] if group["_id"]]).only("id", "name")
         }
         return {
             "period_days": period_days,

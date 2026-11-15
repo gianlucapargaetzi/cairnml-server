@@ -29,7 +29,7 @@ from mongoengine.errors import NotUniqueError
 from apiserver.apierrors import errors
 from apiserver.bll import access, user_access
 from apiserver.config_repo import config
-from apiserver.database.model.auth import Role, User
+from apiserver.database.model.auth import Role, AuthUser
 from apiserver.database.model.project import Project
 from apiserver.database.model.repository import ROLES, Assignment, RegistryEntry, Repository, RepositoryCheck
 from apiserver.database.model.share import Share
@@ -66,12 +66,12 @@ def parse(address: str) -> repo_address.RepoAddress:
 
 def admin_of(company: str) -> Optional[str]:
     """The admin: the one account that owns the shared entries and the company's credentials."""
-    found = User.objects(company=company, role__in=[Role.admin, Role.root]).order_by("created").first()
+    found = AuthUser.objects(company=company, role__in=[Role.admin, Role.root]).order_by("created").first()
     return found.id if found else None
 
 
 def _names(user_ids) -> dict:
-    return {user.id: user.name or user.id for user in User.objects(id__in=list(user_ids)).only("name")}
+    return {user.id: user.name or user.id for user in AuthUser.objects(id__in=list(user_ids)).only("name")}
 
 
 def find(company: str, address: str) -> Optional[Repository]:

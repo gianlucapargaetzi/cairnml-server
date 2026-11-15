@@ -14,7 +14,7 @@ from mongoengine import Q
 
 from apiserver.apierrors import errors
 from apiserver.config_repo import config
-from apiserver.database.model.auth import User
+from apiserver.database.model.auth import AuthUser
 from apiserver.database.model.project import Project
 from apiserver.database.model.user_access import UserAccess
 from apiserver.idp import git_credentials as store
@@ -135,7 +135,7 @@ def credentials_for(company: str, user: str, is_admin: bool) -> list:
     """Every credential the user sees, in one list: their own accesses, the company's GitHub App, and the company's Git
     credentials for other hosts. Each says who owns it, what it is valid for, whether it is valid, and whether this user
     may change it (an owner changes their own; an admin changes the company's)."""
-    me = User.objects(id=user).only("name").first()
+    me = AuthUser.objects(id=user).only("name").first()
     rows = [_row(entry, me.name if me else user, True)
             for entry in UserAccess.objects(company=company, user=user, scope="user").order_by("created")]
     rows += [_row(entry, "Company", is_admin)
@@ -232,7 +232,7 @@ def is_member(company: str, project_id: str, user: str) -> bool:
 
 
 def is_active(user: str) -> bool:
-    return bool(user) and User.objects(id=user, idp_disabled=True).only("id").first() is None
+    return bool(user) and AuthUser.objects(id=user, idp_disabled=True).only("id").first() is None
 
 
 def grant_applies(grant_root: str, project_root: Optional[str], owner_is_member: bool, user_is_member: bool,

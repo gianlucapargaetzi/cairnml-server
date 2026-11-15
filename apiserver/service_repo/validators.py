@@ -4,7 +4,7 @@ import jsonmodels.errors
 from apiserver.apierrors import errors, APIError
 from apiserver.config_repo import config
 from apiserver.database.model import Company
-from apiserver.database.model.auth import Role, User
+from apiserver.database.model.auth import Role, AuthUser
 from apiserver.service_repo import APICall
 from apiserver.service_repo.apicall import MissingIdentity
 from apiserver.service_repo.endpoint import Endpoint
@@ -203,7 +203,7 @@ def validate_impersonation(endpoint, call):
             query = dict(id=user_id)
         else:
             query = dict(id=user_id, company=identity.company)
-        user = User.objects(**query).first()
+        user = AuthUser.objects(**query).first()
         if not user:
             raise errors.bad_request.ImpersonationError("unknown user", **query)
 

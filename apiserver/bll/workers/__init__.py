@@ -24,7 +24,7 @@ from apiserver.apimodels.workers import (
 )
 from apiserver.config_repo import config
 from apiserver.database.errors import translate_errors_context
-from apiserver.database.model.auth import User
+from apiserver.database.model.auth import AuthUser
 from apiserver.database.model.company import Company
 from apiserver.database.model.project import Project
 from apiserver.database.model.queue import Queue
@@ -87,7 +87,7 @@ class WorkerBLL:
 
         with translate_errors_context():
             query = dict(id=user_id, company=company_id)
-            user = User.objects(**query).only("id", "name").first()
+            user = AuthUser.objects(**query).only("id", "name").first()
             if not user:
                 raise bad_request.InvalidUserId(**query)
             company = Company.objects(id=company_id).only("id", "name").first()

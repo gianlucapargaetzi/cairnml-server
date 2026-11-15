@@ -16,9 +16,9 @@ from apiserver.bll.project import ProjectBLL
 from apiserver.bll.user import UserBLL
 from apiserver.config_repo import config
 from apiserver.database.errors import translate_errors_context
-from apiserver.database.model.auth import Role, User as AuthUser
+from apiserver.database.model.auth import Role, AuthUser
 from apiserver.database.model.company import Company
-from apiserver.database.model.user import User
+from apiserver.database.model.user import UserProfile
 from apiserver.database.utils import parse_from_call
 from apiserver.service_repo import APICall, endpoint
 from apiserver.utilities.json import loads, dumps
@@ -42,7 +42,7 @@ def get_user(call, company_id, user_id, only=None):
         query = dict(id=user_id, company=company_id)
 
     with translate_errors_context("retrieving user"):
-        user = User.objects(**query)
+        user = UserProfile.objects(**query)
         if only:
             user = user.only(*only)
         res = user.first()
@@ -61,7 +61,7 @@ def get_by_id(call: APICall, company_id, request: UserRequest):
 @endpoint("users.get_all_ex")
 def get_all_ex(call: APICall, company_id, _):
     with translate_errors_context("retrieving users"):
-        res = User.get_many_with_join(company=company_id, query_dict=call.data)
+        res = UserProfile.get_many_with_join(company=company_id, query_dict=call.data)
 
         call.result.data = {"users": res}
 
@@ -82,7 +82,7 @@ def get_all_ex2_8(call: APICall, company_id, _):
             data = data.copy()
             data["id"] = list(active_users)
 
-        res = User.get_many_with_join(company=company_id, query_dict=data)
+        res = UserProfile.get_many_with_join(company=company_id, query_dict=data)
 
         call.result.data = {"users": res}
 
@@ -90,7 +90,7 @@ def get_all_ex2_8(call: APICall, company_id, _):
 @endpoint("users.get_all")
 def get_all(call: APICall, company_id, _):
     with translate_errors_context("retrieving users"):
-        res = User.get_many(
+        res = UserProfile.get_many(
             company=company_id, parameters=call.data, query_dict=call.data
         )
 
@@ -102,9 +102,9 @@ def get_current_user(call: APICall, company_id, _):
     user_id = call.identity.user
 
     projection = (
-        {"company.name"}.union(User.get_fields()).difference(User.get_exclude_fields())
+        {"company.name"}.union(UserProfile.get_fields()).difference(UserProfile.get_exclude_fields())
     )
-    res = User.get_many_with_join(
+    res = UserProfile.get_many_with_join(
         query=Q(id=user_id),
         company=company_id,
         override_projection=projection,
@@ -156,12 +156,12 @@ def update_user(user_id, company_id, data: dict) -> Tuple[int, dict]:
     :return: (updated fields count, updated fields) pair
     """
     update_fields = {
-        k: v for k, v in create_fields.items() if k in User.user_set_allowed()
+        k: v for k, v in create_fields.items() if k in UserProfile.user_set_allowed()
     }
     auth_user_update_fields = ("name",)
-    partial_update_dict = parse_from_call(data, update_fields, User.get_fields())
+    partial_update_dict = parse_from_call(data, update_fields, UserProfile.get_fields())
     with translate_errors_context("updating user"):
-        ret = User.safe_update(company_id, user_id, partial_update_dict)
+        ret = UserProfile.safe_update(company_id, user_id, partial_update_dict)
         auth_update = {
             k: v for k, v in partial_update_dict.items() if k in auth_user_update_fields
         }
@@ -229,7 +229,7 @@ def set_preferences(call: APICall, company_id, request: SetPreferencesRequest):
         updated, fields = 0, {}
     else:
         with translate_errors_context("updating user preferences"):
-            updated = User.objects(id=call.identity.user, company=company_id).update(
+            updated = UserProfile.objects(id=call.identity.user, company=company_id).update(
                 upsert=False, preferences=dumps(new_preferences)
             )
 

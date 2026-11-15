@@ -13,7 +13,7 @@ from typing import Optional, Set, Tuple
 
 from apiserver.bll import repositories as repos
 from apiserver.bll import repository_registry, user_access
-from apiserver.database.model.auth import User
+from apiserver.database.model.auth import AuthUser
 from apiserver.database.model.project import Project
 from apiserver.database.model.repository import Repository
 from apiserver.database.model.task.task import Task
@@ -189,7 +189,7 @@ def runs_of(company: str, user: str, is_admin: bool, repo: Repository) -> list:
         if role is None:
             continue
         if task.user not in users:
-            owner = User.objects(id=task.user).only("name").first() if task.user else None
+            owner = AuthUser.objects(id=task.user).only("name").first() if task.user else None
             users[task.user] = (owner.name if owner is not None else None) or task.user or ""
         if task.project not in names:
             project = Project.objects(company=company, id=task.project).only("name").first()

@@ -7,7 +7,7 @@ from apiserver.apimodels.project_access import (
     AddMemberRequest, GetMembersRequest, RemoveMemberRequest,
     SetVisibilityRequest, TransferOwnershipRequest, UpdateMemberRoleRequest,
 )
-from apiserver.database.model.auth import Role, User
+from apiserver.database.model.auth import Role, AuthUser
 from apiserver.database.model.project import Project, ProjectMember, ProjectRole, ProjectVisibility
 from apiserver.service_repo.auth import Identity
 from apiserver.services import project_access as svc
@@ -28,7 +28,7 @@ def make_root(visibility=ProjectVisibility.private, members=()):
 
 
 def make_user(user_id):
-    User(id=user_id, name=user_id, company=COMPANY, created=datetime.utcnow()).save()
+    AuthUser(id=user_id, name=user_id, company=COMPANY, created=datetime.utcnow()).save()
 
 
 def identity(user, role=Role.user):

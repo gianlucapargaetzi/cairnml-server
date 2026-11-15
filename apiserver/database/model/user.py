@@ -6,10 +6,12 @@ from apiserver.database.model.base import GetMixin
 from apiserver.database.model.company import Company
 
 
-class User(DbModelMixin, Document):
+class UserProfile(DbModelMixin, Document):
+    # the collection name is pinned: renaming the class must not move the data
     meta = {
         "db_alias": Database.backend,
         "strict": strict,
+        "collection": "user",
     }
     get_all_query_options = GetMixin.QueryParameterOptions(list_fields=("id",))
 

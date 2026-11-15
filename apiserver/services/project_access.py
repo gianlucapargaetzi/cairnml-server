@@ -29,7 +29,7 @@ from apiserver.bll import repositories as repositories_bll
 from apiserver.bll.project.access import ProjectAccessBLL
 from apiserver.bll.queue.queue_access import QueueAccessBLL
 from apiserver.bll.access import ADMIN_ROLES
-from apiserver.database.model.auth import User
+from apiserver.database.model.auth import AuthUser
 from apiserver.database.model.queue import Queue
 from apiserver.database.model.project import Project, ProjectMember, ProjectRole, ProjectVisibility
 from apiserver.database.utils import get_options
@@ -100,7 +100,7 @@ def add_member(call: APICall, company_id: str, request: AddMemberRequest):
     ProjectAccessBLL.assert_can(call.identity, request.project, "admin")
     _check_role(request.role)
 
-    if not User.objects(id=request.user, company=company_id).only("id").first():
+    if not AuthUser.objects(id=request.user, company=company_id).only("id").first():
         raise errors.bad_request.InvalidUserId(id=request.user)
 
     root = _load_root(company_id, root_id)

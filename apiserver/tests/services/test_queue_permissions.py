@@ -20,7 +20,7 @@ from apiserver.apimodels.queues import (
 )
 from apiserver.apimodels.tasks import DequeueRequest
 from apiserver.bll.queue.queue_access import QueueAccessBLL
-from apiserver.database.model.auth import Role, User
+from apiserver.database.model.auth import Role, AuthUser
 from apiserver.database.model.project import Project, ProjectMember, ProjectRole, ProjectVisibility
 from apiserver.bll.access import resource_ids_shared_with
 from apiserver.database.model.queue import Entry, Queue
@@ -54,7 +54,7 @@ class FakeCall:
 
 
 def make_user(company, user_id):
-    User(id=user_id, name=user_id, company=company, created=datetime.utcnow()).save()
+    AuthUser(id=user_id, name=user_id, company=company, created=datetime.utcnow()).save()
 
 
 class UpdateCall(FakeCall):

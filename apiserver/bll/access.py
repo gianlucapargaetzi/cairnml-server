@@ -19,7 +19,7 @@ from mongoengine import ValidationError as ModelValidationError
 
 from apiserver.apierrors import errors
 from apiserver.bll.user_access import grant_applies, is_active, is_member, my_projects, root_project
-from apiserver.database.model.auth import Role, User
+from apiserver.database.model.auth import Role, AuthUser
 from apiserver.database.model.repository import Repository
 from apiserver.database.model.project import Project, ProjectRole
 from apiserver.database.model.queue import Queue
@@ -161,7 +161,7 @@ def require(company: str, user: str, is_admin: bool, resource_type: str, resourc
 
 
 def _is_admin(company: str, actor: str) -> bool:
-    found = User.objects(id=actor, company=company).only("role").first()
+    found = AuthUser.objects(id=actor, company=company).only("role").first()
     return found is not None and found.role in ADMIN_ROLES
 
 
