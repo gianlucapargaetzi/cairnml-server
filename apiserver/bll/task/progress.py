@@ -6,9 +6,10 @@ seconds. That is too often for the database, so the latest value lives in Redis 
 database only gets a coarse value (runtime.progress, runtime.progress_label), so that lists, exports and a run
 that has ended still have one.
 """
+
 import json
 import time
-from typing import Any, Dict, Mapping, Optional, Sequence
+from typing import Any, Dict, List, Mapping, NamedTuple, Optional, Sequence
 
 from apiserver.apierrors import errors
 
@@ -43,6 +44,17 @@ def clean_bars(bars: Optional[Sequence[Mapping[str, Any]]]) -> Sequence[Dict[str
     return cleaned
 
 
+class StoredChange(NamedTuple):
+    """What a report changes in the database: values to write and runtime fields to remove"""
+
+    add_or_update: Dict[str, str]
+    remove: List[str]
+
+
+NO_CHANGE = StoredChange(add_or_update={}, remove=[])
+COARSE_FIELDS = ["progress", "progress_label"]
+
+
 class TaskProgress:
     def __init__(self, redis):
         self.redis = redis
@@ -54,10 +66,11 @@ class TaskProgress:
         percent: Optional[int],
         bars: Optional[Sequence[Mapping[str, Any]]],
         now: Optional[float] = None,
-    ) -> Optional[Dict[str, Any]]:
+    ) -> StoredChange:
         """
-        Remember the latest progress of the task. Returns what has to be written to the database, or None.
+        Remember the latest progress of the task and return what has to change in the database.
         No bars: the run is idle, shown as an animation. The percentage is None while no bar has a known total: then the last known one stays.
+        An idle report clears the coarse value the database holds from the last bar, unless the previous live value was idle already.
         """
         if percent is not None and not 0 <= percent <= 100:
             raise errors.bad_request.ValidationError("percent must be between 0 and 100", field="percent")
@@ -67,29 +80,44 @@ class TaskProgress:
         previous = self._load(self.redis.get(key))
         if not bars:
             percent = None  # idle: no bar that counts is running (loading, saving, a loop that is not the pinned one)
-        elif percent is None:
+            # clear the stored coarse value unless the last live value already was idle (nothing to clear then)
+            clear = previous.get("bars") != []
+            self._save(key, percent, bars, now, persisted=None, persisted_label=None)
+            return StoredChange(add_or_update={}, remove=list(COARSE_FIELDS) if clear else [])
+
+        if percent is None:
             percent = previous.get("percent")  # no bar has a known total (yet): the last percentage stays
         persisted = previous.get("persisted")
 
-        label = bars[0]["label"] if bars else ""
-        persist = bars and percent is not None and (
+        label = bars[0]["label"]
+        persist = percent is not None and (
             persisted is None
             or abs(percent - persisted) >= PERSIST_STEP
             or percent == 100
             or label != previous.get("persisted_label", label)
         )
+        self._save(
+            key,
+            percent,
+            bars,
+            now,
+            persisted=percent if persist else persisted,
+            persisted_label=label if persist else previous.get("persisted_label", label),
+        )
+
+        if not persist:
+            return NO_CHANGE
+        return StoredChange(add_or_update={"progress": str(percent), "progress_label": label}, remove=[])
+
+    def _save(self, key, percent, bars, now, persisted, persisted_label) -> None:
         value = {
             "percent": percent,
             "bars": bars,
             "updated": now if now is not None else time.time(),
-            "persisted": percent if persist else persisted,
-            "persisted_label": label if persist else previous.get("persisted_label", label),
+            "persisted": persisted,
+            "persisted_label": persisted_label,
         }
         self.redis.set(key, json.dumps(value), ex=EXPIRES_SECONDS)
-
-        if not persist:
-            return None
-        return {"progress": str(percent), "progress_label": label}
 
     def get(self, company_id: str, task_ids: Sequence[str]) -> Dict[str, Dict[str, Any]]:
         """The live progress of the given tasks; tasks that are not reporting are left out"""

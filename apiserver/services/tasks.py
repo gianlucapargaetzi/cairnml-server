@@ -1581,14 +1581,14 @@ def ping(call: APICall, company_id, request: PingRequest):
 @endpoint("tasks.update_progress", min_version="2.23", request_data_model=UpdateProgressRequest)
 def update_progress(call: APICall, company_id, request: UpdateProgressRequest):
     _assert_tasks_access(company_id, call.identity, [request.task], "write")
-    stored = task_progress.update(company_id, request.task, request.percent, request.bars)
-    if stored:
+    change = task_progress.update(company_id, request.task, request.percent, request.bars)
+    if change.add_or_update or change.remove:
         TaskBLL.edit_runtime(
             company_id=company_id,
             identity=call.identity,
             task_id=request.task,
-            add_or_update=stored,
-            remove=[],
+            add_or_update=change.add_or_update,
+            remove=change.remove,
             force=True,
         )
 
