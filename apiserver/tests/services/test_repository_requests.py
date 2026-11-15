@@ -152,3 +152,25 @@ def test_known_callers_bodies_are_accepted(action, body):
     model = model_of(action)
     assert model is not None, f"repositories.{action} has no request class"
     model(**body).validate()
+
+
+USER_ACCESS = ["get_all", "add_app", "delete", "check"]
+
+
+@pytest.mark.parametrize("action", USER_ACCESS)
+def test_user_access_unknown_field_is_refused(action):
+    model = ServiceRepo._get_endpoint(f"user_access.{action}", PartialVersion("2.38")).request_data_model
+    assert model is not None, f"user_access.{action} has no request class"
+    with pytest.raises(TypeError, match="bogus"):
+        model(bogus=1)
+
+
+@pytest.mark.parametrize("action,body", [
+    ("get_all", {}), ("delete", {"id": "a1"}), ("check", {"id": "a1"}),
+    ("add_app", {"label": "L", "app_id": "1", "api_url": "", "key": "k", "scope": "company"}),
+    ("add_app", {"label": "L", "app_id": "1", "key": "k"}),
+])
+def test_user_access_known_bodies_are_accepted(action, body):
+    model = ServiceRepo._get_endpoint(f"user_access.{action}", PartialVersion("2.38")).request_data_model
+    assert model is not None
+    model(**body).validate()

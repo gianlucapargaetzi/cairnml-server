@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from apiserver.apierrors import errors
+from apiserver.apimodels.user_access import AddAppRequest
 from apiserver.database.model.auth import Role
 from apiserver.service_repo.auth import Identity
 from apiserver.services import user_access as svc
@@ -20,7 +21,8 @@ class FakeCall:
 
 def test_a_user_may_not_add_the_company_app(monkeypatch):
     monkeypatch.setattr(svc.access_bll, "add_app", lambda *args, **kwargs: pytest.fail("the App was added"))
-    call = FakeCall(Role.user, {"scope": "company", "label": "App", "app_id": "1", "key": "k"})
+    data = {"scope": "company", "label": "App", "app_id": "1", "key": "k"}
+    call = FakeCall(Role.user, data)
 
     with pytest.raises(errors.forbidden.RoleNotAllowed):
-        svc.add_app(call, "c1", None)
+        svc.add_app(call, "c1", AddAppRequest(**data))
