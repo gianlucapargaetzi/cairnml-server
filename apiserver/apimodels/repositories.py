@@ -129,4 +129,4 @@ class ResolveRequest(StrictRequest):
 
 
 class RequirementRequest(StrictRequest):
-    tasks = ListField(items_types=str, required=True)
+    tasks = ListField(items_types=str)  # the schema requires it; jsonmodels never does for a list, a missing one is the empty list, as before

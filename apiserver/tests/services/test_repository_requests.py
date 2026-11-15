@@ -174,3 +174,4 @@ def test_user_access_known_bodies_are_accepted(action, body):
     model = ServiceRepo._get_endpoint(f"user_access.{action}", PartialVersion("2.38")).request_data_model
     assert model is not None
     model(**body).validate()
+

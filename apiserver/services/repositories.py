@@ -272,7 +272,7 @@ def resolve(call: APICall, company: str, request: models.ResolveRequest):
 @endpoint("repositories.requirement")
 def requirement(call: APICall, company: str, request: models.RequirementRequest):
     """What the tasks' repositories need before the caller dispatches them: the warning of the web app."""
-    tasks = list(request.tasks or [])
+    tasks = list(request.tasks)
     if len(tasks) > 500:
         raise errors.bad_request.ValidationError("give a list of at most 500 tasks")
     call.result.data = {"repositories": repository_runs.requirement(company, call.identity.user, tasks, _is_admin(call))}
