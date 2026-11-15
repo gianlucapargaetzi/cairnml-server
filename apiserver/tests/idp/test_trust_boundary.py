@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from apiserver.idp.legacy import cookie_settings_problems
+from apiserver.server_init.config_checks import cookie_settings_problems
 from apiserver.schema import SchemaReader
 
 PROXY_TEMPLATE = Path(__file__).resolve().parents[3] / "docker/build/internal_files/cairnml.conf.template"

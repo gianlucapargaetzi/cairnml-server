@@ -13,7 +13,7 @@ from apiserver.database import db
 from apiserver.bll.statistics.stats_reporter import StatisticsReporter
 from apiserver.config import info
 from apiserver.config_repo import config
-from apiserver.idp.legacy import check_no_legacy_settings
+from apiserver.server_init.config_checks import check_startup_config
 from apiserver.idp.secrets import session_secret
 from apiserver.server_init.cors import cors_settings
 from apiserver.elastic.initialize import (
@@ -43,7 +43,7 @@ class AppSequence:
 
     def start(self, request_handlers: RequestHandlers):
         log.info("################ API Server initializing #####################")
-        check_no_legacy_settings()
+        check_startup_config()
         self._configure()
         self._init_dbs()
         github_status.start_check_in_background()
