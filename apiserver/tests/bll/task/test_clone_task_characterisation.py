@@ -6,7 +6,8 @@ script overrides, execution overrides (model, docker_cmd, model_labels), contain
 root, validation, project resolution (new_project_name), tag update, project time, source lookup.
 Oddities are pinned as they are (for example the caller's override dicts are changed in place).
 """
-from datetime import datetime, timezone
+
+from datetime import datetime
 from unittest import mock
 from uuid import uuid4
 
@@ -54,9 +55,10 @@ def company():
 @pytest.fixture
 def stubs():
     """Recording stubs for the two side effects that leave the task collection."""
-    with mock.patch.object(task_bll_module, "org_bll") as org, mock.patch.object(
-        task_bll_module, "update_project_time"
-    ) as project_time:
+    with (
+        mock.patch.object(task_bll_module, "org_bll") as org,
+        mock.patch.object(task_bll_module, "update_project_time") as project_time,
+    ):
         yield mock.Mock(org=org, project_time=project_time)
 
 
@@ -67,7 +69,11 @@ def new_id(prefix="x"):
 def make_project(company, id_=None, name=None):
     id_ = id_ or new_id("p")
     Project(
-        id=id_, company=company, user="u1", name=name or id_, basename=name or id_,
+        id=id_,
+        company=company,
+        user="u1",
+        name=name or id_,
+        basename=name or id_,
         created=datetime.utcnow(),
     ).save()
     return id_
@@ -76,7 +82,12 @@ def make_project(company, id_=None, name=None):
 def make_model(company, id_=None):
     id_ = id_ or new_id("m")
     Model(
-        id=id_, company=company, user="u1", name=id_, uri="s3://m", created=datetime.utcnow(),
+        id=id_,
+        company=company,
+        user="u1",
+        name=id_,
+        uri="s3://m",
+        created=datetime.utcnow(),
         ready=True,
     ).save()
     return id_
@@ -280,9 +291,7 @@ def test_hyperparams_overrides_merge_per_section_and_key(company, stubs):
 
 def test_hyperparams_overrides_on_a_source_without_hyperparams(company, stubs):
     src = make_source(company, hyperparams=None)
-    new, _ = clone(
-        src, hyperparams_overrides={"S": {"k": {"section": "S", "name": "k", "value": "v"}}}
-    )
+    new, _ = clone(src, hyperparams_overrides={"S": {"k": {"section": "S", "name": "k", "value": "v"}}})
     assert stored(new).hyperparams["S"]["k"].value == "v"
 
 
@@ -335,9 +344,7 @@ def test_given_configuration_wins_over_overrides(company, stubs):
 
 
 def test_script_overrides_are_stripped_and_applied(company, stubs):
-    new, _ = clone(
-        make_source(company), script_overrides={"repository": "  other  ", "branch": " dev "}
-    )
+    new, _ = clone(make_source(company), script_overrides={"repository": "  other  ", "branch": " dev "})
     script = stored(new).script
     assert script.repository == "other" and script.branch == "dev"
     assert script.entry_point == "main.py"
@@ -682,18 +689,34 @@ def test_from_request_maps_every_clone_request_field():
     from apiserver.apimodels.tasks import CloneRequest
 
     pairs = {
-        "new_task_name": "name", "new_task_comment": "comment", "new_task_parent": "parent",
-        "new_task_project": "project", "new_task_tags": "tags", "new_task_system_tags": "system_tags",
-        "new_task_hyperparams": "hyperparams", "new_task_configuration": "configuration",
-        "new_task_container": "container", "execution_overrides": "execution_overrides",
-        "script_overrides": "script_overrides", "validate_references": "validate_references",
+        "new_task_name": "name",
+        "new_task_comment": "comment",
+        "new_task_parent": "parent",
+        "new_task_project": "project",
+        "new_task_tags": "tags",
+        "new_task_system_tags": "system_tags",
+        "new_task_hyperparams": "hyperparams",
+        "new_task_configuration": "configuration",
+        "new_task_container": "container",
+        "execution_overrides": "execution_overrides",
+        "script_overrides": "script_overrides",
+        "validate_references": "validate_references",
         "new_project_name": "new_project_name",
     }
     values = {
-        "new_task_name": "n", "new_task_comment": "c", "new_task_parent": "p", "new_task_project": "pr",
-        "new_task_tags": ["t"], "new_task_system_tags": ["s"], "new_task_hyperparams": {"h": 1},
-        "new_task_configuration": {"c": 1}, "new_task_container": {"i": 1}, "execution_overrides": {"e": 1},
-        "script_overrides": {"s": 1}, "validate_references": True, "new_project_name": "np",
+        "new_task_name": "n",
+        "new_task_comment": "c",
+        "new_task_parent": "p",
+        "new_task_project": "pr",
+        "new_task_tags": ["t"],
+        "new_task_system_tags": ["s"],
+        "new_task_hyperparams": {"h": 1},
+        "new_task_configuration": {"c": 1},
+        "new_task_container": {"i": 1},
+        "execution_overrides": {"e": 1},
+        "script_overrides": {"s": 1},
+        "validate_references": True,
+        "new_project_name": "np",
     }
     request = CloneRequest(task="t1", new_task_input_models=[TaskInputModel(name="a", model="m")], **values)
     spec = CloneSpec.from_request(request)

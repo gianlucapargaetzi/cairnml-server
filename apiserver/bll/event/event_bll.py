@@ -3,20 +3,17 @@ import hashlib
 import json
 import re
 import zlib
-from collections import defaultdict
 from contextlib import closing
 from datetime import datetime
-from typing import Sequence, Set, Tuple, Optional, List, Mapping, Union
+from typing import Sequence, Set, Tuple, Optional, Mapping, Union
 
 import elasticsearch
 from boltons.iterutils import chunked_iter
 from elasticsearch.helpers import BulkIndexError
 from mongoengine import Q
-from nested_dict import nested_dict
 
 from apiserver.bll.event.event_common import (
     EventType,
-    get_index_name,
     check_empty_data,
     search_company_events,
     delete_company_events,

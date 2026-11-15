@@ -8,7 +8,6 @@ from six import string_types
 
 import apiserver.database.utils as dbutils
 from apiserver.apierrors import errors, APIError
-from apiserver.apimodels.tasks import TaskInputModel
 from apiserver.bll.queue import QueueBLL
 from apiserver.bll.organization import OrgBLL, Tags
 from apiserver.bll.project import ProjectBLL
@@ -18,20 +17,11 @@ from apiserver.database.errors import translate_errors_context
 from apiserver.database.model.model import Model
 from apiserver.database.model.project import Project
 from apiserver.database.model.task.metrics import EventStats, MetricEventStats
-from apiserver.database.model.task.output import Output
 from apiserver.database.model.task.task import (
     Task,
     TaskStatus,
-    TaskSystemTags,
-    ArtifactModes,
-    ModelItem,
-    Models,
-    DEFAULT_ARTIFACT_MODE,
-    TaskModelNames,
-    TaskModelTypes,
     Script,
 )
-from apiserver.database.model import EntityVisibility
 from apiserver.database.model.queue import Queue
 from apiserver.database.utils import (
     get_company_or_none_constraint,
@@ -40,11 +30,9 @@ from apiserver.database.utils import (
 )
 from apiserver.es_factory import es_factory
 from apiserver.redis_manager import redman
-from apiserver.services.utils import validate_tags, escape_dict_field, escape_dict
+from apiserver.services.utils import validate_tags
 from apiserver.service_repo.auth import Identity
-from apiserver.utilities.dicts import nested_set
 from apiserver.utilities.parameter_key_escaper import mongoengine_safe
-from .artifacts import artifacts_prepare_for_save
 from .clone import (
     ClonePieces,
     CloneSpec,

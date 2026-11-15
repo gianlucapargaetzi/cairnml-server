@@ -1,4 +1,5 @@
 """The stages of cloning a task, as functions that can be tested alone. TaskBLL.clone_task runs them in order."""
+
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Callable, NamedTuple, Optional, Sequence, Tuple
@@ -95,8 +96,7 @@ def merged_hyperparams(
         return None
 
     updated_hyperparams = {
-        sec: {k: value for k, value in sec_data.items()}
-        for sec, sec_data in (task.hyperparams or {}).items()
+        sec: {k: value for k, value in sec_data.items()} for sec, sec_data in (task.hyperparams or {}).items()
     }
     for section, section_data in hyperparams_overrides.items():
         for key, value in section_data.items():
@@ -129,9 +129,7 @@ def stamped_input_models(
     return [ModelItem(model=m.model, name=m.name, updated=now) for m in input_models]
 
 
-def script_with_overrides(
-    task: Task, script_overrides: Optional[dict], strip_fields: Callable[[dict], None]
-) -> dict:
+def script_with_overrides(task: Task, script_overrides: Optional[dict], strip_fields: Callable[[dict], None]) -> dict:
     """The script of the clone: the source's with the overrides applied. The overrides are stripped in place."""
     script_dict = task.script.to_proper_dict() if task.script else {}
     if script_overrides:
@@ -195,9 +193,7 @@ def drop_queue_and_output_artifacts(execution_dict: dict) -> None:
     artifacts = execution_dict.get("artifacts")
     if artifacts:
         execution_dict["artifacts"] = {
-            k: a
-            for k, a in artifacts.items()
-            if a.get("mode", DEFAULT_ARTIFACT_MODE) != ArtifactModes.output
+            k: a for k, a in artifacts.items() if a.get("mode", DEFAULT_ARTIFACT_MODE) != ArtifactModes.output
         }
     execution_dict.pop("queue", None)
 
@@ -225,11 +221,7 @@ def clean_system_tags(input_tags: Sequence[str]) -> Sequence[str]:
     if not input_tags:
         return input_tags
 
-    return [
-        tag
-        for tag in input_tags
-        if tag not in [TaskSystemTags.development, EntityVisibility.archived.value]
-    ]
+    return [tag for tag in input_tags if tag not in [TaskSystemTags.development, EntityVisibility.archived.value]]
 
 
 def ensure_int_labels(execution: dict) -> dict:
@@ -285,7 +277,9 @@ def build_cloned_task(
     )
 
 
-def tags_to_register(task: Task, new_task: Task, spec: CloneSpec) -> Tuple[Optional[Sequence[str]], Optional[Sequence[str]]]:
+def tags_to_register(
+    task: Task, new_task: Task, spec: CloneSpec
+) -> Tuple[Optional[Sequence[str]], Optional[Sequence[str]]]:
     """The (tags, system tags) to register for the new task's project: the given ones while the clone stays in the
     source's project, else the clone's own (copied) ones."""
     if task.project == new_task.project:

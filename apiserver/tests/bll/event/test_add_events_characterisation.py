@@ -7,12 +7,12 @@ iteration rewrite and range, values rewrite, log ids versus keyed ids, error buc
 allow_locked consistency, task/model clash, partial success, EventsNotAdded, failed bulk items, plot compression and
 validation, last iteration, scalar statistics, model events, set_last_update path, in-place mutation of the events.
 """
+
 from datetime import datetime
 from unittest import mock
 from uuid import uuid4
 
 import pytest
-from elasticsearch.helpers import BulkIndexError
 
 from apiserver.apierrors import errors
 from apiserver.bll.event import event_bll as event_bll_module
@@ -67,9 +67,11 @@ class Bulk:
 @pytest.fixture
 def bulk():
     stub = Bulk()
-    with mock.patch("elasticsearch.helpers.streaming_bulk", stub), mock.patch.object(
-        event_bll_module.es_factory, "get_es_timestamp_str", return_value=ES_TS
-    ), mock.patch.object(event_bll_module.es_factory, "get_timestamp_millis", return_value=TS):
+    with (
+        mock.patch("elasticsearch.helpers.streaming_bulk", stub),
+        mock.patch.object(event_bll_module.es_factory, "get_es_timestamp_str", return_value=ES_TS),
+        mock.patch.object(event_bll_module.es_factory, "get_timestamp_millis", return_value=TS),
+    ):
         yield stub
 
 
@@ -92,8 +94,14 @@ def new_id(prefix):
 
 def make_task(company, status=TaskStatus.created, **kw):
     task = Task(
-        id=new_id("t"), company=company, user="u1", name="task", type="training",
-        created=datetime.utcnow(), status=status, **kw,
+        id=new_id("t"),
+        company=company,
+        user="u1",
+        name="task",
+        type="training",
+        created=datetime.utcnow(),
+        status=status,
+        **kw,
     )
     task.save()
     return task.id
@@ -101,8 +109,13 @@ def make_task(company, status=TaskStatus.created, **kw):
 
 def make_model(company, ready=False):
     model = Model(
-        id=new_id("m"), company=company, user="u1", name="model", uri="s3://m",
-        created=datetime.utcnow(), ready=ready,
+        id=new_id("m"),
+        company=company,
+        user="u1",
+        name="model",
+        uri="s3://m",
+        created=datetime.utcnow(),
+        ready=ready,
     )
     model.save()
     return model.id
@@ -142,7 +155,11 @@ def test_one_scalar_event_is_indexed_and_counted(company, bulk):
     assert source["@timestamp"] == ES_TS and source["timestamp"] == TS
     assert source["worker"] == "w1" and source["model_event"] is False
     assert (source["task"], source["iter"], source["metric"], source["variant"], source["value"]) == (
-        task, 1, "loss", "l", 0.5,
+        task,
+        1,
+        "loss",
+        "l",
+        0.5,
     )
 
 
@@ -303,9 +320,7 @@ def test_errors_are_bucketed_by_message_with_counts(company, bulk):
 def test_task_log_events_are_refused_for_models(company, bulk):
     model = make_model(company)
     task = make_task(company)
-    added, errors_count, buckets = add(
-        company, [scalar(task), dict(type="log", task=model, model_event=True, msg="x")]
-    )
+    added, errors_count, buckets = add(company, [scalar(task), dict(type="log", task=model, model_event=True, msg="x")])
     assert buckets == {"Task log events are not supported for models": 1}
 
 
@@ -363,7 +378,9 @@ def test_one_id_used_as_task_and_model_is_refused(company, bulk):
 def test_partial_success_returns_counts_and_buckets(company, bulk):
     task = make_task(company)
     assert add(company, [scalar(task), {"task": task}]) == (
-        1, 1, {"Event must have a 'type' field": 1},
+        1,
+        1,
+        {"Event must have a 'type' field": 1},
     )
 
 
@@ -495,9 +512,10 @@ def test_the_task_rows_get_last_update_and_last_changed_by(company, bulk):
 
 def test_a_plot_event_updates_the_task_through_update_statistics_not_set_last_update(company, bulk):
     task = make_task(company)
-    with mock.patch.object(event_bll_module.TaskBLL, "set_last_update") as set_last_update, mock.patch.object(
-        event_bll_module.TaskBLL, "update_statistics"
-    ) as update_statistics:
+    with (
+        mock.patch.object(event_bll_module.TaskBLL, "set_last_update") as set_last_update,
+        mock.patch.object(event_bll_module.TaskBLL, "update_statistics") as update_statistics,
+    ):
         add(company, [dict(type="plot", task=task, plot_str="{}")])
     update_statistics.assert_called_once()  # the metric event record counts as last_events
     assert set_last_update.call_count == 0
@@ -505,8 +523,9 @@ def test_a_plot_event_updates_the_task_through_update_statistics_not_set_last_up
 
 def test_update_task_with_nothing_to_update_returns_false_and_triggers_set_last_update(company, bulk):
     task = make_task(company)
-    with mock.patch.object(event_bll_module.TaskBLL, "set_last_update") as set_last_update, mock.patch.object(
-        EventBLL, "_update_task", return_value=False
+    with (
+        mock.patch.object(event_bll_module.TaskBLL, "set_last_update") as set_last_update,
+        mock.patch.object(EventBLL, "_update_task", return_value=False),
     ):
         add(company, [scalar(task)])
     args, kwargs = set_last_update.call_args
@@ -527,7 +546,9 @@ def test_task_statistics_are_updated_even_when_the_bulk_item_failed(company, bul
 
 
 def model_scalar(model, **kw):
-    return dict(type="training_stats_scalar", model=model, model_event=True, iter=4, metric="m", variant="v", value=2.0, **kw)
+    return dict(
+        type="training_stats_scalar", model=model, model_event=True, iter=4, metric="m", variant="v", value=2.0, **kw
+    )
 
 
 def test_a_model_event_uses_the_model_as_its_task_id(company, bulk):
@@ -624,8 +645,14 @@ def test_normalise_event_alone():
     with mock.patch.object(event_bll_module.es_factory, "get_es_timestamp_str", return_value=ES_TS):
         assert normalise_event(event, "training_stats_scalar", "w") == 3
     assert event == {
-        "type": "training_stats_scalar", "@timestamp": ES_TS, "timestamp": 5, "worker": "w", "iter": 3,
-        "value": 1.5, "metric": "", "variant": "",
+        "type": "training_stats_scalar",
+        "@timestamp": ES_TS,
+        "timestamp": 5,
+        "worker": "w",
+        "iter": 3,
+        "value": 1.5,
+        "metric": "",
+        "variant": "",
     }
     with pytest.raises(IterationOutOfRange):
         normalise_event({"iter": MAX_LONG + 1}, "log", "w")
@@ -637,7 +664,9 @@ def test_make_action_alone():
     event = {"task": "t"}
     action = make_action("co", event, "training_stats_scalar", lambda e: "fixed")
     assert action == {
-        "_op_type": "index", "_index": get_index_name("co", "training_stats_scalar"), "_source": event,
+        "_op_type": "index",
+        "_index": get_index_name("co", "training_stats_scalar"),
+        "_source": event,
         "_id": "fixed",
     }
     assert make_action("co", event, "log", lambda e: "fixed")["_id"] != "fixed"

@@ -1,4 +1,5 @@
 """The per-event steps of EventBLL.add_events as functions that can be tested alone."""
+
 from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional, Sequence, Set, Tuple
@@ -77,9 +78,7 @@ def collect_entity_ids(events: Sequence[dict]) -> Tuple[Dict[str, bool], Dict[st
     return task_ids, model_ids
 
 
-def check_event(
-    event: dict, valid_tasks: Set[str], valid_models: Set[str]
-) -> Tuple[Optional[str], Optional[str]]:
+def check_event(event: dict, valid_tasks: Set[str], valid_models: Set[str]) -> Tuple[Optional[str], Optional[str]]:
     """(error, event type): the message the event is refused with, or None, and its type with the spaces replaced.
     The checks run in a fixed order: type, known type, task logs for models, task id, validity of the entity."""
     event_type = event.get("type")
@@ -148,9 +147,7 @@ def normalise_event(event: dict, event_type: str, worker: str) -> Optional[int]:
     return iter
 
 
-def make_action(
-    company_id: str, event: dict, event_type: str, get_event_id: Callable[[dict], str]
-) -> dict:
+def make_action(company_id: str, event: dict, event_type: str, get_event_id: Callable[[dict], str]) -> dict:
     """The Elasticsearch bulk action that indexes the event."""
     es_action = {
         "_op_type": "index",  # overwrite if exists with same ID
