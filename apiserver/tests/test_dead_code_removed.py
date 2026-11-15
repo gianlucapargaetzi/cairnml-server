@@ -11,6 +11,22 @@ ROOT = Path(__file__).resolve().parents[1]
 
 # (module path below apiserver/, name defined as a function or class anywhere in the module)
 REMOVED = [
+    ("database/model/metadata.py", "metadata_delete"),
+    ("database/model/metadata.py", "metadata_add_or_update"),
+    ("idp/github.py", "PublicReader"),
+    ("idp/github.py", "clear_public_cache"),
+    ("idp/directory.py", "build_directory"),
+    ("database/utils.py", "get_subkey"),
+    ("database/utils.py", "init_cls_from_base"),
+    ("database/props.py", "get_field_value"),
+    ("database/model/settings.py", "get_by_prefix"),
+    ("database/model/base.py", "set_default_ordering"),
+    ("database/model/__init__.py", "PrivateDocument"),
+    ("database/model/__init__.py", "is_public"),
+    ("database/fields.py", "CanonicEmailField"),
+    ("database/fields.py", "LengthRangeSortedListField"),
+    ("database/__init__.py", "reconnect"),
+    ("database/__init__.py", "get_aliases"),
     ("utilities/__init__.py", "strict_map"),
     ("service_repo/util.py", "resolve_addr"),
     ("service_repo/util.py", "get_local_addr"),
