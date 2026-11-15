@@ -11,6 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 # (module path below apiserver/, name defined as a function or class anywhere in the module)
 REMOVED = [
+    ("bll/datachunks.py", "delete_objects"),
     ("bll/queue/queue_bll.py", "delete"),
 ]
 
