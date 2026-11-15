@@ -11,6 +11,10 @@ import threading
 
 from apiserver.idp.directory import DirectoryError, DirectoryUser
 from apiserver.idp.users import role_for, single_admin, upsert_idp_user
+from apiserver.database.model.device import Device
+from apiserver.idp.audit import record
+from apiserver.database.model.auth import AuthUser
+from apiserver.config_repo import config
 
 log = logging.getLogger("cairnml.idp.sync")
 
@@ -57,8 +61,6 @@ def fetch_answers(directory, users) -> dict:
 
 def audit_disabled_owner(user_id: str, company: str = None) -> list:
     """Record which live devices lose their owner when the sync disables a user. Returns their ids."""
-    from apiserver.database.model.device import Device
-    from apiserver.idp.audit import record
 
     device_ids = [d.id for d in Device.objects(user=user_id, revoked=False).only("id")]
     if device_ids:
@@ -73,7 +75,6 @@ def import_missing(directory, issuer: str, admin_role: str) -> int:
     Users who never signed in are then in the company's user list (the add-user dialogs), and can be given access
     before their first sign-in. Disabled users and users the directory no longer answers for are not created.
     """
-    from apiserver.database.model.auth import AuthUser
 
     known = {user.idp_subject for user in AuthUser.objects(idp_subject__ne=None).only("idp_subject")}
     created = 0
@@ -90,7 +91,6 @@ def import_missing(directory, issuer: str, admin_role: str) -> int:
 
 def sync_once(directory, admin_role: str) -> int:
     """Run one pass against the database. Returns the number of users changed or created."""
-    from apiserver.database.model.auth import AuthUser
 
     users = list(AuthUser.objects(idp_subject__ne=None))
     answers = fetch_answers(directory, users)
@@ -103,7 +103,6 @@ def sync_once(directory, admin_role: str) -> int:
             audit_disabled_owner(user_id, company=companies.get(user_id))
     changed = len(actions)
     if hasattr(directory, "list_users"):
-        from apiserver.config_repo import config
         try:
             changed += import_missing(directory, config.get("apiserver.idp.issuer"), admin_role)
         except DirectoryError as exc:

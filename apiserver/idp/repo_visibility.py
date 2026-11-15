@@ -21,9 +21,9 @@ from urllib.parse import urlsplit
 import requests
 from requests.adapters import HTTPAdapter
 
-from apiserver.apierrors import errors
 from apiserver.config_repo import config
 from apiserver.idp import git_credentials as store
+from apiserver.idp.access_refused import AccessRefused
 
 log = logging.getLogger("cairnml.idp.repo_visibility")
 PROBE_TIMEOUT_SEC = 10
@@ -180,7 +180,6 @@ def check_readable(company: str, repository: str) -> None:
     if store.find_credential(company, repository) is not None:
         return
     host, _path = store.host_and_path(repository)
-    from apiserver.idp.access_refused import AccessRefused
 
     raise AccessRefused(
         f"the repository on {host} is private or cannot be checked, and no Git credentials are stored for {host}: "

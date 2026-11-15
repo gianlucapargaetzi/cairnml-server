@@ -13,6 +13,8 @@ from typing import Any, Protocol
 from urllib.parse import quote
 
 import requests
+from apiserver.config_repo import config
+from apiserver.idp.secrets import read_secret
 
 
 USER_PAGE = 100
@@ -156,8 +158,6 @@ class KeycloakDirectory:
 
 def build_from_config():
     """The directory the server syncs against, from the secrets mount and the idp configuration."""
-    from apiserver.config_repo import config
-    from apiserver.idp.secrets import read_secret
 
     return KeycloakDirectory(
         config.get("apiserver.idp.issuer"),
