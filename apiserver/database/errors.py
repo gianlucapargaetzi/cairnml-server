@@ -197,22 +197,22 @@ def translate_errors_context(message=None, **kwargs):
     except InvalidQueryError as e:
         MongoEngineErrorsHandler.invalid_query_error(e, message, **kwargs)
     except PyMongoError as e:
-        raise errors.server_error.InternalError(message, err=str(e))
+        raise errors.server_error.InternalError(message, err=str(e)) from e
     except NotPrimaryError as e:
-        raise errors.server_error.InternalError(message, err=str(e))
+        raise errors.server_error.InternalError(message, err=str(e)) from e
     except MakeGetAllQueryError as e:
-        raise errors.bad_request.ValidationError(e.error, field=e.field)
+        raise errors.bad_request.ValidationError(e.error, field=e.field) from e
     except ParseCallError as e:
-        raise errors.bad_request.FieldsValueError(e.args[0], **e.params)
+        raise errors.bad_request.FieldsValueError(e.args[0], **e.params) from e
     except JsonschemaValidationError as e:
         if len(e.args) >= 2:
-            raise errors.bad_request.ValidationError(e.args[0], reason=e.args[1])
-        raise errors.bad_request.ValidationError(e.args[0])
+            raise errors.bad_request.ValidationError(e.args[0], reason=e.args[1]) from e
+        raise errors.bad_request.ValidationError(e.args[0]) from e
     except BulkIndexError as e:
         ElasticErrorsHandler.bulk_error(e, message, **kwargs)
     except (TransportError, ApiError) as e:
-        raise errors.server_error.DataError(e, message, **kwargs)
+        raise errors.server_error.DataError(e, message, **kwargs) from e
     except InvalidKeyName:
-        raise errors.server_error.DataError("invalid empty key encountered in data")
+        raise errors.server_error.DataError("invalid empty key encountered in data") from None
     except Exception:
         raise
