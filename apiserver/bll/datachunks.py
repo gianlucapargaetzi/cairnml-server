@@ -332,10 +332,3 @@ def delete(*, company: str, chunks) -> int:
         chunk.delete()
         removed += 1
     return removed
-
-
-def delete_objects(bucket_key_pairs) -> None:
-    """Removes objects from the store. Used by the async delete job."""
-    client = _internal()
-    for bucket, key in bucket_key_pairs:
-        client.delete_object(Bucket=bucket, Key=key)

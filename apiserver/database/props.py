@@ -121,7 +121,7 @@ class PropsMixin(object):
                     if k == part
                 )
             except StopIteration:
-                raise ValueError("Invalid field path %s" % parts[:depth])
+                raise ValueError("Invalid field path %s" % parts[:depth]) from None
 
             translated_parts.append(part)
 
@@ -176,18 +176,3 @@ class PropsMixin(object):
                 result = separator.join(translated)
                 cls.__cached_dpath_computed_fields[path] = result
         return cls.__cached_dpath_computed_fields[path]
-
-    def get_field_value(self, field_path: str, default=None):
-        """
-        Return the document field_path value by the field_path name.
-        The path may contain '.'. If on any level the path is
-        not found then the default value is returned
-        """
-        path_elements = field_path.split(".")
-        current = self
-        for name in path_elements:
-            current = getattr(current, name, default)
-            if current == default:
-                break
-
-        return current
