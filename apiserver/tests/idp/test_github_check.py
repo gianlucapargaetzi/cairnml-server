@@ -32,7 +32,7 @@ class TestSubmissionCheck(TestCase):
         with mock.patch.object(repositories, "record_use_quietly", return_value=repo), \
                 mock.patch.object(repositories, "resolve", return_value=resolution), \
                 mock.patch.object(repositories, "_app_of", return_value=app), \
-                mock.patch("apiserver.bll.user_access.root_project", return_value="p1"):
+                mock.patch("apiserver.bll.membership.root_project", return_value="p1"):
             check_submission(task(**task_kwargs))
 
     def test_a_repository_read_with_a_credential_and_its_commit_is_accepted(self):

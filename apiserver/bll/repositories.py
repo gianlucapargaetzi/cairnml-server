@@ -27,7 +27,7 @@ from typing import List, Optional, Tuple
 from mongoengine.errors import NotUniqueError
 
 from apiserver.apierrors import errors
-from apiserver.bll import access, user_access
+from apiserver.bll import access, membership, user_access
 from apiserver.config_repo import config
 from apiserver.database.model.auth import Role, User
 from apiserver.database.model.project import Project
@@ -95,7 +95,7 @@ def _reference_for(company: str, name: str, path: str) -> str:
 
 def _root_and_owner(company: str, user: str, project_id: Optional[str]) -> tuple:
     """(root project, its owner) of a run's project; (None, the user) outside any project."""
-    root = user_access.root_project(company, project_id) if project_id else None
+    root = membership.root_project(company, project_id) if project_id else None
     if root is None:
         return None, user
     project = Project.objects(company=company, id=root).only("user").first()
@@ -170,10 +170,10 @@ def add(company: str, user: str, is_admin: bool, address: str, role: str, shared
     parsed = parse(address)
     root = None
     if project_id:
-        root = user_access.root_project(company, project_id)
+        root = membership.root_project(company, project_id)
         if root is None:
             raise errors.bad_request.ValidationError("no such project")
-        if not is_admin and not user_access.is_member(company, root, user):
+        if not is_admin and not membership.is_member(company, root, user):
             raise errors.forbidden.NoWritePermission("you are not a member of this project")
     now = datetime.utcnow()
     repo = Repository.objects(company=company, key=parsed.key).first()
@@ -207,7 +207,7 @@ def is_shared(repo: Repository) -> bool:
 def level_of(company: str, user: str, is_admin: bool, repo: Repository) -> Optional[str]:
     """The level the user holds on the repository: collaborator for its owner and the admin, read for a shared entry and for an
     entry linked to a project they are in, none otherwise."""
-    roots = user_access.my_root_ids(company, user)
+    roots = membership.my_root_ids(company, user)
     level = access.level_of(company, user, is_admin, "repository", repo.id, roots)
     if level is not None and user in (repo.dismissed or []) and not (roots & {s.project for s in linked_projects(repo)}):
         return None  # deleted for this user, and no project of theirs lists it
@@ -220,10 +220,10 @@ def can_see(company: str, user: str, is_admin: bool, repo: Repository) -> bool:
 
 def visible(company: str, user: str, is_admin: bool) -> List[Repository]:
     """The repositories the user sees: those they own, the shared ones, and those linked to a project they are in."""
-    if not user or not user_access.is_active(user):
+    if not user or not membership.is_active(user):
         return []
     repos = list(Repository.objects(company=company).order_by("name"))
-    roots = user_access.my_root_ids(company, user)
+    roots = membership.my_root_ids(company, user)
     listed_in = {}
     for share in Share.objects(company=company, resource_type="repository", scope="projects"):
         listed_in.setdefault(share.resource_id, set()).add(share.project)
@@ -280,10 +280,10 @@ def link(company: str, user: str, is_admin: bool, repository_id: str, project_id
     """Lists a repository in a project, by hand. The user must see the repository and be a member of the project."""
     access.refuse_inactive(user)
     repo = require_visible(company, user, is_admin, repository_id)
-    root = user_access.root_project(company, project_id)
+    root = membership.root_project(company, project_id)
     if root is None:
         raise errors.bad_request.ValidationError("no such project")
-    if not is_admin and not user_access.is_member(company, root, user):
+    if not is_admin and not membership.is_member(company, root, user):
         raise errors.forbidden.NoWritePermission("you are not a member of this project")
     created = _link(company, repo, root, _root_and_owner(company, user, root)[1], actor=user, inherited=False, run_id=None)
     if created is None:
@@ -296,7 +296,7 @@ def unlink(company: str, user: str, is_admin: bool, repository_id: str, project_
     The repository and every assignment stay; a run that uses it again lists it again."""
     access.refuse_inactive(user)
     repo = require_visible(company, user, is_admin, repository_id)
-    root = user_access.root_project(company, project_id)
+    root = membership.root_project(company, project_id)
     share = access.find_share(company, "repository", repo.id, "projects", root or "")
     if share is None:
         raise errors.bad_request.ValidationError("the repository is not listed in this project")
@@ -387,7 +387,7 @@ def delete_blocked(company: str, user: str, is_admin: bool, repo: Repository) ->
     links = linked_projects(repo)
     if links:
         names = [p.name for p in Project.objects(company=company, id__in=[s.project for s in links]).only("name")]
-        mine = user_access.my_root_ids(company, user)
+        mine = membership.my_root_ids(company, user)
         seen = sorted(p.name for p in Project.objects(company=company, id__in=[s.project for s in links if s.project in mine]).only("name"))
         where = ", ".join(seen[:3]) + (f" and {len(seen) - 3} more" if len(seen) > 3 else "") if seen else f"{len(names)} project(s)"
         return f"It is used in {where}: take it out of the project first, because the project depends on it."
@@ -431,7 +431,7 @@ def prune_assignments(company: str, repository_id: Optional[str] = None, user: O
         if repo is None:
             assignment.delete()
             continue
-        if not user_access.is_active(assignment.user):
+        if not membership.is_active(assignment.user):
             continue
         if level_of(company, assignment.user, False, repo) is None:
             assignment.delete()
@@ -439,7 +439,7 @@ def prune_assignments(company: str, repository_id: Optional[str] = None, user: O
     for stored in list(RepositoryCheck.objects(**query)):  # a user without an assignment has a stored check too
         # as for the assignments above, a disabled user's data is kept
         repo = Repository.objects(company=company, id=stored.repository).first()
-        if repo is None or (user_access.is_active(stored.user) and level_of(company, stored.user, False, repo) is None):
+        if repo is None or (membership.is_active(stored.user) and level_of(company, stored.user, False, repo) is None):
             stored.delete()
     return dropped
 
@@ -450,7 +450,7 @@ def _entry_problem(entry: Optional[UserAccess], repo: Repository) -> Optional[st
     """Why a credential cannot be used for the repository, or None."""
     if entry is None:
         return "the assigned credential no longer exists"
-    if entry.scope != "company" and not user_access.is_active(entry.user):
+    if entry.scope != "company" and not membership.is_active(entry.user):
         return f"the owner of {entry.label} is disabled"
     if repo.host == "github.com" and entry.kind != "app":
         return f"{entry.label} is not a GitHub App: GitHub is read with one"
@@ -704,7 +704,7 @@ def token_for(repo: Repository, resolution: Resolution, write: bool = False) -> 
 
 def token_for_job(company: str, repo: Repository, project_id: Optional[str], user: str) -> tuple:
     """(the answer, the resolution) a job's token request gets for the repository, for the project and the user who queued it."""
-    root = user_access.root_project(company, project_id) if project_id else None
+    root = membership.root_project(company, project_id) if project_id else None
     resolution = resolve(repo, root, user)
     return token_for(repo, resolution), resolution
 
@@ -784,7 +784,7 @@ def _assignment_rows(repo: Repository, user: str, links: List[Share], owners: di
             owner = owners.get(share.project)
             if a.user == owner:
                 used.append(project(share, "owner"))
-            elif owner not in assigned_users and user_access.is_member(repo.company, share.project, a.user):
+            elif owner not in assigned_users and membership.is_member(repo.company, share.project, a.user):
                 used.append(project(share, "fallback"))
         entry = entries.get(a.credential) if a.credential else None
         rows.append({
@@ -829,7 +829,7 @@ def view(company: str, user: str, is_admin: bool, repo: Repository, entries: boo
     names = {p.id: p.name for p in projects}
     level = level_of(company, user, is_admin, repo)
     shared = is_shared(repo)
-    mine_roots = user_access.my_root_ids(company, user)
+    mine_roots = membership.my_root_ids(company, user)
     resolution = resolve(repo, None, user, reach=False)
     owner_name = "Company" if shared else _names([repo.owner]).get(repo.owner, repo.owner)
     state, state_message, last_checked = _result_for(repo, user)
@@ -863,7 +863,7 @@ def list_for(company: str, user: str, is_admin: bool, project: Optional[str] = N
     """The repositories the user sees, one row each. With ``project``, only those listed in that project."""
     repos = visible(company, user, is_admin)
     if project:
-        root = user_access.root_project(company, project)
+        root = membership.root_project(company, project)
         if root is None:
             return []
         listed = set(access.resource_ids_shared_with(company, "repository", root))

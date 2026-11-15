@@ -25,7 +25,7 @@ def check_submission(task) -> None:
     listed Failed with the reason). A host that could not be asked never refuses it. The commit is looked up only when an
     authenticated read is used: asking GitHub for it without one would spend the anonymous rate limit.
     """
-    from apiserver.bll import repositories, user_access
+    from apiserver.bll import membership, repositories
 
     repository = task.script.repository
     if not repository:
@@ -34,7 +34,7 @@ def check_submission(task) -> None:
     repo = repositories.record_use_quietly(task.company, repository, "code", task.user, project)
     if repo is None:
         return
-    root = user_access.root_project(task.company, project) if project else None
+    root = membership.root_project(task.company, project) if project else None
     resolution = repositories.resolve(repo, root, task.user)
     if resolution.state == repositories.UNREACHABLE:
         hint = f" Steps: {GITHUB_APP_DOCS}" if repo.host == "github.com" else ""
