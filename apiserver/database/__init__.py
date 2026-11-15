@@ -109,7 +109,7 @@ class DatabaseFactory:
 
                 cls._entries.append(entry)
             except ValidationError as ex:
-                raise Exception("Invalid database entry `%s`: %s" % (key, ex.args[0]))
+                raise Exception("Invalid database entry `%s`: %s" % (key, ex.args[0])) from ex
         if missing:
             raise ValueError(
                 "Missing database configuration for %s" % ", ".join(missing)

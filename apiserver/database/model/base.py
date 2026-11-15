@@ -512,7 +512,7 @@ class GetMixin(PropsMixin):
                         try:
                             data = cls.MultiFieldParameters(**value)
                         except Exception:
-                            raise MakeGetAllQueryError("incorrect field format", field)
+                            raise MakeGetAllQueryError("incorrect field format", field) from None
                         if not data.fields:
                             break
                         if data.pattern is not None:
@@ -557,7 +557,7 @@ class GetMixin(PropsMixin):
                 "failed parsing query field",
                 error=str(ex),
                 **({"field": field} if field else {}),
-            )
+            ) from ex
 
         return query & RegexQ(**dict_query)
 
@@ -693,7 +693,7 @@ class GetMixin(PropsMixin):
                 raise errors.bad_request.ValidationError(
                     field=field,
                     value=str(ex),
-                )
+                ) from ex
 
     @classmethod
     def get_list_filter_query(

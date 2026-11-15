@@ -10,7 +10,7 @@ import hashlib
 import re
 import uuid
 from datetime import datetime
-from typing import Iterable, Optional, Tuple
+from typing import Iterable, Tuple
 from urllib.parse import urlsplit
 
 from cryptography.fernet import Fernet, InvalidToken

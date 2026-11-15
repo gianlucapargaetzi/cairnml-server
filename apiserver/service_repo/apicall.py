@@ -119,7 +119,7 @@ class DataContainer(object):
             try:
                 data_model = [cls(**item) for item in self._batched_data]
             except (ValueError, TypeError) as ex:
-                raise CallParsingError(str(ex))
+                raise CallParsingError(str(ex)) from ex
 
             for m in data_model:
                 m.validate()
@@ -127,7 +127,7 @@ class DataContainer(object):
             try:
                 data_model = cls(**self.data)
             except (ValueError, TypeError) as ex:
-                raise CallParsingError(str(ex))
+                raise CallParsingError(str(ex)) from ex
 
             if not self.schema_validator.enabled:
                 data_model.validate()

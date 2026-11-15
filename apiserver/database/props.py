@@ -121,7 +121,7 @@ class PropsMixin(object):
                     if k == part
                 )
             except StopIteration:
-                raise ValueError("Invalid field path %s" % parts[:depth])
+                raise ValueError("Invalid field path %s" % parts[:depth]) from None
 
             translated_parts.append(part)
 

@@ -114,9 +114,9 @@ def parse_from_call(call_data, fields, cls_fields, discard_none_values=True):
                     try:
                         desc(value)
                     except TypeError:
-                        raise ParseCallError(f"expecting {desc.__name__}", field=field)
+                        raise ParseCallError(f"expecting {desc.__name__}", field=field) from None
                     except Exception as ex:
-                        raise ParseCallError(str(ex), field=field)
+                        raise ParseCallError(str(ex), field=field) from ex
             res[field] = value
         return res
 
