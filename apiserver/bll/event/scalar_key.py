@@ -101,3 +101,73 @@ class ScalarKey(ABC):
     def cast_value(self, value: Any) -> Any:
         """Cast value to appropriate type"""
         return value
+
+
+class TimestampKey(ScalarKey):
+    """
+    Aggregate by timestamp in milliseconds since epoch
+    """
+
+    name = "timestamp"
+    field = "timestamp"
+    enum_value = ScalarKeyEnum.timestamp
+
+    def get_aggregation(self, interval: int) -> dict:
+        return {
+            self.name: {
+                "date_histogram": {
+                    "field": "timestamp",
+                    "fixed_interval": f"{interval}ms",
+                    "min_doc_count": 1,
+                }
+            }
+        }
+
+    def cast_value(self, value: Any) -> int:
+        return int(value)
+
+
+class IterKey(ScalarKey):
+    """
+    Aggregate by iteration number
+    """
+
+    name = "iters"
+    field = "iter"
+    enum_value = ScalarKeyEnum.iter
+
+    def get_aggregation(self, interval: int) -> dict:
+        return {
+            self.name: {
+                "histogram": {"field": "iter", "interval": interval, "min_doc_count": 1}
+            }
+        }
+
+    def cast_value(self, value: Any) -> int:
+        return int(value)
+
+
+class ISOTimeKey(ScalarKey):
+    """
+    Aggregate by time formatted as ISO strings
+    """
+
+    name = "iso_time"
+    field = "timestamp"
+    enum_value = ScalarKeyEnum.iso_time
+    bucket_key_key = "key_as_string"
+
+    def get_aggregation(self, interval: int) -> dict:
+        return {
+            self.name: {
+                "date_histogram": {
+                    "field": "timestamp",
+                    "fixed_interval": f"{interval}ms",
+                    "min_doc_count": 1,
+                    "format": "strict_date_time",
+                }
+            }
+        }
+
+    def _get_iterations_data_single(self, iter_data):
+        return iter_data[self.bucket_key_key], iter_data["avg_val"]["value"]

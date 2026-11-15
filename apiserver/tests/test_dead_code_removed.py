@@ -20,9 +20,6 @@ REMOVED = [
     ("bll/redis_cache_manager.py", "delete_state"),
     ("bll/query/builder.py", "normalize_range"),
     ("bll/project/project_workloads.py", "_get_date_from_iso_str"),
-    ("bll/event/scalar_key.py", "ISOTimeKey"),
-    ("bll/event/scalar_key.py", "IterKey"),
-    ("bll/event/scalar_key.py", "TimestampKey"),
     ("bll/datachunks.py", "delete_objects"),
     ("bll/queue/queue_bll.py", "delete"),
 ]
