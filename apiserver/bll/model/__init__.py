@@ -235,3 +235,6 @@ class ModelBLL:
             Model.objects(id=model_id).update_one(__raw__=[{"$set": raw_updates}])
 
         return ret
+
+# re-exported: imported from this package by other modules (or for their side effects)
+__all__ = ["Metadata"]

@@ -235,7 +235,7 @@ def download_task_log(call, company_id, request: TaskRequest):
             except Exception as e:
                 raise errors.bad_request.FieldsValueError(
                     "invalid line format", error=e.args[0]
-                )
+                ) from e
 
         if invalid_placeholders:
             raise errors.bad_request.FieldsValueError(
@@ -273,7 +273,7 @@ def download_task_log(call, company_id, request: TaskRequest):
                         raise errors.bad_request.FieldsValueError(
                             "undefined placeholders in line format",
                             placeholders=[str(ex)],
-                        )
+                        ) from ex
 
             if len(log_events) < batch_size:
                 break
@@ -383,7 +383,7 @@ def get_task_events(call, company_id, request: TaskEventsRequest):
         try:
             scroll = GetTaskEventsScroll.from_scroll_id(request.scroll_id)
         except ValueError:
-            raise errors.bad_request.InvalidScrollId(scroll_id=request.scroll_id)
+            raise errors.bad_request.InvalidScrollId(scroll_id=request.scroll_id) from None
 
         if scroll.from_key_value is None:
             return make_response(
@@ -1200,7 +1200,7 @@ def scalar_metrics_iter_raw(
         try:
             scroll = ScalarMetricsIterRawScroll.from_scroll_id(request.scroll_id)
         except ValueError:
-            raise errors.bad_request.InvalidScrollId(scroll_id=request.scroll_id)
+            raise errors.bad_request.InvalidScrollId(scroll_id=request.scroll_id) from None
 
         if scroll.from_key_value is None:
             return make_response(
