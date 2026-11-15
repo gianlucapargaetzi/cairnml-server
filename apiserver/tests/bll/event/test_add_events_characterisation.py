@@ -598,3 +598,46 @@ def test_collect_entity_ids_refuses_inconsistent_input():
         collect_entity_ids([{"task": "a"}, {"task": "a", "allow_locked": True}])
     with pytest.raises(errors.bad_request.ValidationError):
         collect_entity_ids([{"task": "a"}, {"task": "a", "model_event": True}])
+
+
+# --- the per-event steps alone (no database) ------------------------------
+
+
+def test_check_event_alone():
+    from apiserver.bll.event.event_prepare import check_event
+
+    ok = {"type": "training stats scalar", "task": "t", "model_event": False}
+    assert check_event(ok, {"t"}, set()) == (None, "training_stats_scalar")
+    assert check_event({"model_event": False}, set(), set()) == ("Event must have a 'type' field", None)
+    assert check_event({"type": "x", "model_event": False}, set(), set())[0] == "Invalid event type x"
+    log = {"type": "log", "task": "m", "model_event": True}
+    assert check_event(log, set(), {"m"})[0] == "Task log events are not supported for models"
+    assert check_event({"type": "log", "model_event": False}, set(), set())[0] == "Event must have a 'task' field"
+    assert check_event({"type": "log", "task": "t", "model_event": False}, set(), set())[0] == "Invalid task id t"
+    assert check_event({"type": "plot", "task": "t", "model_event": True}, {"t"}, set())[0] == "Invalid model id t"
+
+
+def test_normalise_event_alone():
+    from apiserver.bll.event.event_prepare import IterationOutOfRange, normalise_event
+
+    event = {"ts": 5, "iter": "3", "values": 1.5, "metric": None}
+    with mock.patch.object(event_bll_module.es_factory, "get_es_timestamp_str", return_value=ES_TS):
+        assert normalise_event(event, "training_stats_scalar", "w") == 3
+    assert event == {
+        "type": "training_stats_scalar", "@timestamp": ES_TS, "timestamp": 5, "worker": "w", "iter": 3,
+        "value": 1.5, "metric": "", "variant": "",
+    }
+    with pytest.raises(IterationOutOfRange):
+        normalise_event({"iter": MAX_LONG + 1}, "log", "w")
+
+
+def test_make_action_alone():
+    from apiserver.bll.event.event_prepare import make_action
+
+    event = {"task": "t"}
+    action = make_action("co", event, "training_stats_scalar", lambda e: "fixed")
+    assert action == {
+        "_op_type": "index", "_index": get_index_name("co", "training_stats_scalar"), "_source": event,
+        "_id": "fixed",
+    }
+    assert make_action("co", event, "log", lambda e: "fixed")["_id"] != "fixed"

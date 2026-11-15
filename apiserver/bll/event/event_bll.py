@@ -26,7 +26,18 @@ from apiserver.bll.event.event_common import (
     get_max_metric_and_variant_counts,
     PlotFields,
 )
-from apiserver.bll.event.event_prepare import collect_entity_ids
+from apiserver.bll.event.event_prepare import (
+    EVENT_TYPES,  # noqa: F401
+    INVALID_ITERATION_ERROR,
+    MAX_LONG,  # noqa: F401
+    MIN_LONG,  # noqa: F401
+    EventBatch,
+    IterationOutOfRange,
+    check_event,
+    collect_entity_ids,
+    make_action,
+    normalise_event,
+)
 from apiserver.bll.event.events_iterator import EventsIterator, TaskEventsResult
 from apiserver.bll.event.history_debug_image_iterator import HistoryDebugImageIterator
 from apiserver.bll.event.history_plots_iterator import HistoryPlotsIterator
@@ -50,11 +61,7 @@ from apiserver.service_repo.auth import Identity
 from apiserver.utilities.dicts import nested_get
 from apiserver.utilities.json import loads
 
-# noinspection PyTypeChecker
-EVENT_TYPES: Set[str] = set(et.value for et in EventType if et != EventType.all)
 LOCKED_TASK_STATUSES = (TaskStatus.publishing, TaskStatus.published)
-MAX_LONG = 2**63 - 1
-MIN_LONG = -(2**63)
 
 
 log = config.logger(__file__)
@@ -201,121 +208,30 @@ class EventBLL(object):
             company_id, ids=task_ids, identity=identity
         )
 
-        actions: List[dict] = []
-        used_task_ids = set()
-        used_model_ids = set()
-        task_iteration = defaultdict(lambda: 0)
-        task_last_scalar_events = nested_dict(
-            3, dict
-        )  # task_id -> metric_hash -> variant_hash -> MetricEvent
-        task_last_events = nested_dict(
-            3, dict
-        )  # task_id -> metric_hash -> event_type -> MetricEvent
-        errors_per_type = defaultdict(int)
-        invalid_iteration_error = f"Iteration number should not exceed {MAX_LONG}"
+        batch = EventBatch()
+        errors_per_type = batch.errors_per_type
+        actions = batch.actions
+        used_task_ids = batch.used_task_ids
+        used_model_ids = batch.used_model_ids
+        task_iteration = batch.task_iteration
+        task_last_scalar_events = batch.task_last_scalar_events
+        task_last_events = batch.task_last_events
 
         for event in events:
             x_axis_label = event.pop("x_axis_label", None)
-
-            # remove spaces from event type
-            event_type = event.get("type")
-            if event_type is None:
-                errors_per_type["Event must have a 'type' field"] += 1
+            error, event_type = check_event(event, valid_tasks, valid_models)
+            if error:
+                errors_per_type[error] += 1
                 continue
 
-            event_type = event_type.replace(" ", "_")
-            if event_type not in EVENT_TYPES:
-                errors_per_type[f"Invalid event type {event_type}"] += 1
+            try:
+                iter = normalise_event(event, event_type, worker)
+            except IterationOutOfRange:
+                errors_per_type[INVALID_ITERATION_ERROR] += 1
                 continue
 
-            model_event = event["model_event"]
-            if model_event and event_type == EventType.task_log.value:
-                errors_per_type["Task log events are not supported for models"] += 1
-                continue
-
-            task_or_model_id = event.get("task")
-            if task_or_model_id is None:
-                errors_per_type["Event must have a 'task' field"] += 1
-                continue
-
-            if (model_event and task_or_model_id not in valid_models) or (
-                not model_event and task_or_model_id not in valid_tasks
-            ):
-                errors_per_type[
-                    f"Invalid {'model' if model_event else 'task'} id {task_or_model_id}"
-                ] += 1
-                continue
-
-            event["type"] = event_type
-
-            # @timestamp indicates the time the event is written, not when it happened
-            event["@timestamp"] = es_factory.get_es_timestamp_str()
-
-            # for backward bomba-tavili-tea
-            if "ts" in event:
-                event["timestamp"] = event.pop("ts")
-
-            # set timestamp and worker if not sent
-            if "timestamp" not in event:
-                event["timestamp"] = es_factory.get_timestamp_millis()
-
-            if "worker" not in event:
-                event["worker"] = worker
-
-            # force iter to be a long int
-            iter = event.get("iter")
-            if iter is not None:
-                iter = int(iter)
-                if iter > MAX_LONG or iter < MIN_LONG:
-                    errors_per_type[invalid_iteration_error] += 1
-                    continue
-                event["iter"] = iter
-
-            # used to have "values" to indicate array. no need anymore
-            if "values" in event:
-                event["value"] = event["values"]
-                del event["values"]
-
-            event["metric"] = event.get("metric") or ""
-            event["variant"] = event.get("variant") or ""
-
-            index_name = get_index_name(company_id, event_type)
-            es_action = {
-                "_op_type": "index",  # overwrite if exists with same ID
-                "_index": index_name,
-                "_source": event,
-            }
-
-            # for "log" events, don't assign custom _id - whatever is sent, is written (not overwritten)
-            if event_type != EventType.task_log.value:
-                es_action["_id"] = self._get_event_id(event)
-            else:
-                es_action["_id"] = dbutils.id()
-
-            if (
-                iter is not None
-                and event.get("metric") not in self._skip_iteration_for_metric
-            ):
-                task_iteration[task_or_model_id] = max(
-                    iter, task_iteration[task_or_model_id]
-                )
-
-            if model_event:
-                used_model_ids.add(task_or_model_id)
-            else:
-                used_task_ids.add(task_or_model_id)
-                self._update_last_metric_events_for_task(
-                    last_events=task_last_events[task_or_model_id],
-                    event=event,
-                )
-            if event_type == EventType.metrics_scalar.value:
-                self._update_last_scalar_events_for_task(
-                    last_events=task_last_scalar_events[task_or_model_id],
-                    event=event,
-                    x_axis_label=x_axis_label,
-                )
-
-            actions.append(es_action)
+            es_action = make_action(company_id, event, event_type, self._get_event_id)
+            self._record_event(batch, es_action, iter, x_axis_label)
 
         plot_actions = [
             action["_source"]
@@ -388,11 +304,11 @@ class EventBLL(object):
                 )
 
             # this is for backwards compatibility with streaming bulk throwing exception on those
-            invalid_iterations_count = errors_per_type.get(invalid_iteration_error)
+            invalid_iterations_count = errors_per_type.get(INVALID_ITERATION_ERROR)
             if invalid_iterations_count:
                 raise BulkIndexError(
                     f"{invalid_iterations_count} document(s) failed to index.",
-                    [{"_index": invalid_iteration_error}],
+                    [{"_index": INVALID_ITERATION_ERROR}],
                 )
 
         if not added:
@@ -542,6 +458,34 @@ class EventBLL(object):
             last_scalar_events=last_scalar_events,
             last_events=last_events,
         )
+
+    def _record_event(
+        self, batch: EventBatch, es_action: dict, iter: Optional[int], x_axis_label
+    ):
+        """Add the action to the batch and note what the event changes on its task or model."""
+        event = es_action["_source"]
+        task_or_model_id = event["task"]
+        if iter is not None and event["metric"] not in self._skip_iteration_for_metric:
+            batch.task_iteration[task_or_model_id] = max(
+                iter, batch.task_iteration[task_or_model_id]
+            )
+
+        if event["model_event"]:
+            batch.used_model_ids.add(task_or_model_id)
+        else:
+            batch.used_task_ids.add(task_or_model_id)
+            self._update_last_metric_events_for_task(
+                last_events=batch.task_last_events[task_or_model_id],
+                event=event,
+            )
+        if event["type"] == EventType.metrics_scalar.value:
+            self._update_last_scalar_events_for_task(
+                last_events=batch.task_last_scalar_events[task_or_model_id],
+                event=event,
+                x_axis_label=x_axis_label,
+            )
+
+        batch.actions.append(es_action)
 
     def _get_event_id(self, event):
         id_values = (
