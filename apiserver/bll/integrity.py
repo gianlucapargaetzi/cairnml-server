@@ -6,7 +6,7 @@ every delete path; nothing here changes data.
 
 from typing import Dict, List
 
-from apiserver.database.model.auth import User
+from apiserver.database.model.auth import AuthUser
 from apiserver.database.model.datachunk import Datachunk
 from apiserver.database.model.device import Device
 from apiserver.database.model.project import Project
@@ -19,11 +19,11 @@ from apiserver.database.model.user_access import UserAccess
 REFERENCES = (
     ("assignment.repository", Assignment, "repository", Repository),
     ("assignment.credential", Assignment, "credential", UserAccess),
-    ("assignment.user", Assignment, "user", User),
+    ("assignment.user", Assignment, "user", AuthUser),
     ("share.project", Share, "project", Project),
-    ("share.user", Share, "user", User),
-    ("user_access.user", UserAccess, "user", User),
-    ("device.user", Device, "user", User),
+    ("share.user", Share, "user", AuthUser),
+    ("user_access.user", UserAccess, "user", AuthUser),
+    ("device.user", Device, "user", AuthUser),
     ("datachunk.task", Datachunk, "task", Task),  # a staged datachunk has no task and is not an orphan
     ("datachunk.project", Datachunk, "project", Project),
 )
