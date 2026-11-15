@@ -2,6 +2,7 @@
 bll/repositories. The only service for them."""
 
 from apiserver.apierrors import errors
+from apiserver.apimodels import repositories as models
 from apiserver.bll import repositories as bll
 from apiserver.bll import dataset_versions, repository_details, repository_history, repository_registry, repository_runs, user_access
 from apiserver.database.model.auth import Role
@@ -21,10 +22,9 @@ def _view(call: APICall, company: str, repo: Repository, entries: bool = True) -
     return bll.view(company, call.identity.user, _is_admin(call), repo, entries)
 
 
-def _repository_of(call: APICall, company: str, data: dict) -> Repository:
-    """The repository a request names by id (``id``) or by address or reference (``repository``). One the caller does not see is
-    refused as missing."""
-    reference = data.get("id") or data.get("repository") or ""
+def _repository_of(call: APICall, company: str, request: models.RepositoryRefRequest, action: str) -> Repository:
+    """The repository a request names (``ref``: its id, name or address). One the caller does not see is refused as missing."""
+    reference = request.reference(action)
     repo = bll.find_reference(company, reference)
     if repo is None or not bll.can_see(company, call.identity.user, _is_admin(call), repo):
         raise errors.bad_request.ValidationError(f"no such repository: {reference}")
@@ -56,33 +56,31 @@ def add(call: APICall, company: str, _request):
 
 
 @endpoint("repositories.delete")
-def delete(call: APICall, company: str, _request):
-    repo = _repository_of(call, company, call.data or {})
+def delete(call: APICall, company: str, request: models.DeleteRequest):
+    repo = _repository_of(call, company, request, "repositories.delete")
     bll.delete(company, call.identity.user, _is_admin(call), repo.id)
     audit(call.identity.user, "repository.deleted", ip=client_address(call), company=company, repo=repo.key)
     call.result.data = {"deleted": True}
 
 
 @endpoint("repositories.set_shared")
-def set_shared(call: APICall, company: str, _request):
-    data = call.data or {}
-    repo = _repository_of(call, company, data)
-    repo = bll.set_shared(company, call.identity.user, _is_admin(call), repo.id, bool(data.get("shared")),
-                          credential=data.get("credential") or None, none_needed=bool(data.get("none_needed")),
-                          confirm=bool(data.get("shared")))
-    audit(call.identity.user, "repository.shared" if data.get("shared") else "repository.unshared",
+def set_shared(call: APICall, company: str, request: models.SetSharedRequest):
+    repo = _repository_of(call, company, request, "repositories.set_shared")
+    shared = bool(request.shared)
+    repo = bll.set_shared(company, call.identity.user, _is_admin(call), repo.id, shared,
+                          credential=request.credential or None, none_needed=bool(request.none_needed), confirm=shared)
+    audit(call.identity.user, "repository.shared" if shared else "repository.unshared",
           ip=client_address(call), company=company, repo=repo.key)
     call.result.data = {"repository": _view(call, company, repo)}
 
 
 @endpoint("repositories.check_sharing")
-def check_sharing(call: APICall, company: str, _request):
+def check_sharing(call: APICall, company: str, request: models.CheckSharingRequest):
     """Whether a company credential (or None needed) reads the repository, so that it may be shared: ``ok`` and the reason."""
-    data = call.data or {}
-    repo = _repository_of(call, company, data)
+    repo = _repository_of(call, company, request, "repositories.check_sharing")
     try:
-        bll.verify_for_sharing(company, call.identity.user, _is_admin(call), repo.id, data.get("credential") or None,
-                               bool(data.get("none_needed")))
+        bll.verify_for_sharing(company, call.identity.user, _is_admin(call), repo.id, request.credential or None,
+                               bool(request.none_needed))
     except errors.bad_request.ValidationError as refused:
         call.result.data = {"ok": False, "message": refused.msg}
         return
@@ -90,52 +88,48 @@ def check_sharing(call: APICall, company: str, _request):
 
 
 @endpoint("repositories.link")
-def link(call: APICall, company: str, _request):
-    data = call.data or {}
-    repo = _repository_of(call, company, data)
-    bll.link(company, call.identity.user, _is_admin(call), repo.id, data.get("project", ""))
+def link(call: APICall, company: str, request: models.LinkRequest):
+    repo = _repository_of(call, company, request, "repositories.link")
+    bll.link(company, call.identity.user, _is_admin(call), repo.id, request.project)
     call.result.data = {"repository": _view(call, company, repo)}
 
 
 @endpoint("repositories.unlink")
-def unlink(call: APICall, company: str, _request):
-    data = call.data or {}
-    repo = _repository_of(call, company, data)
-    bll.unlink(company, call.identity.user, _is_admin(call), repo.id, data.get("project", ""))
+def unlink(call: APICall, company: str, request: models.UnlinkRequest):
+    repo = _repository_of(call, company, request, "repositories.unlink")
+    bll.unlink(company, call.identity.user, _is_admin(call), repo.id, request.project)
     call.result.data = {"repository": _view(call, company, repo)}
 
 
 @endpoint("repositories.assign")
-def assign(call: APICall, company: str, _request):
+def assign(call: APICall, company: str, request: models.AssignRequest):
     """The caller's own assignment on a repository, named by id or by address. An address no one has listed yet is listed first,
     as the caller's own non-shared entry with the role asked for (a dataset by default)."""
-    data = call.data or {}
-    reference = data.get("id") or data.get("repository") or ""
+    reference = request.reference("repositories.assign")
     repo = bll.find_reference(company, reference)
     if repo is not None and not bll.can_see(company, call.identity.user, _is_admin(call), repo):
         repo = None  # listed by someone else: adding it says so
     if repo is None and bll.repo_address.parse(reference) is not None:
-        repo = bll.add(company, call.identity.user, _is_admin(call), reference, data.get("role") or "dataset")
+        repo = bll.add(company, call.identity.user, _is_admin(call), reference, request.role or "dataset")
     if repo is None:
         raise errors.bad_request.ValidationError(f"no such repository: {reference}")
-    bll.assign(company, call.identity.user, repo.id, data.get("credential") or None, bool(data.get("none_needed")),
-               _is_admin(call))
+    bll.assign(company, call.identity.user, repo.id, request.credential or None, bool(request.none_needed), _is_admin(call))
     audit(call.identity.user, "repository.credential_set", ip=client_address(call), company=company, repo=repo.key,
-          credential=data.get("credential") or "", none_needed=bool(data.get("none_needed")))
+          credential=request.credential or "", none_needed=bool(request.none_needed))
     call.result.data = {"repository": _view(call, company, repo)}
 
 
 @endpoint("repositories.unassign")
-def unassign(call: APICall, company: str, _request):
-    repo = _repository_of(call, company, call.data or {})
+def unassign(call: APICall, company: str, request: models.UnassignRequest):
+    repo = _repository_of(call, company, request, "repositories.unassign")
     bll.unassign(company, call.identity.user, repo.id, _is_admin(call))
     audit(call.identity.user, "repository.credential_cleared", ip=client_address(call), company=company, repo=repo.key)
     call.result.data = {"repository": _view(call, company, repo)}
 
 
 @endpoint("repositories.check")
-def check(call: APICall, company: str, _request):
-    repo = _repository_of(call, company, call.data or {})
+def check(call: APICall, company: str, request: models.CheckRequest):
+    repo = _repository_of(call, company, request, "repositories.check")
     repo = bll.check(company, call.identity.user, _is_admin(call), repo.id)
     row = _view(call, company, repo)  # the caller's own result: what the audit records too
     audit(call.identity.user, "repository.checked", ip=client_address(call), company=company, repo=repo.key,
@@ -144,8 +138,8 @@ def check(call: APICall, company: str, _request):
 
 
 @endpoint("repositories.refresh")
-def refresh(call: APICall, company: str, _request):
-    repo = _repository_of(call, company, call.data or {})
+def refresh(call: APICall, company: str, request: models.RefreshRequest):
+    repo = _repository_of(call, company, request, "repositories.refresh")
     counts = repository_registry.refresh(company, call.identity.user, _is_admin(call), repo.id)
     call.result.data = {"counts": counts, "repository": _view(call, company, bll.get(company, repo.id))}
 
@@ -183,23 +177,23 @@ def _may_read(call: APICall, company: str, repo: Repository) -> bool:
 
 
 @endpoint("repositories.get_runs")
-def get_runs(call: APICall, company: str, _request):
-    repo = _repository_of(call, company, call.data or {})
+def get_runs(call: APICall, company: str, request: models.GetRunsRequest):
+    repo = _repository_of(call, company, request, "repositories.get_runs")
     call.result.data = {"runs": repository_runs.runs_of(company, call.identity.user, _is_admin(call), repo)}
 
 
 @endpoint("repositories.get_history")
-def get_history(call: APICall, company: str, _request):
+def get_history(call: APICall, company: str, request: models.GetHistoryRequest):
     """The condensed history of a repository: the newest commit, every commit a task ran on with its tasks, the first commit, and
     a gap with the number of commits between them. See bll/repository_history."""
-    repo = _repository_of(call, company, call.data or {})
+    repo = _repository_of(call, company, request, "repositories.get_history")
     call.result.data = repository_history.history(company, call.identity.user, _is_admin(call), repo)
 
 
 @endpoint("repositories.get_dataset_versions")
-def get_dataset_versions(call: APICall, company: str, _request):
+def get_dataset_versions(call: APICall, company: str, request: models.GetDatasetVersionsRequest):
     """The samples and splits of a dataset at the commits that matter (see bll/dataset_versions), oldest first."""
-    repo = _repository_of(call, company, call.data or {})
+    repo = _repository_of(call, company, request, "repositories.get_dataset_versions")
     call.result.data = {"versions": dataset_versions.versions(company, call.identity.user, _is_admin(call), repo)}
 
 

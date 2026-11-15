@@ -70,3 +70,55 @@ def test_resolve_still_takes_repositories(world, monkeypatch):
     model = ServiceRepo._get_endpoint("repositories.resolve", VERSION).request_data_model
     svc.resolve(c, world.company, model(**c.data) if model else None)
     assert got == [[URL]]
+
+
+# --- the request classes ------------------------------------------------------------------------------------------------------------
+
+ID_BASED = ["delete", "set_shared", "check_sharing", "link", "unlink", "assign", "unassign", "check", "refresh", "get_runs",
+            "get_history", "get_dataset_versions"]
+TYPED = list(ID_BASED)  # grows with each slice
+
+
+def model_of(action, service="repositories"):
+    return ServiceRepo._get_endpoint(f"{service}.{action}", VERSION).request_data_model
+
+
+@pytest.mark.parametrize("action", TYPED)
+def test_unknown_field_is_refused(action):
+    model = model_of(action)
+    assert model is not None, f"repositories.{action} has no request class"
+    with pytest.raises(TypeError, match="bogus"):
+        model(bogus=1)
+
+
+def test_an_unknown_field_is_a_validation_error_through_the_call():
+    from apiserver.service_repo import APICall
+    from apiserver.service_repo.validators import validate_data
+    endpoint = ServiceRepo._get_endpoint("repositories.check", VERSION)
+    api_call = APICall("repositories.check", data={"bogus": 1}, headers={}, remote_addr="127.0.0.1")
+    with pytest.raises(errors.bad_request.ValidationError, match="bogus"):
+        validate_data(api_call, endpoint)
+
+
+def test_an_alias_logs_a_warning_with_the_action(world, caplog, seen):
+    repo = bll.add(world.company, "owner", False, URL, "dataset")
+    with caplog.at_level("WARNING", logger="apiserver.apimodels.repositories"):
+        invoke("unassign", world, {"id": repo.id})
+        invoke("assign", world, {"repository": URL})
+        invoke("unassign", world, {"ref": repo.id})
+    warnings = [r.getMessage() for r in caplog.records if r.name == "apiserver.apimodels.repositories"]
+    assert len(warnings) == 2
+    assert "repositories.unassign" in warnings[0] and "'id'" in warnings[0]
+    assert "repositories.assign" in warnings[1] and "'repository'" in warnings[1]
+
+
+def test_ref_wins_over_id_over_repository(world, seen):
+    repo = bll.add(world.company, "owner", False, URL, "dataset")
+    invoke("check", world, {"ref": repo.id, "id": "the-id", "repository": "the-repository"})
+    invoke("check", world, {"id": repo.id, "repository": "the-repository"})
+    assert seen == [repo.id, repo.id]
+
+
+def test_no_identifier_is_refused_as_no_such_repository(world):
+    with pytest.raises(errors.bad_request.ValidationError, match=r"no such repository: \)"):
+        invoke("delete", world, {})
