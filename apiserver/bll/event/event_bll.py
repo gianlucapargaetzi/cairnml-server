@@ -24,10 +24,7 @@ from apiserver.bll.event.event_common import (
     PlotFields,
 )
 from apiserver.bll.event.event_prepare import (
-    EVENT_TYPES,  # noqa: F401
     INVALID_ITERATION_ERROR,
-    MAX_LONG,  # noqa: F401
-    MIN_LONG,  # noqa: F401
     EventBatch,
     IterationOutOfRange,
     check_event,
@@ -214,13 +211,13 @@ class EventBLL(object):
                 continue
 
             try:
-                iter = normalise_event(event, event_type, worker)
+                iteration = normalise_event(event, event_type, worker)
             except IterationOutOfRange:
                 batch.errors_per_type[INVALID_ITERATION_ERROR] += 1
                 continue
 
             es_action = make_action(company_id, event, event_type, self._get_event_id)
-            self._record_event(batch, es_action, iter, x_axis_label)
+            self._record_event(batch, es_action, iteration, x_axis_label)
 
         self._compress_plots(batch.actions)
 
@@ -468,14 +465,18 @@ class EventBLL(object):
         )
 
     def _record_event(
-        self, batch: EventBatch, es_action: dict, iter: Optional[int], x_axis_label
+        self,
+        batch: EventBatch,
+        es_action: dict,
+        iteration: Optional[int],
+        x_axis_label: Optional[str],
     ):
         """Add the action to the batch and note what the event changes on its task or model."""
         event = es_action["_source"]
         task_or_model_id = event["task"]
-        if iter is not None and event["metric"] not in self._skip_iteration_for_metric:
+        if iteration is not None and event["metric"] not in self._skip_iteration_for_metric:
             batch.task_iteration[task_or_model_id] = max(
-                iter, batch.task_iteration[task_or_model_id]
+                iteration, batch.task_iteration[task_or_model_id]
             )
 
         if event["model_event"]:

@@ -130,12 +130,12 @@ def normalise_event(event: dict, event_type: str, worker: str) -> Optional[int]:
         event["worker"] = worker
 
     # force iter to be a long int
-    iter = event.get("iter")
-    if iter is not None:
-        iter = int(iter)
-        if iter > MAX_LONG or iter < MIN_LONG:
+    iteration = event.get("iter")
+    if iteration is not None:
+        iteration = int(iteration)
+        if iteration > MAX_LONG or iteration < MIN_LONG:
             raise IterationOutOfRange()
-        event["iter"] = iter
+        event["iter"] = iteration
 
     # used to have "values" to indicate array. no need anymore
     if "values" in event:
@@ -144,7 +144,7 @@ def normalise_event(event: dict, event_type: str, worker: str) -> Optional[int]:
 
     event["metric"] = event.get("metric") or ""
     event["variant"] = event.get("variant") or ""
-    return iter
+    return iteration
 
 
 def make_action(company_id: str, event: dict, event_type: str, get_event_id: Callable[[dict], str]) -> dict:

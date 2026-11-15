@@ -16,7 +16,8 @@ import pytest
 
 from apiserver.apierrors import errors
 from apiserver.bll.event import event_bll as event_bll_module
-from apiserver.bll.event.event_bll import EventBLL, MAX_LONG, MIN_LONG
+from apiserver.bll.event.event_bll import EventBLL
+from apiserver.bll.event.event_prepare import MAX_LONG, MIN_LONG
 from apiserver.bll.event.event_common import get_index_name
 from apiserver.database.model.auth import Role
 from apiserver.database.model.model import Model
