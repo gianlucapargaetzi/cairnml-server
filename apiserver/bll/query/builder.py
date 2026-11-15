@@ -4,9 +4,6 @@ from apiserver.config_repo import config
 
 log = config.logger(__file__)
 
-RANGE_IGNORE_VALUE = -1
-
-
 class Builder:
     @staticmethod
     def dates_range(
