@@ -198,35 +198,6 @@ class QueueBLL(object):
 
         return tasks
 
-    def delete(
-        self, company_id: str, user_id: str, queue_id: str, force: bool
-    ) -> Sequence[str]:
-        """
-        Delete the queue
-        :raise errors.bad_request.InvalidQueueId: if the queue is not found
-        :raise errors.bad_request.QueueNotEmpty: if the queue is not empty and 'force' not set
-        """
-        queue = self.get_by_id(company_id=company_id, queue_id=queue_id)
-        if not queue.entries:
-            queue.delete()
-            return []
-
-        if not force:
-            raise errors.bad_request.QueueNotEmpty(
-                "use force=true to delete", id=queue_id
-            )
-
-        tasks = self._update_task_status_on_removal_from_queue(
-            company_id=company_id,
-            user_id=user_id,
-            task_ids={item.task for item in queue.entries},
-            queue_id=queue_id,
-            reason=f"Queue {queue_id} was deleted",
-        )
-
-        queue.delete()
-        return tasks
-
     def get_all(
         self,
         company_id: str,
