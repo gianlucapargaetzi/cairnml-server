@@ -12,7 +12,6 @@ from apiserver.database.model.datachunk import Datachunk, DatachunkKind, Datachu
 from apiserver.database.model.project import Project, ProjectVisibility
 from apiserver.database.model.task.task import Task
 from apiserver.service_repo.auth import Identity
-from apiserver.utilities.partial_version import PartialVersion
 from apiserver.services import datachunks as svc
 from apiserver.tests.db import ensure_db
 

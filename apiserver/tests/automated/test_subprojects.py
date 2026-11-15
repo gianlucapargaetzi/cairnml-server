@@ -211,7 +211,7 @@ class TestSubProjects(TestService):
         user2_client = APIClient(
             api_key=config.get("apiclient.user_auth_only"),
             secret_key=config.get("apiclient.user_auth_only_secret"),
-            base_url=f"http://localhost/cairnml/api/v2.13",
+            base_url="http://localhost/cairnml/api/v2.13",
         )
 
         basename = "Pr1"
@@ -243,7 +243,7 @@ class TestSubProjects(TestService):
         # test aggregations with non-empty subprojects
         task1 = self._temp_task(project=child)
         self._temp_task(project=child, parent=task1)
-        user2_task = self._temp_task(project=child, client=user2_client)
+        self._temp_task(project=child, client=user2_client)
         framework = "Test framework"
         self._temp_model(project=child, framework=framework)
         res = self.api.users.get_all_ex(active_in_projects=[project])
@@ -442,11 +442,11 @@ class TestSubProjects(TestService):
     def test_public_names_clash(self):
         # cannot create a project with a name that match public existing project
         with self.api.raises(errors.bad_request.PublicProjectExists):
-            project = self._temp_project(name="CairnML Examples")
+            self._temp_project(name="CairnML Examples")
 
         # cannot create a subproject under a public project
         with self.api.raises(errors.bad_request.PublicProjectExists):
-            project = self._temp_project(name="CairnML Examples/my project")
+            self._temp_project(name="CairnML Examples/my project")
 
     def test_get_all_with_stats(self):
         project4, _ = self._temp_project_with_tasks(name="project1/project3/project4")

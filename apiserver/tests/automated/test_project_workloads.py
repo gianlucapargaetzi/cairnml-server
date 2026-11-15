@@ -30,7 +30,7 @@ class TestProjectWorkloads(TestService):
             task_name="workloads test3", is_development=True, project=child_project
         )
         self.api.tasks.started(task=task_child_completed)
-        task_child_not_running = self._create_temp_queued_task(
+        self._create_temp_queued_task(
             task_name="workloads test4", queue=queue, project=child_project
         )
 
@@ -40,7 +40,7 @@ class TestProjectWorkloads(TestService):
 
         from_date = (datetime.now().astimezone() - timedelta(days=5)).isoformat()
         to_date = datetime.now().astimezone().isoformat()
-        res = self.api.organization.get_project_workloads(
+        self.api.organization.get_project_workloads(
             projects=[project],
             from_date=from_date,
             to_date=to_date,

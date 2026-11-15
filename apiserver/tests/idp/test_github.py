@@ -1,6 +1,4 @@
 import re
-import time
-from types import SimpleNamespace
 from unittest import TestCase
 
 import jwt

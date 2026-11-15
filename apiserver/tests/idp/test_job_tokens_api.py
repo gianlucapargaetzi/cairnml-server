@@ -1,7 +1,6 @@
 """Job tokens over HTTP against the live server and the real database. Run inside the server container."""
 
 import pytest
-import os
 import uuid
 from unittest import TestCase
 

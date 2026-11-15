@@ -7,7 +7,7 @@ import pytest
 
 from apiserver.apimodels.organization import TagsRequest
 from apiserver.apimodels.queues import QueueRequest
-from apiserver.bll.organization import OrgBLL, Tags
+from apiserver.bll.organization import OrgBLL
 from apiserver.database.model.auth import Role
 from apiserver.database.model.project import Project, ProjectMember, ProjectRole, ProjectVisibility
 from apiserver.database.model.queue import Entry, Queue

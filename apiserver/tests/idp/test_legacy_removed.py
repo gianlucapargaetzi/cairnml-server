@@ -1,8 +1,6 @@
 """The old login is gone: no basic credentials, no tokens without a kind, no credential endpoints."""
 
 import pytest
-import base64
-import json
 import os
 from unittest import TestCase
 

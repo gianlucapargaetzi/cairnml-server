@@ -1,4 +1,3 @@
-from types import SimpleNamespace
 from unittest import TestCase
 
 from apiserver.database.model.audit import RETENTION_DAYS, AuditEvent

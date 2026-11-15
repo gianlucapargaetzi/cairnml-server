@@ -1,7 +1,6 @@
 """The server's own secrets never appear in an API answer, successful or refused. Run inside the server container."""
 
 import pytest
-import os
 from unittest import TestCase
 
 import requests

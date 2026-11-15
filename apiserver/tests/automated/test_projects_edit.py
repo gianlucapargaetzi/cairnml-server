@@ -35,7 +35,7 @@ class TestProjectsEdit(TestService):
 
     def test_project_name_uniqueness(self):
         name1 = "Test name1"
-        p1 = self.create_temp("projects", name=name1, description="test")
+        self.create_temp("projects", name=name1, description="test")
         with self.api.raises(ExpectedUniqueData):
             p2 = self.create_temp("projects", name=name1, description="test")
         p2 = self.create_temp("projects", name="Test name2", description="test")
