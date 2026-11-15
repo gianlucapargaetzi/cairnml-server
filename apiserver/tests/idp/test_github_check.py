@@ -76,3 +76,22 @@ class TestSubmissionCheck(TestCase):
     def test_an_address_that_names_no_hosted_repository_is_not_checked(self):
         with mock.patch.object(repositories, "record_use_quietly", return_value=None):
             check_submission(task(repository="/home/me/code"))
+
+
+def test_the_client_is_built_from_the_admin_access_and_its_address_is_the_access_or_the_configured_one():
+    from types import SimpleNamespace
+
+    from apiserver.idp.github_check import build_from_config
+
+    made = []
+
+    def make_app(app_id, key, api_url):
+        made.append((app_id, key, api_url))
+        return "client"
+
+    with_address = SimpleNamespace(app_id="1", api_url="https://ghe.example/api")
+    assert build_from_config(find_app=lambda: (with_address, "k"), make_app=make_app) == "client"
+    without = SimpleNamespace(app_id="2", api_url="")
+    build_from_config(find_app=lambda: (without, "k2"), make_app=make_app, default_api_url="https://api.github.com")
+    assert made == [("1", "k", "https://ghe.example/api"), ("2", "k2", "https://api.github.com")]
+    assert build_from_config(find_app=lambda: None, make_app=make_app) is None

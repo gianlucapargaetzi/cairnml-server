@@ -5,6 +5,7 @@ from datetime import datetime
 
 from apiserver.config.info import get_default_company
 from apiserver.database.model.auth import Role, AuthUser
+from apiserver.database.model.user import UserProfile
 
 
 def user_id_for(issuer: str, subject: str) -> str:
@@ -54,7 +55,6 @@ def upsert_idp_user(issuer: str, subject: str, username: str, idp_roles, admin_r
 
 def _ensure_profile(user: AuthUser) -> None:
     """The profile (name, company, preferences) that the API reads for get_current_user."""
-    from apiserver.database.model.user import UserProfile
 
     if UserProfile.objects(id=user.id).first() is None:
         UserProfile(id=user.id, company=user.company, name=user.name, created=datetime.utcnow()).save()

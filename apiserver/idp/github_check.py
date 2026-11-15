@@ -4,9 +4,14 @@ stored Git credentials (repo_visibility). Otherwise the job is refused at once w
 later in the agent when it tries to clone."""
 
 
+from typing import Optional
+
 from apiserver.apierrors import errors
-from apiserver.idp.github import GitHubError
+from apiserver.bll import membership, repositories
+from apiserver.bll.user_access import server_app
+from apiserver.config_repo import config
 from apiserver.idp.access_refused import AccessRefused
+from apiserver.idp.github import GitHubApp, GitHubError
 
 # The section of the server README that sets the App up: every refusal below points to it.
 GITHUB_APP_DOCS = "https://github.com/gianlucapargaetzi/cairnml-server/blob/main/README.md#github-app"
@@ -25,8 +30,6 @@ def check_submission(task) -> None:
     listed Failed with the reason). A host that could not be asked never refuses it. The commit is looked up only when an
     authenticated read is used: asking GitHub for it without one would spend the anonymous rate limit.
     """
-    from apiserver.bll import membership, repositories
-
     repository = task.script.repository
     if not repository:
         return
@@ -56,15 +59,15 @@ def check_submission(task) -> None:
 
 
 
-def build_from_config():
+def build_from_config(find_app=None, make_app=GitHubApp, default_api_url: Optional[str] = None):
     """The server's GitHub App client, from the company access an admin added in the UI (Settings > Access); None when
-    no admin has added one. Its ID and key are kept in the database, encrypted, not in the configuration."""
-    from apiserver.bll.user_access import server_app
-    from apiserver.config_repo import config
-    from apiserver.idp.github import GitHubApp
+    no admin has added one. Its ID and key are kept in the database, encrypted, not in the configuration.
 
-    found = server_app()
+    The API address is the one of the access, or else ``default_api_url``, or else the configured one. ``find_app`` and
+    ``make_app`` may be replaced by a test; they default to the database lookup and the GitHub client."""
+    found = (find_app or server_app)()
     if found is None:
         return None
     entry, key = found
-    return GitHubApp(entry.app_id, key, entry.api_url or config.get("apiserver.idp.github_api_url"))
+    api_url = entry.api_url or (default_api_url if default_api_url is not None else config.get("apiserver.idp.github_api_url"))
+    return make_app(entry.app_id, key, api_url)
