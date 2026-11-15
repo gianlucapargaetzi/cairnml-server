@@ -19,7 +19,6 @@ from datetime import datetime
 from apiserver.database.model.settings import Settings
 from apiserver.idp.github import GitHubError, GitHubRefused
 from apiserver.idp.github_check import build_from_config
-from apiserver.idp.secrets import SecretMissing
 
 STATUS_SETTING = "github.status"
 log = logging.getLogger(__name__)
@@ -42,7 +41,6 @@ def _result(state: str, steps: list, message: str, **extra) -> dict:
 def run_check() -> dict:
     """Runs the steps now: the App against GitHub, and the registries from the database. Does not save the result."""
     from apiserver.database.model.repository import RegistryEntry, Repository
-    from apiserver.config_repo import config
 
     steps = []
 

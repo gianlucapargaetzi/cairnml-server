@@ -152,7 +152,7 @@ def validate_file(meta, name):
     try:
         schema = load_hocon(name)
     except ParseBaseException as e:
-        raise InvalidFile(repr(e))
+        raise InvalidFile(repr(e)) from e
 
     try:
         validate(schema, meta)
@@ -160,9 +160,9 @@ def validate_file(meta, name):
     except JSONSchemaValidationError as e:
         path = "->".join(e.absolute_path)
         message = "{}: {}".format(path, e.args[0])
-        raise InvalidFile(message)
+        raise InvalidFile(message) from e
     except Exception as e:
-        raise InvalidFile(str(e))
+        raise InvalidFile(str(e)) from e
 
 
 def parse_args():

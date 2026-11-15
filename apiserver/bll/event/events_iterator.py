@@ -194,4 +194,4 @@ class Scroll(jsonmodels.models.Base):
                 )
             )
         except jwt.PyJWTError:
-            raise ValueError("Invalid Scroll ID")
+            raise ValueError("Invalid Scroll ID") from None

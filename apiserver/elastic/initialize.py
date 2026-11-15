@@ -106,7 +106,7 @@ def check_elastic_empty() -> bool:
                 if retry >= max_retries - 1:
                     raise ElasticConnectionError(
                         f"Error connecting to Elasticsearch: {str(ex)}"
-                    )
+                    ) from ex
                 log.warn(
                     f"Could not connect to ElasticSearch Service. Retry {retry+1} of {max_retries}. Waiting for {timeout}sec"
                 )
