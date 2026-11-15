@@ -7,7 +7,7 @@ import logging
 import re
 import uuid
 from datetime import datetime
-from typing import Optional, Sequence
+from typing import Optional
 
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
 from mongoengine import Q

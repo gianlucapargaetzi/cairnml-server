@@ -327,7 +327,7 @@ def download_for_get_all(call: APICall, company, request: DownloadForGetAllReque
         call_data = json.loads(request_data)
         request = PrepareDownloadForGetAllRequest(**call_data)
     except Exception as ex:
-        raise errors.server_error.DataError("failed parsing prepared data", ex=ex)
+        raise errors.server_error.DataError("failed parsing prepared data", ex=ex) from ex
 
     class SingleLine:
         @staticmethod

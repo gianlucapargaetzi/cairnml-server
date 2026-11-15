@@ -104,7 +104,7 @@ class AuthBLL:
                 user.delete()
                 raise errors.server_error.GeneralError(
                     "failed adding new user", ex=str(ex)
-                )
+                ) from ex
 
             return user.id
 

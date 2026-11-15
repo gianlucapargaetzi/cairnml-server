@@ -223,7 +223,7 @@ def set_preferences(call: APICall, company_id, request: SetPreferencesRequest):
                 key,
                 value,
             )
-            raise errors.bad_request.InvalidPreferencesUpdate(key=key, value=value)
+            raise errors.bad_request.InvalidPreferencesUpdate(key=key, value=value) from None
 
     if new_preferences == base_preferences:
         updated, fields = 0, {}

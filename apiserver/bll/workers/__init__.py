@@ -231,7 +231,7 @@ class WorkerBLL:
         except Exception as e:
             msg = "Failed processing worker status report"
             log.exception(msg)
-            raise server_error.DataError(msg, err=e.args[0])
+            raise server_error.DataError(msg, err=e.args[0]) from e
         finally:
             self._save_worker(entry)
 
@@ -285,7 +285,7 @@ class WorkerBLL:
                 worker_pattern=worker_pattern,
             )
         except Exception as e:
-            raise server_error.DataError("failed loading worker entries", err=e.args[0])
+            raise server_error.DataError("failed loading worker entries", err=e.args[0]) from e
 
         if last_seen:
             ref_time = datetime.utcnow() - timedelta(seconds=max(1, last_seen))
@@ -435,7 +435,7 @@ class WorkerBLL:
             except Exception as e:
                 msg = "Failed parsing worker entry"
                 log.exception(msg)
-                raise server_error.DataError(msg, err=e.args[0])
+                raise server_error.DataError(msg, err=e.args[0]) from e
 
         # Failed loading worker from Redis
         if config.get("apiserver.workers.auto_register", False):

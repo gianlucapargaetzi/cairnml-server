@@ -7,7 +7,7 @@ import pytest
 
 from apiserver.apierrors import errors
 from apiserver.apimodels.project_access import AddQueuesRequest, GetAssignableQueuesRequest, GetQueuesRequest, RemoveQueueRequest, TransferOwnershipRequest
-from apiserver.apimodels.metadata import AddOrUpdateMetadata, DeleteMetadata, MetadataItem
+from apiserver.apimodels.metadata import MetadataItem
 from apiserver.apimodels.queues import (
     AddOrUpdateMetadataRequest,
     GetAllRequest,
