@@ -154,14 +154,6 @@ class KeycloakDirectory:
         return DirectoryUser(enabled=enabled, roles=tuple(sorted(names)))
 
 
-def build_directory(settings):
-    if not settings.idp_sync_client_secret:
-        return None
-    return KeycloakDirectory(
-        settings.oidc_issuer, settings.idp_sync_client_id, settings.idp_sync_client_secret
-    )
-
-
 def build_from_config():
     """The directory the server syncs against, from the secrets mount and the idp configuration."""
     from apiserver.config_repo import config

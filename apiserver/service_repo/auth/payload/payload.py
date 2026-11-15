@@ -1,5 +1,3 @@
-from apiserver.apierrors import errors
-
 from ..identity import Identity
 from ..dictable import Dictable
 
@@ -40,13 +38,3 @@ class Payload(Dictable):
             "identity": self.identity.to_dict(),
             "entities": self.entities,
         }
-
-    def validate_entities(self, **entities):
-        """ Validate entities. key/value represents entity_name/entity_id(s) """
-        if not self.entities:
-            return
-        for entity_name, entity_id in entities.items():
-            constraints = self.entities.get(entity_name)
-            ids = set(entity_id if isinstance(entity_id, (tuple, list)) else (entity_id,))
-            if constraints and not ids.issubset(constraints):
-                raise errors.unauthorized.EntityNotAllowed(entity=entity_name)

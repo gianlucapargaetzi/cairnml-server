@@ -39,9 +39,6 @@ class RedisCacheManager(Generic[T]):
         if response:
             return self.state_class.from_json(response)
 
-    def delete_state(self, state_id) -> None:
-        self.redis.delete(self._get_redis_key(state_id))
-
     def _get_redis_key(self, state_id):
         return f"{self.state_class}/{state_id}"
 
