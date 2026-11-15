@@ -85,6 +85,7 @@ from apiserver.bll.project import ProjectBLL
 from apiserver.bll.project.access import ProjectAccessBLL
 from apiserver.bll.queue import QueueBLL
 from apiserver.bll.queue.pipeline_deadlock import assert_not_deadlocked
+from apiserver.bll.task.clone import CloneSpec
 from apiserver.bll.task import (
     TaskBLL,
     ChangeStatusRequest,
@@ -711,21 +712,7 @@ def clone_task(call: APICall, company_id, request: CloneRequest):
         company_id=company_id,
         user_id=call.identity.user,
         identity=call.identity,
-        task_id=request.task,
-        name=request.new_task_name,
-        comment=request.new_task_comment,
-        parent=request.new_task_parent,
-        project=request.new_task_project,
-        tags=request.new_task_tags,
-        system_tags=request.new_task_system_tags,
-        hyperparams=request.new_task_hyperparams,
-        configuration=request.new_task_configuration,
-        container=request.new_task_container,
-        execution_overrides=request.execution_overrides,
-        script_overrides=request.script_overrides,
-        input_models=request.new_task_input_models,
-        validate_references=request.validate_references,
-        new_project_name=request.new_project_name,
+        spec=CloneSpec.from_request(request),
     )
     _record_repository(company_id, call.identity.user, task)
     call.result.data = {

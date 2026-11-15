@@ -8,7 +8,6 @@ from six import string_types
 
 import apiserver.database.utils as dbutils
 from apiserver.apierrors import errors, APIError
-from apiserver.apimodels.tasks import TaskInputModel
 from apiserver.bll.queue import QueueBLL
 from apiserver.bll.organization import OrgBLL, Tags
 from apiserver.bll.project import ProjectBLL
@@ -18,20 +17,11 @@ from apiserver.database.errors import translate_errors_context
 from apiserver.database.model.model import Model
 from apiserver.database.model.project import Project
 from apiserver.database.model.task.metrics import EventStats, MetricEventStats
-from apiserver.database.model.task.output import Output
 from apiserver.database.model.task.task import (
     Task,
     TaskStatus,
-    TaskSystemTags,
-    ArtifactModes,
-    ModelItem,
-    Models,
-    DEFAULT_ARTIFACT_MODE,
-    TaskModelNames,
-    TaskModelTypes,
     Script,
 )
-from apiserver.database.model import EntityVisibility
 from apiserver.database.model.queue import Queue
 from apiserver.database.utils import (
     get_company_or_none_constraint,
@@ -40,11 +30,21 @@ from apiserver.database.utils import (
 )
 from apiserver.es_factory import es_factory
 from apiserver.redis_manager import redman
-from apiserver.services.utils import validate_tags, escape_dict_field, escape_dict
+from apiserver.services.utils import validate_tags
 from apiserver.service_repo.auth import Identity
-from apiserver.utilities.dicts import nested_set
 from apiserver.utilities.parameter_key_escaper import mongoengine_safe
-from .artifacts import artifacts_prepare_for_save
+from .clone import (
+    ClonePieces,
+    CloneSpec,
+    apply_execution_overrides,
+    build_cloned_task,
+    drop_queue_and_output_artifacts,
+    merged_params,
+    resolve_target_project,
+    script_with_overrides,
+    stamped_input_models,
+    tags_to_register,
+)
 from .param_utils import params_prepare_for_save
 from .utils import (
     ChangeStatusRequest,
@@ -213,139 +213,67 @@ class TaskBLL:
 
     @classmethod
     def clone_task(
-        cls,
-        company_id: str,
-        user_id: str,
-        identity: Identity,
-        task_id: str,
-        name: Optional[str] = None,
-        comment: Optional[str] = None,
-        parent: Optional[str] = None,
-        project: Optional[str] = None,
-        tags: Optional[Sequence[str]] = None,
-        system_tags: Optional[Sequence[str]] = None,
-        hyperparams: Optional[dict] = None,
-        configuration: Optional[dict] = None,
-        container: Optional[dict] = None,
-        execution_overrides: Optional[dict] = None,
-        script_overrides: Optional[dict] = None,
-        input_models: Optional[Sequence[TaskInputModel]] = None,
-        validate_references: bool = False,
-        new_project_name: str = None,
-        hyperparams_overrides: Optional[dict] = None,
-        configuration_overrides: Optional[dict] = None,
-    ) -> Tuple[Task, dict]:
-        validate_tags(tags, system_tags)
+        cls, company_id: str, user_id: str, identity: Identity, spec: CloneSpec
+    ) -> Tuple[Task, Optional[dict]]:
+        validate_tags(spec.tags, spec.system_tags)
         task: Task = cls.get_by_id(
-            company_id=company_id, task_id=task_id, allow_public=True
+            company_id=company_id, task_id=spec.task_id, allow_public=True
         )
 
-        params_dict = {}
-        if hyperparams:
-            params_dict["hyperparams"] = hyperparams
-        elif hyperparams_overrides:
-            updated_hyperparams = {
-                sec: {k: value for k, value in sec_data.items()}
-                for sec, sec_data in (task.hyperparams or {}).items()
-            }
-            for section, section_data in hyperparams_overrides.items():
-                for key, value in section_data.items():
-                    nested_set(updated_hyperparams, (section, key), value)
-            params_dict["hyperparams"] = updated_hyperparams
-
-        if configuration:
-            params_dict["configuration"] = configuration
-        elif configuration_overrides:
-            updated_configuration = {
-                k: value for k, value in (task.configuration or {}).items()
-            }
-            for key, value in configuration_overrides.items():
-                updated_configuration[key] = value
-            params_dict["configuration"] = updated_configuration
-
+        params_dict = merged_params(task, spec)
         now = datetime.now(timezone.utc)
-        if input_models:
-            input_models = [
-                ModelItem(model=m.model, name=m.name, updated=now) for m in input_models
-            ]
-
-        script_dict = task.script.to_proper_dict() if task.script else {}
-        if script_overrides:
-            cls.strip_script_fields(script_overrides)
-            script_dict.update(script_overrides)
+        input_models = stamped_input_models(spec.input_models, now)
+        script_dict = script_with_overrides(
+            task, spec.script_overrides, cls.strip_script_fields
+        )
 
         execution_dict = task.execution.to_proper_dict() if task.execution else {}
-        if execution_overrides:
-            execution_model = execution_overrides.pop("model", None)
-            if not input_models and execution_model:
-                input_models = [
-                    ModelItem(
-                        model=execution_model,
-                        name=TaskModelNames[TaskModelTypes.input],
-                        updated=now,
-                    )
-                ]
-
-            docker_cmd = execution_overrides.pop("docker_cmd", None)
-            if not container and docker_cmd:
-                image, _, arguments = docker_cmd.partition(" ")
-                container = {"image": image, "arguments": arguments}
-
-            artifacts_prepare_for_save({"execution": execution_overrides})
-
-            params_dict["execution"] = {}
-            for legacy_param in ("parameters", "configuration"):
-                legacy_value = execution_overrides.pop(legacy_param, None)
-                if legacy_value is not None:
-                    params_dict["execution"] = legacy_value
-
-            escape_dict_field(execution_overrides, "model_labels")
-
-            execution_dict.update(execution_overrides)
+        execution_dict, input_models, container, legacy_params = apply_execution_overrides(
+            execution_dict, spec.execution_overrides, input_models, spec.container, now
+        )
+        if legacy_params is not None:
+            params_dict["execution"] = legacy_params
 
         params_prepare_for_save(params_dict, previous_task=task)
+        drop_queue_and_output_artifacts(execution_dict)
 
-        artifacts = execution_dict.get("artifacts")
-        if artifacts:
-            execution_dict["artifacts"] = {
-                k: a
-                for k, a in artifacts.items()
-                if a.get("mode", DEFAULT_ARTIFACT_MODE) != ArtifactModes.output
-            }
-        execution_dict.pop("queue", None)
+        project, new_project_data = resolve_target_project(
+            spec, company_id, user_id, identity
+        )
+        pieces = ClonePieces(
+            project=project,
+            parent=cls._clone_parent(company_id, task, spec.parent),
+            script=script_dict,
+            execution=execution_dict,
+            input_models=input_models,
+            container=container,
+            params=params_dict,
+        )
+        new_task = build_cloned_task(task, spec, pieces, company_id, user_id, now)
+        cls.validate(
+            new_task,
+            validate_models=spec.validate_references or input_models,
+            validate_parent=spec.validate_references or spec.parent,
+            validate_project=spec.validate_references or spec.project,
+        )
+        new_task.save()
 
-        new_project_data = None
-        if not project and new_project_name:
-            # Use a project with the provided name, or create a new project
-            project = ProjectBLL.find_or_create(
-                project_name=new_project_name,
-                user=user_id,
-                company=company_id,
-                identity=identity,
-                description="",
-            )
-            new_project_data = {"id": project, "name": new_project_name}
+        updated_tags, updated_system_tags = tags_to_register(task, new_task, spec)
+        org_bll.update_tags(
+            company_id,
+            Tags.Task,
+            projects=[new_task.project],
+            tags=updated_tags,
+            system_tags=updated_system_tags,
+        )
+        update_project_time(new_task.project)
 
-        def clean_system_tags(input_tags: Sequence[str]) -> Sequence[str]:
-            if not input_tags:
-                return input_tags
+        return new_task, new_project_data
 
-            return [
-                tag
-                for tag in input_tags
-                if tag
-                not in [TaskSystemTags.development, EntityVisibility.archived.value]
-            ]
-
-        def ensure_int_labels(execution: dict) -> dict:
-            if not execution:
-                return execution
-
-            model_labels = execution.get("model_labels")
-            if model_labels:
-                execution["model_labels"] = {k: int(v) for k, v in model_labels.items()}
-
-            return execution
+    @classmethod
+    def _clone_parent(cls, company_id: str, task: Task, parent: Optional[str]) -> str:
+        """A clone is filed under the root of its source's folder, not under the source itself: the folder is named
+        after the root, and a folder can only be read through a root that is in the same project."""
 
         def readable_task(task_id: str):
             try:
@@ -358,56 +286,7 @@ class TaskBLL:
             except errors.bad_request.InvalidTaskId:
                 return None
 
-        # A clone is filed under the root of its source's folder, not under the source itself: the folder is named
-        # after the root, and a folder can only be read through a root that is in the same project.
-        parent_task = folder_root_id(parent or task.id, readable_task)
-        new_task = Task(
-            id=create_id(),
-            user=user_id,
-            company=company_id,
-            created=now,
-            last_update=now,
-            last_change=now,
-            last_changed_by=user_id,
-            name=name or task.name,
-            comment=comment or task.comment,
-            parent=parent_task,
-            project=project or task.project,
-            tags=tags or task.tags,
-            system_tags=system_tags or clean_system_tags(task.system_tags),
-            type=task.type,
-            script=script_dict,
-            output=Output(destination=task.output.destination) if task.output else None,
-            models=Models(input=input_models or task.models.input),
-            container=escape_dict(container) or task.container,
-            execution=ensure_int_labels(execution_dict),
-            configuration=params_dict.get("configuration") or task.configuration,
-            hyperparams=params_dict.get("hyperparams") or task.hyperparams,
-        )
-        cls.validate(
-            new_task,
-            validate_models=validate_references or input_models,
-            validate_parent=validate_references or parent,
-            validate_project=validate_references or project,
-        )
-        new_task.save()
-
-        if task.project == new_task.project:
-            updated_tags = tags
-            updated_system_tags = system_tags
-        else:
-            updated_tags = new_task.tags
-            updated_system_tags = new_task.system_tags
-        org_bll.update_tags(
-            company_id,
-            Tags.Task,
-            projects=[new_task.project],
-            tags=updated_tags,
-            system_tags=updated_system_tags,
-        )
-        update_project_time(new_task.project)
-
-        return new_task, new_project_data
+        return folder_root_id(parent or task.id, readable_task)
 
     @classmethod
     def validate(
