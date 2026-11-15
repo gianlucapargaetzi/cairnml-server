@@ -1,7 +1,8 @@
-"""Refuses to start with settings that belonged to the removed basic login.
+"""Startup checks: the server refuses to start with settings that are removed, test-only, or unsafe for the address
+it is served on. Every check returns the problems it found; check_startup_config raises them together.
 
-Access keys in secure.conf and fixed users would let a password or key log in, which the server no
-longer accepts. A deployment that still sets them must fail loudly rather than appear to work.
+Removed settings: access keys in secure.conf and fixed users belonged to the removed basic login. A deployment that
+still sets them must fail loudly rather than appear to work.
 """
 
 import os
@@ -10,21 +11,22 @@ from typing import Callable, List, Mapping
 from apiserver.config_repo import config
 from apiserver.idp.public_origin import public_origin_problems, trusted_proxies_problems
 
+# --- removed settings
 
-def legacy_settings_in_use(get: Callable = config.get) -> List[str]:
+
+def removed_settings_problems(get: Callable = config.get) -> List[str]:
     problems = []
     if get("secure.credentials", None):
-        problems.append(
-            "secure.credentials is set: access keys are removed, delete the section"
-        )
+        problems.append("secure.credentials is set: access keys are removed, delete the section")
     if get("apiserver.auth.fixed_users.enabled", False):
-        problems.append(
-            "apiserver.auth.fixed_users.enabled is true: fixed users are removed"
-        )
+        problems.append("apiserver.auth.fixed_users.enabled is true: fixed users are removed")
     return problems
 
 
-def test_only_settings_in_use(get: Callable = config.get, env: Mapping = os.environ) -> List[str]:
+# --- test-only settings
+
+
+def settings_for_test_runs_problems(get: Callable = config.get, env: Mapping = os.environ) -> List[str]:
     """Settings that exist for the test suite. They are refused unless the server runs as a test run."""
     test_run = env.get("CAIRNML_TEST_MODE") == "1"
     problems = []
@@ -33,6 +35,9 @@ def test_only_settings_in_use(get: Callable = config.get, env: Mapping = os.envi
     if env.get("CAIRNML_ALLOW_CONFIG_SECRET") == "1" and not test_run:
         problems.append("CAIRNML_ALLOW_CONFIG_SECRET=1 is test-only: it needs CAIRNML_TEST_MODE=1")
     return problems
+
+
+# --- the address the server is served on
 
 
 def cookie_settings_problems(get: Callable = config.get) -> List[str]:
@@ -50,10 +55,10 @@ def cookie_settings_problems(get: Callable = config.get) -> List[str]:
     return []
 
 
-def check_no_legacy_settings(get: Callable = config.get) -> None:
+def check_startup_config(get: Callable = config.get) -> None:
     problems = (
-        legacy_settings_in_use(get)
-        + test_only_settings_in_use(get)
+        removed_settings_problems(get)
+        + settings_for_test_runs_problems(get)
         + cookie_settings_problems(get)
         + public_origin_problems(get)
         + trusted_proxies_problems(get)
