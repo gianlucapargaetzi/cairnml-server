@@ -11,6 +11,14 @@ ROOT = Path(__file__).resolve().parents[1]
 
 # (module path below apiserver/, name defined as a function or class anywhere in the module)
 REMOVED = [
+    ("utilities/__init__.py", "strict_map"),
+    ("service_repo/util.py", "resolve_addr"),
+    ("service_repo/util.py", "get_local_addr"),
+    ("service_repo/auth/payload/payload.py", "validate_entities"),
+    ("service_repo/apicall.py", "get_redacted_headers"),
+    ("service_repo/apicall.py", "assign_new_id"),
+    ("bll/redis_cache_manager.py", "delete_state"),
+    ("bll/query/builder.py", "normalize_range"),
     ("bll/project/project_workloads.py", "_get_date_from_iso_str"),
     ("bll/event/scalar_key.py", "ISOTimeKey"),
     ("bll/event/scalar_key.py", "IterKey"),
