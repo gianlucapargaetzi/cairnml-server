@@ -30,7 +30,10 @@ if ! grep -Eq '^CAIRNML_ADMIN_PASSWORD=.+' .env; then
   printf 'CAIRNML_ADMIN_PASSWORD=%s\n' "$(openssl rand -hex 16)" >> .env
   echo "wrote CAIRNML_ADMIN_PASSWORD to deploy/.env: the CairnML sign-in of the admin uses it from this run on"
 fi
+# An exported CAIRNML_WEB_DIR (for example from a worktree) wins over the value in deploy/.env: keep it across the source.
+_exported_web_dir="${CAIRNML_WEB_DIR-}"
 set -a; . ./.env; set +a
+if [ -n "$_exported_web_dir" ]; then CAIRNML_WEB_DIR="$_exported_web_dir"; export CAIRNML_WEB_DIR; fi
 
 # Keycloak creates a temporary admin with this name on its first start. Setup deletes it once KC_ADMIN can sign in, so
 # KC_ADMIN must be another name.

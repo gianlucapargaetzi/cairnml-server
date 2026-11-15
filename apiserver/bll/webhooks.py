@@ -44,6 +44,11 @@ NOTIFY_STATUSES = frozenset({TaskStatus.completed, TaskStatus.failed, TaskStatus
 _pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="task-webhook")
 
 
+def _pause(seconds: float) -> None:
+    """The wait between retries. A seam of its own: the tests patch this, not time.sleep, which other threads use too."""
+    time.sleep(seconds)
+
+
 def url_problem(url: str) -> Optional[str]:
     """What is wrong with a webhook URL, or None when it may be stored. Plain http is refused unless the host is
     listed in apiserver.webhooks.insecure_http_hosts (local test receivers only)."""
@@ -157,7 +162,7 @@ def deliver_with_retries(url: str, payload: dict) -> Tuple[bool, Optional[int]]:
     code = None
     for attempt in range(MAX_RETRIES + 1):
         if attempt:
-            time.sleep(BACKOFF_SEC * 2 ** (attempt - 1))
+            _pause(BACKOFF_SEC * 2 ** (attempt - 1))
         try:
             code = send(url, payload)
         except (ProbeBlocked, ProbeFailed) as exc:
