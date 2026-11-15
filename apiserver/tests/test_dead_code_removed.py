@@ -11,6 +11,9 @@ ROOT = Path(__file__).resolve().parents[1]
 
 # (module path below apiserver/, name defined as a function or class anywhere in the module)
 REMOVED = [
+    ("bll/event/scalar_key.py", "ISOTimeKey"),
+    ("bll/event/scalar_key.py", "IterKey"),
+    ("bll/event/scalar_key.py", "TimestampKey"),
     ("bll/datachunks.py", "delete_objects"),
     ("bll/queue/queue_bll.py", "delete"),
 ]
