@@ -14,8 +14,10 @@ from mongoengine import Q
 
 from apiserver.apierrors import errors
 from apiserver.config_repo import config
+from apiserver.bll import access
 from apiserver.database.model.auth import AuthUser
 from apiserver.database.model.project import Project
+from apiserver.database.model.repository import Assignment
 from apiserver.database.model.user_access import UserAccess
 from apiserver.idp import git_credentials as store
 from apiserver.idp.audit import record as audit
@@ -92,7 +94,7 @@ def add_app(company: str, user: str, label: str, app_id: str, api_url: str, key:
     now = datetime.utcnow()
     if scope == "company":
         # the company may have several GitHub Apps (one for each group, for example): adding one keeps the others
-        _access().refuse_inactive(user)
+        access.refuse_inactive(user)
     entry = UserAccess(
         id=uuid.uuid4().hex, company=company, user=user, kind="app", label=_label(label), scope=scope,
         host="github.com", app_id=app_id, api_url=api,
@@ -172,18 +174,12 @@ def server_app():
     return apps[0] if apps else None
 
 
-def _access():
-    """bll/access reads this module, so it is imported where it is used"""
-    from apiserver.bll import access
-    return access
-
-
 def delete(company: str, user: str, access_id: str, is_admin: bool = False) -> None:
-    _access().refuse_inactive(user)
+    access.refuse_inactive(user)
     entry = _owned_or_company(company, user, access_id, is_admin)
-    entry.delete()
-    from apiserver.database.model.repository import Assignment
+    # assignments first: a failure in between leaves an unused credential, never an assignment to a missing one
     Assignment.objects(company=company, credential=entry.id).delete()
+    entry.delete()
     audit(user, "user_access.deleted", company=company, kind=entry.kind)
 
 

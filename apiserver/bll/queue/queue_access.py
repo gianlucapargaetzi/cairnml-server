@@ -30,7 +30,7 @@ from apiserver.bll.access import (
     remove_grant,
     shared_project_ids,
 )
-from apiserver.bll.user_access import my_projects
+from apiserver.bll.membership import my_projects
 from apiserver.database.model.auth import Role, AuthUser
 from apiserver.database.model.project import Project
 from apiserver.database.model.queue import Queue

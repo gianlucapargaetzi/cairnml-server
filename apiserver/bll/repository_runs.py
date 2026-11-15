@@ -12,7 +12,7 @@ import re
 from typing import Optional, Set, Tuple
 
 from apiserver.bll import repositories as repos
-from apiserver.bll import repository_registry, user_access
+from apiserver.bll import membership, repository_registry
 from apiserver.database.model.auth import AuthUser
 from apiserver.database.model.project import Project
 from apiserver.database.model.repository import Repository
@@ -52,7 +52,7 @@ def publish_run(task) -> None:
     """Records the repositories a run used and links them to its project. Called when the run records its datasets and when it
     finishes; a repository that is already recorded is left as it is. Never raises for one repository."""
     run = Task.objects(company=task.company, id=task.id).only("id", "company", "user", "project", "hyperparams").first()
-    if run is None or not run.user or not user_access.is_active(run.user):
+    if run is None or not run.user or not membership.is_active(run.user):
         return
     datasets, registries = recorded(run.hyperparams)
     for repo in sorted(datasets):
@@ -88,7 +88,7 @@ def _row(repo, address: str, project_root: Optional[str], resolution, can_assign
 def resolve_many(company: str, addresses: list, user: str, project: Optional[str], is_admin: bool = False) -> list:
     """How each repository is read for the user in the project, as a badge shows it. A repository with no record is answered
     from the host alone, and nothing is recorded."""
-    root = user_access.root_project(company, project) if project else None
+    root = membership.root_project(company, project) if project else None
     rows = []
     for address in addresses:
         parsed = repo_address.parse(address or "")
@@ -106,10 +106,10 @@ def requirement(company: str, user: str, task_ids: list, is_admin: bool) -> list
     """What each task's repositories need before they are dispatched by the user: one row per distinct repository and project of
     the tasks the user may see, with the ids of those tasks. A row with ``ask`` true is one the web app warns about. A row says
     whether the user may assign a credential (their own) and the credentials they may choose from."""
-    mine = user_access.my_root_ids(company, user)
+    mine = membership.my_root_ids(company, user)
     rows: dict = {}
     for task in Task.objects(company=company, id__in=task_ids).only("script.repository", "user", "project", "hyperparams"):
-        root = user_access.root_project(company, task.project) if task.project else None
+        root = membership.root_project(company, task.project) if task.project else None
         if not (is_admin or task.user == user or root in mine):
             continue
         datasets, registries = recorded(task.hyperparams)
@@ -173,7 +173,7 @@ def runs_of(company: str, user: str, is_admin: bool, repo: Repository) -> list:
     projects that list it, read from what each recorded (its datasets and its code), so it is the same list the badges come from."""
     roots = {share.project for share in repos.linked_projects(repo)}
     if not is_admin:
-        roots &= user_access.my_root_ids(company, user)
+        roots &= membership.my_root_ids(company, user)
     if not roots:
         return []
     project_ids = set(roots)

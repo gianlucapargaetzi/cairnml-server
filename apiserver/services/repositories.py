@@ -4,7 +4,7 @@ bll/repositories. The only service for them."""
 from apiserver.apierrors import errors
 from apiserver.apimodels import repositories as models
 from apiserver.bll import repositories as bll
-from apiserver.bll import dataset_versions, repository_details, repository_history, repository_registry, repository_runs, user_access
+from apiserver.bll import dataset_versions, repository_details, repository_history, repository_registry, repository_runs, membership
 from apiserver.database.model.auth import Role
 from apiserver.database.model.repository import Repository
 from apiserver.database.model.task.task import Task
@@ -46,7 +46,7 @@ def add(call: APICall, company: str, request: models.AddRequest):
     if "registry" in repo.roles and repo.read_at is None:
         try:  # its entries are there the moment it is listed; one that cannot be read yet says why on its record
             repository_registry.read_entries(
-                company, repo, call.identity.user, user_access.root_project(company, request.project))
+                company, repo, call.identity.user, membership.root_project(company, request.project))
         except errors.bad_request.ValidationError:
             pass
         repo = bll.get(company, repo.id)
@@ -168,7 +168,7 @@ def _may_read(call: APICall, company: str, repo: Repository) -> bool:
     job_user, project = _job_user(call, company)
     if job_user is None:
         return bll.can_see(company, call.identity.user, _is_admin(call), repo)
-    root = user_access.root_project(company, project) if project else None
+    root = membership.root_project(company, project) if project else None
     return bll.can_see(company, job_user, False, repo) or (
         root is not None and bll.access.find_share(company, "repository", repo.id, "projects", root) is not None)
 

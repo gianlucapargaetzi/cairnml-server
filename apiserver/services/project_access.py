@@ -24,7 +24,7 @@ from apiserver.bll.access import (
     resource_ids_shared_with,
     revoke_member_shares,
 )
-from apiserver.bll import user_access
+from apiserver.bll import membership
 from apiserver.bll import repositories as repositories_bll
 from apiserver.bll.project.access import ProjectAccessBLL
 from apiserver.bll.queue.queue_access import QueueAccessBLL
@@ -299,7 +299,7 @@ def usable(call: APICall, company_id: str, request: UsableRequest):
     root_id = _resolve_root_id(call, request.project)
     ProjectAccessBLL.assert_can(call.identity, request.project, "read")
     # a public project is readable by anyone, but its lists are for its members (and admins) only
-    if call.identity.role not in ADMIN_ROLES and not user_access.is_member(company_id, root_id, call.identity.user):
+    if call.identity.role not in ADMIN_ROLES and not membership.is_member(company_id, root_id, call.identity.user):
         raise errors.forbidden.NoWritePermission("only the members of the project may see what it can use")
     _load_root(company_id, root_id)
 
