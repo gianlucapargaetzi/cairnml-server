@@ -838,3 +838,36 @@ def test_a_write_token_refused_by_github_says_the_app_needs_write_access(world):
     with pytest.raises(errors.bad_request.ValidationError) as read_refused:          # a read token has no such hint
         bll._app_token(App(), repo, "the GitHub App x")
     assert "write" not in read_refused.value.msg
+
+
+# --- no record is left pointing at a deleted one ----------------------------------------------------------------------------
+
+def test_deleting_a_credential_leaves_no_orphan(world):
+    from apiserver.bll import user_access
+    from apiserver.bll.integrity import find_orphans
+
+    credential(world, "mine", "member")
+    repo = use(world)
+    bll.assign(world.company, "member", repo.id, "mine")
+    user_access.delete(world.company, "member", "mine")
+    assert find_orphans(world.company) == {}
+
+
+def test_deleting_a_repository_leaves_no_orphan(world):
+    from apiserver.bll.integrity import find_orphans
+
+    credential(world, "mine", "owner")
+    repo = bll.add(world.company, "owner", False, URL, "dataset")  # used by nobody else, so it may be deleted
+    bll.assign(world.company, "owner", repo.id, "mine")
+    bll.delete(world.company, "owner", False, repo.id)
+    assert find_orphans(world.company) == {}
+
+
+def test_a_dangling_assignment_is_found(world):
+    from apiserver.bll.integrity import find_orphans
+
+    credential(world, "mine", "owner")
+    repo = use(world)
+    bll.assign(world.company, "owner", repo.id, "mine")
+    Assignment.objects(repository=repo.id).update(credential="gone")
+    assert find_orphans(world.company) == {"assignment.credential": [Assignment.objects(repository=repo.id).first().id]}
