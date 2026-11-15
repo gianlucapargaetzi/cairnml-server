@@ -56,8 +56,10 @@ def _git_version() -> tuple:
 
 def _check_git_version() -> None:
     if _git_version() < MIN_GIT:
-        raise GitHubError("git 2.37 or newer is needed to connect only to the address that was checked, and the server's git is "
-                          "older or its version could not be read")
+        raise GitHubError(
+            "git 2.37 or newer is needed to connect only to the address that was checked, and the server's git is "
+            "older or its version could not be read"
+        )
 
 
 def _guard_args(host: str, address: str, port: int = 443) -> list:
@@ -104,13 +106,20 @@ class GitReader:
         env.update({"GIT_TERMINAL_PROMPT": "0", "GIT_CONFIG_NOSYSTEM": "1", "GIT_ASKPASS": "true"})
         if self.token:
             basic = base64.b64encode(f"{self.username}:{self.token}".encode()).decode()
-            env.update({"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "http.extraHeader",
-                        "GIT_CONFIG_VALUE_0": f"Authorization: Basic {basic}"})
+            env.update(
+                {
+                    "GIT_CONFIG_COUNT": "1",
+                    "GIT_CONFIG_KEY_0": "http.extraHeader",
+                    "GIT_CONFIG_VALUE_0": f"Authorization: Basic {basic}",
+                }
+            )
         return env
 
     def _run_git(self, pin: list, *args: str, **kwargs) -> subprocess.CompletedProcess:
         """The only place git is run for this reader: always with the guard options of ``pin``."""
-        return subprocess.run(["git", *pin, *args], env=self._env(), capture_output=True, timeout=CLONE_TIMEOUT, check=False, **kwargs)
+        return subprocess.run(
+            ["git", *pin, *args], env=self._env(), capture_output=True, timeout=CLONE_TIMEOUT, check=False, **kwargs
+        )
 
     def _clone(self, repo: str) -> str:
         if self._dir and self._path == repo:
@@ -119,8 +128,19 @@ class GitReader:
         pin = _checked_pin(self.host)
         folder = tempfile.mkdtemp(prefix="cairnml-git-")
         try:
-            done = self._run_git(pin, "clone", "--quiet", "--depth", str(HISTORY), "--single-branch", "--no-tags", "--",
-                                 f"https://{self.host}/{repo}.git", folder, text=True)
+            done = self._run_git(
+                pin,
+                "clone",
+                "--quiet",
+                "--depth",
+                str(HISTORY),
+                "--single-branch",
+                "--no-tags",
+                "--",
+                f"https://{self.host}/{repo}.git",
+                folder,
+                text=True,
+            )
         except subprocess.TimeoutExpired:
             shutil.rmtree(folder, ignore_errors=True)
             raise GitHubError(f"{repo} could not be read in time") from None
@@ -175,15 +195,24 @@ class GitReader:
 
     def list_commits(self, repo: str, ref: str, limit: int) -> list:
         """The latest commits of the default branch, newest first: sha, first line of the message, author, date, parent shas."""
-        done = self._git(repo, "log", f"--max-count={min(limit, HISTORY)}", "--format=%H%x1f%s%x1f%an%x1f%aI%x1f%P%x1e", "HEAD")
+        done = self._git(
+            repo, "log", f"--max-count={min(limit, HISTORY)}", "--format=%H%x1f%s%x1f%an%x1f%aI%x1f%P%x1e", "HEAD"
+        )
         if done.returncode:
             raise GitHubError(f"commit list failed for {repo}")
         commits = []
         for record in done.stdout.decode("utf-8", "replace").split("\x1e"):
             fields = record.strip("\n").split("\x1f")
             if len(fields) == 5:
-                commits.append({"sha": fields[0], "message": fields[1], "author": fields[2], "date": fields[3],
-                                "parents": fields[4].split()})
+                commits.append(
+                    {
+                        "sha": fields[0],
+                        "message": fields[1],
+                        "author": fields[2],
+                        "date": fields[3],
+                        "parents": fields[4].split(),
+                    }
+                )
         return commits
 
     def graph_history(self, repo: str, run_commits: list, limit: int) -> dict:
@@ -196,8 +225,18 @@ class GitReader:
         pin = _checked_pin(self.host)
         folder = tempfile.mkdtemp(prefix="cairnml-git-history-")
         try:
-            done = self._run_git(pin, "clone", "--quiet", "--bare", "--filter=tree:0", "--no-tags", "--",
-                                 f"https://{self.host}/{repo}.git", folder, text=True)
+            done = self._run_git(
+                pin,
+                "clone",
+                "--quiet",
+                "--bare",
+                "--filter=tree:0",
+                "--no-tags",
+                "--",
+                f"https://{self.host}/{repo}.git",
+                folder,
+                text=True,
+            )
             if done.returncode != 0:
                 raise RepoNotAccessible(f"{repo} could not be read over git: " + _first_line(done.stderr, self.token))
 
@@ -214,7 +253,9 @@ class GitReader:
                     heads[name] = sha
             resolved = {}
             for commit in run_commits:
-                full = git("rev-parse", "--verify", "--quiet", f"{commit}^{{commit}}").strip() if _is_sha(commit) else ""
+                full = (
+                    git("rev-parse", "--verify", "--quiet", f"{commit}^{{commit}}").strip() if _is_sha(commit) else ""
+                )
                 if full:
                     resolved[commit] = full
             known = set(resolved.values())
@@ -234,10 +275,22 @@ class GitReader:
             tips = {}
             for name in wanted:
                 tips.setdefault(heads[name], []).append(name)
-            commits = [c for c in (_commit(r) for r in git("log", "--topo-order", f"--max-count={limit}", fmt, *refs, "--")
-                                   .split("\x1e")) if c]
-            return {"total": int(count), "first": _commit(git("log", "-1", fmt, roots[0])), "tips": tips, "resolved": resolved,
-                    "commits": commits, "default_tip": heads[default]}
+            commits = [
+                c
+                for c in (
+                    _commit(r)
+                    for r in git("log", "--topo-order", f"--max-count={limit}", fmt, *refs, "--").split("\x1e")
+                )
+                if c
+            ]
+            return {
+                "total": int(count),
+                "first": _commit(git("log", "-1", fmt, roots[0])),
+                "tips": tips,
+                "resolved": resolved,
+                "commits": commits,
+                "default_tip": heads[default],
+            }
         except subprocess.TimeoutExpired:
             raise GitHubError(f"{repo} could not be read in time") from None
         finally:
@@ -275,7 +328,13 @@ def _commit(record: str) -> Optional[dict]:
     fields = record.strip("\n").split("\x1f")
     if len(fields) != 5:
         return None
-    return {"sha": fields[0], "message": fields[1], "author": fields[2], "date": fields[3], "parents": fields[4].split()}
+    return {
+        "sha": fields[0],
+        "message": fields[1],
+        "author": fields[2],
+        "date": fields[3],
+        "parents": fields[4].split(),
+    }
 
 
 def _is_sha(text: str) -> bool:

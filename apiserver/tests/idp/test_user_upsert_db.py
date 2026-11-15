@@ -54,7 +54,12 @@ def test_a_second_user_the_idp_maps_to_admin_stays_a_user_while_there_is_an_admi
     second = upsert_idp_user("https://idp", "admin-2", "would-be-admin", ["cairn-admin"], "cairn-admin")
     try:
         assert first.role == Role.admin and second.role == Role.user
-        assert upsert_idp_user("https://idp", "admin-1", "root-admin", ["cairn-admin"], "cairn-admin").role == Role.admin
-        assert single_admin(second.id, Role.admin, company) == Role.user and single_admin(second.id, Role.user, company) == Role.user
+        assert (
+            upsert_idp_user("https://idp", "admin-1", "root-admin", ["cairn-admin"], "cairn-admin").role == Role.admin
+        )
+        assert (
+            single_admin(second.id, Role.admin, company) == Role.user
+            and single_admin(second.id, Role.user, company) == Role.user
+        )
     finally:
         AuthUser.objects(id__in=[first.id, second.id]).delete()

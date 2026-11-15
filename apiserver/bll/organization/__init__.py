@@ -36,17 +36,11 @@ class OrgBLL:
         remove_tags: Sequence[str],
     ) -> int:
         if entity_cls not in (Task, Model):
-            raise errors.bad_request.ValidationError(
-                "Tags editing can be called on tasks or models only"
-            )
+            raise errors.bad_request.ValidationError("Tags editing can be called on tasks or models only")
         if not entity_ids:
-            raise errors.bad_request.ValidationError(
-                "No entity ids provided for editing tags"
-            )
+            raise errors.bad_request.ValidationError("No entity ids provided for editing tags")
         if not (add_tags or remove_tags):
-            raise errors.bad_request.ValidationError(
-                "Either add tags or remove tags should be provided"
-            )
+            raise errors.bad_request.ValidationError("Either add tags or remove tags should be provided")
 
         updated = 0
         last_changed = {
@@ -55,24 +49,24 @@ class OrgBLL:
         }
         if add_tags:
             updated += entity_cls.objects(company=company_id, id__in=entity_ids).update(
-                add_to_set__tags=add_tags, **last_changed,
+                add_to_set__tags=add_tags,
+                **last_changed,
             )
         if remove_tags:
             updated += entity_cls.objects(company=company_id, id__in=entity_ids).update(
-                pull_all__tags=remove_tags, **last_changed,
+                pull_all__tags=remove_tags,
+                **last_changed,
             )
         if not updated:
             return 0
 
-        projects = entity_cls.objects(company=company_id, id__in=entity_ids).distinct(
-            "project"
-        )
+        projects = entity_cls.objects(company=company_id, id__in=entity_ids).distinct("project")
         update_project_time(project_ids=projects)
         self.update_tags(
             company_id,
             entity=Tags.Task if entity_cls is Task else Tags.Model,
             projects=projects,
-            tags=add_tags or remove_tags
+            tags=add_tags or remove_tags,
         )
         return updated
 
@@ -86,9 +80,7 @@ class OrgBLL:
     ) -> dict:
         tags_cache = self._get_tags_cache_for_entity(entity)
         if not projects:
-            return tags_cache.get_tags(
-                company_id, include_system=include_system, filter_=filter_
-            )
+            return tags_cache.get_tags(company_id, include_system=include_system, filter_=filter_)
 
         ret = defaultdict(set)
         for project in projects:
@@ -104,7 +96,12 @@ class OrgBLL:
         return ret
 
     def update_tags(
-        self, company_id: str, entity: Tags, projects: Sequence[str], tags=None, system_tags=None,
+        self,
+        company_id: str,
+        entity: Tags,
+        projects: Sequence[str],
+        tags=None,
+        system_tags=None,
     ):
         tags_cache = self._get_tags_cache_for_entity(entity)
         tags_cache.update_tags(company_id, projects, tags, system_tags)

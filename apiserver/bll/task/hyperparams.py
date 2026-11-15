@@ -38,19 +38,12 @@ class HyperParams:
             allow_public=True,
         )
 
-        return {
-            task.id: {"hyperparams": cls._get_params_list(items=task.hyperparams)}
-            for task in tasks
-        }
+        return {task.id: {"hyperparams": cls._get_params_list(items=task.hyperparams)} for task in tasks}
 
     @classmethod
-    def _get_params_list(
-        cls, items: Dict[str, Dict[str, ParamsItem]]
-    ) -> Sequence[dict]:
+    def _get_params_list(cls, items: Dict[str, Dict[str, ParamsItem]]) -> Sequence[dict]:
         ret = list(chain.from_iterable(v.values() for v in items.values()))
-        return [
-            p.to_proper_dict() for p in sorted(ret, key=attrgetter("section", "name"))
-        ]
+        return [p.to_proper_dict() for p in sorted(ret, key=attrgetter("section", "name"))]
 
     @classmethod
     def _normalize_params(cls, params: Sequence) -> bool:
@@ -81,13 +74,10 @@ class HyperParams:
             identity=identity,
         )
 
-        with_param, without_param = iterutils.partition(
-            hyperparams, key=lambda p: bool(p.name)
-        )
+        with_param, without_param = iterutils.partition(hyperparams, key=lambda p: bool(p.name))
         sections_to_delete = {p.section for p in without_param}
         delete_cmds = {
-            f"unset__hyperparams__{ParameterKeyEscaper.escape(section)}": 1
-            for section in sections_to_delete
+            f"unset__hyperparams__{ParameterKeyEscaper.escape(section)}": 1 for section in sections_to_delete
         }
 
         for item in with_param:
@@ -135,9 +125,7 @@ class HyperParams:
         else:
             for section, section_params in hyperparams.items():
                 for name, value in section_params.items():
-                    update_cmds[
-                        f"set__hyperparams__{section}__{mongoengine_safe(name)}"
-                    ] = value
+                    update_cmds[f"set__hyperparams__{section}__{mongoengine_safe(name)}"] = value
 
         return update_task(
             task,
@@ -151,21 +139,16 @@ class HyperParams:
         sections = iterutils.bucketize(items, key=attrgetter("section"))
         return {
             ParameterKeyEscaper.escape(section): {
-                ParameterKeyEscaper.escape(param.name): ParamsItem(**param.to_struct())
-                for param in params
+                ParameterKeyEscaper.escape(param.name): ParamsItem(**param.to_struct()) for param in params
             }
             for section, params in sections.items()
         }
 
     @classmethod
-    def get_configurations(
-        cls, company_id: str, task_ids: Sequence[str], names: Sequence[str]
-    ) -> Dict[str, dict]:
+    def get_configurations(cls, company_id: str, task_ids: Sequence[str], names: Sequence[str]) -> Dict[str, dict]:
         only = ["id"]
         if names:
-            only.extend(
-                f"configuration.{ParameterKeyEscaper.escape(name)}" for name in names
-            )
+            only.extend(f"configuration.{ParameterKeyEscaper.escape(name)}" for name in names)
         else:
             only.append("configuration")
         tasks = task_bll.assert_exists(
@@ -178,17 +161,14 @@ class HyperParams:
         return {
             task.id: {
                 "configuration": [
-                    c.to_proper_dict()
-                    for c in sorted(task.configuration.values(), key=attrgetter("name"))
+                    c.to_proper_dict() for c in sorted(task.configuration.values(), key=attrgetter("name"))
                 ]
             }
             for task in tasks
         }
 
     @classmethod
-    def get_configuration_names(
-        cls, company_id: str, task_ids: Sequence[str], skip_empty: bool
-    ) -> Dict[str, list]:
+    def get_configuration_names(cls, company_id: str, task_ids: Sequence[str], skip_empty: bool) -> Dict[str, list]:
         skip_empty_condition = {"$match": {"items.v.value": {"$nin": [None, ""]}}}
         pipeline = [
             {
@@ -206,11 +186,7 @@ class HyperParams:
         tasks = Task.aggregate(pipeline)
 
         return {
-            task["_id"]: {
-                "names": sorted(
-                    ParameterKeyEscaper.unescape(name) for name in task["names"]
-                )
-            }
+            task["_id"]: {"names": sorted(ParameterKeyEscaper.unescape(name) for name in task["names"])}
             for task in tasks
         }
 
@@ -224,15 +200,10 @@ class HyperParams:
         replace_configuration: bool,
         force: bool,
     ) -> int:
-        task = get_task_for_update(
-            company_id=company_id, task_id=task_id, force=force, identity=identity
-        )
+        task = get_task_for_update(company_id=company_id, task_id=task_id, force=force, identity=identity)
 
         update_cmds = dict()
-        configuration = {
-            ParameterKeyEscaper.escape(c.name): ConfigurationItem(**c.to_struct())
-            for c in configuration
-        }
+        configuration = {ParameterKeyEscaper.escape(c.name): ConfigurationItem(**c.to_struct()) for c in configuration}
         if replace_configuration:
             update_cmds["set__configuration"] = configuration
         else:
@@ -250,13 +221,8 @@ class HyperParams:
         configuration: Sequence[str],
         force: bool,
     ) -> int:
-        task = get_task_for_update(
-            company_id=company_id, task_id=task_id, force=force, identity=identity
-        )
+        task = get_task_for_update(company_id=company_id, task_id=task_id, force=force, identity=identity)
 
-        delete_cmds = {
-            f"unset__configuration__{ParameterKeyEscaper.escape(name)}": 1
-            for name in set(configuration)
-        }
+        delete_cmds = {f"unset__configuration__{ParameterKeyEscaper.escape(name)}": 1 for name in set(configuration)}
 
         return update_task(task, user_id=identity.user, update_cmds=delete_cmds)

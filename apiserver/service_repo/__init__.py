@@ -22,7 +22,7 @@ def endpoint(
     response_data_model: Type[models.Base] = None,
     validate_schema=False,
 ):
-    """ Endpoint decorator, used to declare a method as an endpoint handler """
+    """Endpoint decorator, used to declare a method as an endpoint handler"""
 
     def decorator(f: Union[EndpointFunc, LegacyEndpointFunc]) -> EndpointFunc:
         # Backwards compatibility: support endpoints with both old-style signature (call) and new-style signature
@@ -56,6 +56,7 @@ def endpoint(
         return func
 
     return decorator
+
 
 # APICallResult is re-exported for the callers of service_repo.
 __all__ = ["APICallResult"]

@@ -76,9 +76,7 @@ def check_elastic_empty() -> bool:
     timeout = config.get("apiserver.elastic.probing.timeout", 30)
 
     es_logger = logging.getLogger("elasticsearch")
-    log_filter = ConnectionErrorFilter(
-        err_type=urllib3.exceptions.NewConnectionError, args_prefix=("GET",)
-    )
+    log_filter = ConnectionErrorFilter(err_type=urllib3.exceptions.NewConnectionError, args_prefix=("GET",))
 
     def events_legacy_template():
         try:
@@ -104,11 +102,9 @@ def check_elastic_empty() -> bool:
                 return not (events_template() or events_legacy_template())
             except exceptions.ConnectionError as ex:
                 if retry >= max_retries - 1:
-                    raise ElasticConnectionError(
-                        f"Error connecting to Elasticsearch: {str(ex)}"
-                    ) from ex
+                    raise ElasticConnectionError(f"Error connecting to Elasticsearch: {str(ex)}") from ex
                 log.warn(
-                    f"Could not connect to ElasticSearch Service. Retry {retry+1} of {max_retries}. Waiting for {timeout}sec"
+                    f"Could not connect to ElasticSearch Service. Retry {retry + 1} of {max_retries}. Waiting for {timeout}sec"
                 )
                 sleep(timeout)
     finally:
@@ -126,7 +122,5 @@ def init_es_data():
         args = cluster_conf.get("args", {})
         http_auth = es_factory.get_credentials(name)
 
-        res = apply_mappings_to_cluster(
-            hosts_config, name, es_args=args, http_auth=http_auth
-        )
+        res = apply_mappings_to_cluster(hosts_config, name, es_args=args, http_auth=http_auth)
         log.info(res)

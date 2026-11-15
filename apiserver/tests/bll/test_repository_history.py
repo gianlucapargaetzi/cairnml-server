@@ -13,8 +13,13 @@ def commit(number: int, parents=None) -> dict:
     """Commit ``number``; by default its parent is ``number - 1`` (a straight line)."""
     if parents is None:
         parents = [sha(number - 1)] if number > 1 else []
-    return {"sha": sha(number), "message": f"commit {number}", "author": "a", "date": f"2026-01-{number % 28 + 1:02d}T00:00:00+00:00",
-            "parents": parents}
+    return {
+        "sha": sha(number),
+        "message": f"commit {number}",
+        "author": "a",
+        "date": f"2026-01-{number % 28 + 1:02d}T00:00:00+00:00",
+        "parents": parents,
+    }
 
 
 def history(total: int):
@@ -24,8 +29,15 @@ def history(total: int):
 
 
 def run(number: int, name="run", dirty=False):
-    return {"id": f"{name}-{number}", "name": name, "status": "completed", "project": "p", "created": None,
-            "commit": sha(number), "dirty": dirty}
+    return {
+        "id": f"{name}-{number}",
+        "name": name,
+        "status": "completed",
+        "project": "p",
+        "created": None,
+        "commit": sha(number),
+        "dirty": dirty,
+    }
 
 
 def shape(result):
@@ -67,13 +79,27 @@ def test_a_commit_lists_its_runs_and_marks_the_ones_with_uncommitted_changes():
 
 
 def test_a_run_that_recorded_a_short_commit_is_found():
-    commits = [{"sha": hashlib.sha1(str(n).encode()).hexdigest(), "message": str(n), "author": "a", "date": "", "parents": []}
-               for n in (4, 3, 2, 1)]
+    commits = [
+        {"sha": hashlib.sha1(str(n).encode()).hexdigest(), "message": str(n), "author": "a", "date": "", "parents": []}
+        for n in (4, 3, 2, 1)
+    ]
     for older, newer in zip(commits[1:], commits[:-1]):
         newer["parents"] = [older["sha"]]
-    short = {"id": "x", "name": "x", "status": "completed", "project": "p", "created": None, "commit": commits[1]["sha"][:10], "dirty": False}
+    short = {
+        "id": "x",
+        "name": "x",
+        "status": "completed",
+        "project": "p",
+        "created": None,
+        "commit": commits[1]["sha"][:10],
+        "dirty": False,
+    }
     result = condense(commits, 4, commits[-1], [short])
-    assert [n["message"] if n["type"] == "commit" else f"...{n['count']}" for n in result["nodes"]] == ["4", "3", "...2"]
+    assert [n["message"] if n["type"] == "commit" else f"...{n['count']}" for n in result["nodes"]] == [
+        "4",
+        "3",
+        "...2",
+    ]
     assert [len(n["runs"]) for n in result["nodes"] if n["type"] == "commit"] == [0, 1]
 
 
@@ -97,7 +123,15 @@ def test_the_window_ends_when_thirty_tasks_are_listed():
 
 def test_runs_on_unknown_commits_are_counted_not_shown():
     commits, first = history(4)
-    stray = {"id": "s", "name": "s", "status": "failed", "project": "p", "created": None, "commit": "f" * 40, "dirty": False}
+    stray = {
+        "id": "s",
+        "name": "s",
+        "status": "failed",
+        "project": "p",
+        "created": None,
+        "commit": "f" * 40,
+        "dirty": False,
+    }
     assert condense(commits, 4, first, [stray])["outside_runs"] == 1
 
 
@@ -111,6 +145,7 @@ def test_a_repository_with_one_commit():
 
 # --- branches ----------------------------------------------------------------------------------------------------------
 
+
 def two_lines():
     """main: 1-2-3-4-5 and feature, forked from 2: 2-6-7 (newer than main). Newest first in topological order."""
     commits = [commit(7, [sha(6)]), commit(6, [sha(2)]), commit(5), commit(4), commit(3), commit(2), commit(1)]
@@ -119,8 +154,9 @@ def two_lines():
 
 def test_the_default_branch_is_always_the_left_lane_even_when_a_branch_is_newer():
     commits, first = two_lines()
-    result = condense(commits, 7, first, [run(6, "on the branch")], tips={sha(7): ["feature"], sha(5): ["main"]},
-                      default_tip=sha(5))
+    result = condense(
+        commits, 7, first, [run(6, "on the branch")], tips={sha(7): ["feature"], sha(5): ["main"]}, default_tip=sha(5)
+    )
     assert shape(result) == [7, 6, 5, "...2", 2, "...1"]
     nodes = result["nodes"]
     assert [n["lane"] for n in nodes] == [1, 1, 0, 0, 0, 0]
@@ -143,8 +179,12 @@ def test_a_merge_commit_is_shown_with_both_of_its_lines():
 
 
 def test_assign_lanes_keeps_lane_zero_for_the_main_line_and_moves_a_line_back_left():
-    rows = [{"id": "d", "parents": ["b", "c"]}, {"id": "c", "parents": ["a"]}, {"id": "b", "parents": ["a"]},
-            {"id": "a", "parents": []}]
+    rows = [
+        {"id": "d", "parents": ["b", "c"]},
+        {"id": "c", "parents": ["a"]},
+        {"id": "b", "parents": ["a"]},
+        {"id": "a", "parents": []},
+    ]
     assert assign_lanes(rows, {"d", "b", "a"}) == 2
     assert [row["lane"] for row in rows] == [0, 1, 0, 0]
 
@@ -171,9 +211,15 @@ def test_a_merged_side_branch_with_a_task_keeps_its_lane():
 
 def test_every_branch_has_a_lane_of_its_own_and_no_lane_is_used_twice():
     # branch X ends at m3; branch Y starts after that: it does not take X's lane
-    rows = [{"id": "x1", "parents": ["m3"]}, {"id": "m5", "parents": ["m4"]}, {"id": "m4", "parents": ["m3"]},
-            {"id": "m3", "parents": ["m2"]}, {"id": "y1", "parents": ["m1"]}, {"id": "m2", "parents": ["m1"]},
-            {"id": "m1", "parents": []}]
+    rows = [
+        {"id": "x1", "parents": ["m3"]},
+        {"id": "m5", "parents": ["m4"]},
+        {"id": "m4", "parents": ["m3"]},
+        {"id": "m3", "parents": ["m2"]},
+        {"id": "y1", "parents": ["m1"]},
+        {"id": "m2", "parents": ["m1"]},
+        {"id": "m1", "parents": []},
+    ]
     count = assign_lanes(rows, {"m5", "m4", "m3", "m2", "m1"})
     lanes = {row["id"]: row["lane"] for row in rows}
     assert lanes["x1"] == 1 and lanes["y1"] == 2
@@ -182,10 +228,21 @@ def test_every_branch_has_a_lane_of_its_own_and_no_lane_is_used_twice():
 
 # --- one test per stage of condense (the stages are extracted from it without a change of behaviour) ----------------------
 
+
 def test_the_window_stops_at_max_commits_and_says_the_history_is_limited():
     commits, first = history(10)
-    runs = [{"id": f"r{n}", "commit": sha(n), "name": "x", "status": "completed", "project": "p", "created": "", "dirty": False}
-            for n in range(10, 0, -1)]  # a run on every commit, so each one of the window is shown
+    runs = [
+        {
+            "id": f"r{n}",
+            "commit": sha(n),
+            "name": "x",
+            "status": "completed",
+            "project": "p",
+            "created": "",
+            "dirty": False,
+        }
+        for n in range(10, 0, -1)
+    ]  # a run on every commit, so each one of the window is shown
     result = condense(commits, total=10, first=first, runs=runs, max_commits=4)
     assert [node["sha"] for node in result["nodes"] if node["type"] == "commit"] == [sha(n) for n in (10, 9, 8, 7)]
     assert result["limited"] is True and result["total_commits"] == 10
@@ -199,7 +256,17 @@ def test_a_history_that_fits_the_window_is_not_limited():
 
 def test_the_newest_commit_is_the_first_node_and_the_oldest_is_marked_first():
     commits, first = history(3)
-    runs = [{"id": "r1", "commit": sha(1), "name": "x", "status": "completed", "project": "p", "created": "", "dirty": False}]
+    runs = [
+        {
+            "id": "r1",
+            "commit": sha(1),
+            "name": "x",
+            "status": "completed",
+            "project": "p",
+            "created": "",
+            "dirty": False,
+        }
+    ]
     result = condense(commits, total=3, first=first, runs=runs)  # the oldest commit is shown because a run is on it
     assert result["nodes"][0]["newest"] is True
     assert [n["first"] for n in result["nodes"] if n["type"] == "commit"][-1] is True
@@ -207,7 +274,17 @@ def test_the_newest_commit_is_the_first_node_and_the_oldest_is_marked_first():
 
 def test_a_run_on_a_commit_outside_the_window_is_counted_as_outside():
     commits, first = history(5)
-    runs = [{"id": "r1", "commit": sha(99), "name": "x", "status": "completed", "project": "p", "created": "", "dirty": False}]
+    runs = [
+        {
+            "id": "r1",
+            "commit": sha(99),
+            "name": "x",
+            "status": "completed",
+            "project": "p",
+            "created": "",
+            "dirty": False,
+        }
+    ]
     result = condense(commits, total=5, first=first, runs=runs)
     assert result["outside_runs"] == 1
 

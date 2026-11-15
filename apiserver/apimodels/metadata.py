@@ -18,7 +18,5 @@ class DeleteMetadata(Base):
 
 
 class AddOrUpdateMetadata(Base):
-    metadata: Sequence[MetadataItem] = ListField(
-        [MetadataItem], validators=validators.Length(minimum_value=1)
-    )
+    metadata: Sequence[MetadataItem] = ListField([MetadataItem], validators=validators.Length(minimum_value=1))
     replace_metadata = BoolField(default=False)

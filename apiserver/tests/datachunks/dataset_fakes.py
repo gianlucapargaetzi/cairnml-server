@@ -16,8 +16,9 @@ ADAPTER = b"class Adapter:\n    pass\n"
 
 
 def good_files(dvc=DVC, labels=None):
-    lock = fp.build_lock(fp.parse_dvc_file(DVC), {"kind": "native"}, 3, {"image": "image"},
-                         labels or {"class": "class"}, "2.1.13")
+    lock = fp.build_lock(
+        fp.parse_dvc_file(DVC), {"kind": "native"}, 3, {"image": "image"}, labels or {"class": "class"}, "2.1.13"
+    )
     return {fp.DVC_FILE: dvc.encode(), fp.CONFIG_FILE: b"format: native\n", fp.LOCK_FILE: json.dumps(lock).encode()}
 
 

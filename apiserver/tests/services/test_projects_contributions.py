@@ -54,9 +54,7 @@ def make_project(company, id_, owner="owner1", parent=None, visibility=ProjectVi
         visibility=visibility,
         parent=parent.id if parent else None,
         path=[*(parent.path or []), parent.id] if parent else [],
-        members=[
-            ProjectMember(user=u, role=r, added=datetime.utcnow(), added_by=owner) for u, r in members
-        ],
+        members=[ProjectMember(user=u, role=r, added=datetime.utcnow(), added_by=owner) for u, r in members],
     )
     project.save()
     return project
@@ -178,6 +176,13 @@ def test_a_member_reads_the_contributions_and_gets_the_response_shape(company, i
     call = FakeCall(identity(company, "u2"))
     svc.get_contributions(call, company, ProjectContributionsRequest(project=ids.root, period_days=30))
     assert set(call.result.data) == {
-        "period_days", "total", "completed", "failed", "running", "days", "contributors", "contributor_count",
+        "period_days",
+        "total",
+        "completed",
+        "failed",
+        "running",
+        "days",
+        "contributors",
+        "contributor_count",
     }
     assert call.result.data["period_days"] == 30

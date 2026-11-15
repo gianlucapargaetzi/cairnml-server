@@ -62,12 +62,8 @@ class ProjectionHelper(object):
         :param projection: List of projection fields
         :return: A tuple of document projection and reference fields information
         """
-        doc_projection = (
-            set()
-        )  # Projection fields for this class (used in the main query)
-        ref_projection_info = (
-            []
-        )  # Projection information for reference fields (used in join queries)
+        doc_projection = set()  # Projection fields for this class (used in the main query)
+        ref_projection_info = []  # Projection information for reference fields (used in join queries)
         for field in projection:
             field_ = field.lstrip(self.exclusion_prefix)
             for ref_field, ref_field_cls in doc_cls.get_reference_fields().items():
@@ -87,8 +83,7 @@ class ProjectionHelper(object):
                     (
                         ref_field,
                         ref_field_cls,
-                        ("" if field_[0] == field[0] else self.exclusion_prefix)
-                        + subfield[1:],
+                        ("" if field_[0] == field[0] else self.exclusion_prefix) + subfield[1:],
                     )
                 )
                 break
@@ -99,9 +94,7 @@ class ProjectionHelper(object):
                 if field.endswith(".*"):
                     field = field[:-2]
                 if not field.lstrip(self.exclusion_prefix):
-                    raise errors.bad_request.InvalidFields(
-                        field=orig_field, object=doc_cls.__name__
-                    )
+                    raise errors.bad_request.InvalidFields(field=orig_field, object=doc_cls.__name__)
                 doc_projection.add(field)
         return doc_projection, ref_projection_info
 
@@ -119,18 +112,16 @@ class ProjectionHelper(object):
         if not projection:
             return [], {}
 
-        doc_projection, ref_projection_info = self._collect_projection_fields(
-            doc_cls, projection
-        )
+        doc_projection, ref_projection_info = self._collect_projection_fields(doc_cls, projection)
 
         def normalize_cls_projection(cls_, fields):
-            """ Normalize projection for this class and group (expand *, for once) """
+            """Normalize projection for this class and group (expand *, for once)"""
             if "*" in fields:
                 return list(fields.difference("*").union(cls_.get_fields()))
             return list(fields)
 
         def compute_ref_cls_projection(cls_, group):
-            """ Compute inner projection for this class and group """
+            """Compute inner projection for this class and group"""
             subfields = set([x[2] for x in group if x[2]])
             return normalize_cls_projection(cls_, subfields)
 
@@ -140,16 +131,12 @@ class ProjectionHelper(object):
         # Aggregate by reference field. We'll leave out '*' from the projected items since
         ref_projection = {
             ref_field: dict(cls=ref_cls, only=compute_ref_cls_projection(ref_cls, g))
-            for (ref_field, ref_cls), g in groupby(
-                sorted(ref_projection_info, key=sort_key), sort_key
-            )
+            for (ref_field, ref_cls), g in groupby(sorted(ref_projection_info, key=sort_key), sort_key)
         }
 
         # Make sure this doesn't contain any reference field we'll join anyway
         # (i.e. in case only_fields=[project, project.name])
-        doc_projection = normalize_cls_projection(
-            doc_cls, doc_projection.difference(ref_projection)
-        )
+        doc_projection = normalize_cls_projection(doc_cls, doc_projection.difference(ref_projection))
 
         # Make sure that in case one or more field is a subfield of another field, we only use the the top-level field.
         # This is done since in such a case, MongoDB will only use the most restrictive field (most nested field) and
@@ -159,23 +146,15 @@ class ProjectionHelper(object):
         doc_projection = [
             field
             for field in doc_projection
-            if not any(
-                field.startswith(f"{other_field}.")
-                for other_field in projection_set - {field}
-            )
+            if not any(field.startswith(f"{other_field}.") for other_field in projection_set - {field})
         ]
 
         # Make sure we didn't get any invalid projection fields for this class
         invalid_fields = [
-            f
-            for f in doc_projection
-            if f.partition(SEP)[0].lstrip(self.exclusion_prefix)
-            not in doc_cls.get_fields()
+            f for f in doc_projection if f.partition(SEP)[0].lstrip(self.exclusion_prefix) not in doc_cls.get_fields()
         ]
         if invalid_fields:
-            raise errors.bad_request.InvalidFields(
-                fields=invalid_fields, object=doc_cls.__name__
-            )
+            raise errors.bad_request.InvalidFields(fields=invalid_fields, object=doc_cls.__name__)
 
         if ref_projection:
             # Join mode - use both normal projection fields and top-level reference fields
@@ -187,10 +166,7 @@ class ProjectionHelper(object):
             doc_projection = list(doc_projection)
 
         # If there are include fields (not only exclude) then add an id field
-        if (
-            not all(p.startswith(self.exclusion_prefix) for p in doc_projection)
-            and "id" not in doc_projection
-        ):
+        if not all(p.startswith(self.exclusion_prefix) for p in doc_projection) and "id" not in doc_projection:
             doc_projection.append("id")
 
         self._doc_projection = doc_projection
@@ -222,11 +198,7 @@ class ProjectionHelper(object):
                     parent = target
                     target = target[part]
                 elif isinstance(target, list) and part == "*":
-                    return list(
-                        chain.from_iterable(
-                            _search_and_replace(t, p[idx + 1 :]) for t in target
-                        )
-                    )
+                    return list(chain.from_iterable(_search_and_replace(t, p[idx + 1 :]) for t in target))
                 else:
                     return []
 
@@ -257,21 +229,10 @@ class ProjectionHelper(object):
                 All collected IDs are replaced in the result dictionaries with a reference proxy generated by the
                 proxies manager to allow rapid update later on when projection results are obtained.
                 """
-                all_ids = (
-                    self._search(
-                        cls, res, ref_field_name, factory=self._proxy_manager.add
-                    )
-                    for res in results
-                )
+                all_ids = (self._search(cls, res, ref_field_name, factory=self._proxy_manager.add) for res in results)
                 return list(filter(None, set(chain.from_iterable(all_ids))))
 
-            items = [
-                tup
-                for tup in (
-                    (*item, collect_ids(item[0])) for item in ref_projection.items()
-                )
-                if tup[2]
-            ]
+            items = [tup for tup in ((*item, collect_ids(item[0])) for item in ref_projection.items()) if tup[2]]
 
             if items:
 
@@ -283,9 +244,7 @@ class ProjectionHelper(object):
                     doc_only = list({"id"} | set(doc_only)) if doc_only else None
 
                     for ids_chunk in iterutils.chunked_iter(ids, max_items_per_fetch):
-                        for res in projection_func(
-                            doc_type=doc_type, projection=doc_only, ids=ids_chunk
-                        ):
+                        for res in projection_func(doc_type=doc_type, projection=doc_only, ids=ids_chunk):
                             self._proxy_manager.update(res)
 
                 if len(ref_projection) == 1:
@@ -305,9 +264,7 @@ class ProjectionHelper(object):
         # any reference field not projected should be expanded
         if self._should_expand_reference_ids:
             for result in results:
-                do_expand_reference_ids(
-                    result, skip_fields=list(ref_projection) if ref_projection else None
-                )
+                do_expand_reference_ids(result, skip_fields=list(ref_projection) if ref_projection else None)
 
         return results
 

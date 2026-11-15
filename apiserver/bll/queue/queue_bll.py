@@ -113,9 +113,7 @@ class QueueBLL(object):
             query = dict(id=queue_id, company=company_id)
             queue = Queue.objects(entries__task=task_id, **query).first()
             if not queue:
-                raise errors.bad_request.InvalidQueueOrTaskNotQueued(
-                    task=task_id, **query
-                )
+                raise errors.bad_request.InvalidQueueOrTaskNotQueued(task=task_id, **query)
 
             return queue
 
@@ -126,21 +124,15 @@ class QueueBLL(object):
         :raise errors.bad_request.MultipleDefaultQueues: if more than one default queue is found
         """
         with translate_errors_context():
-            res = Queue.objects(company=company_id, system_tags="default").only(
-                "id", "name"
-            )
+            res = Queue.objects(company=company_id, system_tags="default").only("id", "name")
             if not res:
                 raise errors.bad_request.NoDefaultQueue()
             if len(res) > 1:
-                raise errors.bad_request.MultipleDefaultQueues(
-                    queues=tuple(r.id for r in res)
-                )
+                raise errors.bad_request.MultipleDefaultQueues(queues=tuple(r.id for r in res))
 
             return res.first()
 
-    def update(
-        self, company_id: str, queue_id: str, **update_fields
-    ) -> Tuple[int, dict]:
+    def update(self, company_id: str, queue_id: str, **update_fields) -> Tuple[int, dict]:
         """
         Partial update of the queue from update_fields
         :raise errors.bad_request.InvalidQueueId: if the queue is not found
@@ -192,9 +184,7 @@ class QueueBLL(object):
                     unset__execution__queue=1,
                 )
             except Exception as ex:
-                log.error(
-                    f"Failed updating task {task_id} status on removal from queue: {queue_id}, {str(ex)}"
-                )
+                log.error(f"Failed updating task {task_id} status on removal from queue: {queue_id}, {str(ex)}")
 
         return tasks
 
@@ -213,11 +203,7 @@ class QueueBLL(object):
                 parameters=query_dict,
                 query_dict=query_dict,
                 query=query,
-                projection_fields=(
-                    self._get_task_entries_projection(max_task_entries)
-                    if max_task_entries
-                    else None
-                ),
+                projection_fields=(self._get_task_entries_projection(max_task_entries) if max_task_entries else None),
                 ret_params=ret_params,
             )
 
@@ -265,11 +251,7 @@ class QueueBLL(object):
                         projection.append(field)
             if self._field_requested(projection, "workers"):
                 workers_requested = True
-                projection = [
-                    f
-                    for f in projection
-                    if not (f == "workers" or f.startswith("workers."))
-                ]
+                projection = [f for f in projection if not (f == "workers" or f.startswith("workers."))]
 
         res = Queue.get_many_with_join(
             company=company_id,
@@ -277,11 +259,7 @@ class QueueBLL(object):
             query=query,
             # do not pass empty override projection because it would result in no override
             override_projection=projection or ["id"],
-            projection_fields=(
-                self._get_task_entries_projection(max_task_entries)
-                if max_task_entries
-                else None
-            ),
+            projection_fields=(self._get_task_entries_projection(max_task_entries) if max_task_entries else None),
             ret_params=ret_params,
         )
         if not res:
@@ -300,10 +278,7 @@ class QueueBLL(object):
                 if entry.get("task") and entry["task"].get("id")
             }
             if all_task_ids:
-                task_projects = {
-                    task.id: task.project
-                    for task in Task.objects(id__in=all_task_ids).only("project")
-                }
+                task_projects = {task.id: task.project for task in Task.objects(id__in=all_task_ids).only("project")}
                 for item in res:
                     for entry in item.get("entries") or []:
                         task = entry.get("task")
@@ -321,11 +296,7 @@ class QueueBLL(object):
                     queue_workers[queue].append(worker)
 
             def worker_task_visible(worker) -> bool:
-                return (
-                    visible is None
-                    or not worker.project
-                    or worker.project.id in visible
-                )
+                return visible is None or not worker.project or worker.project.id in visible
 
             for item in res:
                 item["workers"] = [
@@ -333,9 +304,7 @@ class QueueBLL(object):
                         "name": w.id,
                         "ip": w.ip,
                         "key": w.key,
-                        "task": w.task.to_struct()
-                        if w.task and worker_task_visible(w)
-                        else None,
+                        "task": w.task.to_struct() if w.task and worker_task_visible(w) else None,
                     }
                     for w in queue_workers.get(item["id"], [])
                 ]
@@ -378,18 +347,16 @@ class QueueBLL(object):
         if not res:
             raise errors.bad_request.InvalidQueueOrTaskNotQueued(task=task_id, **query)
 
-    def get_next_task(
-        self, company_id: str, queue_id: str, task_id: str = None
-    ) -> Optional[Entry]:
+    def get_next_task(self, company_id: str, queue_id: str, task_id: str = None) -> Optional[Entry]:
         """
         Atomically pop and return the first task from the queue (or None)
         :raise errors.bad_request.InvalidQueueId: if the queue does not exist
         """
         with translate_errors_context():
             query = dict(id=queue_id, company=company_id)
-            queue = Queue.objects(
-                **query, **({"entries__0__task": task_id} if task_id else {})
-            ).modify(pop__entries=-1, upsert=False)
+            queue = Queue.objects(**query, **({"entries__0__task": task_id} if task_id else {})).modify(
+                pop__entries=-1, upsert=False
+            )
             if not queue:
                 if not task_id or not Queue.objects(**query).first():
                     raise errors.bad_request.InvalidQueueId(**query)
@@ -446,9 +413,7 @@ class QueueBLL(object):
         Removes the task from the queue and returns the number of removed items
         :raise errors.bad_request.InvalidQueueOrTaskNotQueued: if the task is not found in the queue
         """
-        queue = self.get_queue_with_task(
-            company_id=company_id, queue_id=queue_id, task_id=task_id
-        )
+        queue = self.get_queue_with_task(company_id=company_id, queue_id=queue_id, task_id=task_id)
 
         entries_to_remove = [e for e in queue.entries if e.task == task_id]
         query = dict(id=queue_id, company=company_id)
@@ -482,9 +447,7 @@ class QueueBLL(object):
         """
 
         def get_queue_and_task_position():
-            q = self.get_queue_with_task(
-                company_id=company_id, queue_id=queue_id, task_id=task_id
-            )
+            q = self.get_queue_with_task(company_id=company_id, queue_id=queue_id, task_id=task_id)
             return q, next(i for i, e in enumerate(q.entries) if e.task == task_id)
 
         with translate_errors_context():
@@ -513,21 +476,9 @@ class QueueBLL(object):
                 }
             }
             if move_count == MOVE_FIRST:
-                operations = [
-                    {
-                        "$set": {
-                            "entries": {"$concatArrays": [task_entry, without_entry]}
-                        }
-                    }
-                ]
+                operations = [{"$set": {"entries": {"$concatArrays": [task_entry, without_entry]}}}]
             elif move_count == MOVE_LAST:
-                operations = [
-                    {
-                        "$set": {
-                            "entries": {"$concatArrays": [without_entry, task_entry]}
-                        }
-                    }
-                ]
+                operations = [{"$set": {"entries": {"$concatArrays": [without_entry, task_entry]}}}]
             else:
                 operations = [
                     {
@@ -591,9 +542,9 @@ class QueueBLL(object):
                     {"$unset": ["new_pos", "without_entry", "task_entry"]},
                 ]
 
-            updated = Queue.objects(
-                id=queue_id, company=company_id, entries__task=task_id
-            ).update_one(__raw__=operations)
+            updated = Queue.objects(id=queue_id, company=company_id, entries__task=task_id).update_one(
+                __raw__=operations
+            )
 
             if not updated:
                 raise errors.bad_request.FailedAddingDuringReposition(task=task_id)

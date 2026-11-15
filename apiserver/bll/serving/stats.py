@@ -60,9 +60,7 @@ class ServingStats:
         :return: The amount of logged documents
         """
         company_id = entry.company_id
-        es_index = (
-            f"{cls._serving_stats_prefix(company_id)}" f"{cls._get_es_index_suffix()}"
-        )
+        es_index = f"{cls._serving_stats_prefix(company_id)}{cls._get_es_index_suffix()}"
 
         entry_data = entry.to_struct()
         doc = {
@@ -98,12 +96,7 @@ class ServingStats:
                     }
                 )
 
-            doc.update(
-                {
-                    field: stats.get(field)
-                    for field in ("disk_free_home", "network_rx", "network_tx")
-                }
-            )
+            doc.update({field: stats.get(field) for field in ("disk_free_home", "network_rx", "network_tx")})
 
         cls.es.index(index=es_index, document=doc)
 
@@ -206,9 +199,7 @@ class ServingStats:
         from_date = metrics_request.from_date
         to_date = metrics_request.to_date
         if from_date >= to_date:
-            raise errors.bad_request.FieldsValueError(
-                "from_date must be less than to_date"
-            )
+            raise errors.bad_request.FieldsValueError("from_date must be less than to_date")
 
         metric_type = metrics_request.metric_type
         agg_data = cls.agg_fields.get(metric_type)
@@ -318,9 +309,7 @@ class ServingStats:
             if metrics_request.instance_charts:
                 found_keys = set()
                 for instance in nested_get(point, ("instances", "buckets"), []):
-                    instances[instance["key"]].append(
-                        nested_get(instance, ("sample", "value"), 0)
-                    )
+                    instances[instance["key"]].append(nested_get(instance, ("sample", "value"), 0))
                     found_keys.add(instance["key"])
                 for missing_key in instance_keys - found_keys:
                     instances[missing_key].append(0)

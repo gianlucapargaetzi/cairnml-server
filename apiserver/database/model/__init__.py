@@ -13,6 +13,7 @@ class AttributedDocument(DbModelMixin, Document):
     Represents objects which are attributed to a company and a user or to "no one".
     Company must be required since it can be used as unique field.
     """
+
     meta = ABSTRACT_FLAG
     company = StringField(required=True, reference_field=Company)
     user = StringField(reference_field=UserProfile)
@@ -28,7 +29,7 @@ def validate_id(cls, company, **kwargs):
     :return:
     """
     ids = set(kwargs.values())
-    objs = list(cls.objects(company=company, id__in=ids).only('id'))
+    objs = list(cls.objects(company=company, id__in=ids).only("id"))
     missing = ids - set(x.id for x in objs)
     if not missing:
         return
@@ -36,8 +37,8 @@ def validate_id(cls, company, **kwargs):
     for name, obj_id in kwargs.items():
         id_to_name.setdefault(obj_id, []).append(name)
     raise errors.bad_request.ValidationError(
-        'Invalid {} ids'.format(cls.__name__.lower()),
-        **{name: obj_id for obj_id in missing for name in id_to_name[obj_id]}
+        "Invalid {} ids".format(cls.__name__.lower()),
+        **{name: obj_id for obj_id in missing for name in id_to_name[obj_id]},
     )
 
 

@@ -43,13 +43,16 @@ def repos(prefix, count):
 
 class TestInstalledRepositories(TestCase):
     def test_every_repository_of_every_installation_is_listed_with_its_default_branch(self):
-        http = FakeHttp({
-            ("/app/installations", None): Response(200, [{"id": 11}, {"id": 12}]),
-            ("/app/installations/11/access_tokens", None): Response(201, {"token": "tok-11"}),
-            ("/app/installations/12/access_tokens", None): Response(201, {"token": "tok-12"}),
-            ("/installation/repositories", None): Response(200, {"repositories": [
-                {"full_name": "acme/cars", "default_branch": "main", "private": True}]}),
-        })
+        http = FakeHttp(
+            {
+                ("/app/installations", None): Response(200, [{"id": 11}, {"id": 12}]),
+                ("/app/installations/11/access_tokens", None): Response(201, {"token": "tok-11"}),
+                ("/app/installations/12/access_tokens", None): Response(201, {"token": "tok-12"}),
+                ("/installation/repositories", None): Response(
+                    200, {"repositories": [{"full_name": "acme/cars", "default_branch": "main", "private": True}]}
+                ),
+            }
+        )
         app = app_with(http)
         listed = app.installed_repositories()
         self.assertEqual(sorted(item["repository"] for item in listed), ["acme/cars", "acme/cars"])
@@ -57,23 +60,27 @@ class TestInstalledRepositories(TestCase):
 
     def test_a_listing_longer_than_one_page_is_read_page_by_page(self):
         first, second = repos("acme", 100), repos("acme-two", 3)
-        http = FakeHttp({
-            ("/app/installations", None): Response(200, [{"id": 11}]),
-            ("/app/installations/11/access_tokens", None): Response(201, {"token": "tok"}),
-            ("/installation/repositories", 1): Response(200, {"repositories": first}),
-            ("/installation/repositories", 2): Response(200, {"repositories": second}),
-        })
+        http = FakeHttp(
+            {
+                ("/app/installations", None): Response(200, [{"id": 11}]),
+                ("/app/installations/11/access_tokens", None): Response(201, {"token": "tok"}),
+                ("/installation/repositories", 1): Response(200, {"repositories": first}),
+                ("/installation/repositories", 2): Response(200, {"repositories": second}),
+            }
+        )
         listed = app_with(http).installed_repositories()
         self.assertEqual(len(listed), 103)
         pages = [page for method, url, page, _headers in http.requests if url.endswith("/installation/repositories")]
         self.assertEqual(pages, [1, 2])
 
     def test_the_repositories_are_listed_with_the_token_of_their_installation(self):
-        http = FakeHttp({
-            ("/app/installations", None): Response(200, [{"id": 11}]),
-            ("/app/installations/11/access_tokens", None): Response(201, {"token": "tok-11"}),
-            ("/installation/repositories", None): Response(200, {"repositories": repos("acme", 1)}),
-        })
+        http = FakeHttp(
+            {
+                ("/app/installations", None): Response(200, [{"id": 11}]),
+                ("/app/installations/11/access_tokens", None): Response(201, {"token": "tok-11"}),
+                ("/installation/repositories", None): Response(200, {"repositories": repos("acme", 1)}),
+            }
+        )
         app_with(http).installed_repositories()
         listing = [headers for _m, url, _p, headers in http.requests if url.endswith("/installation/repositories")]
         self.assertEqual(listing[0]["Authorization"], "Bearer tok-11")
@@ -121,7 +128,7 @@ class TestPublicRepository(TestCase):
 
     def test_a_commit_of_an_empty_repository_is_not_found_rather_than_a_failed_check(self):
         app = github.GitHubApp("1", "", "https://api.example")
-        app._send = lambda *args, **kwargs: Response(409)      # GitHub: "Git Repository is empty"
+        app._send = lambda *args, **kwargs: Response(409)  # GitHub: "Git Repository is empty"
         app._read_headers = lambda repo: {}
         self.assertFalse(app.commit_exists("acme/empty", "abc"))
         app._send = lambda *args, **kwargs: Response(500)

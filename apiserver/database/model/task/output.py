@@ -5,8 +5,8 @@ from apiserver.database.utils import get_options
 
 
 class Result(object):
-    success = 'success'
-    failure = 'failure'
+    success = "success"
+    failure = "failure"
 
 
 class Output(EmbeddedDocument):

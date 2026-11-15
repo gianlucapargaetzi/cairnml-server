@@ -200,9 +200,7 @@ class GetMixin(PropsMixin):
                     self.allow_empty = True
                     continue
 
-                self.actions[self.mongo_modifiers[current_context][d.include]].append(
-                    d.value
-                )
+                self.actions[self.mongo_modifiers[current_context][d.include]].append(d.value)
 
             if self.global_operator is None:
                 self.global_operator = self.default_global_operator
@@ -248,11 +246,7 @@ class GetMixin(PropsMixin):
                     yield self.Term(operator=operator)
                     continue
 
-                if (
-                    not unary_operator
-                    and self._support_legacy
-                    and value.startswith("-")
-                ):
+                if not unary_operator and self._support_legacy and value.startswith("-"):
                     value = value[1:]
                     if not value:
                         raise FieldsValueError(
@@ -270,9 +264,7 @@ class GetMixin(PropsMixin):
                 yield term
 
             if unary_operator:
-                raise FieldsValueError(
-                    "Value is expected after", operator=unary_operator
-                )
+                raise FieldsValueError("Value is expected after", operator=unary_operator)
 
     get_all_query_options = QueryParameterOptions()
 
@@ -290,9 +282,7 @@ class GetMixin(PropsMixin):
             cls._cache_manager = RedisCacheManager(
                 state_class=cls.GetManyScrollState,
                 redis=redman.connection("apiserver"),
-                expiration_interval=mongo_conf.get(
-                    "scroll_state_expiration_seconds", 600
-                ),
+                expiration_interval=mongo_conf.get("scroll_state_expiration_seconds", 600),
             )
 
         return cls._cache_manager
@@ -307,10 +297,7 @@ class GetMixin(PropsMixin):
         include_public=False,
         **kwargs,
     ) -> "GetMixin":
-        q = cls.objects(
-            cls._prepare_perm_query(company, allow_public=include_public)
-            & Q(id=id, **kwargs)
-        )
+        q = cls.objects(cls._prepare_perm_query(company, allow_public=include_public) & Q(id=id, **kwargs))
         if _only:
             q = q.only(*_only)
         return q.first()
@@ -338,14 +325,12 @@ class GetMixin(PropsMixin):
                 provided datetime fields match the provided condition.
         :return: mongoengine.Q query object
         """
-        return cls._prepare_query_no_company(
-            parameters, parameters_options
-        ) & cls._prepare_perm_query(company, allow_public=allow_public)
+        return cls._prepare_query_no_company(parameters, parameters_options) & cls._prepare_perm_query(
+            company, allow_public=allow_public
+        )
 
     @staticmethod
-    def _pop_matching_params(
-        patterns: Sequence[str], parameters: dict
-    ) -> Mapping[str, Any]:
+    def _pop_matching_params(patterns: Sequence[str], parameters: dict) -> Mapping[str, Any]:
         """
         Pop the parameters that match the specified patterns and return
         the dictionary of matching parameters
@@ -358,9 +343,7 @@ class GetMixin(PropsMixin):
         for pattern in patterns:
             if pattern.endswith("*"):
                 prefix = pattern[:-1]
-                fields.update(
-                    {field for field in parameters if field.startswith(prefix)}
-                )
+                fields.update({field for field in parameters if field.startswith(prefix)})
             elif pattern in parameters:
                 fields.add(pattern)
 
@@ -400,12 +383,7 @@ class GetMixin(PropsMixin):
         if not isinstance(data, list):
             data = [data]
 
-        if len(data) == 2 and not any(
-                d.startswith(mod)
-                for d in data
-                if d is not None
-                for mod in ACCESS_MODIFIER
-        ):
+        if len(data) == 2 and not any(d.startswith(mod) for d in data if d is not None for mod in ACCESS_MODIFIER):
             return cls.get_range_field_query(field, data)
 
         dict_query = {}
@@ -418,11 +396,7 @@ class GetMixin(PropsMixin):
                 value = parse_datetime(m.group("value"))
                 prefix = m.group("prefix")
                 modifier = ACCESS_MODIFIER.get(prefix)
-                f = (
-                    field
-                    if not modifier
-                    else "__".join((field, modifier))
-                )
+                f = field if not modifier else "__".join((field, modifier))
                 dict_query[f] = value
             except (ValueError, OverflowError):
                 pass
@@ -430,9 +404,7 @@ class GetMixin(PropsMixin):
         return dict_query
 
     @classmethod
-    def _prepare_query_no_company(
-        cls, parameters=None, parameters_options=QueryParameterOptions()
-    ):
+    def _prepare_query_no_company(cls, parameters=None, parameters_options=QueryParameterOptions()):
         """
         Prepare a query object based on the provided query dictionary and various fields.
 
@@ -456,9 +428,7 @@ class GetMixin(PropsMixin):
         # noinspection PyBroadException
         try:
             if parameters:
-                parameters = {
-                    k: cls._get_fixed_field_value(k, v) for k, v in parameters.items()
-                }
+                parameters = {k: cls._get_fixed_field_value(k, v) for k, v in parameters.items()}
                 filters = parameters.pop("filters", {})
                 if not isinstance(filters, dict):
                     raise FieldsValueError(
@@ -472,25 +442,17 @@ class GetMixin(PropsMixin):
                     if pattern:
                         dict_query[field] = RegexWrapper(pattern)
 
-                for field, data in cls._pop_matching_params(
-                    patterns=opts.list_fields, parameters=filters
-                ).items():
+                for field, data in cls._pop_matching_params(patterns=opts.list_fields, parameters=filters).items():
                     query &= cls.get_list_filter_query(field, data)
                     parameters.pop(field, None)
 
-                for field, data in cls._pop_matching_params(
-                    patterns=opts.list_fields, parameters=parameters
-                ).items():
+                for field, data in cls._pop_matching_params(patterns=opts.list_fields, parameters=parameters).items():
                     query &= cls.get_list_field_query(field, data)
 
-                for field, data in cls._pop_matching_params(
-                    patterns=opts.range_fields, parameters=parameters
-                ).items():
+                for field, data in cls._pop_matching_params(patterns=opts.range_fields, parameters=parameters).items():
                     query &= cls.get_range_field_query(field, data)
 
-                for field, data in cls._pop_matching_params(
-                    patterns=opts.fields or [], parameters=parameters
-                ).items():
+                for field, data in cls._pop_matching_params(patterns=opts.fields or [], parameters=parameters).items():
                     if "._" in field or "_." in field:
                         query &= RegexQ(__raw__={field: data})
                     else:
@@ -520,11 +482,7 @@ class GetMixin(PropsMixin):
                                 q = reduce(
                                     lambda a, x: func(
                                         a,
-                                        RegexQ(
-                                            __raw__={
-                                                x: {"$regex": data.pattern, "$options": "i"}
-                                            }
-                                        ),
+                                        RegexQ(__raw__={x: {"$regex": data.pattern, "$options": "i"}}),
                                     ),
                                     data.fields,
                                     RegexQ(),
@@ -569,9 +527,7 @@ class GetMixin(PropsMixin):
         In case the min value is None the records with missing or None value from db are included
         """
         if not isinstance(data, (list, tuple)) or len(data) != 2:
-            raise errors.bad_request.ValidationError(
-                f"Min and max values should be specified for range field {field}"
-            )
+            raise errors.bad_request.ValidationError(f"Min and max values should be specified for range field {field}")
 
         min_val, max_val = data
         if min_val is None and max_val is None:
@@ -640,8 +596,7 @@ class GetMixin(PropsMixin):
         def op_validator(self, _, value):
             if value not in self._allowed_op:
                 raise ValueError(
-                    f"Invalid list query filter operator: {value}. "
-                    f"Should be one of {str(self._allowed_op)}"
+                    f"Invalid list query filter operator: {value}. Should be one of {str(self._allowed_op)}"
                 )
 
         @property
@@ -696,9 +651,7 @@ class GetMixin(PropsMixin):
                 ) from ex
 
     @classmethod
-    def get_list_filter_query(
-        cls, field: str, data: Mapping
-    ) -> Union[RegexQ, RegexQCombination]:
+    def get_list_filter_query(cls, field: str, data: Mapping) -> Union[RegexQ, RegexQCombination]:
         if not data:
             return RegexQ()
 
@@ -756,8 +709,7 @@ class GetMixin(PropsMixin):
         mongoengine_field = field.replace(".", "__")
 
         queries = [
-            RegexQ(**{f"{mongoengine_field}__{action}": list(set(values))})
-            for action, values in actions.items()
+            RegexQ(**{f"{mongoengine_field}__{action}": list(set(values))}) for action, values in actions.items()
         ]
 
         if not queries:
@@ -825,9 +777,7 @@ class GetMixin(PropsMixin):
 
         page_size = parameters.get("page_size", default_page_size or max_page_size)
         if page_size is not None and page_size < 1:
-            raise errors.bad_request.ValidationError(
-                "page_size must be >0", field="page_size"
-            )
+            raise errors.bad_request.ValidationError("page_size must be >0", field="page_size")
 
         if page_size is not None:
             page = page or 0
@@ -851,9 +801,7 @@ class GetMixin(PropsMixin):
         return parameters.get(cls._projection_key) or parameters.get("only_fields", [])
 
     @classmethod
-    def split_projection(
-        cls, projection: Sequence[str]
-    ) -> Tuple[Collection[str], Collection[str]]:
+    def split_projection(cls, projection: Sequence[str]) -> Tuple[Collection[str], Collection[str]]:
         """Return include and exclude lists based on passed projection and class definition"""
         if projection:
             include, exclude = partition(
@@ -908,9 +856,7 @@ class GetMixin(PropsMixin):
         state: Optional[cls.GetManyScrollState] = None
         if "scroll_id" in query_dict:
             size = cls.validate_scroll_size(query_dict)
-            state = cls.get_cache_manager().get_or_create_state_core(
-                query_dict.get("scroll_id")
-            )
+            state = cls.get_cache_manager().get_or_create_state_core(query_dict.get("scroll_id"))
             if query_dict.get("refresh_scroll"):
                 query_dict[cls._size_key] = max(state.position, size)
                 state.position = 0
@@ -956,9 +902,7 @@ class GetMixin(PropsMixin):
             )
             return []
 
-        override_projection = cls.get_projection(
-            parameters=query_dict, override_projection=override_projection
-        )
+        override_projection = cls.get_projection(parameters=query_dict, override_projection=override_projection)
 
         helper = ProjectionHelper(
             doc_cls=cls,
@@ -993,9 +937,7 @@ class GetMixin(PropsMixin):
     @classmethod
     def _get_collation_override(cls, field: str) -> Optional[dict]:
         return first(
-            v
-            for k, v in cls._field_collation_overrides.items()
-            if field.startswith(k) or field.startswith(f"-{k}")
+            v for k, v in cls._field_collation_overrides.items() if field.startswith(k) or field.startswith(f"-{k}")
         )
 
     @classmethod
@@ -1168,9 +1110,7 @@ class GetMixin(PropsMixin):
         if order_by and not override_collation:
             override_collation = cls._get_collation_override(order_by[0])
         start, size = cls.validate_paging(parameters=parameters)
-        include, exclude = cls.split_projection(
-            cls.get_projection(parameters, override_projection)
-        )
+        include, exclude = cls.split_projection(cls.get_projection(parameters, override_projection))
 
         qs = cls.objects(query)
         if override_collation:
@@ -1198,9 +1138,7 @@ class GetMixin(PropsMixin):
         return qs
 
     @classmethod
-    def _get_queries_for_order_field(
-        cls, query: Q, order_field: str
-    ) -> Union[None, Tuple[Q, Q]]:
+    def _get_queries_for_order_field(cls, query: Q, order_field: str) -> Union[None, Tuple[Q, Q]]:
         """
         In case the order_field is one of the cls fields and the sorting is ascending
         then return the tuple of 2 queries:
@@ -1211,9 +1149,7 @@ class GetMixin(PropsMixin):
             return
 
         mongo_field_name = order_field.replace(".", "__")
-        mongo_field = first(
-            v for k, v in cls.get_all_fields_with_instance() if k == mongo_field_name
-        )
+        mongo_field = first(v for k, v in cls.get_all_fields_with_instance() if k == mongo_field_name)
 
         if isinstance(mongo_field, ListField):
             params = {"is_list": True}
@@ -1259,15 +1195,11 @@ class GetMixin(PropsMixin):
         if size is not None and size <= 0:
             return []
 
-        include, exclude = cls.split_projection(
-            cls.get_projection(parameters, override_projection)
-        )
+        include, exclude = cls.split_projection(cls.get_projection(parameters, override_projection))
 
         query_sets = [cls.objects(query)]
         if order_by:
-            order_field = first(
-                field for field in order_by if not field.startswith("$")
-            )
+            order_field = first(field for field in order_by if not field.startswith("$"))
             res = cls._get_queries_for_order_field(query, order_field)
             if res:
                 query_sets = [cls.objects(q) for q in res]
@@ -1276,9 +1208,7 @@ class GetMixin(PropsMixin):
                 override_collation = cls._get_collation_override(order_field)
 
         if override_collation:
-            query_sets = [
-                qs.collation(collation=override_collation) for qs in query_sets
-            ]
+            query_sets = [qs.collation(collation=override_collation) for qs in query_sets]
 
         if search_text:
             query_sets = [qs.search_text(search_text) for qs in query_sets]
@@ -1294,11 +1224,7 @@ class GetMixin(PropsMixin):
             query_sets = [qs.fields(**projection_fields) for qs in query_sets]
 
         if start is None or not size:
-            return [
-                obj.to_proper_dict(only=include, exclude=exclude)
-                for qs in query_sets
-                for obj in qs
-            ]
+            return [obj.to_proper_dict(only=include, exclude=exclude) for qs in query_sets for obj in qs]
 
         # add paging
         ret = []
@@ -1323,17 +1249,13 @@ class GetMixin(PropsMixin):
         return ret
 
     @classmethod
-    def get_for_writing(
-        cls, *args, _only: Collection[str] = None, **kwargs
-    ) -> "GetMixin":
+    def get_for_writing(cls, *args, _only: Collection[str] = None, **kwargs) -> "GetMixin":
         if _only and "company" not in _only:
             _only = list(set(_only) | {"company"})
         result = cls.get(*args, _only=_only, include_public=True, **kwargs)
         if result and not result.company:
             object_name = cls.__name__.lower()
-            raise errors.forbidden.NoWritePermission(
-                f"cannot modify public {object_name}(s), ids={(result.id,)}"
-            )
+            raise errors.forbidden.NoWritePermission(f"cannot modify public {object_name}(s), ids={(result.id,)}")
         return result
 
 
@@ -1344,17 +1266,13 @@ class UpdateMixin(object):
     @classmethod
     def user_set_allowed(cls):
         if cls.__user_set_allowed_fields is None:
-            cls.__user_set_allowed_fields = dict(
-                get_fields_choices(cls, "user_set_allowed")
-            )
+            cls.__user_set_allowed_fields = dict(get_fields_choices(cls, "user_set_allowed"))
         return cls.__user_set_allowed_fields
 
     @classmethod
     def locked_when_published(cls):
         if cls.__locked_when_published_fields is None:
-            cls.__locked_when_published_fields = dict(
-                get_fields_choices(cls, "locked_when_published")
-            )
+            cls.__locked_when_published_fields = dict(get_fields_choices(cls, "locked_when_published"))
         return cls.__locked_when_published_fields
 
     @classmethod
@@ -1367,11 +1285,7 @@ class UpdateMixin(object):
             field: value
             for field, allowed, value in fields
             if allowed is None
-            or (
-                (value in allowed)
-                if not isinstance(value, list)
-                else all(v in allowed for v in value)
-            )
+            or ((value in allowed) if not isinstance(value, list) else all(v in allowed for v in value))
         }
         return update_dict
 
@@ -1388,9 +1302,7 @@ class UpdateMixin(object):
             return 0, {}
         if injected_update:
             update_dict.update(injected_update)
-        update_count = cls.objects(id=id, company=company_id).update(
-            upsert=False, **update_dict
-        )
+        update_count = cls.objects(id=id, company=company_id).update(upsert=False, **update_dict)
         return update_count, update_dict
 
 
@@ -1432,11 +1344,7 @@ class DbModelMixin(GetMixin, ProperDictMixin, UpdateMixin):
             items = list(cls.objects(id__in=ids, company=company_id).only("id"))
             update: dict = dict(set__company_origin=company_id, set__company="")
         else:
-            items = list(
-                cls.objects(
-                    id__in=ids, company="", company_origin=company_id
-                ).only("id")
-            )
+            items = list(cls.objects(id__in=ids, company="", company_origin=company_id).only("id"))
             update: dict = dict(set__company=company_id, unset__company_origin=1)
 
         if len(items) < len(ids):

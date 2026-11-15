@@ -49,12 +49,9 @@ from apiserver.service_repo.auth import Identity
 from apiserver.utilities import json
 
 
-
 def _print(msg: str):
     time = datetime.now().isoformat(sep=" ", timespec="seconds")
     print(f"{time} {msg}")
-
-
 
 
 class PrePopulate:
@@ -119,9 +116,7 @@ class PrePopulate:
         return getattr(entity, "last_update", None) or getattr(entity, "created")
 
     @classmethod
-    def _check_for_update(
-        cls, map_file: Path, entities: dict, metadata_hash: str
-    ) -> Tuple[bool, Sequence[str]]:
+    def _check_for_update(cls, map_file: Path, entities: dict, metadata_hash: str) -> Tuple[bool, Sequence[str]]:
         if not map_file.is_file():
             return True, []
 
@@ -196,9 +191,7 @@ class PrePopulate:
             raise ValueError("Invalid task statuses")
 
         def export_to_zip_core(file_base_name: Path, projects_: Sequence[str]):
-            entities = cls._resolve_entities(
-                experiments=experiments, projects=projects_, task_statuses=task_statuses
-            )
+            entities = cls._resolve_entities(experiments=experiments, projects=projects_, task_statuses=task_statuses)
 
             hash_ = hashlib.md5()
             if metadata:
@@ -209,9 +202,7 @@ class PrePopulate:
                 meta_str, metadata_hash = "", ""
 
             map_file = file_base_name.with_suffix(".map")
-            updated, old_files = cls._check_for_update(
-                map_file, entities=entities, metadata_hash=metadata_hash
-            )
+            updated, old_files = cls._check_for_update(map_file, entities=entities, metadata_hash=metadata_hash)
             if not updated:
                 _print("There are no updates from the last export")
                 return old_files
@@ -240,12 +231,9 @@ class PrePopulate:
                 temp_file.unlink(missing_ok=True)
                 raise
 
-            file_with_hash = file_base_name.with_stem(
-                f"{file_base_name.stem}_{hash_.hexdigest()}"
-            )
+            file_with_hash = file_base_name.with_stem(f"{file_base_name.stem}_{hash_.hexdigest()}")
             temp_file.replace(file_with_hash)
             files = [str(file_with_hash)]
-
 
             cls._write_update_file(
                 map_file,
@@ -278,9 +266,7 @@ class PrePopulate:
                 )
             )
         else:
-            created_files = export_to_zip_core(
-                file_base_name=filename, projects_=projects
-            )
+            created_files = export_to_zip_core(file_base_name=filename, projects_=projects)
 
         return created_files
 
@@ -310,9 +296,7 @@ class PrePopulate:
                         meta_user_name = metadata.get("user_name", "")
                         user_id, user_name = meta_user_id, meta_user_name
             except Exception as ex:
-                _print(
-                    f"Error getting metadata from {cls.metadata_filename}: {str(ex)}"
-                )
+                _print(f"Error getting metadata from {cls.metadata_filename}: {str(ex)}")
 
             # Make sure we won't end up with an invalid company ID
             if company_id is None:
@@ -334,7 +318,6 @@ class PrePopulate:
                 metadata=metadata,
                 user_mapping=user_mapping,
             )
-
 
     @classmethod
     def update_featured_projects_order(cls):
@@ -418,16 +401,11 @@ class PrePopulate:
             return
 
         prefixes = [
-            cls.ParentPrefix(
-                prefix=f"{project.name.rpartition('/')[0]}/", path=project.path
-            )
-            for project in orphans
+            cls.ParentPrefix(prefix=f"{project.name.rpartition('/')[0]}/", path=project.path) for project in orphans
         ]
         prefixes.sort(key=lambda p: len(p.path), reverse=True)
         for project in projects:
-            prefix = first(
-                pref for pref in prefixes if project.path[: len(pref.path)] == pref.path
-            )
+            prefix = first(pref for pref in prefixes if project.path[: len(pref.path)] == pref.path)
             if not prefix:
                 continue
             project.path = project.path[len(prefix.path) :]
@@ -456,9 +434,7 @@ class PrePopulate:
             projects = [p for p in projects if p]
             if projects:
                 projects = project_ids_with_children(projects)
-                entities[cls.project_cls].update(
-                    cls._resolve_entity_type(cls.project_cls, projects)
-                )
+                entities[cls.project_cls].update(cls._resolve_entity_type(cls.project_cls, projects))
             _print("--> Reading project experiments...")
             p_ids = list(set(p.id for p in entities[cls.project_cls]))
             if root:
@@ -470,21 +446,13 @@ class PrePopulate:
             if task_statuses:
                 query &= Q(status__in=list(set(task_statuses)))
             objs = cls.task_cls.objects(query)
-            entities[cls.task_cls].update(
-                o for o in objs if o.id not in (experiments or [])
-            )
+            entities[cls.task_cls].update(o for o in objs if o.id not in (experiments or []))
 
         if experiments:
             _print("Reading experiments...")
-            entities[cls.task_cls].update(
-                cls._resolve_entity_type(cls.task_cls, experiments)
-            )
+            entities[cls.task_cls].update(cls._resolve_entity_type(cls.task_cls, experiments))
             _print("--> Reading experiments projects...")
-            objs = cls.project_cls.objects(
-                id__in=list(
-                    set(filter(None, (p.project for p in entities[cls.task_cls])))
-                )
-            )
+            objs = cls.project_cls.objects(id__in=list(set(filter(None, (p.project for p in entities[cls.task_cls])))))
             project_ids = {p.id for p in entities[cls.project_cls]}
             entities[cls.project_cls].update(o for o in objs if o.id not in project_ids)
 
@@ -620,10 +588,7 @@ class PrePopulate:
         if not auth_users:
             return
 
-        be_users = {
-            user.id: cls._cleanup_be_user(user)
-            for user in cls.user_cls.objects(id__in=list(auth_users))
-        }
+        be_users = {user.id: cls._cleanup_be_user(user) for user in cls.user_cls.objects(id__in=list(auth_users))}
         if not be_users:
             return
 
@@ -673,9 +638,7 @@ class PrePopulate:
             base_filename = cls._get_base_filename(cls_)
             if export_events:
                 for item in items:
-                    cls._export_entity_related_data(
-                        cls_, item, base_filename, writer, hash_
-                    )
+                    cls._export_entity_related_data(cls_, item, base_filename, writer, hash_)
             filename = base_filename + ".json"
             _print(f"Writing {len(items)} items into {writer.filename}:{filename}")
             with BytesIO() as f:
@@ -693,14 +656,7 @@ class PrePopulate:
     @staticmethod
     def json_lines(file: IO[bytes]):
         for line in file:
-            clean = (
-                line.decode("utf-8")
-                .rstrip("\r\n")
-                .strip()
-                .lstrip("[")
-                .rstrip(",]")
-                .strip()
-            )
+            clean = line.decode("utf-8").rstrip("\r\n").strip().lstrip("[").rstrip(",]").strip()
             if not clean:
                 continue
             yield clean
@@ -734,9 +690,7 @@ class PrePopulate:
         entity_files: Sequence,
         metadata: Mapping[str, Any],
     ) -> Mapping[str, str]:
-        if not metadata or not any(
-            metadata.get(key) for key in ("new_ids", "example_ids", "private_ids")
-        ):
+        if not metadata or not any(metadata.get(key) for key in ("new_ids", "example_ids", "private_ids")):
             return {}
 
         ids = {}
@@ -753,11 +707,7 @@ class PrePopulate:
                     doc = json.loads(item)
                     orig_id = doc.get("_id")
                     if orig_id:
-                        ids[orig_id] = (
-                            id_func(orig_id)
-                            if id_func != cls._hash_id
-                            else id_func(doc.get("name"))
-                        )
+                        ids[orig_id] = id_func(orig_id) if id_func != cls._hash_id else id_func(doc.get("name"))
         return ids
 
     @classmethod
@@ -769,15 +719,11 @@ class PrePopulate:
         and its id is mapped to the existing user with the same email
         If the user with the same id exists in backend or auth db then its creation is skipped
         """
-        users_file = first(
-            fi for fi in reader.filelist if fi.orig_filename == cls.users_filename
-        )
+        users_file = first(fi for fi in reader.filelist if fi.orig_filename == cls.users_filename)
         if not users_file:
             return {}
 
-        existing_user_ids = set(cls.user_cls.objects().scalar("id")) | set(
-            cls.auth_user_cls.objects().scalar("id")
-        )
+        existing_user_ids = set(cls.user_cls.objects().scalar("id")) | set(cls.auth_user_cls.objects().scalar("id"))
         existing_user_emails = {u.email: u.id for u in cls.auth_user_cls.objects()}
         user_id_mappings = {}
 
@@ -869,9 +815,7 @@ class PrePopulate:
         for task in tasks:
             old_task_id = new_to_old_ids.get(task.id, task.id)
             events_file = first(
-                fi
-                for fi in reader.filelist
-                if fi.orig_filename.endswith(old_task_id + event_file_ending)
+                fi for fi in reader.filelist if fi.orig_filename.endswith(old_task_id + event_file_ending)
             )
             if not events_file:
                 continue
@@ -883,9 +827,7 @@ class PrePopulate:
     @classmethod
     def _get_entity_type(cls, full_name) -> Type[mongoengine.Document]:
         module_name, _, class_name = full_name.rpartition(".")
-        if cls.module_name_prefix and not module_name.startswith(
-            cls.module_name_prefix
-        ):
+        if cls.module_name_prefix and not module_name.startswith(cls.module_name_prefix):
             module_name = cls.module_name_prefix + module_name
         module = importlib.import_module(module_name)
         return getattr(module, class_name)
@@ -951,9 +893,7 @@ class PrePopulate:
                 override_project_name = metadata.get("project_name", None)
                 if override_project_name:
                     if override_project_count:
-                        override_project_name = (
-                            f"{override_project_name} {override_project_count + 1}"
-                        )
+                        override_project_name = f"{override_project_name} {override_project_count + 1}"
                     override_project_count += 1
                     doc.name = override_project_name
 
@@ -968,9 +908,7 @@ class PrePopulate:
 
             if isinstance(doc, cls.task_cls):
                 tasks.append(doc)
-                cls.event_bll.delete_task_events(
-                    company_id, doc.id, wait_for_delete=True
-                )
+                cls.event_bll.delete_task_events(company_id, doc.id, wait_for_delete=True)
 
         if tasks:
             return tasks

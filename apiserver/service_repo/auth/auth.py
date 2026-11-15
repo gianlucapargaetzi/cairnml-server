@@ -46,24 +46,20 @@ def authorize_token(jwt_token, service, action, call):
         return token
     except jwt.exceptions.InvalidKeyError as ex:
         log_error("Failed parsing token.")
-        raise errors.unauthorized.InvalidToken(
-            "jwt invalid key error", reason=ex.args[0]
-        ) from ex
+        raise errors.unauthorized.InvalidToken("jwt invalid key error", reason=ex.args[0]) from ex
     except jwt.InvalidTokenError as ex:
         log_error("Failed parsing token.")
         raise errors.unauthorized.InvalidToken("invalid jwt token", reason=ex.args[0]) from ex
     except ValueError as ex:
         log_error(f"Failed while processing token: {str(ex.args[0])}.")
-        raise errors.unauthorized.InvalidToken(
-            "failed processing token", reason=ex.args[0]
-        ) from ex
+        raise errors.unauthorized.InvalidToken("failed processing token", reason=ex.args[0]) from ex
     except Exception:
         log_error("Failed processing token.")
         raise
 
 
 def authorize_impersonation(user, identity, service, action, call):
-    """ Returns a new basic object (auth payload)"""
+    """Returns a new basic object (auth payload)"""
     if not user:
         raise ValueError("missing user")
 

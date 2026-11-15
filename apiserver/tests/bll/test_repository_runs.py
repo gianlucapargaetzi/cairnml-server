@@ -1,5 +1,6 @@
 """What a run does to the repositories: it records the ones it uses the moment it says so, a registry is read once with every
 dataset it lists, and a dispatch asks how they will be read (apiserver/bll/repository_runs, repository_registry)."""
+
 from datetime import datetime
 from types import SimpleNamespace
 from uuid import uuid4
@@ -36,7 +37,9 @@ ENTRY_FILES = {
     "notes.txt": "not an entry",
     "ours.yaml": "source: repo\nlink: acme/ours\n",
 }
-METADATA = {"metadata/cars.json": b'{"modalities": {"image": "image"}, "labels": {"class": "class"}, "splits": {"train": 10}, "samples": 10}'}
+METADATA = {
+    "metadata/cars.json": b'{"modalities": {"image": "image"}, "labels": {"class": "class"}, "splits": {"train": 10}, "samples": 10}'
+}
 
 
 class FakeReader:
@@ -62,8 +65,16 @@ def world(monkeypatch):
     for user in ("owner", "member", "stranger"):
         AuthUser(id=user, name=user.title(), company=company, created=now).save()
     root = f"p-{company}"
-    Project(id=root, company=company, user="owner", name="P", basename="P", created=now, last_update=now,
-            members=[ProjectMember(user="member", role=ProjectRole.read, added=now, added_by="owner")]).save()
+    Project(
+        id=root,
+        company=company,
+        user="owner",
+        name="P",
+        basename="P",
+        created=now,
+        last_update=now,
+        members=[ProjectMember(user="member", role=ProjectRole.read, added=now, added_by="owner")],
+    ).save()
     state = SimpleNamespace(company=company, root=root, private=False, reader=FakeReader(), reached=[])
     monkeypatch.setattr(store, "key_material", lambda: "test-key-material")
     _patch(monkeypatch, "is_private", lambda address: state.private)
@@ -77,13 +88,27 @@ def world(monkeypatch):
 def make_task(world, user, datasets=(), registries=(), script=None, status=TaskStatus.in_progress):
     hyperparams = {SECTION: {}}
     for alias, repo in datasets:
-        hyperparams[SECTION][f"{alias}/repo"] = ParamsItem(section=SECTION, name=f"{alias}/repo", value=repo, type="str")
+        hyperparams[SECTION][f"{alias}/repo"] = ParamsItem(
+            section=SECTION, name=f"{alias}/repo", value=repo, type="str"
+        )
     for alias, repo in registries:
         for key, value in (("external_repo", repo), ("kind", "external"), ("name", alias)):
-            hyperparams[SECTION][f"{alias}/{key}"] = ParamsItem(section=SECTION, name=f"{alias}/{key}", value=value, type="str")
-    task = Task(id=uuid4().hex, company=world.company, user=user, name="train", type="training", created=datetime.utcnow(),
-                started=datetime.utcnow(), status=status, project=world.root, hyperparams=hyperparams,
-                script=SimpleNamespace(repository=script, version_num="abc") if False else None)
+            hyperparams[SECTION][f"{alias}/{key}"] = ParamsItem(
+                section=SECTION, name=f"{alias}/{key}", value=value, type="str"
+            )
+    task = Task(
+        id=uuid4().hex,
+        company=world.company,
+        user=user,
+        name="train",
+        type="training",
+        created=datetime.utcnow(),
+        started=datetime.utcnow(),
+        status=status,
+        project=world.root,
+        hyperparams=hyperparams,
+        script=SimpleNamespace(repository=script, version_num="abc") if False else None,
+    )
     task.save()
     return task
 
@@ -94,13 +119,14 @@ def entry_names(world):
 
 # --- the registry a run read an external dataset from -------------------------------------------------------------------------
 
+
 def test_a_registry_is_kept_with_every_dataset_it_lists_for_the_owner_of_the_project(world):
     task = make_task(world, "member", registries=[("cars", REGISTRY)])
     runs.publish_run(task)
     repo = Repository.objects(company=world.company, key="github.com/acme/registry").first()
     assert repo.owner == "owner" and repo.roles == ["registry"] and repo.state == "ok" and repo.read_at
-    assert entry_names(world) == ["cars", "faces"]                      # the one it used, the one it did not, not the others
-    assert Repository.objects(company=world.company).count() == 1       # not a dataset of its own
+    assert entry_names(world) == ["cars", "faces"]  # the one it used, the one it did not, not the others
+    assert Repository.objects(company=world.company).count() == 1  # not a dataset of its own
     link = access.find_share(world.company, "repository", repo.id, "projects", world.root)
     assert link is not None and link.inherited and link.run_id == task.id
 
@@ -139,8 +165,12 @@ def test_a_registry_that_failed_is_read_again_by_the_next_run(world):
 def test_refreshing_a_registry_adds_updates_and_removes_entries(world):
     runs.publish_run(make_task(world, "owner", registries=[("cars", REGISTRY)]))
     repo = Repository.objects(company=world.company).first()
-    world.reader = FakeReader({"cars.yaml": "source: huggingface\nlink: hf://datasets/acme/cars2\n",
-                               "newer.yaml": "source: web\nlink: https://example.org/n.zip\n"})
+    world.reader = FakeReader(
+        {
+            "cars.yaml": "source: huggingface\nlink: hf://datasets/acme/cars2\n",
+            "newer.yaml": "source: web\nlink: https://example.org/n.zip\n",
+        }
+    )
     counts = registry.refresh(world.company, "owner", False, repo.id)
     assert counts == {"added": 1, "updated": 1, "removed": 1} and entry_names(world) == ["cars", "newer"]
 
@@ -167,10 +197,11 @@ def test_a_registry_is_read_with_the_credential_that_reads_it(world, monkeypatch
     _patch(monkeypatch, "_company_reach", lambda repo: (None, "none"))
     repo = bll.record_use(world.company, REGISTRY, "registry", "owner", world.root)
     with pytest.raises(errors.bad_request.ValidationError, match="could not be read"):
-        registry.reader_for(repo, "owner", world.root)           # private, and nobody assigned a credential
+        registry.reader_for(repo, "owner", world.root)  # private, and nobody assigned a credential
 
 
 # --- datasets of their own ----------------------------------------------------------------------------------------------------
+
 
 def test_a_dataset_of_its_own_is_recorded_as_a_dataset_the_moment_the_run_records_it(world):
     runs.publish_run(make_task(world, "member", datasets=[("cars", "acme/cars")]))
@@ -187,10 +218,22 @@ def test_a_deactivated_user_records_nothing(world):
 
 # --- the warning before a dispatch --------------------------------------------------------------------------------------------
 
+
 def test_a_dispatch_asks_about_a_private_repository_nobody_assigned_and_offers_the_users_credentials(world):
     world.private = True
-    UserAccess(id="mine", company=world.company, user="member", kind="app", app_id="1", label="mine", scope="user",
-               host="github.com", path="", secret=store.encrypt("pem", store.key_material()), created=datetime.utcnow()).save()
+    UserAccess(
+        id="mine",
+        company=world.company,
+        user="member",
+        kind="app",
+        app_id="1",
+        label="mine",
+        scope="user",
+        host="github.com",
+        path="",
+        secret=store.encrypt("pem", store.key_material()),
+        created=datetime.utcnow(),
+    ).save()
     task = make_task(world, "member", datasets=[("cars", "acme/cars")])
     runs.publish_run(task)
     rows = runs.requirement(world.company, "member", [task.id], False)
@@ -218,12 +261,17 @@ def test_a_dispatch_is_not_warned_about_tasks_the_user_may_not_see(world):
 
 def test_the_badges_answer_for_the_repositories_that_are_recorded(world):
     runs.publish_run(make_task(world, "owner", datasets=[("cars", "acme/cars")]))
-    rows = runs.resolve_many(world.company, ["https://github.com/acme/cars", "https://github.com/acme/unknown", "nonsense"],
-                             "member", world.root)
+    rows = runs.resolve_many(
+        world.company,
+        ["https://github.com/acme/cars", "https://github.com/acme/unknown", "nonsense"],
+        "member",
+        world.root,
+    )
     assert [r["url"] for r in rows] == ["https://github.com/acme/cars"] and rows[0]["state"] == bll.ANONYMOUS
 
 
 # --- the runs of a repository ---------------------------------------------------------------------------------------------------
+
 
 def test_the_runs_of_a_repository_are_those_of_its_projects_that_used_it(world):
     task = make_task(world, "member", registries=[("cars", REGISTRY)])
@@ -232,7 +280,9 @@ def test_the_runs_of_a_repository_are_those_of_its_projects_that_used_it(world):
     runs.publish_run(other)
     registry_repo = Repository.objects(company=world.company, key="github.com/acme/registry").first()
     found = runs.runs_of(world.company, "owner", False, registry_repo)
-    assert [(r["id"], r["as"], r["user_name"], r["project_name"]) for r in found] == [(task.id, "registry", "Member", "P")]
+    assert [(r["id"], r["as"], r["user_name"], r["project_name"]) for r in found] == [
+        (task.id, "registry", "Member", "P")
+    ]
     ours = Repository.objects(company=world.company, key="github.com/acme/ours").first()
     assert [r["id"] for r in runs.runs_of(world.company, "member", False, ours)] == [other.id]
 
@@ -241,4 +291,4 @@ def test_a_user_outside_the_project_sees_no_runs_of_it(world):
     runs.publish_run(make_task(world, "owner", registries=[("cars", REGISTRY)]))
     repo = Repository.objects(company=world.company, key="github.com/acme/registry").first()
     assert runs.runs_of(world.company, "stranger", False, repo) == []
-    assert len(runs.runs_of(world.company, "stranger", True, repo)) == 1       # the admin sees every project's
+    assert len(runs.runs_of(world.company, "stranger", True, repo)) == 1  # the admin sees every project's

@@ -11,9 +11,7 @@ class Builder:
         from_date: Optional[Union[int, float]] = None,
         to_date: Optional[Union[int, float]] = None,
     ) -> dict:
-        assert (
-            from_date or to_date
-        ), "range condition requires that at least one of from_date or to_date specified"
+        assert from_date or to_date, "range condition requires that at least one of from_date or to_date specified"
         conditions = {}
         if from_date:
             conditions["gte"] = int(from_date)
@@ -33,6 +31,7 @@ class Builder:
         if isinstance(values, str):
             assert not isinstance(values, str), "apparently 'term' should be used here"
         return {"terms": {field: list(values)}}
+
     @staticmethod
     def term(field: str, value) -> dict:
         return {"term": {field: value}}

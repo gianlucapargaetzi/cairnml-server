@@ -71,7 +71,8 @@ def verify_dataset(app, repo: str) -> tuple:
         }
         if files[footprint.CONFIG_FILE] is None:
             raise NotADataset(
-                f"{repo} is not a CairnML dataset: {footprint.CONFIG_FILE} is missing on its default branch")
+                f"{repo} is not a CairnML dataset: {footprint.CONFIG_FILE} is missing on its default branch"
+            )
         sizes = app.tree_sizes(repo, head)
         if _is_local_adapter(files[footprint.CONFIG_FILE]):
             files[footprint.ADAPTER_FILE] = _read_adapter(app, repo, head, sizes)

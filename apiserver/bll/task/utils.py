@@ -31,9 +31,7 @@ log = config.logger(__file__)
 @typed_attrs
 class ChangeStatusRequest(object):
     task = attr.ib(type=Task)
-    new_status = attr.ib(
-        type=six.string_types, validator=attr.validators.in_(valid_statuses)
-    )
+    new_status = attr.ib(type=six.string_types, validator=attr.validators.in_(valid_statuses))
     status_reason = attr.ib(type=six.string_types, default="")
     status_message = attr.ib(type=six.string_types, default="")
     force = attr.ib(type=bool, default=False)
@@ -73,9 +71,7 @@ class ChangeStatusRequest(object):
             # atomic change of task status by querying the task with the EXPECTED status before modifying it
             params = fields.copy()
             params.update(control)
-            updated = Task.objects(id=self.task.id, status=current_status).update(
-                **params
-            )
+            updated = Task.objects(id=self.task.id, status=current_status).update(**params)
 
         if not updated:
             # failed to change status (someone else beat us to it?)
@@ -95,11 +91,7 @@ class ChangeStatusRequest(object):
             return tail and (head in UPDATE_OPERATORS)
 
         # make sure to not return _raw_ queries or any of the update operators
-        fields = {
-            key: value
-            for key, value in fields.items()
-            if not (key == "__raw__" or is_mongo_operator(key))
-        }
+        fields = {key: value for key, value in fields.items() if not (key == "__raw__" or is_mongo_operator(key))}
 
         return dict(updated=updated, fields=fields)
 
@@ -191,9 +183,7 @@ def get_possible_status_changes(current_status):
     """
     possible = state_machine.get(current_status)
     if possible is None:
-        raise errors.server_error.InternalError(
-            f"Current status {current_status} not supported by state machine"
-        )
+        raise errors.server_error.InternalError(f"Current status {current_status} not supported by state machine")
 
     return possible
 
@@ -229,9 +219,7 @@ def get_many_tasks_for_writing(
         if not task.project:
             return False
         try:
-            ProjectAccessBLL.assert_can(
-                identity, task.project, "write", object_owner=task.user
-            )
+            ProjectAccessBLL.assert_can(identity, task.project, "write", object_owner=task.user)
             return False
         except errors.bad_request.InvalidProjectId:
             return True
@@ -273,9 +261,7 @@ def get_task_with_write_access(
         if ProjectAccessBLL.get_role(identity, task.project) is None:
             # Same answer a missing task gets, so a hidden task does not reveal its project
             raise errors.bad_request.InvalidTaskId(**query)
-        ProjectAccessBLL.assert_can(
-            identity, task.project, "write", object_owner=task.user
-        )
+        ProjectAccessBLL.assert_can(identity, task.project, "write", object_owner=task.user)
 
     return task
 
@@ -305,15 +291,11 @@ def get_task_for_update(
         allowed_statuses.extend(task_running_statuses)
 
     if task.status not in allowed_statuses:
-        raise errors.bad_request.InvalidTaskStatus(
-            expected=TaskStatus.created, status=task.status
-        )
+        raise errors.bad_request.InvalidTaskStatus(expected=TaskStatus.created, status=task.status)
     return task
 
 
-def update_task(
-    task: Task, user_id: str, update_cmds: dict, set_last_update: bool = True
-):
+def update_task(task: Task, user_id: str, update_cmds: dict, set_last_update: bool = True):
     now = datetime.now(timezone.utc)
     last_updates = dict(last_change=now, last_changed_by=user_id)
     if set_last_update:
@@ -416,16 +398,10 @@ def get_last_metric_updates(
         else:
             condition = exists
 
-        raw_updates[value_field] = {
-            "$cond": [condition, metric_value, f"${value_field}"]
-        }
+        raw_updates[value_field] = {"$cond": [condition, metric_value, f"${value_field}"]}
 
-        value_iteration_field = (
-            f"{metric_path}__{field_prefix}_value_iteration".replace("__", ".")
-        )
-        raw_updates[value_iteration_field] = {
-            "$cond": [condition, iter_value, f"${value_iteration_field}"]
-        }
+        value_iteration_field = f"{metric_path}__{field_prefix}_value_iteration".replace("__", ".")
+        raw_updates[value_iteration_field] = {"$cond": [condition, iter_value, f"${value_iteration_field}"]}
 
     for metric_key, metric_data in last_scalar_events.items():
         for variant_key, variant_data in metric_data.items():

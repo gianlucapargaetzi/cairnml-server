@@ -40,8 +40,20 @@ def short_token_lifetime(isolated_stack):
 def long_job(client_home, project, short_token_lifetime, tmp_path_factory):
     """The record of one job that sleeps longer than the token lifetime. It is made after the lifetime is set."""
     folder = tmp_path_factory.mktemp("job-token-record")
-    entries = [{"argv": ["--project", project, "--name", new_name("long-job"),
-                         "--scalars", "40", "--sleep", str(JOB_SLEEP_SEC)]}]
+    entries = [
+        {
+            "argv": [
+                "--project",
+                project,
+                "--name",
+                new_name("long-job"),
+                "--scalars",
+                "40",
+                "--sleep",
+                str(JOB_SLEEP_SEC),
+            ]
+        }
+    ]
     (folder / "jobs.json").write_text(json.dumps(entries))
     result = cli.python(JOB_SCRIPT, client_home, args=["--batch", folder / "jobs.json"], timeout=300)
     assert result.returncode == 0, result.output[-3000:]

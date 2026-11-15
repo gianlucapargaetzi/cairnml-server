@@ -21,14 +21,14 @@ class WorkerRequest(Base):
     tags = ListField(str)
     system_tags = ListField(str)
 
+
 class Resources(Base):
     cpu_usage = FloatField()
     gpu_usage = FloatField()
 
+
 class RegisterRequest(WorkerRequest):
-    timeout = IntField(
-        default=int(config.get("services.workers.default_worker_timeout_sec", 60 * 60))
-    )
+    timeout = IntField(default=int(config.get("services.workers.default_worker_timeout_sec", 60 * 60)))
     """ registration timeout in seconds (default is 60min) """
     queues = ListField(six.string_types)  # list of queues this worker listens to
     resources = EmbeddedField(Resources)
@@ -147,9 +147,7 @@ class StatItem(Base):
 
 
 class GetStatsRequest(StatsReportBase):
-    items = ListField(
-        StatItem, required=True, validators=validators.Length(minimum_value=1)
-    )
+    items = ListField(StatItem, required=True, validators=validators.Length(minimum_value=1))
     split_by_variant = BoolField(default=False)
     split_by_resource = BoolField(default=False)
 

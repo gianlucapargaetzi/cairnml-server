@@ -46,7 +46,9 @@ def _require_task_read_access(call: APICall, company: str, task_id: str) -> None
     job_task = _job_task(call)
     if job_task is not None:
         if not may_read_task_data(job_task, task_id):
-            raise errors.unauthorized.InvalidToken("a job token only reads the data of its own task and its pipeline's steps")
+            raise errors.unauthorized.InvalidToken(
+                "a job token only reads the data of its own task and its pipeline's steps"
+            )
         return
     task = Task.objects(id=task_id, company=company).only("id", "project", "user").first()
     if not task:

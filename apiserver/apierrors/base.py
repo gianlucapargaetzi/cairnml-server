@@ -19,9 +19,7 @@ class BaseError(APIError):
         if extra_msg:
             message += f" ({extra_msg})"
         if kwargs:
-            kwargs_msg = ", ".join(
-                f"{k}={self._format_kwarg(v)}" for k, v in kwargs.items()
-            )
+            kwargs_msg = ", ".join(f"{k}={self._format_kwarg(v)}" for k, v in kwargs.items())
             message += f": {kwargs_msg}"
 
         super(BaseError, self).__init__(
@@ -43,7 +41,7 @@ class BaseError(APIError):
     @staticmethod
     def _format_kwarg(value):
         if is_collection(value):
-            return f'({", ".join(str(v) for v in value)})'
+            return f"({', '.join(str(v) for v in value)})"
         elif isinstance(value, six.string_types):
             return value
         return str(value)

@@ -10,8 +10,13 @@ FINAL = ("completed", "failed", "stopped", "aborted", "closed")
 
 # What a job's console says when its container cannot reach the server. The SDK retries these for hours (the agent
 # sets api.http.retries.total to 240), so a job that never starts would otherwise wait out the whole timeout.
-UNREACHABLE = ("Max retries exceeded", "Failed to establish a new connection", "Connection refused",
-               "Name or service not known", "Temporary failure in name resolution")
+UNREACHABLE = (
+    "Max retries exceeded",
+    "Failed to establish a new connection",
+    "Connection refused",
+    "Name or service not known",
+    "Temporary failure in name resolution",
+)
 
 
 class JobEnded(AssertionError):
@@ -33,9 +38,9 @@ def task_record(api, task_id: str) -> dict:
 def console(api, task_id: str, size: int = 50) -> list:
     """The job's last console lines, oldest first."""
     # API 2.9 pages the log without an Elasticsearch scroll; 2.8 would open one per call and leave it open.
-    events = api.authed(
-        "events.get_task_log", {"task": task_id, "order": "desc", "batch_size": size}, version="2.9"
-    )["events"]
+    events = api.authed("events.get_task_log", {"task": task_id, "order": "desc", "batch_size": size}, version="2.9")[
+        "events"
+    ]
     return [event["msg"] for event in reversed(events)]
 
 
@@ -50,7 +55,8 @@ def explain(api, task_id: str, record: dict = None) -> str:
     errors = [line for line in lines if any(marker in line for marker in ERROR_MARKERS)]
     last = (errors or lines or ["no console output"])[-1]
     return "status '{}', reason {!r}, message {!r}, last console line {!r}".format(
-        record.get("status"), record.get("status_reason"), record.get("status_message"), last)
+        record.get("status"), record.get("status_reason"), record.get("status_message"), last
+    )
 
 
 def _unreachable(api, task_id: str):
@@ -75,16 +81,17 @@ def _follow(api, task_id: str, done, what: str, timeout: float, poll: float = 1.
         if not record.get("last_metrics"):
             unreachable = _unreachable(api, task_id)
             if unreachable:
-                raise JobEnded(f"{what}: the job's container cannot reach the server, {explain(api, task_id, record)}, "
-                               f"console {unreachable!r}")
+                raise JobEnded(
+                    f"{what}: the job's container cannot reach the server, {explain(api, task_id, record)}, "
+                    f"console {unreachable!r}"
+                )
         time.sleep(poll)
     raise JobEnded(f"{what}: still '{record.get('status')}' after {timeout:.0f} s, {explain(api, task_id, record)}")
 
 
 def wait_for(api, task_id: str, states, timeout: float = 60) -> dict:
     """Waits until the status is one of states, and returns the record (see _follow for the failures)."""
-    return _follow(api, task_id, lambda r: r.get("status") in states,
-                   f"waiting for {' or '.join(states)}", timeout)
+    return _follow(api, task_id, lambda r: r.get("status") in states, f"waiting for {' or '.join(states)}", timeout)
 
 
 def wait_for_start(api, task_id: str, timeout: float = 60) -> dict:

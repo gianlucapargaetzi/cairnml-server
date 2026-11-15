@@ -34,9 +34,7 @@ class LengthRangeListField(ListField):
 
 class LengthRangeEmbeddedDocumentListField(LengthRangeListField):
     def __init__(self, field=None, *args, **kwargs):
-        super(LengthRangeEmbeddedDocumentListField, self).__init__(
-            EmbeddedDocumentField(field), *args, **kwargs
-        )
+        super(LengthRangeEmbeddedDocumentListField, self).__init__(EmbeddedDocumentField(field), *args, **kwargs)
 
 
 class UniqueEmbeddedDocumentListField(EmbeddedDocumentListField):
@@ -71,9 +69,7 @@ class EmbeddedDocumentSortedListField(EmbeddedDocumentListField):
     """
 
     def to_mongo(self, value, use_db_field=True, fields=None):
-        value = super(EmbeddedDocumentSortedListField, self).to_mongo(
-            value, use_db_field, fields
-        )
+        value = super(EmbeddedDocumentSortedListField, self).to_mongo(value, use_db_field, fields)
         return sorted(value, key=object_to_key_value_pairs)
 
 
@@ -90,12 +86,8 @@ class CustomFloatField(FloatField):
 
 
 class StrippedStringField(StringField):
-    def __init__(
-        self, regex=None, max_length=None, min_length=None, strip_chars=None, **kwargs
-    ):
-        super(StrippedStringField, self).__init__(
-            regex, max_length, min_length, **kwargs
-        )
+    def __init__(self, regex=None, max_length=None, min_length=None, strip_chars=None, **kwargs):
+        super(StrippedStringField, self).__init__(regex, max_length, min_length, **kwargs)
         self._strip_chars = strip_chars
 
     def __set__(self, instance, value):
@@ -140,9 +132,7 @@ class DictValidationMixin:
             self.error(msg)
 
         if key_starts_with_dollar(value):
-            self.error(
-                'Invalid dictionary key name - keys may not startswith "$" characters'
-            )
+            self.error('Invalid dictionary key name - keys may not startswith "$" characters')
         super(DictField, self).validate(value)
 
 
@@ -201,12 +191,6 @@ class UnionField(DynamicField):
     def validate(self, value, clean=True):
         if not isinstance(value, self.types):
             type_names = [t.__name__ for t in self.types]
-            expected = " or ".join(
-                filter(
-                    None,
-                    (", ".join(type_names[:-1]), type_names[-1]))
-            )
-            self.error(
-                f"Expected {expected}, got {type(value).__name__}: {value}"
-            )
+            expected = " or ".join(filter(None, (", ".join(type_names[:-1]), type_names[-1])))
+            self.error(f"Expected {expected}, got {type(value).__name__}: {value}")
         super(UnionField, self).validate(value, clean)

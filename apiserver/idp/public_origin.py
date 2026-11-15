@@ -53,7 +53,9 @@ def remember(headers, host: str, remote_addr: Optional[str] = None) -> None:
     trusted = is_trusted_proxy(remote_addr)
     forwarded = headers.get("X-Forwarded-Host") or headers.get("X-Forwarded-Proto")
     if forwarded and not trusted:
-        log.warning("forwarded headers from %s ignored: not a trusted proxy (apiserver.idp.trusted_proxies)", remote_addr)
+        log.warning(
+            "forwarded headers from %s ignored: not a trusted proxy (apiserver.idp.trusted_proxies)", remote_addr
+        )
     if trusted:
         scheme = headers.get("X-Forwarded-Proto") or "http"
         netloc = headers.get("X-Forwarded-Host") or host

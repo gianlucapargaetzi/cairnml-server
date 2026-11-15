@@ -32,10 +32,14 @@ class TestIdpConfig(TestCase):
         with COMPOSE_FILE.open() as f:
             env = yaml.safe_load(f)["services"]["apiserver"]["environment"]
         self.assertEqual(config.get("apiserver.idp.admin_role"), env["CAIRNML__apiserver__idp__admin_role"])
-        self.assertEqual(config.get("apiserver.idp.sync_enabled"),
-                         env["CAIRNML__apiserver__idp__sync_enabled"] == "true")
-        self.assertEqual(config.get("apiserver.auth.cookies.secure"),
-                         _compose_value(env["CAIRNML__apiserver__auth__cookies__secure"]) == "true")
-        self.assertEqual(config.get("apiserver.auth.custom_cookies.idp_session.settings.secure"),
-                         _compose_value(env["CAIRNML__apiserver__auth__custom_cookies__idp_session__settings__secure"])
-                         == "true")
+        self.assertEqual(
+            config.get("apiserver.idp.sync_enabled"), env["CAIRNML__apiserver__idp__sync_enabled"] == "true"
+        )
+        self.assertEqual(
+            config.get("apiserver.auth.cookies.secure"),
+            _compose_value(env["CAIRNML__apiserver__auth__cookies__secure"]) == "true",
+        )
+        self.assertEqual(
+            config.get("apiserver.auth.custom_cookies.idp_session.settings.secure"),
+            _compose_value(env["CAIRNML__apiserver__auth__custom_cookies__idp_session__settings__secure"]) == "true",
+        )

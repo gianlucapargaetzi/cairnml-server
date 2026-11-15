@@ -26,8 +26,14 @@ def main() -> None:
     files = {
         p.relative_to(dataset.path).as_posix(): file_digest(p) for p in sorted(dataset.path.rglob("*")) if p.is_file()
     }
-    report({"commit": dataset.commit, "content_hash": dataset.content_hash, "files": files,
-            "task_id": task.id if task else None})
+    report(
+        {
+            "commit": dataset.commit,
+            "content_hash": dataset.content_hash,
+            "files": files,
+            "task_id": task.id if task else None,
+        }
+    )
     if task:
         task.close()
 

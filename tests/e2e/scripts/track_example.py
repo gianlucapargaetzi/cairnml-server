@@ -30,8 +30,9 @@ def record(project: str, name: str, steps: int) -> str:
         logger.report_scalar(title="loss", series="val", value=2.0 / (step + 1), iteration=step)
     logger.report_single_value(name="accuracy", value=0.93)
     logger.report_text("text line from the example run")
-    logger.report_image(title="debug", series="gradient", iteration=0,
-                        image=np.tile(np.arange(16, dtype=np.uint8), (16, 1)))
+    logger.report_image(
+        title="debug", series="gradient", iteration=0, image=np.tile(np.arange(16, dtype=np.uint8), (16, 1))
+    )
     print("console line from the example run")
 
     report({"task_id": task.id, "steps": steps})
@@ -44,9 +45,12 @@ def main() -> None:
     parser.add_argument("--project", required=True)
     parser.add_argument("--name", default="")
     parser.add_argument("--steps", type=int, default=100)
-    parser.add_argument("--batch", default="",
-                        help="a JSON file listing {name, steps} runs to record in this process, one after another "
-                             "(docs/e2e_testing/E2E.md, speed section, item 12)")
+    parser.add_argument(
+        "--batch",
+        default="",
+        help="a JSON file listing {name, steps} runs to record in this process, one after another "
+        "(docs/e2e_testing/E2E.md, speed section, item 12)",
+    )
     args = parser.parse_args()
     if args.batch:
         for entry in json.loads(Path(args.batch).read_text()):

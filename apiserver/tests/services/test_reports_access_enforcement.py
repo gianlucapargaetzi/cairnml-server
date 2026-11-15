@@ -25,8 +25,13 @@ def company():
 
 def make_root(company, id_="root1", owner="owner1", visibility=ProjectVisibility.private, members=()):
     project = Project(
-        id=id_, company=company, user=owner, name=id_, basename=id_,
-        created=datetime.utcnow(), visibility=visibility,
+        id=id_,
+        company=company,
+        user=owner,
+        name=id_,
+        basename=id_,
+        created=datetime.utcnow(),
+        visibility=visibility,
         members=[ProjectMember(user=u, role=r, added=datetime.utcnow(), added_by=owner) for u, r in members],
     )
     project.save()
@@ -35,8 +40,13 @@ def make_root(company, id_="root1", owner="owner1", visibility=ProjectVisibility
 
 def make_report(company, project, owner, id_="report1"):
     task = Task(
-        id=id_, company=company, user=owner, name="report", project=project,
-        type=TaskType.report, created=datetime.utcnow(),
+        id=id_,
+        company=company,
+        user=owner,
+        name="report",
+        project=project,
+        type=TaskType.report,
+        created=datetime.utcnow(),
     )
     task.save()
     return task

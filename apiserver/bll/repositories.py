@@ -17,7 +17,11 @@ from apiserver.idp import repo_address
 
 from apiserver.bll.repository_records import ASSIGNED, COMPANY, NONE_NEEDED, ANONYMOUS, UNKNOWN, UNREACHABLE  # noqa: F401
 from apiserver.bll.repository_access import (  # noqa: F401
-    ANONYMOUS_NO_TTL, ANONYMOUS_UNKNOWN_TTL, ANONYMOUS_YES_TTL, READ_PERMISSIONS, WRITE_PERMISSIONS,
+    ANONYMOUS_NO_TTL,
+    ANONYMOUS_UNKNOWN_TTL,
+    ANONYMOUS_YES_TTL,
+    READ_PERMISSIONS,
+    WRITE_PERMISSIONS,
 )
 from apiserver.bll.repository_records import (  # noqa: F401  (moved; re-exported for the existing callers)
     _create,
@@ -68,10 +72,15 @@ from apiserver.bll.repository_view import (  # noqa: F401  (moved; re-exported f
 log = logging.getLogger(__name__)
 
 
-
-
-def record_use(company: str, address: str, role: str, user: str, project_id: Optional[str] = None,
-               run_id: Optional[str] = None, now: Optional[datetime] = None) -> Optional[Repository]:
+def record_use(
+    company: str,
+    address: str,
+    role: str,
+    user: str,
+    project_id: Optional[str] = None,
+    run_id: Optional[str] = None,
+    now: Optional[datetime] = None,
+) -> Optional[Repository]:
     """Records the repository a run uses. The record is made for the owner of the run's project when there is none (never for
     the user who ran it, unless they own the project), and the repository is linked to the project. A record that exists is
     only linked and given the role. None when the address names no hosted repository."""
@@ -92,8 +101,9 @@ def record_use(company: str, address: str, role: str, user: str, project_id: Opt
     return repo
 
 
-def record_use_quietly(company: str, address: str, role: str, user: str, project_id: Optional[str] = None,
-                       run_id: Optional[str] = None) -> Optional[Repository]:
+def record_use_quietly(
+    company: str, address: str, role: str, user: str, project_id: Optional[str] = None, run_id: Optional[str] = None
+) -> Optional[Repository]:
     """``record_use`` for the places that save a task: a failure is logged and never refuses the save."""
     try:
         return record_use(company, address, role, user, project_id, run_id)
@@ -102,8 +112,17 @@ def record_use_quietly(company: str, address: str, role: str, user: str, project
         return None
 
 
-def add(company: str, user: str, is_admin: bool, address: str, role: str, shared: bool = False,
-        project_id: Optional[str] = None, credential: Optional[str] = None, none_needed: bool = False) -> Repository:
+def add(
+    company: str,
+    user: str,
+    is_admin: bool,
+    address: str,
+    role: str,
+    shared: bool = False,
+    project_id: Optional[str] = None,
+    credential: Optional[str] = None,
+    none_needed: bool = False,
+) -> Repository:
     """Lists a repository before any run has used it. A user's entry is non-shared; only the admin may add a shared one."""
     access.refuse_inactive(user)
     if role not in ROLES:
@@ -129,7 +148,8 @@ def add(company: str, user: str, is_admin: bool, address: str, role: str, shared
             repo = get(company, repo.id)
         if not can_see(company, user, is_admin, repo):
             raise errors.bad_request.ValidationError(
-                "this repository is already listed by someone else: ask for it to be shared")
+                "this repository is already listed by someone else: ask for it to be shared"
+            )
         _with_role(repo, role).save()
     if shared and not is_shared(repo):
         set_shared(company, user, is_admin, repo.id, True)
@@ -141,10 +161,22 @@ def add(company: str, user: str, is_admin: bool, address: str, role: str, shared
     return repo
 
 
-def _link(company: str, repo: Repository, root: str, root_owner: str, actor: str, inherited: bool, run_id: Optional[str]):
+def _link(
+    company: str, repo: Repository, root: str, root_owner: str, actor: str, inherited: bool, run_id: Optional[str]
+):
     try:
-        return access.record_grant(company, root_owner, "repository", repo.id, "projects", root, level="read", actor=actor,
-                                   inherited=inherited, run_id=run_id)
+        return access.record_grant(
+            company,
+            root_owner,
+            "repository",
+            repo.id,
+            "projects",
+            root,
+            level="read",
+            actor=actor,
+            inherited=inherited,
+            run_id=run_id,
+        )
     except errors.bad_request.ValidationError:
         log.warning("the repository %s could not be linked to project %s", repo.key, root, exc_info=True)
         return None
@@ -161,7 +193,9 @@ def link(company: str, user: str, is_admin: bool, repository_id: str, project_id
         raise errors.bad_request.ValidationError("no such project")
     if not is_admin and not membership.is_member(company, root, user):
         raise errors.forbidden.NoWritePermission("you are not a member of this project")
-    created = _link(company, repo, root, _root_and_owner(company, user, root)[1], actor=user, inherited=False, run_id=None)
+    created = _link(
+        company, repo, root, _root_and_owner(company, user, root)[1], actor=user, inherited=False, run_id=None
+    )
     if created is None:
         raise errors.bad_request.ValidationError("the repository could not be listed in the project")
     return created
@@ -187,8 +221,9 @@ def regrant_project_links(company: str, root: str, new_owner: str, actor: str) -
         access.record_grant(company, new_owner, "repository", repository_id, "projects", root, actor=actor)
 
 
-def verify_for_sharing(company: str, user: str, is_admin: bool, repository_id: str, credential: Optional[str],
-                       none_needed: bool = False) -> None:
+def verify_for_sharing(
+    company: str, user: str, is_admin: bool, repository_id: str, credential: Optional[str], none_needed: bool = False
+) -> None:
     """Raises, with the reason, unless the company credential reads the repository (or the host clones it without a credential,
     for ``none_needed``): what a shared repository is read with must be confirmed before it is shared."""
     repo = require_visible(company, user, is_admin, repository_id)
@@ -203,13 +238,24 @@ def verify_for_sharing(company: str, user: str, is_admin: bool, repository_id: s
         answer = anonymous(repo, force=True)
         if answer is not True:
             raise errors.bad_request.ValidationError(
-                f"{repo.host}/{repo.path} cannot be cloned without a credential, so None needed does not apply")
+                f"{repo.host}/{repo.path} cannot be cloned without a credential, so None needed does not apply"
+            )
     else:
-        raise errors.bad_request.ValidationError("choose the company credential that reads it, or None needed for a public repository")
+        raise errors.bad_request.ValidationError(
+            "choose the company credential that reads it, or None needed for a public repository"
+        )
 
 
-def set_shared(company: str, user: str, is_admin: bool, repository_id: str, shared: bool, credential: Optional[str] = None,
-               none_needed: bool = False, confirm: bool = False) -> Repository:
+def set_shared(
+    company: str,
+    user: str,
+    is_admin: bool,
+    repository_id: str,
+    shared: bool,
+    credential: Optional[str] = None,
+    none_needed: bool = False,
+    confirm: bool = False,
+) -> Repository:
     """Makes an entry shared, or non-shared again. The owner or the admin makes it shared: ownership moves to the admin, and
     the previous owner's assignment is dropped, as is any assignment of a credential that is not the company's (a shared
     entry is read with company credentials only). Only the admin makes it non-shared again. With ``confirm`` the company
@@ -238,7 +284,8 @@ def set_shared(company: str, user: str, is_admin: bool, repository_id: str, shar
         access.record_grant(company, admin, "repository", repo.id, "public", actor=user)
         if confirm:
             reads = Assignment.objects(repository=repo.id, user=admin).first() or Assignment(
-                id=uuid.uuid4().hex, company=company, repository=repo.id, user=admin, created=datetime.utcnow())
+                id=uuid.uuid4().hex, company=company, repository=repo.id, user=admin, created=datetime.utcnow()
+            )
             reads.credential, reads.none_needed = (credential or None), bool(none_needed)
             reads.save()
         return repo
@@ -298,8 +345,14 @@ def prune_assignments(company: str, repository_id: Optional[str] = None, user: O
     return dropped
 
 
-def assign(company: str, user: str, repository_id: str, credential: Optional[str] = None, none_needed: bool = False,
-           is_admin: bool = False) -> Optional[Assignment]:
+def assign(
+    company: str,
+    user: str,
+    repository_id: str,
+    credential: Optional[str] = None,
+    none_needed: bool = False,
+    is_admin: bool = False,
+) -> Optional[Assignment]:
     """Assigns the user's own credential (or the company's), or "None needed", to a repository they see; with neither, the
     assignment is cleared. The credential must read the repository. "None needed" only applies when the host clones it
     without a credential. Only the user's own assignment is changed, whoever they are."""
@@ -314,21 +367,29 @@ def assign(company: str, user: str, repository_id: str, credential: Optional[str
         entry = next((e for e in credential_choices(company, user, repo) if e.id == credential), None)
         if entry is None:
             raise errors.bad_request.ValidationError(
-                "that credential is not one you may assign here: " + (
-                    "a shared repository is read with a company credential" if is_shared(repo)
-                    else "choose one of your own credentials or the company's"))
+                "that credential is not one you may assign here: "
+                + (
+                    "a shared repository is read with a company credential"
+                    if is_shared(repo)
+                    else "choose one of your own credentials or the company's"
+                )
+            )
         _check_reads(entry, repo)
     else:
         answer = anonymous(repo, force=True)
         if answer is None:
             raise errors.bad_request.ValidationError(
-                f"{repo.host} could not be asked whether {repo.path} can be cloned without a credential: try again in a moment")
+                f"{repo.host} could not be asked whether {repo.path} can be cloned without a credential: try again in a moment"
+            )
         if answer is not True:
             raise errors.bad_request.ValidationError(
-                f"{repo.host}/{repo.path} cannot be cloned without a credential, so None needed does not apply")
+                f"{repo.host}/{repo.path} cannot be cloned without a credential, so None needed does not apply"
+            )
     mine = Assignment.objects(repository=repo.id, user=user).first()
     if mine is None:
-        mine = Assignment(id=uuid.uuid4().hex, company=company, repository=repo.id, user=user, created=datetime.utcnow())
+        mine = Assignment(
+            id=uuid.uuid4().hex, company=company, repository=repo.id, user=user, created=datetime.utcnow()
+        )
     mine.credential, mine.none_needed = (credential or None), bool(none_needed)
     mine.save()
     return mine
@@ -360,6 +421,12 @@ def check(company: str, user: str, is_admin: bool, repository_id: str) -> Reposi
     elif resolution.state == UNREACHABLE:
         state, message = "no_access", resolution.message
     RepositoryCheck.objects(repository=repo.id, user=user).modify(
-        upsert=True, new=True, set_on_insert__id=uuid.uuid4().hex, set__company=company, set__state=state, set__message=message,
-        set__checked=datetime.utcnow())
+        upsert=True,
+        new=True,
+        set_on_insert__id=uuid.uuid4().hex,
+        set__company=company,
+        set__state=state,
+        set__message=message,
+        set__checked=datetime.utcnow(),
+    )
     return repo

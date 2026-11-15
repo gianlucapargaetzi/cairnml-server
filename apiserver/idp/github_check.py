@@ -3,7 +3,6 @@ installed on it; a public repository needs neither the App nor a token. On anoth
 stored Git credentials (repo_visibility). Otherwise the job is refused at once with a clear message, instead of failing
 later in the agent when it tries to clone."""
 
-
 from typing import Optional
 
 from apiserver.apierrors import errors
@@ -15,10 +14,6 @@ from apiserver.idp.github import GitHubApp, GitHubError
 
 # The section of the server README that sets the App up: every refusal below points to it.
 GITHUB_APP_DOCS = "https://github.com/gianlucapargaetzi/cairnml-server/blob/main/README.md#github-app"
-
-
-
-
 
 
 def check_submission(task) -> None:
@@ -54,9 +49,9 @@ def check_submission(task) -> None:
     except GitHubError:
         raise errors.bad_request.ValidationError("GitHub could not be reached to check the job") from None
     if not found:
-        raise errors.bad_request.ValidationError(f"commit not found on GitHub: push it first ({repo.path}@{commit[:8]})")
-
-
+        raise errors.bad_request.ValidationError(
+            f"commit not found on GitHub: push it first ({repo.path}@{commit[:8]})"
+        )
 
 
 def build_from_config(find_app=None, make_app=GitHubApp, default_api_url: Optional[str] = None):
@@ -69,5 +64,7 @@ def build_from_config(find_app=None, make_app=GitHubApp, default_api_url: Option
     if found is None:
         return None
     entry, key = found
-    api_url = entry.api_url or (default_api_url if default_api_url is not None else config.get("apiserver.idp.github_api_url"))
+    api_url = entry.api_url or (
+        default_api_url if default_api_url is not None else config.get("apiserver.idp.github_api_url")
+    )
     return make_app(entry.app_id, key, api_url)

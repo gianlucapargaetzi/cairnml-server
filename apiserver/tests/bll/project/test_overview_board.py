@@ -18,16 +18,19 @@ def test_a_valid_board_is_accepted_and_returned_with_the_known_fields_only():
     assert set(cleaned[2]) == {"id", "type", "x", "y", "w", "h", "settings"}
 
 
-@pytest.mark.parametrize("bad", [
-    card(type_="nonsense"),
-    card(x=4, w=3),          # x + w > 6
-    card(w=0),
-    card(h=49),              # taller than 12 tiles
-    card(h=6),               # a card is a whole number of tiles high
-    card(x=-1),
-    card(type_="divider", h=4),   # a divider is one row
-    "not an object",
-])
+@pytest.mark.parametrize(
+    "bad",
+    [
+        card(type_="nonsense"),
+        card(x=4, w=3),  # x + w > 6
+        card(w=0),
+        card(h=49),  # taller than 12 tiles
+        card(h=6),  # a card is a whole number of tiles high
+        card(x=-1),
+        card(type_="divider", h=4),  # a divider is one row
+        "not an object",
+    ],
+)
 def test_a_card_that_does_not_fit_the_grid_or_the_rules_is_refused(bad):
     with pytest.raises(errors.bad_request.ValidationError):
         validate_board([bad])

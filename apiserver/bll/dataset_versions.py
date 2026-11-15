@@ -22,15 +22,22 @@ def versions_of(reader, repository: str, commits: List[dict]) -> List[dict]:
         if not reader.commit_exists(repository, commit["sha"]):
             continue
         try:
-            metadata = registry_bll.parse_metadata(reader.read_file(repository, MANIFEST_FILE, commit["sha"]), MANIFEST_FILE) or {}
+            metadata = (
+                registry_bll.parse_metadata(reader.read_file(repository, MANIFEST_FILE, commit["sha"]), MANIFEST_FILE)
+                or {}
+            )
         except errors.bad_request.ValidationError:
             metadata = {}
         samples = metadata.get("samples")
-        found.append({
-            "commit": commit["sha"], "date": commit.get("date", ""), "message": commit.get("message", ""),
-            "samples": samples if isinstance(samples, int) and not isinstance(samples, bool) else None,
-            "splits": metadata.get("splits") or {},
-        })
+        found.append(
+            {
+                "commit": commit["sha"],
+                "date": commit.get("date", ""),
+                "message": commit.get("message", ""),
+                "samples": samples if isinstance(samples, int) and not isinstance(samples, bool) else None,
+                "splits": metadata.get("splits") or {},
+            }
+        )
     return sorted(found, key=lambda version: version["date"])
 
 

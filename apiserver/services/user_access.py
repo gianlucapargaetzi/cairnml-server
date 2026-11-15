@@ -23,8 +23,11 @@ def add_app(call: APICall, company: str, request: models.AddAppRequest):
     scope = request.scope or "user"
     if scope == "company" and call.identity.role not in (Role.admin, Role.root):
         raise errors.forbidden.RoleNotAllowed("only an admin may add the company's GitHub App")
-    call.result.data = {"access": access_bll.add_app(
-        company, call.identity.user, request.label, request.app_id, request.api_url or "", request.key, scope=scope)}
+    call.result.data = {
+        "access": access_bll.add_app(
+            company, call.identity.user, request.label, request.app_id, request.api_url or "", request.key, scope=scope
+        )
+    }
 
 
 @endpoint("user_access.delete")

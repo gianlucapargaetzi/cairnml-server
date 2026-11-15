@@ -12,8 +12,9 @@ API = "https://api.github.com"
 
 def _pem_pair():
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    pem = key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
-                            serialization.NoEncryption()).decode()
+    pem = key.private_bytes(
+        serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()
+    ).decode()
     return pem, key.public_key()
 
 
@@ -65,22 +66,39 @@ class TestGitHubApp(TestCase):
             app(http, pem).commit_exists("acme/proj", "abc123")
         # the first request is the public check (no token); the installation lookup is the one signed with the App key
         auth = next(kw["headers"]["Authorization"] for _m, url, kw in http.requests if url.endswith("/installation"))
-        claims = jwt.decode(auth.split(" ", 1)[1], public, algorithms=["RS256"], options={"verify_aud": False, "verify_exp": False})
+        claims = jwt.decode(
+            auth.split(" ", 1)[1], public, algorithms=["RS256"], options={"verify_aud": False, "verify_exp": False}
+        )
         self.assertEqual(claims["iss"], "123")
 
     def test_an_existing_commit_is_found(self):
-        http = FakeHttp({INSTALL: Resp(200, {"id": 77}), TOKEN: Resp(201, {"token": "ghs_x", "expires_at": "2099-01-01T00:00:00Z"}),
-                         COMMIT: Resp(200, {"sha": "abc123"})})
+        http = FakeHttp(
+            {
+                INSTALL: Resp(200, {"id": 77}),
+                TOKEN: Resp(201, {"token": "ghs_x", "expires_at": "2099-01-01T00:00:00Z"}),
+                COMMIT: Resp(200, {"sha": "abc123"}),
+            }
+        )
         self.assertTrue(app(http).commit_exists("acme/proj", "abc123"))
 
     def test_a_missing_commit_is_not_found(self):
-        http = FakeHttp({INSTALL: Resp(200, {"id": 77}), TOKEN: Resp(201, {"token": "ghs_x", "expires_at": "2099-01-01T00:00:00Z"}),
-                         COMMIT: Resp(404)})
+        http = FakeHttp(
+            {
+                INSTALL: Resp(200, {"id": 77}),
+                TOKEN: Resp(201, {"token": "ghs_x", "expires_at": "2099-01-01T00:00:00Z"}),
+                COMMIT: Resp(404),
+            }
+        )
         self.assertFalse(app(http).commit_exists("acme/proj", "abc123"))
 
     def test_a_failing_github_call_is_an_error_not_a_missing_commit(self):
-        http = FakeHttp({INSTALL: Resp(200, {"id": 77}), TOKEN: Resp(201, {"token": "ghs_x", "expires_at": "2099-01-01T00:00:00Z"}),
-                         COMMIT: Resp(500)})
+        http = FakeHttp(
+            {
+                INSTALL: Resp(200, {"id": 77}),
+                TOKEN: Resp(201, {"token": "ghs_x", "expires_at": "2099-01-01T00:00:00Z"}),
+                COMMIT: Resp(500),
+            }
+        )
         with self.assertRaises(GitHubError):
             app(http).commit_exists("acme/proj", "abc123")
 
@@ -90,7 +108,9 @@ class TestGitHubApp(TestCase):
             app(http).installation_token("acme/proj")
 
     def test_the_token_is_scoped_to_one_repository_and_read_only(self):
-        http = FakeHttp({INSTALL: Resp(200, {"id": 77}), TOKEN: Resp(201, {"token": "ghs_x", "expires_at": "2099-01-01T00:00:00Z"})})
+        http = FakeHttp(
+            {INSTALL: Resp(200, {"id": 77}), TOKEN: Resp(201, {"token": "ghs_x", "expires_at": "2099-01-01T00:00:00Z"})}
+        )
         app(http).installation_token("acme/proj")
         body = [k for m, u, k in http.requests if u.endswith("/access_tokens")][0]["json"]
         self.assertEqual(body["repositories"], ["proj"])
@@ -113,8 +133,7 @@ class TestAppId(TestCase):
         """An app id read from the environment is a number; the JWT issuer must still be a string."""
         pem, public_key = _pem_pair()
         token = GitHubApp(123, pem, API, http=FakeHttp({}), clock=lambda: 1000.0)._app_jwt()
-        claims = jwt.decode(token, public_key, algorithms=["RS256"],
-                            options={"verify_iat": False, "verify_exp": False})
+        claims = jwt.decode(token, public_key, algorithms=["RS256"], options={"verify_iat": False, "verify_exp": False})
         self.assertEqual(claims["iss"], "123")
 
 
@@ -125,14 +144,29 @@ class TestReadDirTexts(TestCase):
     SETUP = {INSTALL: Resp(200, {"id": 77}), TOKEN: Resp(201, {"token": "ghs_x", "expires_at": "2099-01-01T00:00:00Z"})}
 
     def _entries(self, *names, blob=True):
-        return {"data": {"repository": {"object": {"entries": [
-            {"name": n, "type": "blob" if blob else "tree",
-             "object": {"text": f"text of {n}\n", "isTruncated": False} if blob else {}} for n in names]}}}}
+        return {
+            "data": {
+                "repository": {
+                    "object": {
+                        "entries": [
+                            {
+                                "name": n,
+                                "type": "blob" if blob else "tree",
+                                "object": {"text": f"text of {n}\n", "isTruncated": False} if blob else {},
+                            }
+                            for n in names
+                        ]
+                    }
+                }
+            }
+        }
 
     def test_all_the_files_come_back_from_one_request(self):
         http = FakeHttp({**self.SETUP, self.GRAPHQL: Resp(200, self._entries("a.yaml", "b.yaml", "c.yaml"))})
         texts = app(http).read_dir_texts("acme/proj", "datasets")
-        self.assertEqual(texts, {"a.yaml": "text of a.yaml\n", "b.yaml": "text of b.yaml\n", "c.yaml": "text of c.yaml\n"})
+        self.assertEqual(
+            texts, {"a.yaml": "text of a.yaml\n", "b.yaml": "text of b.yaml\n", "c.yaml": "text of c.yaml\n"}
+        )
         self.assertEqual(len([r for r in http.requests if r[1].endswith("/graphql")]), 1)
         sent = [r for r in http.requests if r[1].endswith("/graphql")][0][2]["json"]["variables"]
         self.assertEqual(sent, {"owner": "acme", "name": "proj", "expr": "HEAD:datasets"})

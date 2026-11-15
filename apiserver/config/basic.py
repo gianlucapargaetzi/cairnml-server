@@ -37,29 +37,20 @@ class BasicConfig:
         prefix: Sequence[str] = DEFAULT_PREFIXES,
         exclude_files_from_base_folder: Sequence[str] = None,
     ):
-        folder = (
-            Path(folder)
-            if folder
-            else Path(__file__).with_name(self.default_config_dir)
-        )
+        folder = Path(folder) if folder else Path(__file__).with_name(self.default_config_dir)
         if not folder.is_dir():
             raise ValueError("Invalid configuration folder")
 
         self.exclude_files_from_base_folder = (
-            set(exclude_files_from_base_folder)
-            if exclude_files_from_base_folder
-            else set()
+            set(exclude_files_from_base_folder) if exclude_files_from_base_folder else set()
         )
         self.verbose = verbose
 
-        self.extra_config_path_override_var = [
-            f"{p.upper()}_CONFIG_DIR" for p in prefix
-        ]
+        self.extra_config_path_override_var = [f"{p.upper()}_CONFIG_DIR" for p in prefix]
 
         self.prefix = prefix[0]
         self.extra_config_values_env_key_prefix = [
-            f"{p.upper()}{self.extra_config_values_env_key_sep}"
-            for p in reversed(prefix)
+            f"{p.upper()}{self.extra_config_values_env_key_sep}" for p in reversed(prefix)
         ]
 
         self._paths = [folder, *self._get_paths()]
@@ -71,9 +62,7 @@ class BasicConfig:
     def get(self, key: str, default: Any = NotSet) -> Any:
         value = self._config.get(key, default)
         if value is self.NotSet:
-            raise KeyError(
-                f"Unable to find value for key '{key}' and default value was not provided."
-            )
+            raise KeyError(f"Unable to find value for key '{key}' and default value was not provided.")
         return value
 
     def to_dict(self) -> dict:
@@ -97,14 +86,8 @@ class BasicConfig:
         for prefix in self.extra_config_values_env_key_prefix:
             keys = sorted(k for k in os.environ if k.startswith(prefix))
             for key in keys:
-                path = (
-                    key[len(prefix) :]
-                    .replace(self.extra_config_values_env_key_sep, ".")
-                    .lower()
-                )
-                result = self._merge_configs(
-                    result, ConfigFactory.parse_string(f"{path}: {os.environ[key]}")
-                )
+                path = key[len(prefix) :].replace(self.extra_config_values_env_key_sep, ".").lower()
+                result = self._merge_configs(result, ConfigFactory.parse_string(f"{path}: {os.environ[key]}"))
 
         return result
 
@@ -112,9 +95,7 @@ class BasicConfig:
         default_paths = EXTRA_CONFIG_PATH_SEP.join(EXTRA_CONFIG_PATHS)
         value = first(map(getenv, self.extra_config_path_override_var), default_paths)
 
-        paths = [
-            Path(expandvars(v)).expanduser() for v in value.split(EXTRA_CONFIG_PATH_SEP)
-        ]
+        paths = [Path(expandvars(v)).expanduser() for v in value.split(EXTRA_CONFIG_PATH_SEP)]
 
         if value is not default_paths:
             invalid = [path for path in paths if not path.is_dir()]
@@ -134,9 +115,7 @@ class BasicConfig:
         configs = [
             self._read_recursive(
                 path,
-                exclude_files=(
-                    self.exclude_files_from_base_folder if idx == 0 else None
-                ),
+                exclude_files=(self.exclude_files_from_base_folder if idx == 0 else None),
             )
             for idx, path in enumerate(self._paths)
         ]
@@ -155,12 +134,7 @@ class BasicConfig:
             if override:
                 key = key[len(override_prefix) :]
             # if key is in both a and b and both values are dictionary then merge it otherwise override it
-            if (
-                not override
-                and key in a
-                and isinstance(a[key], ConfigTree)
-                and isinstance(b[key], ConfigTree)
-            ):
+            if not override and key in a and isinstance(a[key], ConfigTree) and isinstance(b[key], ConfigTree):
                 if copy_trees:
                     a[key] = a[key].copy()
                 cls._merge_configs(a[key], b[key], copy_trees=copy_trees)
@@ -173,9 +147,7 @@ class BasicConfig:
                 a[key] = value
                 if a.root:
                     if b.root:
-                        a.history[key] = a.history.get(key, []) + b.history.get(
-                            key, [value]
-                        )
+                        a.history[key] = a.history.get(key, []) + b.history.get(key, [value])
                     else:
                         a.history[key] = a.history.get(key, []) + [value]
 
@@ -254,7 +226,10 @@ def without_unwritable_file_handlers(logging_config):
         return logging_config
     names = {name for name, _folder in dropped}
     for name, folder in dropped:
-        print(f"logging: cannot write to {folder}; the {name} handler is left out, logging to the console only", file=sys.stderr)
+        print(
+            f"logging: cannot write to {folder}; the {name} handler is left out, logging to the console only",
+            file=sys.stderr,
+        )
 
     def keep(handler_names):
         return [h for h in handler_names if h not in names]

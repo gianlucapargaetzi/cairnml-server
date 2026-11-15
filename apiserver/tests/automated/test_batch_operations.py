@@ -9,10 +9,7 @@ class TestBatchOperations(TestService):
 
     def test_tasks(self):
         tasks = [self._temp_task() for _ in range(2)]
-        [
-            self._temp_task_model(task=t, uri=f"uri_{idx}")
-            for idx, t in enumerate(tasks)
-        ]
+        [self._temp_task_model(task=t, uri=f"uri_{idx}") for idx, t in enumerate(tasks)]
         missing_id = db_id()
         ids = [*tasks, missing_id]
 
@@ -40,9 +37,7 @@ class TestBatchOperations(TestService):
         self.assertEqual({t.status for t in data}, {"published"})
 
         # reset
-        res = self.api.tasks.reset_many(
-            ids=ids, delete_output_models=True, return_file_urls=True, force=True
-        )
+        res = self.api.tasks.reset_many(ids=ids, delete_output_models=True, return_file_urls=True, force=True)
         self._assert_succeeded(res, tasks)
         self.assertEqual(sum(t.deleted_models for t in res.succeeded), 2)
         self.assertEqual(
@@ -67,9 +62,7 @@ class TestBatchOperations(TestService):
         self.assertFalse(any("archived" in t.system_tags for t in data))
 
         # delete
-        res = self.api.tasks.delete_many(
-            ids=ids, delete_output_models=True, return_file_urls=True
-        )
+        res = self.api.tasks.delete_many(ids=ids, delete_output_models=True, return_file_urls=True)
         self._assert_succeeded(res, tasks)
         self._assert_failed(res, [missing_id])
         data = self.api.tasks.get_all_ex(id=ids).tasks
@@ -84,12 +77,8 @@ class TestBatchOperations(TestService):
         # publish
         task = self._temp_task()
         self.api.models.edit(model=ids[0], ready=False, task=task)
-        self.api.tasks.add_or_update_model(
-            task=task, name="output", type="input", model=ids[0]
-        )
-        res = self.api.models.publish_many(
-            ids=ids, publish_task=True, force_publish_task=True
-        )
+        self.api.tasks.add_or_update_model(task=task, name="output", type="input", model=ids[0])
+        res = self.api.models.publish_many(ids=ids, publish_task=True, force_publish_task=True)
         self._assert_succeeded(res, [ids[0]])
         self.assertEqual(res.succeeded[0].published_task.id, task)
         self._assert_failed(res, [ids[1], missing_id])
@@ -127,12 +116,12 @@ class TestBatchOperations(TestService):
 
     def _temp_task(self):
         return self.create_temp(
-            service="tasks", type="testing", name=self.name,
+            service="tasks",
+            type="testing",
+            name=self.name,
         )
 
     def _temp_task_model(self, task, **kwargs) -> str:
         model = self._temp_model(ready=False, task=task, **kwargs)
-        self.api.tasks.add_or_update_model(
-            task=task, name="output", type="output", model=model
-        )
+        self.api.tasks.add_or_update_model(task=task, name="output", type="output", model=model)
         return model

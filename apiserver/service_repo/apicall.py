@@ -32,7 +32,7 @@ class Redirect:
 
 
 class DataContainer(object):
-    """ Data container that supports raw data (dict or a list of batched dicts) and a data model """
+    """Data container that supports raw data (dict or a list of batched dicts) and a data model"""
 
     null_schema_validator: SchemaValidator = SchemaValidator(None)
 
@@ -65,7 +65,7 @@ class DataContainer(object):
 
     @data.setter
     def data(self, value):
-        """ Set the data using a raw dict. If a model cls is defined, validate the raw data """
+        """Set the data using a raw dict. If a model cls is defined, validate the raw data"""
         if value is not None:
             assert isinstance(value, dict), "Data should be a dict"
         self._data = value
@@ -94,9 +94,9 @@ class DataContainer(object):
 
     @raw_data.setter
     def raw_data(self, value):
-        assert isinstance(
-            value, string_types + (types.GeneratorType, bytes)
-        ), "Raw data must be a string type or bytes or generator"
+        assert isinstance(value, string_types + (types.GeneratorType, bytes)), (
+            "Raw data must be a string type or bytes or generator"
+        )
         self._raw_data = value
 
     @property
@@ -150,7 +150,7 @@ class DataContainer(object):
 
     @data_model.setter
     def data_model(self, value):
-        """ Set the data using a model instance. NOTE: batched_data is never updated. """
+        """Set the data using a model instance. NOTE: batched_data is never updated."""
         cls = self.data_model_cls
         if not cls:
             raise ValueError("Data model is not defined")
@@ -248,7 +248,7 @@ class APICallResult(DataContainer):
 
     @property
     def extra_log(self):
-        """ Extra data to be logged into ES """
+        """Extra data to be logged into ES"""
         return self._extra
 
     @extra_log.setter
@@ -446,13 +446,11 @@ class APICall(DataContainer):
         :param value: Value to set
         :return:
         """
-        self._headers[
-            header[0] if isinstance(header, (tuple, list)) else header
-        ] = value
+        self._headers[header[0] if isinstance(header, (tuple, list)) else header] = value
 
     @property
     def real_ip(self):
-        """ Obtain visitor's IP address """
+        """Obtain visitor's IP address"""
         return (
             self.get_header(self.HEADER_FORWARDED_FOR)
             or self.get_header(self.HEADER_REAL_IP)
@@ -478,7 +476,7 @@ class APICall(DataContainer):
 
     @property
     def auth(self):
-        """ Authenticated payload (Token) """
+        """Authenticated payload (Token)"""
         return self._auth
 
     @auth.setter
@@ -487,11 +485,7 @@ class APICall(DataContainer):
 
     @property
     def impersonation_headers(self):
-        return {
-            k: v
-            for k, v in self._headers.items()
-            if k in (self._impersonate_as_headers + self._act_as_headers)
-        }
+        return {k: v for k, v in self._headers.items() if k in (self._impersonate_as_headers + self._act_as_headers)}
 
     @property
     def impersonate_as(self):
@@ -562,7 +556,7 @@ class APICall(DataContainer):
 
     @property
     def authorization(self):
-        """ Call authorization data used to authenticate the call """
+        """Call authorization data used to authenticate the call"""
         return self.get_header(self.HEADER_AUTHORIZATION)
 
     @property
@@ -608,9 +602,7 @@ class APICall(DataContainer):
         :return: Response data (encoded according to self.content_type) and the data's content type
         """
         include_stack = (
-            include_stack
-            if include_stack is not None
-            else config.get("apiserver.return_stack_to_caller", False)
+            include_stack if include_stack is not None else config.get("apiserver.return_stack_to_caller", False)
         )
 
         def make_version_number(version: PartialVersion) -> Union[None, float, str]:
@@ -634,12 +626,8 @@ class APICall(DataContainer):
                     "trx": self.trx,
                     "endpoint": {
                         "name": self.endpoint_name,
-                        "requested_version": make_version_number(
-                            self.requested_endpoint_version
-                        ),
-                        "actual_version": make_version_number(
-                            self.actual_endpoint_version
-                        ),
+                        "requested_version": make_version_number(self.requested_endpoint_version),
+                        "actual_version": make_version_number(self.actual_endpoint_version),
                     },
                     "result_code": self.result.code,
                     "result_subcode": self.result.subcode,
@@ -652,11 +640,7 @@ class APICall(DataContainer):
             }
             if self.content_type.lower() == JSON_CONTENT_TYPE:
                 try:
-                    func = (
-                        json.dumps
-                        if self._json_flags.pop("ensure_ascii", True)
-                        else json.dumps_notascii
-                    )
+                    func = json.dumps if self._json_flags.pop("ensure_ascii", True) else json.dumps_notascii
                     res = func(res, **(self._json_flags or {}))
                 except Exception as ex:
                     # JSON serialization may fail, probably problem with data or error_data so pop it and try again
@@ -665,16 +649,12 @@ class APICall(DataContainer):
                     self.result.data = None
                     self.result.error_data = None
                     msg = "Error serializing response data: " + str(ex)
-                    self.set_error_result(
-                        code=500, subcode=0, msg=msg, include_stack=False
-                    )
+                    self.set_error_result(code=500, subcode=0, msg=msg, include_stack=False)
                     return self.get_response()
 
             return res, self.content_type
 
-    def set_error_result(
-        self, msg, code=500, subcode=0, include_stack=False, error_data=None
-    ):
+    def set_error_result(self, msg, code=500, subcode=0, include_stack=False, error_data=None):
         tb = format_exc() if include_stack else None
         self._result = APICallResult(
             data=self._result.data,

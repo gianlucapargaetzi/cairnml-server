@@ -31,6 +31,7 @@ class RepoNotAccessible(GitHubError):
 
 class GitHubRefused(GitHubError):
     """GitHub answered that the App ID or its key is not accepted. Not a network problem: fix the App settings."""
+
     pass
 
 
@@ -53,7 +54,8 @@ _public_answers: dict = {}  # repository in lower case -> (is public, when it wa
 def _anonymous_get(api_url: str, path: str, http=None):
     try:
         return (http or requests.Session()).request(
-            "GET", f"{api_url.rstrip('/')}{path}", headers=_ANONYMOUS, timeout=_TIMEOUT)
+            "GET", f"{api_url.rstrip('/')}{path}", headers=_ANONYMOUS, timeout=_TIMEOUT
+        )
     except requests.RequestException:
         raise GitHubError("GitHub transport error") from None
 
@@ -92,7 +94,8 @@ def repository_readable_with(api_url: str, token: str, repo: str, http=None) -> 
     headers = {**_ANONYMOUS, "Authorization": f"Bearer {token}"}
     try:
         response = (http or requests.Session()).request(
-            "GET", f"{api_url.rstrip('/')}/repos/{repo}", headers=headers, timeout=_TIMEOUT)
+            "GET", f"{api_url.rstrip('/')}/repos/{repo}", headers=headers, timeout=_TIMEOUT
+        )
     except requests.RequestException:
         raise GitHubError("GitHub transport error") from None
     if response.status_code in (401, 403, 404):
@@ -126,13 +129,17 @@ class GitHubApp:
 
     @staticmethod
     def _headers(token: str) -> dict:
-        return {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json",
-                "X-GitHub-Api-Version": "2022-11-28"}
+        return {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        }
 
     def _installation_id(self, repo: str) -> int:
         if repo not in self._installations:
-            response = self._send("GET", f"{self._api}/repos/{repo}/installation",
-                                  headers=self._headers(self._app_jwt()))
+            response = self._send(
+                "GET", f"{self._api}/repos/{repo}/installation", headers=self._headers(self._app_jwt())
+            )
             if response.status_code == 404:
                 raise RepoNotAccessible(repo)
             if response.status_code == 401:
@@ -156,7 +163,8 @@ class GitHubApp:
         if cached and cached.expires_at.timestamp() - self._clock() > _REFRESH_MARGIN:
             return cached
         response = self._send(
-            "POST", f"{self._api}/app/installations/{self._installation_id(repo)}/access_tokens",
+            "POST",
+            f"{self._api}/app/installations/{self._installation_id(repo)}/access_tokens",
             headers=self._headers(self._app_jwt()),
             json={"repositories": [repo.split("/", 1)[1]], "permissions": permissions},
         )
@@ -198,17 +206,22 @@ class GitHubApp:
         repos = []
         for installation in self._pages(f"{self._api}/app/installations", self._headers(self._app_jwt())):
             minted = self._send(
-                "POST", f"{self._api}/app/installations/{installation['id']}/access_tokens",
-                headers=self._headers(self._app_jwt()), json={"permissions": {"contents": "read"}})
+                "POST",
+                f"{self._api}/app/installations/{installation['id']}/access_tokens",
+                headers=self._headers(self._app_jwt()),
+                json={"permissions": {"contents": "read"}},
+            )
             if minted.status_code != 201:
                 raise GitHubError(f"token request failed: {minted.status_code}")
             headers = self._headers(minted.json()["token"])
             for item in self._pages(f"{self._api}/installation/repositories", headers, key="repositories"):
-                repos.append({
-                    "repository": item["full_name"],
-                    "default_branch": item.get("default_branch") or "",
-                    "private": item.get("private"),
-                })
+                repos.append(
+                    {
+                        "repository": item["full_name"],
+                        "default_branch": item.get("default_branch") or "",
+                        "private": item.get("private"),
+                    }
+                )
         return repos
 
     def _pages(self, url: str, headers: dict, key: str = None) -> list:
@@ -263,8 +276,9 @@ class GitHubApp:
     def read_file(self, repo: str, path: str, ref: str = None):
         """The bytes of a file at a ref (the default branch if None), or None when there is no such file."""
         headers = dict(self._read_headers(repo), Accept="application/vnd.github.raw+json")
-        response = self._send("GET", f"{self._api}/repos/{repo}/contents/{path}", headers=headers,
-                              params={"ref": ref} if ref else None)
+        response = self._send(
+            "GET", f"{self._api}/repos/{repo}/contents/{path}", headers=headers, params={"ref": ref} if ref else None
+        )
         if response.status_code == 404:
             return None
         if response.status_code != 200:
@@ -273,8 +287,12 @@ class GitHubApp:
 
     def tree_sizes(self, repo: str, ref: str) -> dict:
         """Size in bytes of every file in the repository at a ref, by path."""
-        response = self._send("GET", f"{self._api}/repos/{repo}/git/trees/{ref}", headers=self._read_headers(repo),
-                              params={"recursive": "1"})
+        response = self._send(
+            "GET",
+            f"{self._api}/repos/{repo}/git/trees/{ref}",
+            headers=self._read_headers(repo),
+            params={"recursive": "1"},
+        )
         if response.status_code != 200:
             raise GitHubError(f"tree lookup failed: {response.status_code}")
         body = response.json()
@@ -284,8 +302,12 @@ class GitHubApp:
 
     def list_dir(self, repo: str, path: str, ref: str = None) -> list:
         """The names of the files in a folder, or an empty list when there is none."""
-        response = self._send("GET", f"{self._api}/repos/{repo}/contents/{path}", headers=self._read_headers(repo),
-                              params={"ref": ref} if ref else None)
+        response = self._send(
+            "GET",
+            f"{self._api}/repos/{repo}/contents/{path}",
+            headers=self._read_headers(repo),
+            params={"ref": ref} if ref else None,
+        )
         if response.status_code == 404:
             return []
         if response.status_code != 200:
@@ -316,7 +338,9 @@ class GitHubApp:
             "{ object(expression: $expr) { ... on Tree { entries { name type object { ... on Blob { text isTruncated } } } } } } }"
         )
         response = self._send(
-            "POST", f"{self._api}/graphql", headers=self._read_headers(repo),
+            "POST",
+            f"{self._api}/graphql",
+            headers=self._read_headers(repo),
             json={"query": query, "variables": {"owner": owner, "name": name, "expr": f"HEAD:{path}"}},
         )
         if response.status_code != 200:
@@ -336,19 +360,25 @@ class GitHubApp:
 
     def list_commits(self, repo: str, ref: str, limit: int) -> list:
         """The latest commits of a ref, newest first: sha, first line of the message, author, date and parent shas."""
-        response = self._send("GET", f"{self._api}/repos/{repo}/commits", headers=self._read_headers(repo),
-                              params={"sha": ref, "per_page": str(min(limit, 100))})
+        response = self._send(
+            "GET",
+            f"{self._api}/repos/{repo}/commits",
+            headers=self._read_headers(repo),
+            params={"sha": ref, "per_page": str(min(limit, 100))},
+        )
         if response.status_code != 200:
             raise GitHubError(f"commit list failed: {response.status_code}")
         commits = []
         for item in response.json():
             details = item.get("commit") or {}
             author = details.get("author") or {}
-            commits.append({
-                "sha": item["sha"],
-                "message": ((details.get("message") or "").splitlines() or [""])[0],
-                "author": author.get("name") or "",
-                "date": author.get("date") or "",
-                "parents": [parent["sha"] for parent in item.get("parents") or []],
-            })
+            commits.append(
+                {
+                    "sha": item["sha"],
+                    "message": ((details.get("message") or "").splitlines() or [""])[0],
+                    "author": author.get("name") or "",
+                    "date": author.get("date") or "",
+                    "parents": [parent["sha"] for parent in item.get("parents") or []],
+                }
+            )
         return commits

@@ -22,9 +22,7 @@ class TestGetAllExFilters(TestService):
             ("all", "exclude", ["test"], [task_no_tags]),
             ("all", "exclude", ["test", None], []),
         ):
-            res = self.api.tasks.get_all_ex(
-                id=tasks, filters={"tags": {cond: {op: tags}}}
-            ).tasks
+            res = self.api.tasks.get_all_ex(id=tasks, filters={"tags": {cond: {op: tags}}}).tasks
             self.assertEqual({t.id for t in res}, set(expected_tasks))
 
     def test_list_filters(self):
@@ -36,14 +34,10 @@ class TestGetAllExFilters(TestService):
             self.api.tasks.get_all_ex(filters={"tags": {"test": ["1"]}})
 
         # test any condition
-        res = self.api.tasks.get_all_ex(
-            id=tasks, filters={"tags": {"any": {"include": ["a", "b"]}}}
-        ).tasks
+        res = self.api.tasks.get_all_ex(id=tasks, filters={"tags": {"any": {"include": ["a", "b"]}}}).tasks
         self.assertEqual(set(tasks[1:]), set(t.id for t in res))
 
-        res = self.api.tasks.get_all_ex(
-            id=tasks, filters={"tags": {"any": {"exclude": ["c", "d"]}}}
-        ).tasks
+        res = self.api.tasks.get_all_ex(id=tasks, filters={"tags": {"any": {"exclude": ["c", "d"]}}}).tasks
         self.assertEqual(set(tasks[:-1]), set(t.id for t in res))
 
         res = self.api.tasks.get_all_ex(
@@ -53,14 +47,10 @@ class TestGetAllExFilters(TestService):
         self.assertEqual(set(tasks), set(t.id for t in res))
 
         # test all condition
-        res = self.api.tasks.get_all_ex(
-            id=tasks, filters={"tags": {"all": {"include": ["a", "b"]}}}
-        ).tasks
+        res = self.api.tasks.get_all_ex(id=tasks, filters={"tags": {"all": {"include": ["a", "b"]}}}).tasks
         self.assertEqual(set(tasks[2:]), set(t.id for t in res))
 
-        res = self.api.tasks.get_all_ex(
-            id=tasks, filters={"tags": {"all": {"exclude": ["c", "d"]}}}
-        ).tasks
+        res = self.api.tasks.get_all_ex(id=tasks, filters={"tags": {"all": {"exclude": ["c", "d"]}}}).tasks
         self.assertEqual(set(tasks[:-2]), set(t.id for t in res))
 
         res = self.api.tasks.get_all_ex(
@@ -72,9 +62,7 @@ class TestGetAllExFilters(TestService):
         # test combination
         res = self.api.tasks.get_all_ex(
             id=tasks,
-            filters={
-                "tags": {"any": {"include": ["a", "b"]}, "all": {"exclude": ["c", "d"]}}
-            },
+            filters={"tags": {"any": {"include": ["a", "b"]}, "all": {"exclude": ["c", "d"]}}},
         ).tasks
         self.assertEqual(set(tasks[1:-2]), set(t.id for t in res))
 

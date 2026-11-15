@@ -62,9 +62,7 @@ class _TagsCache:
         """
         filter_str = None
         if filter_:
-            filter_str = "_".join(
-                ["filter", *chain.from_iterable([f, *v] for f, v in filter_.items())]
-            )
+            filter_str = "_".join(["filter", *chain.from_iterable([f, *v] for f, v in filter_.items())])
         key_parts = [field, company_id, project, self.db_cls.__name__, filter_str]
         return "_".join(filter(None, key_parts))
 
@@ -87,18 +85,12 @@ class _TagsCache:
 
         ret = {}
         for field in fields:
-            redis_key = self._get_tags_cache_key(
-                company_id, field=field, project=project, filter_=filter_
-            )
+            redis_key = self._get_tags_cache_key(company_id, field=field, project=project, filter_=filter_)
             cached_tags = self.redis.lrange(redis_key, 0, -1)
             if cached_tags:
                 tags = [c.decode() for c in cached_tags[1:]]
             else:
-                tags = list(
-                    self._get_tags_from_db(
-                        company_id, field=field, project=project, filter_=filter_
-                    )
-                )
+                tags = list(self._get_tags_from_db(company_id, field=field, project=project, filter_=filter_))
                 self.redis.rpush(redis_key, self._dummy_tag, *tags)
                 self.redis.expire(redis_key, self._tags_cache_expiration_seconds)
 
@@ -131,14 +123,10 @@ class _TagsCache:
             fields=(self._tags_field, self._system_tags_field),
         )
 
-    def _delete_redis_keys(
-        self, company_id: str, projects: Sequence[str], fields: Sequence[str]
-    ):
+    def _delete_redis_keys(self, company_id: str, projects: Sequence[str], fields: Sequence[str]):
         redis_keys = list(
             chain.from_iterable(
-                self.redis.keys(
-                    self._get_tags_cache_key(company_id, field=f, project=p) + "*"
-                )
+                self.redis.keys(self._get_tags_cache_key(company_id, field=f, project=p) + "*")
                 for f in fields
                 for p in set(projects) | {None}
             )

@@ -16,12 +16,10 @@ class ParameterKeyEscaper:
 
     @classmethod
     def escape(cls, value: str):
-        """ Quote a parameter key """
+        """Quote a parameter key"""
         value = value.strip()
         if not value:
-            raise errors.bad_request.ValidationError(
-                "Empty key is not allowed"
-            )
+            raise errors.bad_request.ValidationError("Empty key is not allowed")
 
         value = value.replace("%", "%%")
         for c, r in cls._mapping.items():
@@ -40,7 +38,7 @@ class ParameterKeyEscaper:
 
     @classmethod
     def unescape(cls, value: str):
-        """ Unquote a quoted parameter key """
+        """Unquote a quoted parameter key"""
         value = "%".join(map(cls._unescape, value.split("%%")))
 
         if value.startswith("%_"):

@@ -8,5 +8,6 @@ def migrate_backend(db: Database):
         name: str = doc["name"]
         _, _, basename = name.rpartition("/")
         projects.update_one(
-            {"_id": doc["_id"]}, {"$set": {"basename": basename}},
+            {"_id": doc["_id"]},
+            {"$set": {"basename": basename}},
         )

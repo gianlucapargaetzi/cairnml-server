@@ -43,9 +43,7 @@ class NonResponsiveTasksWatchdog:
             watch_interval = cls.settings.watch_interval_sec
             if cls.settings.enabled:
                 try:
-                    stopped = cls.cleanup_tasks(
-                        threshold_sec=cls.settings.threshold_sec
-                    )
+                    stopped = cls.cleanup_tasks(threshold_sec=cls.settings.threshold_sec)
                     log.info(f"{stopped} non-responsive tasks stopped")
                 except Exception as ex:
                     log.exception(f"Failed stopping tasks: {str(ex)}")
@@ -56,9 +54,7 @@ class NonResponsiveTasksWatchdog:
         relevant_status = (TaskStatus.in_progress,)
         threshold = timedelta(seconds=threshold_sec)
         ref_time = datetime.utcnow() - threshold
-        log.info(
-            f"Starting cleanup cycle for running tasks last updated before {ref_time}"
-        )
+        log.info(f"Starting cleanup cycle for running tasks last updated before {ref_time}")
 
         tasks = list(
             Task.objects(status__in=relevant_status, last_update__lt=ref_time).only(
@@ -73,9 +69,7 @@ class NonResponsiveTasksWatchdog:
         project_ids = set()
         now = datetime.utcnow()
         for task in tasks:
-            log.info(
-                f"Stopping {task.id} ({task.name}), last updated at {task.last_update}"
-            )
+            log.info(f"Stopping {task.id} ({task.name}), last updated at {task.last_update}")
             # noinspection PyBroadException
             try:
                 updated = Task.objects(id=task.id, status=task.status).update(

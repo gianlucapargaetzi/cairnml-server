@@ -16,4 +16,3 @@ class TestAccessRefused(TestCase):
 
     def test_a_plain_validation_error_is_not_an_access_refusal(self):
         self.assertFalse(issubclass(errors.bad_request.ValidationError, AccessRefused))
-

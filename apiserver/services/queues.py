@@ -63,7 +63,7 @@ def conform_queue_data(call: APICall, queue_data: Union[Sequence[dict], dict]):
 
 
 def _with_owner(queue_data: Union[Sequence[dict], dict]) -> Union[Sequence[dict], dict]:
-    """ The owner is always reported, null for queues created before ownership (mongo omits empty fields) """
+    """The owner is always reported, null for queues created before ownership (mongo omits empty fields)"""
     for queue in [queue_data] if isinstance(queue_data, dict) else queue_data:
         queue.setdefault("created_by", None)
     return queue_data
@@ -72,9 +72,7 @@ def _with_owner(queue_data: Union[Sequence[dict], dict]) -> Union[Sequence[dict]
 @endpoint("queues.get_by_id", min_version="2.4")
 def get_by_id(call: APICall, company_id, request: GetByIdRequest):
     QueueAccessBLL.assert_can_use(call.identity, company_id, request.queue)
-    queue = queue_bll.get_by_id(
-        company_id, request.queue, max_task_entries=request.max_task_entries
-    )
+    queue = queue_bll.get_by_id(company_id, request.queue, max_task_entries=request.max_task_entries)
     queue_dict = _with_owner(queue.to_proper_dict())
     conform_queue_data(call, queue_dict)
     call.result.data = {"queue": queue_dict}
@@ -91,12 +89,7 @@ def _hidden_query(data: dict) -> Q:
     1. Add only non-hidden queues search condition (unless specifically specified differently)
     """
     hidden_tags = config.get("services.queues.hidden_tags", [])
-    if (
-        not hidden_tags
-        or data.get("search_hidden")
-        or data.get("id")
-        or data.get("name")
-    ):
+    if not hidden_tags or data.get("search_hidden") or data.get("id") or data.get("name"):
         return Q()
 
     return Q(system_tags__nin=hidden_tags)
@@ -104,15 +97,15 @@ def _hidden_query(data: dict) -> Q:
 
 @endpoint("queues.get_projects", min_version="2.4")
 def get_projects(call: APICall, company_id, request: QueueRequest):
-    """ Root projects the queue is allocated to. Admins see all of them, others only the ones they own or are in """
+    """Root projects the queue is allocated to. Admins see all of them, others only the ones they own or are in"""
     QueueAccessBLL.assert_can_use(call.identity, company_id, request.queue)
-    query = Q(company=company_id) & Q(parent=None) & Q(id__in=list(shared_project_ids(company_id, "queue", request.queue)))
+    query = (
+        Q(company=company_id) & Q(parent=None) & Q(id__in=list(shared_project_ids(company_id, "queue", request.queue)))
+    )
     if not QueueAccessBLL.is_admin(call.identity):
         query &= QueueAccessBLL.visible_root_query(call.identity)
     projects = Project.objects(query).only("id", "name")
-    call.result.data = {
-        "projects": [{"id": project.id, "name": project.name} for project in projects]
-    }
+    call.result.data = {"projects": [{"id": project.id, "name": project.name} for project in projects]}
 
 
 @endpoint("queues.get_all_ex", min_version="2.4")
@@ -162,14 +155,14 @@ def update(call: APICall, company_id, request: UpdateRequest):
     data = call.data_model_for_partial_update
     other = sorted(key for key in data if key not in ("queue", "public"))
     if other:
-        raise errors.bad_request.ValidationError(f"only the visibility of a queue can be changed, not {', '.join(other)}")
+        raise errors.bad_request.ValidationError(
+            f"only the visibility of a queue can be changed, not {', '.join(other)}"
+        )
     if "public" in data:
         refuse_inactive(call.identity.user)
     conform_tag_fields(call, data, validate=True)
     escape_metadata(data)
-    updated, fields = queue_bll.update(
-        company_id=company_id, queue_id=request.queue, **data
-    )
+    updated, fields = queue_bll.update(company_id=company_id, queue_id=request.queue, **data)
     if "public" in data:
         _set_public_share(company_id, call.identity.user, request.queue, bool(data["public"]))
     conform_queue_data(call, fields)
@@ -193,9 +186,7 @@ def _set_public_share(company_id: str, actor: str, queue_id: str, public: bool) 
 
 def update_added_task_properties(queue: str, task: str, update_execution_queue: bool):
     if update_execution_queue:
-        Task.objects(id=task).update(
-            execution__queue=queue, multi=False
-        )
+        Task.objects(id=task).update(execution__queue=queue, multi=False)
 
 
 @endpoint("queues.move_task_to_queue")
@@ -214,7 +205,7 @@ def move_task_to_queue(call: APICall, company_id, request: MoveTaskToQueueReques
         task_id=request.task,
     )
     if not removed:
-        return  {"moved": 0}
+        return {"moved": 0}
 
     try:
         queue_bll.add_task(
@@ -244,9 +235,7 @@ def move_task_to_queue(call: APICall, company_id, request: MoveTaskToQueueReques
 def add_task(call: APICall, company_id, request: AddTaskRequest):
     QueueAccessBLL.assert_can_use(call.identity, company_id, request.queue)
     _assert_tasks_access(company_id, call.identity, [request.task], "write")
-    queue_bll.add_task(
-        company_id=company_id, queue_id=request.queue, task_id=request.task
-    )
+    queue_bll.add_task(company_id=company_id, queue_id=request.queue, task_id=request.task)
     update_added_task_properties(
         queue=request.queue,
         task=request.task,
@@ -259,9 +248,7 @@ def add_task(call: APICall, company_id, request: AddTaskRequest):
 @endpoint("queues.get_next_task")
 def get_next_task(call: APICall, company_id, request: GetNextTaskRequest):
     QueueAccessBLL.assert_can_use(call.identity, company_id, request.queue)
-    entry = queue_bll.get_next_task(
-        company_id=company_id, queue_id=request.queue, task_id=request.task
-    )
+    entry = queue_bll.get_next_task(company_id=company_id, queue_id=request.queue, task_id=request.task)
     if entry:
         data = {"entry": entry.to_proper_dict()}
         task = Task.objects(id=entry.task).only("company", "user", "status").first()
@@ -298,7 +285,8 @@ def clear_queue(call: APICall, company_id, request: QueueRequest):
     QueueAccessBLL.assert_can_use(call.identity, company_id, request.queue)
     queue = Queue.objects(company=company_id, id=request.queue).only("entries").first()
     QueueAccessBLL.assert_can_change_tasks(
-        call.identity, company_id, request.queue, [entry.task for entry in queue.entries] if queue else [])
+        call.identity, company_id, request.queue, [entry.task for entry in queue.entries] if queue else []
+    )
     call.result.data = {
         "removed_tasks": queue_bll.clear_queue(
             company_id=company_id,
@@ -389,9 +377,7 @@ def move_task_to_back(call: APICall, company_id, request: TaskRequest):
     min_version="2.4",
     response_data_model=GetMetricsResponse,
 )
-def get_queue_metrics(
-    call: APICall, company_id, request: GetMetricsRequest
-) -> GetMetricsResponse:
+def get_queue_metrics(call: APICall, company_id, request: GetMetricsRequest) -> GetMetricsResponse:
     empty_response = GetMetricsResponse(queues=[])
 
     queue_query = dict(company=company_id)
@@ -405,11 +391,7 @@ def get_queue_metrics(
         if not QueueAccessBLL.is_admin(call.identity):
             queue_query["id__in"] = QueueAccessBLL.usable_queue_ids(call.identity, company_id)
 
-    queue_ids = list(
-        Queue.objects(Q(**queue_query) & _hidden_query(call.data)).scalar(
-            "id"
-        )
-    )
+    queue_ids = list(Queue.objects(Q(**queue_query) & _hidden_query(call.data)).scalar("id"))
     if not queue_ids:
         return empty_response
 
@@ -424,9 +406,7 @@ def get_queue_metrics(
     )
 
     queue_dicts = {
-        queue: extract_properties_to_lists(
-            ["date", "avg_waiting_time", "queue_length"], data
-        )
+        queue: extract_properties_to_lists(["date", "avg_waiting_time", "queue_length"], data)
         for queue, data in ret.items()
     }
     return GetMetricsResponse(
@@ -445,17 +425,11 @@ def get_queue_metrics(
 
 
 @endpoint("queues.add_or_update_metadata", min_version="2.13")
-def add_or_update_metadata(
-    call: APICall, company_id: str, request: AddOrUpdateMetadataRequest
-):
+def add_or_update_metadata(call: APICall, company_id: str, request: AddOrUpdateMetadataRequest):
     QueueAccessBLL.assert_can_manage(call.identity, company_id, request.queue)
     queue_id = request.queue
     queue = queue_bll.get_by_id(company_id=company_id, queue_id=queue_id, only=("id",))
-    return {
-        "updated": Metadata.edit_metadata(
-            queue, items=request.metadata, replace_metadata=request.replace_metadata
-        )
-    }
+    return {"updated": Metadata.edit_metadata(queue, items=request.metadata, replace_metadata=request.replace_metadata)}
 
 
 @endpoint("queues.delete_metadata", min_version="2.13")
@@ -470,14 +444,15 @@ def delete_metadata(call: APICall, company_id: str, request: DeleteMetadataReque
 def peek_task(call: APICall, company_id: str, request: QueueRequest):
     QueueAccessBLL.assert_can_use(call.identity, company_id, request.queue)
     queue_id = request.queue
-    queue = queue_bll.get_by_id(
-        company_id=company_id, queue_id=queue_id, max_task_entries=1
-    )
+    queue = queue_bll.get_by_id(company_id=company_id, queue_id=queue_id, max_task_entries=1)
     task_id = queue.entries[0].task if queue.entries else None
     # A head task the caller cannot see is reported exactly as a missing one, so it does not reveal itself
-    if task_id and not Task.objects(
-        _scope_tasks_query(Q(id=task_id) & Q(company=company_id), call.identity)
-    ).only("id").first():
+    if (
+        task_id
+        and not Task.objects(_scope_tasks_query(Q(id=task_id) & Q(company=company_id), call.identity))
+        .only("id")
+        .first()
+    ):
         task_id = None
     return {"task": task_id}
 
@@ -501,12 +476,10 @@ def get_users(call: APICall, company_id: str, request: QueueRequest):
     _get_queue_or_fail(company_id, request.queue)
     # the users granted the queue are its user shares: added is the share's creation, added_by who granted it
     shares = Share.objects(company=company_id, resource_type="queue", resource_id=request.queue, scope="user").order_by(
-        "created")
+        "created"
+    )
     call.result.data = {
-        "users": [
-            {"user": share.user, "added": share.created, "added_by": share.granted_by}
-            for share in shares
-        ]
+        "users": [{"user": share.user, "added": share.created, "added_by": share.granted_by} for share in shares]
     }
 
 
@@ -521,8 +494,9 @@ def add_user(call: APICall, company_id: str, request: UserRequest):
     if find_share(company_id, "queue", request.queue, "user", user=request.user):
         return UpdateResponse(updated=0)
 
-    record_grant(company_id, call.identity.user, "queue", request.queue, "user", user=request.user,
-                 actor=call.identity.user)
+    record_grant(
+        company_id, call.identity.user, "queue", request.queue, "user", user=request.user, actor=call.identity.user
+    )
     return UpdateResponse(updated=1)
 
 
@@ -537,4 +511,3 @@ def remove_user(call: APICall, company_id: str, request: UserRequest):
     remove_grant(company_id, "queue", request.queue, "user", user=request.user, actor=call.identity.user)
     QueueAccessBLL.remove_user_allocations(company_id, request.user, request.queue, actor=call.identity.user)
     return UpdateResponse(updated=1)
-

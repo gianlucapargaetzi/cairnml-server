@@ -44,9 +44,7 @@ class ServiceRepo(object):
     """ Maximum version number (the highest min_version value across all endpoints) """
 
     _endpoint_exp = (
-        re.compile(
-            r"^/?v(?P<endpoint_version>(?:\d+\.\d+|\d{2,}))/(?P<endpoint_name>[a-zA-Z_]\w+\.[a-zA-Z_]\w+)/?$"
-        )
+        re.compile(r"^/?v(?P<endpoint_version>(?:\d+\.\d+|\d{2,}))/(?P<endpoint_name>[a-zA-Z_]\w+\.[a-zA-Z_]\w+)/?$")
         if config.get("apiserver.version.required")
         else re.compile(
             r"^/?(v(?P<endpoint_version>(?:\d+\.\d+|\d{2,}))/)?(?P<endpoint_name>[a-zA-Z_]\w+\.[a-zA-Z_]\w+)/?$"
@@ -71,9 +69,7 @@ class ServiceRepo(object):
     _return_stack = config.get("apiserver.return_stack")
     """ return stack trace on error """
 
-    _return_stack_on_code = parse_return_stack_on_code(
-        config.get("apiserver.return_stack_on_code", {})
-    )
+    _return_stack_on_code = parse_return_stack_on_code(config.get("apiserver.return_stack_on_code", {}))
     """ if 'return_stack' is true and error contains a return code, return stack trace only for these error codes """
 
     _token = None
@@ -92,33 +88,18 @@ class ServiceRepo(object):
             if predicate and not predicate(sub_module):
                 continue
 
-            if (
-                sub_module.is_file()
-                and sub_module.suffix == ".py"
-                and not sub_module.stem == "__init__"
-            ):
-                import_module(
-                    ".".join(
-                        filter(None, (module_prefix, root_module.stem, sub_module.stem))
-                    )
-                )
+            if sub_module.is_file() and sub_module.suffix == ".py" and not sub_module.stem == "__init__":
+                import_module(".".join(filter(None, (module_prefix, root_module.stem, sub_module.stem))))
 
             if sub_module.is_dir() and not sub_module.stem == "__pycache__":
-                import_module(
-                    ".".join(
-                        filter(None, (module_prefix, root_module.stem, sub_module.stem))
-                    )
-                )
+                import_module(".".join(filter(None, (module_prefix, root_module.stem, sub_module.stem))))
 
         # leave no trace of the 'sub_module' local
         del sub_module
 
         cls._max_version = max(
             cls._max_version,
-            max(
-                ep.min_version
-                for ep in cast(Iterable[Endpoint], chain(*cls._endpoints.values()))
-            ),
+            max(ep.min_version for ep in cast(Iterable[Endpoint], chain(*cls._endpoints.values()))),
         )
 
     @classmethod
@@ -131,10 +112,7 @@ class ServiceRepo(object):
     @classmethod
     def register(cls, endpoint: Endpoint):
         if cls._endpoints.get(endpoint.name):
-            if any(
-                ep.min_version == endpoint.min_version
-                for ep in cls._endpoints[endpoint.name]
-            ):
+            if any(ep.min_version == endpoint.min_version for ep in cls._endpoints[endpoint.name]):
                 raise Exception(
                     f"Trying to register an existing endpoint. name={endpoint.name}, version={endpoint.min_version}"
                 )
@@ -152,10 +130,7 @@ class ServiceRepo(object):
     @classmethod
     def endpoints_summary(cls):
         return {
-            "endpoints": {
-                name: list(map(Endpoint.to_dict, eps))
-                for name, eps in cls._endpoints.items()
-            },
+            "endpoints": {name: list(map(Endpoint.to_dict, eps)) for name, eps in cls._endpoints.items()},
             "models": {},
         }
 
@@ -176,9 +151,7 @@ class ServiceRepo(object):
 
     @classmethod
     def _resolve_endpoint_from_call(cls, call: APICall) -> Optional[Endpoint]:
-        endpoint = cls._get_endpoint(
-            call.endpoint_name, call.requested_endpoint_version
-        )
+        endpoint = cls._get_endpoint(call.endpoint_name, call.requested_endpoint_version)
         if endpoint is None:
             call.log_api = False
             call.set_error_result(
@@ -197,7 +170,7 @@ class ServiceRepo(object):
 
     @classmethod
     def parse_endpoint_path(cls, path: str) -> Tuple[PartialVersion, str]:
-        """ Parse endpoint version, service and action from request path. """
+        """Parse endpoint version, service and action from request path."""
         m = cls._endpoint_exp.match(path)
         if not m:
             raise MalformedPathError("Invalid request path %s" % path)
@@ -210,13 +183,9 @@ class ServiceRepo(object):
             try:
                 version = PartialVersion(version)
             except ValueError as e:
-                raise errors.bad_request.RequestPathHasInvalidVersion(
-                    version=version, reason=e
-                ) from e
+                raise errors.bad_request.RequestPathHasInvalidVersion(version=version, reason=e) from e
             if cls._check_max_version and version > cls._max_version:
-                raise InvalidVersionError(
-                    f"Invalid API version (max. supported version is {cls._max_version})"
-                )
+                raise InvalidVersionError(f"Invalid API version (max. supported version is {cls._max_version})")
         return version, endpoint_name
 
     @classmethod
@@ -233,9 +202,7 @@ class ServiceRepo(object):
         return subcode in subcode_list
 
     @classmethod
-    def _get_identity(
-        cls, call: APICall, endpoint: Endpoint = None, ignore_error: bool = False
-    ) -> Optional[Identity]:
+    def _get_identity(cls, call: APICall, endpoint: Endpoint = None, ignore_error: bool = False) -> Optional[Identity]:
         authorize = endpoint and endpoint.authorize
         if ignore_error or not authorize:
             try:
@@ -245,9 +212,7 @@ class ServiceRepo(object):
         return call.identity
 
     @classmethod
-    def _get_company(
-        cls, call: APICall, endpoint: Endpoint = None, ignore_error: bool = False
-    ) -> Optional[str]:
+    def _get_company(cls, call: APICall, endpoint: Endpoint = None, ignore_error: bool = False) -> Optional[str]:
         identity = cls._get_identity(call, endpoint=endpoint, ignore_error=ignore_error)
         return None if identity is None else identity.company
 
@@ -298,9 +263,7 @@ class ServiceRepo(object):
 
         except APIError as ex:
             # report stack trace only for gene
-            include_stack = cls._should_return_stack(
-                ex.code, ex.subcode
-            )
+            include_stack = cls._should_return_stack(ex.code, ex.subcode)
             call.set_error_result(
                 code=ex.code,
                 subcode=ex.subcode,
@@ -312,12 +275,8 @@ class ServiceRepo(object):
             pass
         except Exception as ex:
             log.exception(ex)
-            include_stack = cls._should_return_stack(
-                500, 0
-            )
-            call.set_error_result(
-                code=500, subcode=0, msg=str(ex), include_stack=include_stack
-            )
+            include_stack = cls._should_return_stack(500, 0)
+            call.set_error_result(code=500, subcode=0, msg=str(ex), include_stack=include_stack)
         finally:
             content, content_type = call.get_response()
             call.mark_end()

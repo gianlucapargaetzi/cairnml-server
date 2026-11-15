@@ -20,7 +20,8 @@ from apiserver.apimodels.workers import (
     StatusReportRequest,
     WorkerResponseEntry,
     QueueEntry,
-    MachineStats, Resources,
+    MachineStats,
+    Resources,
 )
 from apiserver.config_repo import config
 from apiserver.database.errors import translate_errors_context
@@ -132,9 +133,7 @@ class WorkerBLL:
         :param worker: worker ID
         :raise bad_request.WorkerNotRegistered: the worker was not previously registered
         """
-        res = self.redis.delete(
-            company_id, self._get_worker_key(company_id, user_id, worker)
-        )
+        res = self.redis.delete(company_id, self._get_worker_key(company_id, user_id, worker))
         if not res and not config.get("apiserver.workers.auto_unregister", False):
             raise bad_request.WorkerNotRegistered(worker=worker)
 
@@ -221,9 +220,7 @@ class WorkerBLL:
                     if task.project:
                         project = Project.objects(id=task.project).only("name").first()
                         if project:
-                            entry.project = IdNameEntry(
-                                id=project.id, name=project.name
-                            )
+                            entry.project = IdNameEntry(id=project.id, name=project.name)
 
             entry.last_report_time = now
         except APIError:
@@ -289,11 +286,7 @@ class WorkerBLL:
 
         if last_seen:
             ref_time = datetime.utcnow() - timedelta(seconds=max(1, last_seen))
-            workers = [
-                w
-                for w in workers
-                if w.last_activity_time.replace(tzinfo=None) >= ref_time
-            ]
+            workers = [w for w in workers if w.last_activity_time.replace(tzinfo=None) >= ref_time]
 
         return workers
 
@@ -318,9 +311,7 @@ class WorkerBLL:
         ]
 
         task_ids = set(filter(None, (helper.task_id for helper in helpers)))
-        all_queues = set(
-            itertools.chain.from_iterable(helper.queue_ids for helper in helpers)
-        )
+        all_queues = set(itertools.chain.from_iterable(helper.queue_ids for helper in helpers))
 
         queues_info = {}
         if all_queues:
@@ -339,10 +330,7 @@ class WorkerBLL:
             task_ids = task_ids.union(
                 filter(
                     None,
-                    (
-                        nested_get(info, ("next_entry", "task"))
-                        for info in queues_info.values()
-                    ),
+                    (nested_get(info, ("next_entry", "task")) for info in queues_info.values()),
                 )
             )
 
@@ -442,11 +430,7 @@ class WorkerBLL:
             try:
                 return self.register_worker(company_id, user_id, worker)
             except Exception:
-                log.error(
-                    "Failed auto registration of {} for company {}".format(
-                        worker, company_id
-                    )
-                )
+                log.error("Failed auto registration of {} for company {}".format(worker, company_id))
 
         raise bad_request.InvalidWorkerId(worker=worker)
 
@@ -461,9 +445,7 @@ class WorkerBLL:
         return f"workers_{company}"
 
     def _save_worker_data(self, entry: WorkerEntry):
-        self.redis.setex(
-            entry.key, timedelta(seconds=entry.register_timeout), entry.to_json()
-        )
+        self.redis.setex(entry.key, timedelta(seconds=entry.register_timeout), entry.to_json())
         company_id = entry.company.id
         expiration = int(time()) + entry.register_timeout
         worker_item = {entry.key: expiration}
@@ -502,9 +484,7 @@ class WorkerBLL:
                 in_keys = {k for k in in_keys if user_bytes in k}
 
             if worker_pattern:
-                worker_pattern_bytes = (
-                    f"{worker_pattern.translate(self._key_regex_trans)}$".encode()
-                )
+                worker_pattern_bytes = f"{worker_pattern.translate(self._key_regex_trans)}$".encode()
                 regex = re.compile(worker_pattern_bytes)
                 in_keys = {k for k in in_keys if regex.search(k)}
 
@@ -523,20 +503,12 @@ class WorkerBLL:
             if include:
                 tagged_workers = set()
                 for tag in include:
-                    tagged_workers_key = self._get_tagged_workers_key(
-                        company, tags_field, tag
-                    )
-                    self.redis.zremrangebyscore(
-                        tagged_workers_key, min=0, max=timestamp
-                    )
+                    tagged_workers_key = self._get_tagged_workers_key(company, tags_field, tag)
+                    self.redis.zremrangebyscore(tagged_workers_key, min=0, max=timestamp)
                     tagged_workers.update(self.redis.zrange(tagged_workers_key, 0, -1))
 
                 tagged_workers = filter_by_user_and_pattern(tagged_workers)
-                worker_keys = (
-                    worker_keys.intersection(tagged_workers)
-                    if worker_keys
-                    else tagged_workers
-                )
+                worker_keys = worker_keys.intersection(tagged_workers) if worker_keys else tagged_workers
                 if not worker_keys:
                     return []
 
@@ -550,15 +522,9 @@ class WorkerBLL:
                         return []
 
                 for tag in exclude:
-                    tagged_workers_key = self._get_tagged_workers_key(
-                        company, tags_field, tag[1:]
-                    )
-                    self.redis.zremrangebyscore(
-                        tagged_workers_key, min=0, max=timestamp
-                    )
-                    worker_keys.difference_update(
-                        self.redis.zrange(tagged_workers_key, 0, -1)
-                    )
+                    tagged_workers_key = self._get_tagged_workers_key(company, tags_field, tag[1:])
+                    self.redis.zremrangebyscore(tagged_workers_key, min=0, max=timestamp)
+                    worker_keys.difference_update(self.redis.zrange(tagged_workers_key, 0, -1))
                     if not worker_keys:
                         return []
 
@@ -605,10 +571,7 @@ class WorkerBLL:
         Actually writing the worker statistics to Elastic
         :return: The amount of logged documents
         """
-        es_index = (
-            f"{self._stats.worker_stats_prefix_for_company(company_id)}"
-            f"{self._get_es_index_suffix()}"
-        )
+        es_index = f"{self._stats.worker_stats_prefix_for_company(company_id)}{self._get_es_index_suffix()}"
 
         def make_doc(category, metric, variant, value) -> dict:
             return dict(
@@ -633,10 +596,7 @@ class WorkerBLL:
             if not isinstance(value, (list, tuple)):
                 actions.append(make_doc(category, metric, "total", value))
             else:
-                actions.extend(
-                    make_doc(category, metric, str(i), val)
-                    for i, val in enumerate(value)
-                )
+                actions.extend(make_doc(category, metric, str(i), val) for i, val in enumerate(value))
 
         es_res = elasticsearch.helpers.bulk(self.es_client, actions)
         added, errors = es_res[:2]

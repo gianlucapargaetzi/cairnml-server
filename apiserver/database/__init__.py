@@ -100,18 +100,14 @@ class DatabaseFactory:
 
             try:
                 entry.validate()
-                log.info(
-                    "Registering connection to %(alias)s (%(host)s)" % entry.to_struct()
-                )
+                log.info("Registering connection to %(alias)s (%(host)s)" % entry.to_struct())
                 register_connection(**entry.to_struct())
 
                 cls._entries.append(entry)
             except ValidationError as ex:
                 raise Exception("Invalid database entry `%s`: %s" % (key, ex.args[0])) from ex
         if missing:
-            raise ValueError(
-                "Missing database configuration for %s" % ", ".join(missing)
-            )
+            raise ValueError("Missing database configuration for %s" % ", ".join(missing))
 
     @classmethod
     def get_entries(cls):

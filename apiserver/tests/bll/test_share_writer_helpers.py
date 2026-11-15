@@ -1,5 +1,6 @@
 # apiserver/tests/bll/test_share_writer_helpers.py
 """The writers' helpers refuse a deactivated caller, as share() and unshare() do."""
+
 from datetime import datetime
 from uuid import uuid4
 

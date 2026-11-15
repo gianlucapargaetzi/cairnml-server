@@ -11,8 +11,9 @@ from apiserver.idp.git_reader import GitReader
 
 
 def _git(folder, *args):
-    subprocess.run(["git", "-C", str(folder), "-c", "user.name=t", "-c", "user.email=t@t", *args], check=True,
-                   capture_output=True)
+    subprocess.run(
+        ["git", "-C", str(folder), "-c", "user.name=t", "-c", "user.email=t@t", *args], check=True, capture_output=True
+    )
 
 
 @pytest.fixture
@@ -41,7 +42,9 @@ def host(tmp_path, monkeypatch):
 
 def test_reads_a_folder_and_a_file_over_git(host):
     with GitReader(host) as reader:
-        assert reader.read_dir_texts("owner/registry", "datasets") == {"cifar10.yaml": "source: hf\nlink: https://example.test/cifar\n"}
+        assert reader.read_dir_texts("owner/registry", "datasets") == {
+            "cifar10.yaml": "source: hf\nlink: https://example.test/cifar\n"
+        }
         assert reader.read_file("owner/registry", "DATASET.md") == b"second"
         assert reader.read_file("owner/registry", "missing.txt") is None
         assert reader.read_dir_texts("owner/registry", "nothing") == {}
@@ -57,12 +60,15 @@ def test_head_history_and_an_older_revision(host):
         branch, head = reader.default_branch_head("owner/registry")
         commits = reader.list_commits("owner/registry", branch, 10)
         assert branch == "main" and [c["message"] for c in commits] == ["second", "first"] and commits[0]["sha"] == head
-        assert reader.commit_exists("owner/registry", commits[1]["sha"]) and not reader.commit_exists("owner/registry", "0" * 40)
+        assert reader.commit_exists("owner/registry", commits[1]["sha"]) and not reader.commit_exists(
+            "owner/registry", "0" * 40
+        )
         assert reader.read_file("owner/registry", "DATASET.md", commits[1]["sha"]) == b"hello"
 
 
 def test_an_unknown_repository_is_not_accessible(host):
     from apiserver.idp.github import RepoNotAccessible
+
     with GitReader(host) as reader, pytest.raises(RepoNotAccessible):
         reader.read_file("owner/nothing", "x")
     assert not GitReader(host).repository_visible("owner/nothing")
@@ -83,6 +89,7 @@ def test_the_size_of_every_file_is_listed_for_a_commit(host):
 
 def test_a_repository_without_dataset_yaml_is_not_a_dataset_when_read_over_git(host):
     from apiserver.bll.dataset_layout import NotADataset, verify_dataset
+
     with GitReader(host) as reader, pytest.raises(NotADataset, match="dataset.yaml is missing"):
         verify_dataset(reader, "owner/registry")
 
@@ -90,6 +97,7 @@ def test_a_repository_without_dataset_yaml_is_not_a_dataset_when_read_over_git(h
 def test_a_repository_that_cannot_be_cloned_is_refused_with_the_reason(host):
     from apiserver.apierrors import errors
     from apiserver.bll.dataset_layout import verify_dataset
+
     with GitReader(host) as reader, pytest.raises(errors.bad_request.ValidationError, match="could not be read"):
         verify_dataset(reader, "owner/nothing")
 
@@ -119,7 +127,9 @@ def test_a_branch_with_a_task_of_its_own_is_part_of_the_graph_and_one_without_is
     (work / "a.txt").write_text("a")
     _git(work, "add", "-A")
     _git(work, "commit", "-q", "-m", "on the branch")
-    on_branch = subprocess.run(["git", "-C", str(work), "rev-parse", "HEAD"], capture_output=True, text=True, check=True).stdout.strip()
+    on_branch = subprocess.run(
+        ["git", "-C", str(work), "rev-parse", "HEAD"], capture_output=True, text=True, check=True
+    ).stdout.strip()
     _git(work, "push", "-q", "origin", "feature/with-task")
     _git(work, "checkout", "-q", "-b", "feature/nothing-ran", "main")
     (work / "b.txt").write_text("b")
@@ -156,6 +166,7 @@ def redirecting_host(tmp_path, monkeypatch):
             second.append(self.path)
             self.send_response(404)
             self.end_headers()
+
         log_message = lambda *args: None
 
     b = _serve(Second)
@@ -166,12 +177,15 @@ def redirecting_host(tmp_path, monkeypatch):
             self.send_response(302)
             self.send_header("Location", f"http://127.0.0.1:{b.server_address[1]}{REDIRECT_TARGET}")
             self.end_headers()
+
         log_message = lambda *args: None
 
     a = _serve(First)
     home = tmp_path / "home"
     home.mkdir()
-    (home / ".gitconfig").write_text(f'[url "http://127.0.0.1:{a.server_address[1]}/"]\n\tinsteadOf = https://example.test/\n')
+    (home / ".gitconfig").write_text(
+        f'[url "http://127.0.0.1:{a.server_address[1]}/"]\n\tinsteadOf = https://example.test/\n'
+    )
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setattr(repo_visibility, "check_address", lambda name, port: "127.0.0.1")
     yield SimpleNamespace(host="example.test", first=first, second=second)
@@ -182,15 +196,19 @@ def redirecting_host(tmp_path, monkeypatch):
 
 def test_a_redirect_is_not_followed_on_a_read(redirecting_host):
     from apiserver.idp.github import RepoNotAccessible
+
     with GitReader(redirecting_host.host) as reader, pytest.raises(RepoNotAccessible) as raised:
         reader.read_file("owner/repo", "DATASET.md")
     assert redirecting_host.second == []  # the redirect was not followed: nothing reached the second server
-    assert redirecting_host.first and "info/refs" in redirecting_host.first[0]  # and the first server was asked, so git did run
+    assert (
+        redirecting_host.first and "info/refs" in redirecting_host.first[0]
+    )  # and the first server was asked, so git did run
     assert "302" in str(raised.value)
 
 
 def test_a_redirect_is_not_followed_on_the_graph(redirecting_host):
     from apiserver.idp.github import RepoNotAccessible
+
     with pytest.raises(RepoNotAccessible) as raised:
         GitReader(redirecting_host.host).graph_history("owner/repo", [], 30)
     assert redirecting_host.second == []
@@ -207,6 +225,7 @@ def test_pinned_address_is_the_one_connected(tmp_path, monkeypatch):
             seen.append(self.path)
             self.send_response(404)
             self.end_headers()
+
         log_message = lambda *args: None
 
     server = _serve(Server)
@@ -217,15 +236,33 @@ def test_pinned_address_is_the_one_connected(tmp_path, monkeypatch):
     env = GitReader("pinned.invalid")._env()
     url = f"http://pinned.invalid:{port}/owner/repo.git"
     try:
-        pinned = subprocess.run(["git", *git_reader._guard_args("pinned.invalid", "127.0.0.1", port=port), "clone", "--quiet", "--", url,
-                                 str(tmp_path / "a")], env=env, capture_output=True, text=True, timeout=30)
+        pinned = subprocess.run(
+            [
+                "git",
+                *git_reader._guard_args("pinned.invalid", "127.0.0.1", port=port),
+                "clone",
+                "--quiet",
+                "--",
+                url,
+                str(tmp_path / "a"),
+            ],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
         after_pinned = len(seen)
-        unpinned = subprocess.run(["git", "clone", "--quiet", "--", url, str(tmp_path / "b")], env=env, capture_output=True, text=True,
-                                  timeout=30)
+        unpinned = subprocess.run(
+            ["git", "clone", "--quiet", "--", url, str(tmp_path / "b")],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
     finally:
         server.shutdown()
         server.server_close()
-    assert seen                       # the pinned clone reached the server although the name does not resolve
+    assert seen  # the pinned clone reached the server although the name does not resolve
     assert len(seen) == after_pinned  # and the clone without the pin did not (the name has no address)
     assert pinned.returncode == unpinned.returncode == 128
 
@@ -258,9 +295,11 @@ def test_guard_args_on_every_call(host, monkeypatch):
     verbs = {argv[argv.index("clone") if "clone" in argv else argv.index("-C") + 2] for argv in network}
     assert {"clone", "fetch", "log"} <= verbs
     for argv in network:
-        before_the_verb = argv[:argv.index("clone") if "clone" in argv else argv.index("-C")]
+        before_the_verb = argv[: argv.index("clone") if "clone" in argv else argv.index("-C")]
         for option in ("http.followRedirects=false", "http.curloptResolve=example.test:443:127.0.0.1"):
-            assert ["-c", option] == [before_the_verb[i] for i in (before_the_verb.index(option) - 1, before_the_verb.index(option))], argv
+            assert ["-c", option] == [
+                before_the_verb[i] for i in (before_the_verb.index(option) - 1, before_the_verb.index(option))
+            ], argv
 
 
 def test_resolver_stub_pin(monkeypatch):
@@ -279,9 +318,12 @@ def test_resolver_stub_pin(monkeypatch):
         return subprocess.CompletedProcess(argv, 128, "", "fatal: stopped")
 
     monkeypatch.setattr(repo_visibility.socket, "getaddrinfo", getaddrinfo)
-    monkeypatch.setattr(git_reader, "_git_version", lambda: (2, 43, 0))  # the stub of subprocess.run below must not answer it
+    monkeypatch.setattr(
+        git_reader, "_git_version", lambda: (2, 43, 0)
+    )  # the stub of subprocess.run below must not answer it
     monkeypatch.setattr(git_reader.subprocess, "run", fake_run)
     from apiserver.idp.github import RepoNotAccessible
+
     with GitReader("example.test") as reader, pytest.raises(RepoNotAccessible):
         reader.read_file("owner/repo", "x")
     clones = [argv for argv in argv_seen if "clone" in argv]
@@ -291,21 +333,27 @@ def test_resolver_stub_pin(monkeypatch):
 
 
 def test_versions_are_compared_as_numbers():
-    assert (2, 100, 0) >= git_reader.MIN_GIT > (2, 36, 1)  # (2, 100) is newer than (2, 37); a string compare says the opposite
+    assert (
+        (2, 100, 0) >= git_reader.MIN_GIT > (2, 36, 1)
+    )  # (2, 100) is newer than (2, 37); a string compare says the opposite
 
 
-@pytest.mark.parametrize("text, version", [
-    ("git version 2.36.1", (2, 36, 1)),
-    ("git version 2.43.0", (2, 43, 0)),
-    ("git version 2.100.0 (Apple Git-1)", (2, 100, 0)),
-    ("git version 3.0.0", (3, 0, 0)),
-])
+@pytest.mark.parametrize(
+    "text, version",
+    [
+        ("git version 2.36.1", (2, 36, 1)),
+        ("git version 2.43.0", (2, 43, 0)),
+        ("git version 2.100.0 (Apple Git-1)", (2, 100, 0)),
+        ("git version 3.0.0", (3, 0, 0)),
+    ],
+)
 def test_parse_git_version(text, version):
     assert git_reader._parse_git_version(text) == version
 
 
 def test_an_unreadable_git_version_is_refused(monkeypatch):
     from apiserver.idp.github import GitHubError
+
     assert git_reader._parse_git_version("something else") == (0,)
     monkeypatch.setattr(git_reader, "_git_version", lambda: (0,))
     with pytest.raises(GitHubError, match="2.37"):
@@ -314,6 +362,7 @@ def test_an_unreadable_git_version_is_refused(monkeypatch):
 
 def test_git_too_old_is_refused(host, monkeypatch):
     from apiserver.idp.github import GitHubError
+
     monkeypatch.setattr(git_reader, "_git_version", lambda: (2, 36, 1))
     with GitReader(host) as reader, pytest.raises(GitHubError, match="2.37"):
         reader.read_file("owner/registry", "DATASET.md")
@@ -324,11 +373,14 @@ def test_git_too_old_is_refused(host, monkeypatch):
 def test_a_failed_git_version_lookup_is_not_kept(monkeypatch):
     answers = iter(["", "git version 2.43.0"])
     monkeypatch.setattr(git_reader, "_git_version_read", None)
-    monkeypatch.setattr(git_reader.subprocess, "run",
-                        lambda argv, *args, **kwargs: subprocess.CompletedProcess(argv, 0, next(answers), ""))
-    assert git_reader._git_version() == (0,)          # nothing readable: refused, but not remembered
-    assert git_reader._git_version() == (2, 43, 0)    # the next lookup works, and is kept
-    assert git_reader._git_version() == (2, 43, 0)    # a third call does not run git again (the iterator is spent)
+    monkeypatch.setattr(
+        git_reader.subprocess,
+        "run",
+        lambda argv, *args, **kwargs: subprocess.CompletedProcess(argv, 0, next(answers), ""),
+    )
+    assert git_reader._git_version() == (0,)  # nothing readable: refused, but not remembered
+    assert git_reader._git_version() == (2, 43, 0)  # the next lookup works, and is kept
+    assert git_reader._git_version() == (2, 43, 0)  # a third call does not run git again (the iterator is spent)
 
 
 def _ipv6_loopback_available():
@@ -350,6 +402,7 @@ def test_pinned_ipv6_address_is_connected_by_real_git(tmp_path, monkeypatch):
             seen.append(self.path)
             self.send_response(404)
             self.end_headers()
+
         log_message = lambda *args: None
 
     class Server6(http.server.HTTPServer):
@@ -362,9 +415,21 @@ def test_pinned_ipv6_address_is_connected_by_real_git(tmp_path, monkeypatch):
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
     try:
-        subprocess.run(["git", *git_reader._guard_args("pinned.invalid", "::1", port=port), "clone", "--quiet", "--",
-                        f"http://pinned.invalid:{port}/owner/repo.git", str(tmp_path / "c")], env=GitReader("pinned.invalid")._env(),
-                       capture_output=True, text=True, timeout=30)
+        subprocess.run(
+            [
+                "git",
+                *git_reader._guard_args("pinned.invalid", "::1", port=port),
+                "clone",
+                "--quiet",
+                "--",
+                f"http://pinned.invalid:{port}/owner/repo.git",
+                str(tmp_path / "c"),
+            ],
+            env=GitReader("pinned.invalid")._env(),
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
     finally:
         server.shutdown()
         server.server_close()

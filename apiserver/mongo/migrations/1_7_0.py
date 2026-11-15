@@ -10,6 +10,4 @@ def migrate_backend(db: Database, auth_db: Database):
         auth_user = auth_users.find_one({"_id": doc["_id"]}, projection=[created_field])
         if not auth_user or created_field not in auth_user:
             continue
-        users.update_one(
-            {"_id": doc["_id"]}, {"$set": {created_field: auth_user[created_field]}}
-        )
+        users.update_one({"_id": doc["_id"]}, {"$set": {created_field: auth_user[created_field]}})

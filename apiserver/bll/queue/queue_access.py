@@ -41,7 +41,7 @@ _ADMIN_ROLES = (Role.admin, Role.root)
 
 
 class QueueAccessBLL:
-    """ Every decision reads the share records through bll/access.py; the queue's owner is its created_by. """
+    """Every decision reads the share records through bll/access.py; the queue's owner is its created_by."""
 
     @staticmethod
     def is_admin(identity: Identity) -> bool:
@@ -49,39 +49,35 @@ class QueueAccessBLL:
 
     @staticmethod
     def _roots(identity: Identity) -> Set[str]:
-        """ The root projects the user owns or is a member of (in any role) """
+        """The root projects the user owns or is a member of (in any role)"""
         return {project["id"] for project in my_projects(identity.company, identity.user)}
 
     @staticmethod
     def visible_root_query(identity: Identity) -> Q:
-        """ Root projects of the user's company that the user owns or is a member of (in any role) """
-        return (
-            Q(company=identity.company)
-            & Q(parent=None)
-            & (Q(user=identity.user) | Q(members__user=identity.user))
-        )
+        """Root projects of the user's company that the user owns or is a member of (in any role)"""
+        return Q(company=identity.company) & Q(parent=None) & (Q(user=identity.user) | Q(members__user=identity.user))
 
     @staticmethod
     def allocated_queue_ids(identity: Identity) -> Set[str]:
-        """ Queues allocated to root projects the user owns or is a member of """
+        """Queues allocated to root projects the user owns or is a member of"""
         return queue_ids_allocated(identity.company, identity.user, QueueAccessBLL._roots(identity))
 
     @staticmethod
     def usable_query(identity: Identity) -> Q:
-        """ Queues the user may see and use, without the admin exception """
+        """Queues the user may see and use, without the admin exception"""
         held = queue_ids_held(identity.company, identity.user, QueueAccessBLL._roots(identity))
         return Q(id__in=list(held))
 
     @staticmethod
     def visible_query(identity: Identity) -> Q:
-        """ Listing filter: admins see every queue, others the queues they may use """
+        """Listing filter: admins see every queue, others the queues they may use"""
         if QueueAccessBLL.is_admin(identity):
             return Q()
         return QueueAccessBLL.usable_query(identity)
 
     @staticmethod
     def usable_queue_ids(identity: Identity, company_id: str) -> list:
-        """ Ids of the queues the user may use; admins get every queue """
+        """Ids of the queues the user may use; admins get every queue"""
         query = Queue.objects(company=company_id)
         if not QueueAccessBLL.is_admin(identity):
             query = query.filter(QueueAccessBLL.usable_query(identity))
@@ -110,15 +106,20 @@ class QueueAccessBLL:
             raise errors.bad_request.InvalidQueueId(id=queue_id)
         # the owner holds the collaborator level, the one that manages a queue
         if not allows(level, "manage_sharing", "queue"):
-            raise errors.forbidden.NoWritePermission(
-                "only the owner or a company admin can manage the queue"
-            )
+            raise errors.forbidden.NoWritePermission("only the owner or a company admin can manage the queue")
 
     @staticmethod
     def require_action(identity: Identity, company_id: str, queue_id: str, action: str) -> None:
-        """ The level check of bll/access for one action on the queue (ACTION_NEEDS) """
-        require(company_id, identity.user, QueueAccessBLL.is_admin(identity), "queue", queue_id,
-                QueueAccessBLL._roots(identity), action)
+        """The level check of bll/access for one action on the queue (ACTION_NEEDS)"""
+        require(
+            company_id,
+            identity.user,
+            QueueAccessBLL.is_admin(identity),
+            "queue",
+            queue_id,
+            QueueAccessBLL._roots(identity),
+            action,
+        )
 
     @staticmethod
     def assert_can_change_tasks(identity: Identity, company_id: str, queue_id: str, task_ids: Iterable[str]) -> None:
@@ -147,8 +148,16 @@ class QueueAccessBLL:
             from apiserver.database.model.device import Device, DeviceKind
 
             device = Device.objects(id=device_id, company=company_id).first()
-            owner_disabled = AuthUser.objects(id=device.user, idp_disabled=True).first() is not None if device else False
-            if device is None or device.kind != DeviceKind.agent or device.revoked or not device.queue or owner_disabled:
+            owner_disabled = (
+                AuthUser.objects(id=device.user, idp_disabled=True).first() is not None if device else False
+            )
+            if (
+                device is None
+                or device.kind != DeviceKind.agent
+                or device.revoked
+                or not device.queue
+                or owner_disabled
+            ):
                 raise errors.bad_request.InvalidQueueId(ids=sorted(queue_ids))
             own = Queue.objects(id=device.queue, company=company_id, created_by=device.user).first()
             invalid = queue_ids - ({own.id} if own is not None else set())
@@ -165,12 +174,12 @@ class QueueAccessBLL:
 
     @staticmethod
     def assignable_queue_ids(company_id: str, user_id: str) -> Set[str]:
-        """ What a project owner may allocate: public, granted and owned queues, without admin rights """
+        """What a project owner may allocate: public, granted and owned queues, without admin rights"""
         return queue_ids_held(company_id, user_id, set(), include_projects=False)
 
     @staticmethod
     def remove_user_allocations(company_id: str, user_id: str, queue_id: str, actor: str) -> None:
-        """ Take a queue out of the allocations of the root projects the user owns (the cascade of a removed grant) """
+        """Take a queue out of the allocations of the root projects the user owns (the cascade of a removed grant)"""
         owned = {root.id for root in Project.objects(company=company_id, parent=None, user=user_id).only("id")}
         for root_id in sorted(shared_project_ids(company_id, "queue", queue_id) & owned):
             remove_grant(company_id, "queue", queue_id, "projects", root_id, actor=actor)

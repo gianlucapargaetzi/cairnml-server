@@ -13,8 +13,9 @@ def parse_return_stack_on_code(codes):
             if isinstance(subcodes, six.integer_types):
                 subcodes = [subcodes]
             if isinstance(subcodes, (list, tuple)):
-                assert all(isinstance(x, six.integer_types) for x in subcodes),\
+                assert all(isinstance(x, six.integer_types) for x in subcodes), (
                     "return_stack_on_code/subcode must be list(int)"
+                )
             else:
                 raise ValueError("invalid return_stack_on_code/subcode(s): %s" % subcodes)
         else:

@@ -33,7 +33,18 @@ class TestAssertion(TestCase):
     def test_tampered_assertion_is_refused(self):
         token = make_assertion(self.key, "dev_1", AUD)
         head, body, sig = token.split(".")
-        forged = jwt.encode({"iss": "dev_2", "sub": "dev_2", "aud": AUD, "iat": int(time.time()), "exp": int(time.time()) + 60, "jti": "x"}, self.key, algorithm="EdDSA")
+        forged = jwt.encode(
+            {
+                "iss": "dev_2",
+                "sub": "dev_2",
+                "aud": AUD,
+                "iat": int(time.time()),
+                "exp": int(time.time()) + 60,
+                "jti": "x",
+            },
+            self.key,
+            algorithm="EdDSA",
+        )
         with self.assertRaises(AssertionInvalid):
             verify_assertion(forged.rsplit(".", 1)[0] + "." + sig, self.pub, AUD)
 
@@ -45,7 +56,9 @@ class TestAssertion(TestCase):
 
     def test_missing_jti_is_refused(self):
         now = int(time.time())
-        token = jwt.encode({"iss": "dev_1", "sub": "dev_1", "aud": AUD, "iat": now, "exp": now + 60}, self.key, algorithm="EdDSA")
+        token = jwt.encode(
+            {"iss": "dev_1", "sub": "dev_1", "aud": AUD, "iat": now, "exp": now + 60}, self.key, algorithm="EdDSA"
+        )
         with self.assertRaises(AssertionInvalid):
             verify_assertion(token, self.pub, AUD)
 

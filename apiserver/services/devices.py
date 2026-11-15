@@ -65,7 +65,9 @@ def _device_view(device: Device, owner: AuthUser = None) -> dict:
 
 def _device_views(devices) -> list:
     devices = list(devices)
-    owners = {u.id: u for u in AuthUser.objects(id__in=list({d.user for d in devices})).only("id", "name", "idp_disabled")}
+    owners = {
+        u.id: u for u in AuthUser.objects(id__in=list({d.user for d in devices})).only("id", "name", "idp_disabled")
+    }
     return [_device_view(d, owners.get(d.user)) for d in devices]
 
 
@@ -144,25 +146,45 @@ def exchange(call: APICall, _company, request: ExchangeRequest):
     try:
         check_device(device, owner)
     except AccessDenied as exc:
-        audit(device_id, "token.refused", ip=client_address(call), company=device.company if device else None, device=device_id, reason=str(exc))
+        audit(
+            device_id,
+            "token.refused",
+            ip=client_address(call),
+            company=device.company if device else None,
+            device=device_id,
+            reason=str(exc),
+        )
         raise errors.unauthorized.InvalidToken(str(exc)) from None
 
     audience = public_origin.api_url().rstrip("/")
     try:
         claims = verify_assertion(request.assertion, load_public_key(device.public_key), audience=audience)
     except (AssertionInvalid, ValueError):
-        audit(device_id, "token.refused", ip=client_address(call), company=device.company, device=device_id, reason="bad assertion")
+        audit(
+            device_id,
+            "token.refused",
+            ip=client_address(call),
+            company=device.company,
+            device=device_id,
+            reason="bad assertion",
+        )
         raise errors.unauthorized.InvalidToken("invalid assertion") from None
 
     now = datetime.utcnow().timestamp()
     if not claim_jti(claims["jti"], ttl=max(1, int(claims["exp"] - now)) + 60):
-        audit(device_id, "token.refused", ip=client_address(call), company=device.company, device=device_id, reason="assertion reused")
+        audit(
+            device_id,
+            "token.refused",
+            ip=client_address(call),
+            company=device.company,
+            device=device_id,
+            reason="assertion reused",
+        )
         raise errors.unauthorized.InvalidToken("assertion already used")
 
     # An agent acts with the user role whatever its owner's role: it never holds admin rights.
     role = Role.user if device.kind == DeviceKind.agent else owner.role
-    token = issue_access_token(owner.id, owner.company, device.id, kind=device.kind,
-                               role=role, user_name=owner.name)
+    token = issue_access_token(owner.id, owner.company, device.id, kind=device.kind, role=role, user_name=owner.name)
     device.last_used = datetime.utcnow()
     device.save()
     audit(owner.id, "token.issued", ip=client_address(call), company=owner.company, device=device.id, kind=device.kind)
@@ -208,7 +230,15 @@ def reassign(call: APICall, _company, request: ReassignRequest):
     previous_owner = device.user
     device.user = new_owner.id
     device.save()
-    audit(identity.user, "device.reassigned", ip=client_address(call), company=device.company, device=device.id, previous_owner=previous_owner, new_owner=new_owner.id)
+    audit(
+        identity.user,
+        "device.reassigned",
+        ip=client_address(call),
+        company=device.company,
+        device=device.id,
+        previous_owner=previous_owner,
+        new_owner=new_owner.id,
+    )
     return _device_view(device, new_owner)
 
 
@@ -233,7 +263,15 @@ def job_token(call: APICall, _company, request: JobTokenRequest):
         if owner is None or owner.idp_disabled:
             raise AccessDenied("task owner is disabled or unknown")
     except AccessDenied as exc:
-        audit(device.id if device else "unknown", "job_token.refused", ip=client_address(call), company=device.company if device else None, device=device.id if device else None, task=request.task, reason=str(exc))
+        audit(
+            device.id if device else "unknown",
+            "job_token.refused",
+            ip=client_address(call),
+            company=device.company if device else None,
+            device=device.id if device else None,
+            task=request.task,
+            reason=str(exc),
+        )
         raise errors.unauthorized.InvalidToken(str(exc)) from None
     token = issue_job_token(owner, task.id, device.id)
     audit(device.id, "job_token.issued", ip=client_address(call), company=device.company, task=task.id)
@@ -251,34 +289,34 @@ def git_token(call: APICall, company, request: GitTokenRequest):
             if claims.get("task") != request.task:
                 raise AccessDenied("this token is for another task")
         elif claims.get("kind") == DeviceKind.agent:
-            check_job_issue(task.status if task else None, task.last_device if task else None,
-                            Device.objects(id=claims.get("device")).first())
+            check_job_issue(
+                task.status if task else None,
+                task.last_device if task else None,
+                Device.objects(id=claims.get("device")).first(),
+            )
         else:
             raise AccessDenied("only a job or its agent may get a repository token")
     except AccessDenied as exc:
-        audit(claims.get("device") or "unknown", "git_token.refused", ip=client_address(call), company=company, device=claims.get("device"), task=request.task, reason=str(exc))
+        audit(
+            claims.get("device") or "unknown",
+            "git_token.refused",
+            ip=client_address(call),
+            company=company,
+            device=claims.get("device"),
+            task=request.task,
+            reason=str(exc),
+        )
         raise errors.unauthorized.InvalidToken(str(exc)) from None
 
     actor = claims.get("device") or claims.get("sub") or "unknown"
     if task is None:
         raise errors.bad_request.InvalidId("task not found")
-    return git_access.issue_for_task(company, actor, claims.get("device"), task, request.task, request.repository,
-                                     client_address(call))
-
-
-
-
-
-
-
-
+    return git_access.issue_for_task(
+        company, actor, claims.get("device"), task, request.task, request.repository, client_address(call)
+    )
 
 
 AGENT_NOTICE = (
     "Projects that run jobs on this agent can give them the GitHub Apps shared with those projects. Enrol this agent only "
     "on a machine you trust with them."
 )
-
-
-
-

@@ -13,6 +13,7 @@ import requests
 from support import workspace
 from support.workspace import new_name, run_json
 
+
 def test_deleted_run_loses_its_stored_bytes(client_home, project, tmp_path):
     """A deleted run loses its stored bytes.
 
@@ -21,14 +22,25 @@ def test_deleted_run_loses_its_stored_bytes(client_home, project, tmp_path):
     """
     tmp_dir = tmp_path
     api = workspace.device_api(client_home)
-    run = run_json(client_home, "artifact_upload.py", [
-        "--project", project, "--name", new_name("to-delete"), "--work", str(tmp_dir / "sources"),
-        "--expect", str(tmp_dir / "expect.json"),
-    ], timeout=300)
+    run = run_json(
+        client_home,
+        "artifact_upload.py",
+        [
+            "--project",
+            project,
+            "--name",
+            new_name("to-delete"),
+            "--work",
+            str(tmp_dir / "sources"),
+            "--expect",
+            str(tmp_dir / "expect.json"),
+        ],
+        timeout=300,
+    )
     task_id = run["task_id"]
     record = api.authed("tasks.get_by_id", {"task": task_id})["task"]
     uri = next(a["uri"] for a in record["execution"]["artifacts"] if a["key"] == "file")
-    kind, _, name = (unquote(part) for part in uri[len("datachunk://"):].split("/", 2))
+    kind, _, name = (unquote(part) for part in uri[len("datachunk://") :].split("/", 2))
     link = api.authed("datachunks.prepare_download", {"task": task_id, "kind": kind, "name": name})["url"]
     assert requests.get(link, timeout=60).status_code == 200, "the artifact must be readable before the delete"
 

@@ -35,9 +35,7 @@ def _update_task_name(task: Task):
 
     _, _, name_prefix = project.name.rpartition("/")
     name_mask = re.compile(rf"{re.escape(name_prefix)}( #\d+)?$")
-    count = Task.objects(
-        project=task.project, system_tags__in=["pipeline"], name=name_mask
-    ).count()
+    count = Task.objects(project=task.project, system_tags__in=["pipeline"], name=name_mask).count()
     new_name = f"{name_prefix} #{count}" if count > 0 else name_prefix
     task.update(name=new_name)
 
@@ -48,9 +46,7 @@ def delete_runs(call: APICall, company_id: str, request: DeleteRunsRequest):
     # so a hidden project's runs cannot actually be deleted; company-scoping this lookup too keeps
     # it from matching anything outside the caller's own company in the first place
     existing_runs = set(
-        Task.objects(
-            company=company_id, project=request.project, type=TaskType.controller
-        ).scalar("id")
+        Task.objects(company=company_id, project=request.project, type=TaskType.controller).scalar("id")
     )
     if not existing_runs.difference(request.ids):
         raise CannotRemoveAllRuns(project=request.project)
@@ -81,9 +77,7 @@ def delete_runs(call: APICall, company_id: str, request: DeleteRunsRequest):
         for _id, (deleted, task, cleanup_res) in results:
             if deleted:
                 tasks[_id] = cleanup_res
-            succeeded.append(
-                dict(id=_id, deleted=bool(deleted), **cleanup_res.to_res_dict(False))
-            )
+            succeeded.append(dict(id=_id, deleted=bool(deleted), **cleanup_res.to_res_dict(False)))
 
         if tasks:
             _delete_task_events(

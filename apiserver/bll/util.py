@@ -36,9 +36,9 @@ def parallel_chunked_decorator(func: Callable = None, chunk_size: int = 100):
 
     @functools.wraps(func)
     def wrapper(self, iterable: Iterable, **kwargs):
-        assert iterutils.is_collection(
-            iterable
-        ), "The positional parameter should be an iterable for breaking into chunks"
+        assert iterutils.is_collection(iterable), (
+            "The positional parameter should be an iterable for breaking into chunks"
+        )
 
         func_with_params = functools.partial(func, self, **kwargs)
         with ThreadPoolExecutor() as pool:
@@ -60,9 +60,7 @@ def parallel_chunked_decorator(func: Callable = None, chunk_size: int = 100):
 T = TypeVar("T")
 
 
-def run_batch_operation(
-    func: Callable[[str], T], ids: Sequence[str]
-) -> Tuple[Sequence[Tuple[str, T]], Sequence[dict]]:
+def run_batch_operation(func: Callable[[str], T], ids: Sequence[str]) -> Tuple[Sequence[Tuple[str, T]], Sequence[dict]]:
     results = list()
     failures = list()
     for _id in ids:

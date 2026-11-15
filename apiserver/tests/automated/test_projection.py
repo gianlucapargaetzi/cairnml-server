@@ -30,9 +30,7 @@ class TestProjection(TestService):
         message = "task started"
         task_id = self._temp_task()
         self.api.tasks.started(task=task_id, status_message=message)
-        task = self.api.tasks.get_all_ex(
-            id=[task_id], only_fields=["status", "status_message"]
-        ).tasks[0]
+        task = self.api.tasks.get_all_ex(id=[task_id], only_fields=["status", "status_message"]).tasks[0]
         assert task["status"] == TaskStatus.in_progress
         assert task["status_message"] == message
 
@@ -77,14 +75,9 @@ class TestProjection(TestService):
     def test_exclude_projection(self):
         task_id = self._temp_task()
 
-        res = self.api.tasks.get_all_ex(
-            id=[task_id]
-        ).tasks[0]
+        res = self.api.tasks.get_all_ex(id=[task_id]).tasks[0]
         self.assertEqual("test projection", res.name)
 
-        task = self.api.tasks.get_all_ex(
-            id=[task_id],
-            only_fields=["-name"]
-        ).tasks[0]
+        task = self.api.tasks.get_all_ex(id=[task_id], only_fields=["-name"]).tasks[0]
         self.assertFalse("name" in task)
         self.assertEqual("testing", res.type)

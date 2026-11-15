@@ -1,4 +1,5 @@
 """A run that records a dataset it uses shares that dataset with its project when it records it (not when it finishes)."""
+
 from types import SimpleNamespace
 
 from apiserver.bll.task import utils as task_utils
@@ -15,7 +16,9 @@ def run_edit(monkeypatch, hyperparams):
     monkeypatch.setattr(svc.HyperParams, "edit_params", staticmethod(lambda *args, **kwargs: 1))
     monkeypatch.setattr(task_utils, "_publish_datasets", lambda task: shared.append((task.company, task.id)))
     request = SimpleNamespace(task="run1", hyperparams=hyperparams, replace_hyperparams="none", force=False)
-    call = SimpleNamespace(identity=SimpleNamespace(user="u1", company="c1", role="user"), result=SimpleNamespace(data=None))
+    call = SimpleNamespace(
+        identity=SimpleNamespace(user="u1", company="c1", role="user"), result=SimpleNamespace(data=None)
+    )
     svc.edit_hyper_params(call, "c1", request)
     return shared
 

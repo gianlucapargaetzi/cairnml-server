@@ -49,9 +49,7 @@ class LocalStorage(object):
         )
 
     def get(self, key):
-        return self.driver.execute_script(
-            "return window.localStorage.getItem(arguments[0]);", key
-        )
+        return self.driver.execute_script("return window.localStorage.getItem(arguments[0]);", key)
 
     def remove(self, key):
         self.driver.execute_script("window.localStorage.removeItem(arguments[0]);", key)
@@ -66,9 +64,7 @@ class LocalStorage(object):
         return value
 
     def __setitem__(self, key, value):
-        self.driver.execute_script(
-            "window.localStorage.setItem(arguments[0], arguments[1]);", key, value
-        )
+        self.driver.execute_script("window.localStorage.setItem(arguments[0], arguments[1]);", key, value)
 
     def __contains__(self, key):
         return key in self.keys()
@@ -81,13 +77,12 @@ class LocalStorage(object):
 
 
 class ValidationError(Exception):
-
     def __init__(self, *args):
         super(ValidationError, self).__init__(*args)
         self.message = self.args[0]
 
     def report(self, schema_file):
-        message = color(schema_file, fg='red')
+        message = color(schema_file, fg="red")
         if self.message:
             message += ": {}".format(self.message)
         print(message)
@@ -133,11 +128,7 @@ def validate_ascii_only(name):
     )
     if invalid_char:
         line, column, char = invalid_char
-        raise ValidationError(
-            "file contains non-ascii character {!r} in line {} pos {}".format(
-                char, line, column
-            )
-        )
+        raise ValidationError("file contains non-ascii character {!r} in line {} pos {}".format(char, line, column))
 
 
 def validate_file(meta, name):
@@ -168,9 +159,7 @@ def validate_file(meta, name):
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("files", nargs="+")
-    parser.add_argument(
-        "--linter", "-l", action="store_true", help="open jsonschema linter in browser"
-    )
+    parser.add_argument("--linter", "-l", action="store_true", help="open jsonschema linter in browser")
     parser.add_argument(
         "--raise",
         "-r",
@@ -258,7 +247,6 @@ def main(here: str):
     collisions = {}
 
     for schema_file in args.files:
-
         if Path(schema_file).name.startswith("_"):
             continue
 
@@ -285,10 +273,7 @@ def main(here: str):
         for name, values in collisions.items():
             if len(values) <= 1:
                 continue
-            groups = [
-                [service for (service, _) in pairs]
-                for _, pairs in groupby(values.items(), itemgetter(1))
-            ]
+            groups = [[service for (service, _) in pairs] for _, pairs in groupby(values.items(), itemgetter(1))]
             if not groups:
                 raise RuntimeError("Unknown error")
             print(

@@ -12,9 +12,7 @@ def flatten_nested_items(
     for key, value in dictionary.items():
         path = prefix + (key,)
         if isinstance(value, dict) and nesting != 0:
-            yield from flatten_nested_items(
-                value, next_nesting, include_leaves, prefix=path
-            )
+            yield from flatten_nested_items(value, next_nesting, include_leaves, prefix=path)
         elif include_leaves is None or key in include_leaves:
             yield path, value
 
@@ -133,15 +131,13 @@ def project_dict(data: dict, projection: Sequence[str], separator=".") -> dict:
                         )
 
                     dst[path_part] = [
-                        copy_path(path_parts[depth + 1 :], s, d)
-                        for s, d in zip(src_part, dst[path_part])
+                        copy_path(path_parts[depth + 1 :], s, d) for s, d in zip(src_part, dst[path_part])
                     ]
 
                     return destination
                 else:
                     raise TypeError(
-                        "Unsupported projection type %s for %s"
-                        % (type(src), separator.join(path_parts[: depth + 1]))
+                        "Unsupported projection type %s for %s" % (type(src), separator.join(path_parts[: depth + 1]))
                     )
 
             last_part = path_parts[-1]
@@ -152,7 +148,5 @@ def project_dict(data: dict, projection: Sequence[str], separator=".") -> dict:
         return destination
 
     for projection_path in sorted(projection):
-        copy_path(
-            path_parts=projection_path.split(separator), source=data, destination=result
-        )
+        copy_path(path_parts=projection_path.split(separator), source=data, destination=result)
     return result

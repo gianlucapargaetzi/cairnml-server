@@ -59,31 +59,23 @@ class ProjectBLL:
     child_classes = (Task, Model)
 
     @classmethod
-    def merge_project(
-        cls, company: str, source_id: str, destination_id: str
-    ) -> Tuple[int, int, Set[str]]:
+    def merge_project(cls, company: str, source_id: str, destination_id: str) -> Tuple[int, int, Set[str]]:
         """
         Move all the tasks and sub projects from the source project to the destination
         Remove the source project
         Return the amounts of moved entities and subprojects + set of all the affected project ids
         """
         if source_id == destination_id:
-            raise errors.bad_request.ProjectSourceAndDestinationAreTheSame(
-                source=source_id
-            )
+            raise errors.bad_request.ProjectSourceAndDestinationAreTheSame(source=source_id)
         source = Project.get(company, source_id)
         if destination_id:
             destination = Project.get(company, destination_id)
             if source_id in destination.path:
-                raise errors.bad_request.ProjectCannotBeMergedIntoItsChild(
-                    source=source_id, destination=destination_id
-                )
+                raise errors.bad_request.ProjectCannotBeMergedIntoItsChild(source=source_id, destination=destination_id)
         else:
             destination = None
 
-        children = _get_sub_projects(
-            [source.id], _only=("id", "name", "parent", "path")
-        )[source.id]
+        children = _get_sub_projects([source.id], _only=("id", "name", "parent", "path"))[source.id]
         if destination:
             cls.validate_projects_depth(
                 projects=children,
@@ -118,9 +110,7 @@ class ProjectBLL:
         return moved_entities, moved_sub_projects, affected
 
     @staticmethod
-    def validate_projects_depth(
-        projects: Sequence[Project], old_parent_depth: int, new_parent_depth: int
-    ):
+    def validate_projects_depth(projects: Sequence[Project], old_parent_depth: int, new_parent_depth: int):
         for current in projects:
             current_depth = len(current.path) + 1
             if current_depth - old_parent_depth + new_parent_depth > max_depth:
@@ -143,38 +133,24 @@ class ProjectBLL:
         """
         project = Project.get(company, project_id)
         old_parent_id = project.parent
-        old_parent = (
-            Project.get_for_writing(company=project.company, id=old_parent_id)
-            if old_parent_id
-            else None
-        )
+        old_parent = Project.get_for_writing(company=project.company, id=old_parent_id) if old_parent_id else None
 
-        children = _get_sub_projects([project.id], _only=("id", "name", "path"))[
-            project.id
-        ]
+        children = _get_sub_projects([project.id], _only=("id", "name", "path"))[project.id]
         cls.validate_projects_depth(
             projects=[project, *children],
             old_parent_depth=len(project.path),
             new_parent_depth=_get_project_depth(new_location),
         )
 
-        new_parent = _ensure_project(
-            company=company, user=user, name=new_location, identity=identity
-        )
+        new_parent = _ensure_project(company=company, user=user, name=new_location, identity=identity)
         new_parent_id = new_parent.id if new_parent else None
         if old_parent_id == new_parent_id:
             raise errors.bad_request.ProjectSourceAndDestinationAreTheSame(
                 location=new_parent.name if new_parent else ""
             )
-        if new_parent and (
-            project_id == new_parent.id or project_id in new_parent.path
-        ):
-            raise errors.bad_request.ProjectCannotBeMovedUnderItself(
-                project=project_id, parent=new_parent.id
-            )
-        moved = _reposition_project_with_children(
-            project, children=children, parent=new_parent
-        )
+        if new_parent and (project_id == new_parent.id or project_id in new_parent.path):
+            raise errors.bad_request.ProjectCannotBeMovedUnderItself(project=project_id, parent=new_parent.id)
+        moved = _reposition_project_with_children(project, children=children, parent=new_parent)
 
         now = datetime.utcnow()
         affected = set()
@@ -207,12 +183,8 @@ class ProjectBLL:
         if new_name:
             old_name = project.name
             project.name = new_name
-            children = _get_sub_projects([project.id], _only=("id", "name", "path"))[
-                project.id
-            ]
-            _update_subproject_names(
-                project=project, children=children, old_name=old_name
-            )
+            children = _get_sub_projects([project.id], _only=("id", "name", "path"))[project.id]
+            _update_subproject_names(project=project, children=children, old_name=old_name)
 
         return updated
 
@@ -304,17 +276,13 @@ class ProjectBLL:
             project = Project.objects(company=company, id=project_id).only("id").first()
             if not project:
                 raise errors.bad_request.InvalidProjectId(id=project_id)
-            ProjectAccessBLL.assert_can(
-                identity, project_id, "write", object_owner=identity.user
-            )
+            ProjectAccessBLL.assert_can(identity, project_id, "write", object_owner=identity.user)
             return project_id
 
         project_name, _ = _validate_project_name(project_name)
         # Checks the project found by this name, or the deepest visible parent a new one is created in
         ProjectAccessBLL.assert_can_write_destination(identity, company, project_name)
-        project = _get_writable_project_from_name(
-            company=company, name=project_name, identity=identity
-        )
+        project = _get_writable_project_from_name(company=company, name=project_name, identity=identity)
         if project:
             return project.id
 
@@ -360,9 +328,7 @@ class ProjectBLL:
         if hasattr(entity_cls, "last_changed_by"):
             extra["set__last_changed_by"] = user
 
-        entity_cls.objects(company=company, id__in=ids).update(
-            set__project=project, **extra
-        )
+        entity_cls.objects(company=company, id__in=ids).update(set__project=project, **extra)
 
         return project
 
@@ -503,9 +469,7 @@ class ProjectBLL:
                 "$group": {
                     "_id": "$project",
                     "total_runtime": runtime_subquery(),
-                    "recently_completed": completed_after_subquery(
-                        time_thresh=time_thresh
-                    ),
+                    "recently_completed": completed_after_subquery(time_thresh=time_thresh),
                     "max_task_started": max_started_subquery(),
                     **task_status_counts_subquery(),
                 }
@@ -555,9 +519,7 @@ class ProjectBLL:
                         company=company,
                         project_ids=project_ids,
                         users=users,
-                        filter_={
-                            "system_tags": [f"-{EntityVisibility.archived.value}"]
-                        },
+                        filter_={"system_tags": [f"-{EntityVisibility.archived.value}"]},
                     ),
                     "runtime": {"$exists": True, "$gt": {}},
                 }
@@ -593,9 +555,7 @@ class ProjectBLL:
         )
 
     @staticmethod
-    def _get_children_info(
-        project_ids: Sequence[str], child_projects: ProjectsChildren
-    ) -> dict:
+    def _get_children_info(project_ids: Sequence[str], child_projects: ProjectsChildren) -> dict:
         return {
             project: sorted(
                 [{"id": c.id, "name": c.name} for c in child_projects.get(project, [])],
@@ -674,10 +634,7 @@ class ProjectBLL:
             stat["tags"] = sorted(list(stat.get("tags", {})))
 
         empty_stats = {"count": 0, "tags": []}
-        stats = {
-            project: {"datasets": top_project_stats.get(project, empty_stats)}
-            for project in project_ids
-        }
+        stats = {project: {"datasets": top_project_stats.get(project, empty_stats)} for project in project_ids}
         return stats, cls._get_children_info(project_ids, child_projects)
 
     @classmethod
@@ -745,9 +702,7 @@ class ProjectBLL:
             for result in Task.aggregate(runtime_pipeline)
         }
 
-        def sum_runtime(
-            a: Mapping[str, dict], b: Mapping[str, dict]
-        ) -> Dict[str, dict]:
+        def sum_runtime(a: Mapping[str, dict], b: Mapping[str, dict]) -> Dict[str, dict]:
             ret = {}
             for key in set(a) | set(b):
                 if key == "max_task_started":
@@ -772,23 +727,16 @@ class ProjectBLL:
             def get_time_or_none(value):
                 return value if value != datetime.min else None
 
-            status_counts = {
-                status: project_runtime.get(status, 0)
-                for status in cls.task_count_statuses
-            }
+            status_counts = {status: project_runtime.get(status, 0) for status in cls.task_count_statuses}
             return {
                 "status_count": status_counts,
                 "total_tasks": sum(status_counts.values()),
                 "total_runtime": project_runtime.get("total_runtime", 0),
                 "completed_tasks_24h": project_runtime.get("recently_completed", 0),
-                "last_task_run": get_time_or_none(
-                    project_runtime.get("max_task_started", datetime.min)
-                ),
+                "last_task_run": get_time_or_none(project_runtime.get("max_task_started", datetime.min)),
             }
 
-        stats = {
-            project: {"active": get_project_info(project)} for project in project_ids
-        }
+        stats = {project: {"active": get_project_info(project)} for project in project_ids}
 
         return stats, cls._get_children_info(project_ids, child_projects)
 
@@ -838,9 +786,7 @@ class ProjectBLL:
             query &= Q(id__in=_ids_with_children(projects))
 
         tags = Project.objects(query).distinct("tags")
-        system_tags = (
-            Project.objects(query).distinct("system_tags") if include_system else []
-        )
+        system_tags = Project.objects(query).distinct("system_tags") if include_system else []
         return tags, system_tags
 
     @classmethod
@@ -860,23 +806,15 @@ class ProjectBLL:
         If project ids are specified then filter the results by these project ids
         """
         if not (users or children_type):
-            raise errors.bad_request.ValidationError(
-                "Either active users or children_condition should be specified"
-            )
+            raise errors.bad_request.ValidationError("Either active users or children_condition should be specified")
 
-        query = (
-            get_company_or_none_constraint(company)
-            if allow_public
-            else Q(company=company)
-        )
+        query = get_company_or_none_constraint(company) if allow_public else Q(company=company)
         if users:
             query &= Q(user__in=users)
 
         project_query = None
         if children_tags_filter:
-            child_query = query & GetMixin.get_list_filter_query(
-                "tags", children_tags_filter
-            )
+            child_query = query & GetMixin.get_list_filter_query("tags", children_tags_filter)
         elif children_tags:
             child_query = query & GetMixin.get_list_field_query("tags", children_tags)
         else:
@@ -884,13 +822,11 @@ class ProjectBLL:
 
         if children_type == ProjectChildrenType.dataset:
             child_queries = {
-                Project: child_query
-                & Q(system_tags__in=[dataset_tag], basename__ne=datasets_project_name)
+                Project: child_query & Q(system_tags__in=[dataset_tag], basename__ne=datasets_project_name)
             }
         elif children_type == ProjectChildrenType.pipeline:
             child_queries = {
-                Project: child_query
-                & Q(system_tags__in=[pipeline_tag], basename__ne=pipelines_project_name)
+                Project: child_query & Q(system_tags__in=[pipeline_tag], basename__ne=pipelines_project_name)
             }
         elif children_type == ProjectChildrenType.report:
             child_queries = {Task: child_query & Q(system_tags__in=[reports_tag])}
@@ -904,31 +840,19 @@ class ProjectBLL:
                 project_query &= Q(id__in=ids_with_children)
             for child_cls in child_queries:
                 child_queries[child_cls] &= (
-                    Q(parent__in=ids_with_children)
-                    if child_cls is Project
-                    else Q(project__in=ids_with_children)
+                    Q(parent__in=ids_with_children) if child_cls is Project else Q(project__in=ids_with_children)
                 )
 
-        res = (
-            set(Project.objects(project_query).scalar("id")) if project_query else set()
-        )
+        res = set(Project.objects(project_query).scalar("id")) if project_query else set()
         for cls_, query_ in child_queries.items():
-            res |= set(
-                cls_.objects(query_).distinct(
-                    field="id" if cls_ is Project else "project"
-                )
-            )
+            res |= set(cls_.objects(query_).distinct(field="id" if cls_ is Project else "project"))
 
         res = list(res)
         if not res:
             return res, res
 
         selected_project_ids = _ids_with_parents(res)
-        filtered_ids = (
-            list(set(selected_project_ids) & set(project_ids))
-            if project_ids
-            else list(selected_project_ids)
-        )
+        filtered_ids = list(set(selected_project_ids) & set(project_ids)) if project_ids else list(selected_project_ids)
 
         return filtered_ids, selected_project_ids
 
@@ -967,9 +891,7 @@ class ProjectBLL:
         Get list of unique parent tasks sorted by task name for the passed company projects
         If projects is None or empty then get parents for all the company tasks
         """
-        query = cls._get_project_query(
-            company_id, projects, include_subprojects=include_subprojects, state=state
-        )
+        query = cls._get_project_query(company_id, projects, include_subprojects=include_subprojects, state=state)
 
         parent_ids = set(Task.objects(query).distinct("parent"))
         if not parent_ids:
@@ -993,9 +915,7 @@ class ProjectBLL:
         projects: Sequence[str],
         include_subprojects: bool,
     ) -> Sequence[dict]:
-        query = cls._get_project_query(
-            company, projects, include_subprojects=include_subprojects
-        )
+        query = cls._get_project_query(company, projects, include_subprojects=include_subprojects)
         user_ids = entity_cls.objects(query).distinct(field="user")
         if not user_ids:
             return []
@@ -1068,7 +988,9 @@ class ProjectBLL:
         users = result.get("users", [])
         names = {
             u.id: u.name
-            for u in UserProfile.objects(id__in=[group["_id"] for group in users[:limit] if group["_id"]]).only("id", "name")
+            for u in UserProfile.objects(id__in=[group["_id"] for group in users[:limit] if group["_id"]]).only(
+                "id", "name"
+            )
         }
         return {
             "period_days": period_days,
@@ -1133,9 +1055,7 @@ class ProjectBLL:
                     raise errors.bad_request.ValidationError(
                         f"Only string values are allowed in the list filter: {field}"
                     )
-                helper = GetMixin.NewListFieldBucketHelper(
-                    field, data=field_filter, legacy=True
-                )
+                helper = GetMixin.NewListFieldBucketHelper(field, data=field_filter, legacy=True)
                 op = helper.global_operator
                 db_query = {op: helper.actions}
             else:
@@ -1152,12 +1072,7 @@ class ProjectBLL:
 
                 if op == Q.OR and len(field_conditions) > 1:
                     or_conditions.append(
-                        {
-                            "$or": [
-                                {field: {db_modifier: cond}}
-                                for db_modifier, cond in field_conditions.items()
-                            ]
-                        }
+                        {"$or": [{field: {db_modifier: cond}} for db_modifier, cond in field_conditions.items()]}
                     )
                 else:
                     conditions[field] = field_conditions
@@ -1200,9 +1115,7 @@ class ProjectBLL:
             {"$project": {project_field: 1}},
             {"$group": {"_id": f"${project_field}", "count": {"$sum": 1}}},
         ]
-        datasets = {
-            data["_id"]: data["count"] for data in entity_class.aggregate(pipeline)
-        }
+        datasets = {data["_id"]: data["count"] for data in entity_class.aggregate(pipeline)}
 
         return {pid: {"own_datasets": datasets.get(pid, 0)} for pid in project_ids}
 
@@ -1276,7 +1189,4 @@ class ProjectBLL:
 
         tasks = get_agrregate_res(Task)
         models = get_agrregate_res(Model)
-        return {
-            pid: {"own_tasks": tasks.get(pid, 0), "own_models": models.get(pid, 0)}
-            for pid in project_ids
-        }
+        return {pid: {"own_tasks": tasks.get(pid, 0), "own_models": models.get(pid, 0)} for pid in project_ids}

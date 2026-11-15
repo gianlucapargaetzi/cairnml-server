@@ -12,9 +12,7 @@ except ImportError:
 
 env = jinja2.Environment(
     loader=jinja2.FileSystemLoader(str(Path(__file__).parent)),
-    autoescape=jinja2.select_autoescape(
-        disabled_extensions=("py",), default_for_string=False
-    ),
+    autoescape=jinja2.select_autoescape(disabled_extensions=("py",), default_for_string=False),
     trim_blocks=True,
     lstrip_blocks=True,
 )
@@ -47,9 +45,7 @@ class Generator(object):
     def _do_render(self, file, template, context):
         with file.open("w") as f:
             result = template.render(
-                base_class_name=self._base_class_name,
-                base_class_module=self._base_class_module,
-                **context
+                base_class_name=self._base_class_name, base_class_module=self._base_class_module, **context
             )
             if self._format_pep8:
                 import autopep8

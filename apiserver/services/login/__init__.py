@@ -73,8 +73,9 @@ def _redirect_uri() -> str:
 @endpoint("login.idp_start", min_version="2.8")
 def idp_start(call: APICall, _company, _):
     # The browser signs in at the identity provider's address as the browser reaches it (through the proxy).
-    call.result.redirect = _start(_login_store, _public_origin.idp_issuer(),
-                                  _config.get("apiserver.idp.web_client_id"), _redirect_uri())
+    call.result.redirect = _start(
+        _login_store, _public_origin.idp_issuer(), _config.get("apiserver.idp.web_client_id"), _redirect_uri()
+    )
 
 
 @endpoint("login.idp_callback", min_version="2.8", request_data_model=IdpCallbackRequest)
@@ -83,8 +84,15 @@ def idp_callback(call: APICall, _company, request: IdpCallbackRequest):
     client = _config.get("apiserver.idp.web_client_id")
     try:
         user, identity = _finish(
-            _login_store, _idp_http, _verifier(), issuer, client, _redirect_uri(),
-            request.state, request.code, _config.get("apiserver.idp.admin_role"),
+            _login_store,
+            _idp_http,
+            _verifier(),
+            issuer,
+            client,
+            _redirect_uri(),
+            request.state,
+            request.code,
+            _config.get("apiserver.idp.admin_role"),
         )
     except _LoginRefused:
         _audit("anonymous", "web.login_refused", ip=client_address(call))

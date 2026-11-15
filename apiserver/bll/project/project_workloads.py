@@ -151,9 +151,7 @@ class ProjectWorkloads:
                     "$cond": {
                         # $eq does not work here since 'undefined' value is separate from null
                         # for aggregation equality comparison
-                        "if": {
-                            "$lte": [{"$first": "$queues.resources.cpu_usage"}, None]
-                        },
+                        "if": {"$lte": [{"$first": "$queues.resources.cpu_usage"}, None]},
                         "then": 1,
                         "else": 0,
                     }
@@ -166,9 +164,7 @@ class ProjectWorkloads:
                 },
                 "def_gpu": {
                     "$cond": {
-                        "if": {
-                            "$lte": [{"$first": "$queues.resources.gpu_usage"}, None]
-                        },
+                        "if": {"$lte": [{"$first": "$queues.resources.gpu_usage"}, None]},
                         "then": 1,
                         "else": 0,
                     }
@@ -308,10 +304,7 @@ class ProjectWorkloads:
     @classmethod
     def _group_by_dates(cls, breakdown_keys: Sequence[str]):
         return {
-            "$facet": {
-                f"{field}s": [cls._group_by_field(field), cls._flatten_group_key()]
-                for field in breakdown_keys
-            }
+            "$facet": {f"{field}s": [cls._group_by_field(field), cls._flatten_group_key()] for field in breakdown_keys}
         }
 
     @classmethod
@@ -323,9 +316,7 @@ class ProjectWorkloads:
         q_names.update(
             {
                 q_id: display_name or name
-                for q_id, display_name, name in cls_.objects(id__in=ids).scalar(
-                    "id", "display_name", "name"
-                )
+                for q_id, display_name, name in cls_.objects(id__in=ids).scalar("id", "display_name", "name")
             }
         )
         return q_names
@@ -350,9 +341,7 @@ class ProjectWorkloads:
         """
         unsupported_breakdown_keys = set(breakdown_keys) - set(cls._field_to_cls)
         if unsupported_breakdown_keys:
-            raise errors.bad_request.ValidationError(
-                "Unsupported breakdown fields", fields=unsupported_breakdown_keys
-            )
+            raise errors.bad_request.ValidationError("Unsupported breakdown fields", fields=unsupported_breakdown_keys)
 
         if from_date.tzinfo is None:
             from_date = from_date.replace(tzinfo=timezone.utc)
@@ -385,9 +374,7 @@ class ProjectWorkloads:
             return projects_child_to_parent.get(p_id, p_id)
 
         if allowed_queues is None:
-            allowed_queues = list(
-                Queue.objects(company__in=[company_id, "", None]).scalar("id")
-            )
+            allowed_queues = list(Queue.objects(company__in=[company_id, "", None]).scalar("id"))
 
         def get_queue_id(item: dict):
             """
@@ -433,11 +420,7 @@ class ProjectWorkloads:
                 for date_data in sorted(key_data, key=itemgetter("date")):
                     # the mongo aggregation dates are always returned as UTC
                     # need to convert them to the requested timezone
-                    current_date = (
-                        date_data["date"]
-                        .replace(tzinfo=timezone.utc)
-                        .astimezone(request_tz)
-                    )
+                    current_date = date_data["date"].replace(tzinfo=timezone.utc).astimezone(request_tz)
                     while current_date.date() > next_date.date():
                         dates.append(next_date.timestamp())
                         next_date += timedelta(days=1)
@@ -539,9 +522,7 @@ class ProjectWorkloads:
         from_date = cls.fromisoformat(from_date_str)
         to_date = cls.fromisoformat(to_date_str)
         if from_date > to_date:
-            raise errors.bad_request.ValidationError(
-                "from_date cannot be later than to_date"
-            )
+            raise errors.bad_request.ValidationError("from_date cannot be later than to_date")
 
         empty = {
             f"{field}s": {
@@ -563,8 +544,7 @@ class ProjectWorkloads:
             search_hidden=True,
         )
         project_ids_with_children = list(
-            set(project_ids)
-            | {p.id for p in chain.from_iterable(child_projects.values())}
+            set(project_ids) | {p.id for p in chain.from_iterable(child_projects.values())}
         )
         if add_root:
             project_ids_with_children.append(project_root)
@@ -575,9 +555,7 @@ class ProjectWorkloads:
         child_to_parent = {}
         if child_projects:
             child_to_parent = {
-                child.id: parent_id
-                for parent_id, children in child_projects.items()
-                for child in children
+                child.id: parent_id for parent_id, children in child_projects.items() for child in children
             }
 
         return cls.get_project_workloads_internal(

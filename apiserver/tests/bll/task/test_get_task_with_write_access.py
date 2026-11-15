@@ -22,8 +22,13 @@ def company():
 
 def make_root(company, id_="root1", owner="owner1", visibility=ProjectVisibility.private, members=()):
     project = Project(
-        id=id_, company=company, user=owner, name=id_, basename=id_,
-        created=datetime.utcnow(), visibility=visibility,
+        id=id_,
+        company=company,
+        user=owner,
+        name=id_,
+        basename=id_,
+        created=datetime.utcnow(),
+        visibility=visibility,
         members=[ProjectMember(user=u, role=r, added=datetime.utcnow(), added_by=owner) for u, r in members],
     )
     project.save()
@@ -31,7 +36,9 @@ def make_root(company, id_="root1", owner="owner1", visibility=ProjectVisibility
 
 
 def make_task(company, project, owner, id_="task1"):
-    task = Task(id=id_, company=company, user=owner, name=id_, project=project, type="training", created=datetime.utcnow())
+    task = Task(
+        id=id_, company=company, user=owner, name=id_, project=project, type="training", created=datetime.utcnow()
+    )
     task.save()
     return task
 
@@ -62,9 +69,7 @@ def test_refuses_even_with_a_restricted_projection(company):
     make_root(company)
     make_task(company, "root1", "owner1")
     with pytest.raises(errors.bad_request.InvalidTaskId):
-        get_task_with_write_access(
-            "task1", company_id=company, identity=identity(company, "stranger"), only=("id",)
-        )
+        get_task_with_write_access("task1", company_id=company, identity=identity(company, "stranger"), only=("id",))
 
 
 def test_allows_a_read_write_member_to_write_their_own_task(company):

@@ -40,13 +40,17 @@ def make_root(company, id_="root1", owner="owner1", visibility=ProjectVisibility
 
 
 def make_task(company, project, owner, id_="task1"):
-    task = Task(id=id_, company=company, user=owner, name=id_, project=project, type="training", created=datetime.utcnow())
+    task = Task(
+        id=id_, company=company, user=owner, name=id_, project=project, type="training", created=datetime.utcnow()
+    )
     task.save()
     return task
 
 
 def make_model(company, project, owner, id_="model1"):
-    model = Model(id=id_, company=company, user=owner, name=id_, project=project, created=datetime.utcnow(), ready=False)
+    model = Model(
+        id=id_, company=company, user=owner, name=id_, project=project, created=datetime.utcnow(), ready=False
+    )
     model.save()
     return model
 
@@ -78,9 +82,7 @@ def test_get_vector_metrics_refuses_a_task_in_a_private_project_to_a_stranger(co
 def test_assert_task_or_model_exists_allows_a_member(company):
     make_root(company, members=[("u2", ProjectRole.read)])
     make_task(company, "root1", "owner1")
-    result = svc._assert_task_or_model_exists(
-        company, "task1", model_events=False, identity=identity(company, "u2")
-    )
+    result = svc._assert_task_or_model_exists(company, "task1", model_events=False, identity=identity(company, "u2"))
     assert result[0].id == "task1"
 
 
@@ -89,11 +91,12 @@ def test_add_event_refuses_a_task_in_a_private_project_to_a_stranger(company):
     # excluded from the valid set, so with only one event requested, none of them get added
     make_root(company)
     make_task(company, "root1", "owner1")
-    call = FakeCall(identity(company, "stranger"), data={"task": "task1", "metric": "m", "variant": "v", "type": "training_stats_scalar"})
+    call = FakeCall(
+        identity(company, "stranger"),
+        data={"task": "task1", "metric": "m", "variant": "v", "type": "training_stats_scalar"},
+    )
     with pytest.raises(errors.bad_request.EventsNotAdded):
-        svc.event_bll.add_events(
-            company_id=company, identity=call.identity, events=[call.data], worker=None
-        )
+        svc.event_bll.add_events(company_id=company, identity=call.identity, events=[call.data], worker=None)
 
 
 def test_delete_for_model_refuses_a_model_in_a_private_project_to_a_stranger(company):

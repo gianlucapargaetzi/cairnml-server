@@ -42,7 +42,12 @@ def world(company):
     for user in (OWNER, COLLABORATOR, MEMBER, QUEUE_OWNER):
         AuthUser(id=user, name=user, company=company, created=datetime.utcnow()).save()
     root = Project(
-        id=uuid4().hex, company=company, user=OWNER, name="root", basename="root", created=datetime.utcnow(),
+        id=uuid4().hex,
+        company=company,
+        user=OWNER,
+        name="root",
+        basename="root",
+        created=datetime.utcnow(),
         visibility=ProjectVisibility.private,
         members=[
             ProjectMember(user=COLLABORATOR, role=ProjectRole.collaborator, added=datetime.utcnow(), added_by=OWNER),
@@ -52,8 +57,9 @@ def world(company):
     root.save()
     queue = Queue(id=uuid4().hex, company=company, name="gpu-queue", created=datetime.utcnow())
     queue.save()
-    queue_share = record_grant(company, QUEUE_OWNER, "queue", queue.id, "projects", root.id, level="read",
-                               actor=QUEUE_OWNER)
+    queue_share = record_grant(
+        company, QUEUE_OWNER, "queue", queue.id, "projects", root.id, level="read", actor=QUEUE_OWNER
+    )
     return SimpleNamespace(queue_share=queue_share.id)
 
 

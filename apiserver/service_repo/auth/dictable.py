@@ -6,7 +6,7 @@ class Dictable(object):
         if cls._cached_props is None:
             props = set()
             for c in cls.mro():
-                props.update(k for k, v in vars(c).items() if isinstance(v, property) and not k.startswith('_'))
+                props.update(k for k, v in vars(c).items() if isinstance(v, property) and not k.startswith("_"))
             cls._cached_props = list(props)
         return cls._cached_props
 

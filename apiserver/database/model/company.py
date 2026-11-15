@@ -34,5 +34,5 @@ class Company(DbModelMixin, Document):
 
     @classmethod
     def _prepare_perm_query(cls, company, allow_public=False):
-        """ Override default behavior since a 'company' constraint is not supported for this document... """
+        """Override default behavior since a 'company' constraint is not supported for this document..."""
         return Q()

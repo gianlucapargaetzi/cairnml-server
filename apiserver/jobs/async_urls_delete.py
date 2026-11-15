@@ -28,9 +28,7 @@ def mark_retry_failed(ids: Sequence[str], reason: str):
         last_failure_reason=reason,
         inc__retry_count=1,
     )
-    UrlToDelete.objects(id__in=ids, retry_count__gte=max_retries).update(
-        status=DeletionStatus.failed
-    )
+    UrlToDelete.objects(id__in=ids, retry_count__gte=max_retries).update(status=DeletionStatus.failed)
 
 
 def mark_failed(query: Q, reason: str):
@@ -54,9 +52,7 @@ class Storage(Generic[T], metaclass=ABCMeta):
         def get_path(self, url: UrlToDelete) -> str:
             pass
 
-        def delete_many(
-            self, paths: Sequence[str]
-        ) -> Tuple[Sequence[str], Mapping[str, Sequence[str]]]:
+        def delete_many(self, paths: Sequence[str]) -> Tuple[Sequence[str], Mapping[str, Sequence[str]]]:
             pass
 
     @property
@@ -64,9 +60,7 @@ class Storage(Generic[T], metaclass=ABCMeta):
     def name(self) -> str:
         pass
 
-    def group_urls(
-        self, urls: Sequence[UrlToDelete]
-    ) -> Mapping[T, Sequence[UrlToDelete]]:
+    def group_urls(self, urls: Sequence[UrlToDelete]) -> Mapping[T, Sequence[UrlToDelete]]:
         pass
 
     def get_client(self, base: T, urls: Sequence[UrlToDelete]) -> Client:
@@ -83,11 +77,10 @@ def delete_urls(urls_query: Q, storage: Storage):
         if not base:
             msg = f"Invalid {storage.name} url or missing {storage.name} configuration for account"
             mark_failed(
-                Q(id__in=[url.id for url in urls]), msg,
+                Q(id__in=[url.id for url in urls]),
+                msg,
             )
-            log.warning(
-                f"Failed to delete {len(urls)} files from {storage.name} due to: {msg}"
-            )
+            log.warning(f"Failed to delete {len(urls)} files from {storage.name} due to: {msg}")
             continue
 
         try:
@@ -95,9 +88,7 @@ def delete_urls(urls_query: Q, storage: Storage):
         except Exception as ex:
             failed = [url.id for url in urls]
             mark_retry_failed(failed, reason=str(ex))
-            log.warning(
-                f"Failed to delete {len(failed)} files from {storage.name} due to: {str(ex)}"
-            )
+            log.warning(f"Failed to delete {len(failed)} files from {storage.name} due to: {str(ex)}")
             continue
 
         for chunk in chunked_iter(urls, client.chunk_size):
@@ -124,34 +115,20 @@ def delete_urls(urls_query: Q, storage: Storage):
                 deleted_paths, errors = client.delete_many(paths)
             except Exception as ex:
                 mark_retry_failed([url.id for url in urls], str(ex))
-                log.warning(
-                    f"Error deleting {len(paths)} files from {storage.name}: {str(ex)}"
-                )
+                log.warning(f"Error deleting {len(paths)} files from {storage.name}: {str(ex)}")
                 continue
 
             failed_ids = set()
             for reason, err_paths in errors.items():
-                error_ids = set(
-                    chain.from_iterable(
-                        path_to_id_mapping.get(p, []) for p in err_paths
-                    )
-                )
+                error_ids = set(chain.from_iterable(path_to_id_mapping.get(p, []) for p in err_paths))
                 mark_retry_failed(list(error_ids), reason)
-                log.warning(
-                    f"Failed to delete {len(error_ids)} files from {storage.name} storage due to: {reason}"
-                )
+                log.warning(f"Failed to delete {len(error_ids)} files from {storage.name} storage due to: {reason}")
                 failed_ids.update(error_ids)
 
-            deleted_ids = set(
-                chain.from_iterable(
-                    path_to_id_mapping.get(p, []) for p in deleted_paths
-                )
-            )
+            deleted_ids = set(chain.from_iterable(path_to_id_mapping.get(p, []) for p in deleted_paths))
             if deleted_ids:
                 UrlToDelete.objects(id__in=list(deleted_ids)).delete()
-                log.info(
-                    f"{len(deleted_ids)} files deleted from {storage.name} storage"
-                )
+                log.info(f"{len(deleted_ids)} files deleted from {storage.name} storage")
 
             missing_ids = ids_to_delete - deleted_ids - failed_ids
             if missing_ids:
@@ -174,16 +151,12 @@ class DatachunkStorage(Storage):
                 raise ValueError("Not a datachunk location")
             return url.url
 
-        def delete_many(
-            self, paths: Sequence[str]
-        ) -> Tuple[Sequence[str], Mapping[str, Sequence[str]]]:
+        def delete_many(self, paths: Sequence[str]) -> Tuple[Sequence[str], Mapping[str, Sequence[str]]]:
             deleted, errors = [], defaultdict(list)
             for path in paths:
                 try:
                     kind, task_id, name = datachunks.parse_location(path)
-                    chunks = list(
-                        Datachunk.objects(company=self.company, task=task_id, kind=kind, name=name)
-                    )
+                    chunks = list(Datachunk.objects(company=self.company, task=task_id, kind=kind, name=name))
                     datachunks.delete(company=self.company, chunks=chunks)
                     deleted.append(path)
                 except Exception as ex:
@@ -226,15 +199,15 @@ def run_delete_loop():
         urls_query = (
             Q(status__ne=DeletionStatus.failed)
             & Q(retry_count__lt=max_retries)
-            & (
-                Q(last_failure_time__exists=False)
-                | Q(last_failure_time__lt=now - retry_timeout)
-            )
+            & (Q(last_failure_time__exists=False) | Q(last_failure_time__lt=now - retry_timeout))
         )
 
-        url_to_delete: UrlToDelete = UrlToDelete.objects(
-            urls_query & Q(storage_type__in=list(storage_helpers))
-        ).order_by("retry_count").limit(1).first()
+        url_to_delete: UrlToDelete = (
+            UrlToDelete.objects(urls_query & Q(storage_type__in=list(storage_helpers)))
+            .order_by("retry_count")
+            .limit(1)
+            .first()
+        )
         if not url_to_delete:
             sleep(10)
             continue
@@ -242,11 +215,10 @@ def run_delete_loop():
         company = url_to_delete.company
         user = url_to_delete.user
         storage_type = url_to_delete.storage_type
-        log.info(
-            f"Deleting {storage_type} objects for company: {company}, user: {user}"
-        )
+        log.info(f"Deleting {storage_type} objects for company: {company}, user: {user}")
         company_storage_urls_query = urls_query & Q(
-            company=company, storage_type=storage_type,
+            company=company,
+            storage_type=storage_type,
         )
         delete_urls(
             urls_query=company_storage_urls_query,

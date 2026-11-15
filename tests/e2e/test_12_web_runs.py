@@ -39,10 +39,12 @@ def runs(client_home, project, tmp_path_factory):
     """Two runs of the same metrics in one project: the run to look at, and a second one to compare with. One process
     records both (docs/e2e_testing/E2E.md, speed section, item 12)."""
     folder = tmp_path_factory.mktemp("web-runs")
-    (folder / "runs.json").write_text(json.dumps([{"name": new_name("web-run"), "steps": 100},
-                                                  {"name": new_name("web-run-2"), "steps": 50}]))
-    first, second = workspace.run_json_lines(client_home, "track_example.py",
-                                             ["--project", project, "--batch", folder / "runs.json"])
+    (folder / "runs.json").write_text(
+        json.dumps([{"name": new_name("web-run"), "steps": 100}, {"name": new_name("web-run-2"), "steps": 50}])
+    )
+    first, second = workspace.run_json_lines(
+        client_home, "track_example.py", ["--project", project, "--batch", folder / "runs.json"]
+    )
     api = workspace.device_api(client_home)
     project_id = api.authed("projects.get_all", {"name": f"^{project}$"})["projects"][0]["id"]
     return {"project_id": project_id, "first": first["task_id"], "second": second["task_id"]}
@@ -126,12 +128,14 @@ def test_debug_sample_renders_as_an_image(runs, signed_in_page):
 
     Expect: the debug samples tab renders the logo and the sample, both as images with a width."""
     _open(signed_in_page, _task_path(runs, "debugImages"))
+
     def rendered_images():
         widths = signed_in_page.evaluate("() => Array.from(document.images).map(i => i.naturalWidth)")
         return [w for w in widths if w > 0]
 
-    assert _until(lambda: len(rendered_images()) >= 2, timeout=CHECK_TIMEOUT_MS / 1000), \
+    assert _until(lambda: len(rendered_images()) >= 2, timeout=CHECK_TIMEOUT_MS / 1000), (
         f"the debug sample must render (logo and sample): {rendered_images()}"
+    )
 
 
 def test_comparison_view_overlays_both_runs(runs, signed_in_page):
@@ -169,8 +173,10 @@ def test_task_folder_lists_its_experiments(runs, signed_in_page):
     Expect: the TASKS tab lists the run's task by its name.
     """
     _open(signed_in_page, f"/projects/{runs['project_id']}/tasks")
-    assert _until(lambda: re.search(r"e2e-web-run-[0-9a-f]{6}", signed_in_page.inner_text("body")),
-                  timeout=CHECK_TIMEOUT_MS / 1000), "the tasks tab must list the task of the run"
+    assert _until(
+        lambda: re.search(r"e2e-web-run-[0-9a-f]{6}", signed_in_page.inner_text("body")),
+        timeout=CHECK_TIMEOUT_MS / 1000,
+    ), "the tasks tab must list the task of the run"
 
 
 def test_single_click_selects_and_double_click_opens_a_project(runs, project, signed_in_page):
@@ -193,8 +199,11 @@ def test_workers_page_shows_a_running_job_without_a_reload(client_home, project,
 
     Expect: the worker running a job shows the job on the Workers page, without a reload of the page."""
     new_name_prefix = new_name("live")
-    task_id = run_json(client_home, str(LIVE_JOB_SCRIPT), ["--project", project, "--name", new_name_prefix,
-                                                           "--scalars", "1", "--sleep", "300"])["task_id"]
+    task_id = run_json(
+        client_home,
+        str(LIVE_JOB_SCRIPT),
+        ["--project", project, "--name", new_name_prefix, "--scalars", "1", "--sleep", "300"],
+    )["task_id"]
     api = workspace.device_api(client_home)
     jobs.enqueue(client_home, task_id)
     # the Workers tab of the workers and queues section: a worker lists the task it runs
@@ -211,5 +220,7 @@ def test_workers_page_shows_a_running_job_without_a_reload(client_home, project,
     # what the page shows when the job should have been running: a screenshot in the report folder, and the page text
     signed_in_page.screenshot(path=str(Path(__file__).parent / "reports" / "live-jobs-page.png"), full_page=True)
     body = signed_in_page.inner_text("body")
-    pytest.fail(f"the job {new_name_prefix} never showed on the Workers page: {jobs.explain(api, task_id)}; "
-                f"the page says: {body[:1500]!r}")
+    pytest.fail(
+        f"the job {new_name_prefix} never showed on the Workers page: {jobs.explain(api, task_id)}; "
+        f"the page says: {body[:1500]!r}"
+    )

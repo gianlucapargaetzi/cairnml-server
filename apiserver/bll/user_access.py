@@ -96,10 +96,20 @@ def add_app(company: str, user: str, label: str, app_id: str, api_url: str, key:
         # the company may have several GitHub Apps (one for each group, for example): adding one keeps the others
         access.refuse_inactive(user)
     entry = UserAccess(
-        id=uuid.uuid4().hex, company=company, user=user, kind="app", label=_label(label), scope=scope,
-        host="github.com", app_id=app_id, api_url=api,
-        secret=store.encrypt(pem, store.key_material()), created=now, updated=now,
-        last_checked=now, last_state="ok",
+        id=uuid.uuid4().hex,
+        company=company,
+        user=user,
+        kind="app",
+        label=_label(label),
+        scope=scope,
+        host="github.com",
+        app_id=app_id,
+        api_url=api,
+        secret=store.encrypt(pem, store.key_material()),
+        created=now,
+        updated=now,
+        last_checked=now,
+        last_state="ok",
         last_message=f"GitHub accepts the App {info.get('slug') or app_id}",
     )
     entry.save()
@@ -138,10 +148,14 @@ def credentials_for(company: str, user: str, is_admin: bool) -> list:
     credentials for other hosts. Each says who owns it, what it is valid for, whether it is valid, and whether this user
     may change it (an owner changes their own; an admin changes the company's)."""
     me = AuthUser.objects(id=user).only("name").first()
-    rows = [_row(entry, me.name if me else user, True)
-            for entry in UserAccess.objects(company=company, user=user, scope="user").order_by("created")]
-    rows += [_row(entry, "Company", is_admin)
-             for entry in UserAccess.objects(company=company, scope="company").order_by("created")]
+    rows = [
+        _row(entry, me.name if me else user, True)
+        for entry in UserAccess.objects(company=company, user=user, scope="user").order_by("created")
+    ]
+    rows += [
+        _row(entry, "Company", is_admin)
+        for entry in UserAccess.objects(company=company, scope="company").order_by("created")
+    ]
     return rows
 
 
@@ -192,7 +206,10 @@ def check(company: str, user: str, access_id: str, is_admin: bool = False) -> di
         try:
             info = app.app_info()
             reach = len(app.installed_repositories())
-            state, message = "ok", f"GitHub accepts the App {info.get('slug') or entry.app_id}; installed on {reach} repositories"
+            state, message = (
+                "ok",
+                f"GitHub accepts the App {info.get('slug') or entry.app_id}; installed on {reach} repositories",
+            )
         except GitHubRefused:
             state, message = "refused", "GitHub did not accept this App ID or key any more"
         except GitHubError:
@@ -231,11 +248,17 @@ def is_active(user: str) -> bool:
     return bool(user) and AuthUser.objects(id=user, idp_disabled=True).only("id").first() is None
 
 
-def grant_applies(grant_root: str, project_root: Optional[str], owner_is_member: bool, user_is_member: bool,
-                  owner_active: bool, user_active: bool) -> bool:
+def grant_applies(
+    grant_root: str,
+    project_root: Optional[str],
+    owner_is_member: bool,
+    user_is_member: bool,
+    owner_active: bool,
+    user_active: bool,
+) -> bool:
     """The one rule for a grant: it applies to the project it names, while its owner is still a member and active, and
     the user is still a member and active."""
-    return (project_root == grant_root and owner_is_member and user_is_member and owner_active and user_active)
+    return project_root == grant_root and owner_is_member and user_is_member and owner_active and user_active
 
 
 def my_root_ids(company: str, user: str) -> set:
@@ -245,6 +268,7 @@ def my_root_ids(company: str, user: str) -> set:
 
 def my_projects(company: str, user: str) -> list:
     """The root projects the user owns or is a member of: the ones they may share an access with."""
-    projects = Project.objects(
-        Q(company=company) & Q(parent=None) & (Q(user=user) | Q(members__user=user))).only("id", "name")
+    projects = Project.objects(Q(company=company) & Q(parent=None) & (Q(user=user) | Q(members__user=user))).only(
+        "id", "name"
+    )
     return [{"id": project.id, "name": project.name} for project in projects]

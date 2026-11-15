@@ -37,7 +37,7 @@ def identity(company, user, role=Role.user):
 
 
 def outcome(fn):
-    """ The refusal as (error class, codes, message), or None when the call goes through """
+    """The refusal as (error class, codes, message), or None when the call goes through"""
     try:
         fn()
     except Exception as exc:  # noqa: BLE001 - every refusal is an API error here
@@ -56,12 +56,17 @@ def company():
 
 @pytest.fixture
 def world(company):
-    """ An owner, a member of the root project, a stranger and a company admin; a root project of the owner, and three
-    queues of the owner: two that the owner may allocate and a third that is never allocated """
+    """An owner, a member of the root project, a stranger and a company admin; a root project of the owner, and three
+    queues of the owner: two that the owner may allocate and a third that is never allocated"""
     for user in (OWNER, MEMBER, STRANGER, ADMIN):
         AuthUser(id=user, name=user, company=company, created=datetime.utcnow()).save()
     root = Project(
-        id=uuid4().hex, company=company, user=OWNER, name="root", basename="root", created=datetime.utcnow(),
+        id=uuid4().hex,
+        company=company,
+        user=OWNER,
+        name="root",
+        basename="root",
+        created=datetime.utcnow(),
         visibility=ProjectVisibility.private,
         members=[ProjectMember(user=MEMBER, role=ProjectRole.read, added=datetime.utcnow(), added_by=OWNER)],
     )
@@ -78,8 +83,8 @@ def world(company):
 
 @pytest.fixture
 def deactivate():
-    """ Deactivates users for one test. User ids are global and the test database is not reset between tests, so the
-    flag is cleared again afterwards. """
+    """Deactivates users for one test. User ids are global and the test database is not reset between tests, so the
+    flag is cleared again afterwards."""
     touched = []
 
     def switch_off(user):
@@ -98,6 +103,7 @@ def listed(company, user, root, role=Role.user):
 
 
 # --- what a project shows -------------------------------------------------------------------------------------------
+
 
 def test_the_owner_and_a_member_see_the_allocated_queues_in_allocation_order(world):
     q, c = world.queues, world.company
@@ -123,7 +129,9 @@ def test_a_stranger_is_refused_the_queues_of_the_project(world):
 
 def test_a_queue_leaves_the_listing_when_its_allocation_is_removed(world):
     q, c = world.queues, world.company
-    svc.add_queues(FakeCall(identity(c, OWNER)), c, AddQueuesRequest(project=world.root, queues=[q["first"], q["second"]]))
+    svc.add_queues(
+        FakeCall(identity(c, OWNER)), c, AddQueuesRequest(project=world.root, queues=[q["first"], q["second"]])
+    )
     svc.remove_queue(FakeCall(identity(c, OWNER)), c, RemoveQueueRequest(project=world.root, queue=q["first"]))
 
     assert listed(c, OWNER, world.root) == [q["second"]]
@@ -139,20 +147,27 @@ def test_a_queue_that_is_not_allocated_is_not_listed(world):
 
 # --- what allocating and removing a queue decides -------------------------------------------------------------------
 
+
 def test_a_queue_already_allocated_to_the_project_is_refused_on_a_second_allocation(world):
     q, c = world.queues, world.company
     svc.add_queues(FakeCall(identity(c, OWNER)), c, AddQueuesRequest(project=world.root, queues=[q["first"]]))
 
-    result = outcome(lambda: svc.add_queues(FakeCall(identity(c, OWNER)), c,
-                                            AddQueuesRequest(project=world.root, queues=[q["first"]])))
+    result = outcome(
+        lambda: svc.add_queues(
+            FakeCall(identity(c, OWNER)), c, AddQueuesRequest(project=world.root, queues=[q["first"]])
+        )
+    )
     assert result == refusal(errors.bad_request.ValidationError("a queue is already allocated to the project"))
 
 
 def test_removing_a_queue_that_is_not_allocated_is_refused(world):
     q, c = world.queues, world.company
 
-    result = outcome(lambda: svc.remove_queue(FakeCall(identity(c, OWNER)), c,
-                                              RemoveQueueRequest(project=world.root, queue=q["spare"])))
+    result = outcome(
+        lambda: svc.remove_queue(
+            FakeCall(identity(c, OWNER)), c, RemoveQueueRequest(project=world.root, queue=q["spare"])
+        )
+    )
     assert result == refusal(errors.bad_request.InvalidQueueId(id=q["spare"]))
 
 
@@ -160,16 +175,23 @@ def test_a_member_may_not_allocate_or_remove_a_queue(world):
     q, c = world.queues, world.company
     svc.add_queues(FakeCall(identity(c, OWNER)), c, AddQueuesRequest(project=world.root, queues=[q["first"]]))
 
-    allocate = outcome(lambda: svc.add_queues(FakeCall(identity(c, MEMBER)), c,
-                                              AddQueuesRequest(project=world.root, queues=[q["second"]])))
-    remove = outcome(lambda: svc.remove_queue(FakeCall(identity(c, MEMBER)), c,
-                                              RemoveQueueRequest(project=world.root, queue=q["first"])))
+    allocate = outcome(
+        lambda: svc.add_queues(
+            FakeCall(identity(c, MEMBER)), c, AddQueuesRequest(project=world.root, queues=[q["second"]])
+        )
+    )
+    remove = outcome(
+        lambda: svc.remove_queue(
+            FakeCall(identity(c, MEMBER)), c, RemoveQueueRequest(project=world.root, queue=q["first"])
+        )
+    )
     message = "only the project owner can change the queues of the project"
     assert allocate == refusal(errors.forbidden.NoWritePermission(message))
     assert remove == refusal(errors.forbidden.NoWritePermission(message))
 
 
 # --- the share records alone decide what a project shows ------------------------------------------------------------
+
 
 def test_a_share_record_alone_gives_the_listing(world):
     q, c = world.queues, world.company
@@ -187,6 +209,7 @@ def test_no_share_gives_no_listing(world):
 
 
 # --- a deactivated owner or member gives no queue through the project (R25) -----------------------------------------
+
 
 def test_a_deactivated_owner_gives_the_project_no_queues(world, deactivate):
     q, c = world.queues, world.company

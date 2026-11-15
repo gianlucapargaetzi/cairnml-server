@@ -81,7 +81,6 @@ class TestQueues(TestService):
         res = self.api.queues.get_by_id(queue=queue1)
         self.assertQueueTasks(res.queue, [tasks[0]])
 
-
         # clear queue
         res = self.api.queues.clear_queue(queue=queue1)
         self.assertEqual(res.removed_tasks, [tasks[0]])
@@ -169,10 +168,7 @@ class TestQueues(TestService):
 
     def test_max_queue_entries(self):
         queue = self._temp_queue("TestTempQueue")
-        tasks = [
-            self._create_temp_queued_task(t, queue)["id"]
-            for t in ("temp task1", "temp task2", "temp task3")
-        ]
+        tasks = [self._create_temp_queued_task(t, queue)["id"] for t in ("temp task1", "temp task2", "temp task3")]
 
         num = self.api.queues.get_num_entries(queue=queue).num
         self.assertEqual(num, 3)
@@ -205,61 +201,47 @@ class TestQueues(TestService):
         self.assertQueueTasks(res.queue, tasks)
 
         # no change in position
-        new_pos = self.api.queues.move_task_to_front(
-            queue=queue, task=tasks[0]
-        ).position
+        new_pos = self.api.queues.move_task_to_front(queue=queue, task=tasks[0]).position
         self.assertEqual(new_pos, 0)
         res = self.api.queues.get_by_id(queue=queue)
         self.assertQueueTasks(res.queue, tasks)
 
         # move backwards in the middle
-        new_pos = self.api.queues.move_task_backward(
-            queue=queue, task=tasks[0], count=2
-        ).position
+        new_pos = self.api.queues.move_task_backward(queue=queue, task=tasks[0], count=2).position
         self.assertEqual(new_pos, 2)
         res = self.api.queues.get_by_id(queue=queue)
         changed_tasks = tasks[1:3] + [tasks[0], tasks[3]]
         self.assertQueueTasks(res.queue, changed_tasks)
 
         # move backwards beyond the end
-        new_pos = self.api.queues.move_task_backward(
-            queue=queue, task=tasks[0], count=100
-        ).position
+        new_pos = self.api.queues.move_task_backward(queue=queue, task=tasks[0], count=100).position
         self.assertEqual(new_pos, 3)
         res = self.api.queues.get_by_id(queue=queue)
         changed_tasks = tasks[1:] + [tasks[0]]
         self.assertQueueTasks(res.queue, changed_tasks)
 
         # move forwards in the middle
-        new_pos = self.api.queues.move_task_forward(
-            queue=queue, task=tasks[0], count=2
-        ).position
+        new_pos = self.api.queues.move_task_forward(queue=queue, task=tasks[0], count=2).position
         self.assertEqual(new_pos, 1)
         res = self.api.queues.get_by_id(queue=queue)
         changed_tasks = [tasks[1], tasks[0]] + tasks[2:]
         self.assertQueueTasks(res.queue, changed_tasks)
 
         # move forwards beyond the beginning
-        new_pos = self.api.queues.move_task_forward(
-            queue=queue, task=tasks[0], count=100
-        ).position
+        new_pos = self.api.queues.move_task_forward(queue=queue, task=tasks[0], count=100).position
         self.assertEqual(new_pos, 0)
         res = self.api.queues.get_by_id(queue=queue)
         self.assertQueueTasks(res.queue, tasks)
 
         # move to back
-        new_pos = self.api.queues.move_task_to_back(
-            queue=queue, task=tasks[0]
-        ).position
+        new_pos = self.api.queues.move_task_to_back(queue=queue, task=tasks[0]).position
         self.assertEqual(new_pos, 3)
         res = self.api.queues.get_by_id(queue=queue)
         changed_tasks = tasks[1:] + [tasks[0]]
         self.assertQueueTasks(res.queue, changed_tasks)
 
         # move to front
-        new_pos = self.api.queues.move_task_to_front(
-            queue=queue, task=tasks[0]
-        ).position
+        new_pos = self.api.queues.move_task_to_front(queue=queue, task=tasks[0]).position
         self.assertEqual(new_pos, 0)
         res = self.api.queues.get_by_id(queue=queue)
         self.assertQueueTasks(res.queue, tasks)
@@ -281,13 +263,8 @@ class TestQueues(TestService):
             workers=[],
         )
 
-        tasks = [
-            self._create_temp_queued_task(t, queue)
-            for t in ("temp task1", "temp task2")
-        ]
-        workers = [
-            self._create_temp_worker(w, queue) for w in ("temp worker1", "temp worker2")
-        ]
+        tasks = [self._create_temp_queued_task(t, queue) for t in ("temp task1", "temp task2")]
+        workers = [self._create_temp_worker(w, queue) for w in ("temp worker1", "temp worker2")]
         res = self.api.queues.get_all_ex(name="TestTempQueue*").queues
         self.assertQueue(
             res,
@@ -310,9 +287,7 @@ class TestQueues(TestService):
             self.assertEqual(len(queue_res[prop]), dates_len)
 
         dates_in_sec = [d / 1000 for d in queue_res["dates"]]
-        self.assertGreater(
-            dates_in_sec[0], (utc_now_tz_aware() - timedelta(seconds=15)).timestamp()
-        )
+        self.assertGreater(dates_in_sec[0], (utc_now_tz_aware() - timedelta(seconds=15)).timestamp())
         if dates_len > 1:
             self.assertAlmostEqual(dates_in_sec[1] - dates_in_sec[0], 5, places=0)
 
@@ -348,13 +323,17 @@ class TestQueues(TestService):
         self.assertEqual([e.task for e in queue.entries], tasks)
         if queue_name:
             for task in tasks:
-                execution = self.api.tasks.get_by_id_ex(
-                    id=[task["id"]],
-                    only_fields=[
-                        "execution.queue.name",
-                        "execution.queue.display_name",
-                    ],
-                ).tasks[0].execution
+                execution = (
+                    self.api.tasks.get_by_id_ex(
+                        id=[task["id"]],
+                        only_fields=[
+                            "execution.queue.name",
+                            "execution.queue.display_name",
+                        ],
+                    )
+                    .tasks[0]
+                    .execution
+                )
                 self.assertEqual(execution.queue.name, queue_name)
                 self.assertEqual(execution.queue.display_name, display_queue_name)
 
@@ -372,9 +351,7 @@ class TestQueues(TestService):
         display_queue_name: str = None,
     ):
         sort_key = itemgetter("name")
-        self.assertEqual(
-            sorted(queue.workers, key=sort_key), sorted(workers, key=sort_key)
-        )
+        self.assertEqual(sorted(queue.workers, key=sort_key), sorted(workers, key=sort_key))
         if not workers:
             return
 
@@ -419,8 +396,5 @@ class TestQueues(TestService):
             task=task["id"],
         )
         return dict(
-            name=worker,
-            ip="127.0.0.1",
-            task=task,
-            key=f"worker_{self.user.company.id}_{self.user.id}_{worker}"
+            name=worker, ip="127.0.0.1", task=task, key=f"worker_{self.user.company.id}_{self.user.id}_{worker}"
         )

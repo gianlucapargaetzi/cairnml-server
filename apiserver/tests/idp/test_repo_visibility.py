@@ -28,13 +28,22 @@ def resolving(*addresses):
 
 class TestAddressRules(TestCase):
     BLOCKED = [
-        "127.0.0.1", "127.255.0.1",          # loopback
-        "169.254.169.254",                     # link-local, cloud metadata
-        "10.1.2.3", "172.16.0.5", "172.31.255.1", "192.168.1.9",  # RFC1918 (includes Docker bridge networks)
-        "100.64.0.1",                           # carrier-grade NAT
-        "0.0.0.0", "224.0.0.1",
-        "::1", "fe80::1", "fc00::5", "fd12:3456::9",  # loopback, link-local, unique-local
-        "::ffff:10.0.0.7", "::ffff:127.0.0.1",   # IPv4-mapped private addresses
+        "127.0.0.1",
+        "127.255.0.1",  # loopback
+        "169.254.169.254",  # link-local, cloud metadata
+        "10.1.2.3",
+        "172.16.0.5",
+        "172.31.255.1",
+        "192.168.1.9",  # RFC1918 (includes Docker bridge networks)
+        "100.64.0.1",  # carrier-grade NAT
+        "0.0.0.0",
+        "224.0.0.1",
+        "::1",
+        "fe80::1",
+        "fc00::5",
+        "fd12:3456::9",  # loopback, link-local, unique-local
+        "::ffff:10.0.0.7",
+        "::ffff:127.0.0.1",  # IPv4-mapped private addresses
     ]
 
     def test_loopback_link_local_private_and_unique_local_addresses_are_blocked(self):
@@ -45,8 +54,11 @@ class TestAddressRules(TestCase):
 
     def test_the_probe_is_not_sent_to_a_blocked_address(self):
         for address in ("127.0.0.1", "169.254.169.254", "10.0.0.4", "fd00::4"):
-            with self.subTest(address=address), resolving(address), \
-                    mock.patch.object(repo_visibility.requests, "get") as get:
+            with (
+                self.subTest(address=address),
+                resolving(address),
+                mock.patch.object(repo_visibility.requests, "get") as get,
+            ):
                 is_private(REPO)
             get.assert_not_called()
 
@@ -83,8 +95,9 @@ class TestIsPrivate(TestCase):
     def test_an_anonymous_advertisement_means_public(self):
         with resolving(PUBLIC), fetching(response(200)) as fetch:
             self.assertIs(is_private("https://gitlab.example.org/team/proj.git"), False)
-        self.assertEqual(fetch.call_args[0], (PUBLIC, "https", 443, "team/proj", "gitlab.example.org",
-                                              "gitlab.example.org"))
+        self.assertEqual(
+            fetch.call_args[0], (PUBLIC, "https", 443, "team/proj", "gitlab.example.org", "gitlab.example.org")
+        )
 
     def test_the_request_connects_to_the_checked_address_and_keeps_the_name(self):
         with resolving(PUBLIC), fetching(response(200)) as fetch:
@@ -101,8 +114,10 @@ class TestIsPrivate(TestCase):
             [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (PUBLIC, 443))],
             [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.4", 443))],
         ]
-        with mock.patch.object(repo_visibility.socket, "getaddrinfo", side_effect=rebinding) as getaddrinfo, \
-                fetching(response(200)) as fetch:
+        with (
+            mock.patch.object(repo_visibility.socket, "getaddrinfo", side_effect=rebinding) as getaddrinfo,
+            fetching(response(200)) as fetch,
+        ):
             self.assertIs(is_private(REPO), False)
         getaddrinfo.assert_called_once()
         self.assertEqual(fetch.call_args[0][0], PUBLIC)
@@ -206,14 +221,18 @@ class TestIsPrivate(TestCase):
 
 class TestCheckReadable(TestCase):
     def test_a_public_repository_is_accepted_without_credentials(self):
-        with mock.patch.object(repo_visibility, "is_private", return_value=False), \
-                mock.patch.object(repo_visibility.store, "find_credential") as find:
+        with (
+            mock.patch.object(repo_visibility, "is_private", return_value=False),
+            mock.patch.object(repo_visibility.store, "find_credential") as find,
+        ):
             check_readable("c1", REPO)
         find.assert_not_called()
 
     def test_a_host_that_cannot_be_asked_is_refused_without_credentials(self):
-        with mock.patch.object(repo_visibility, "is_private", return_value=None), \
-                mock.patch.object(repo_visibility.store, "find_credential", return_value=None):
+        with (
+            mock.patch.object(repo_visibility, "is_private", return_value=None),
+            mock.patch.object(repo_visibility.store, "find_credential", return_value=None),
+        ):
             with self.assertRaises(errors.bad_request.ValidationError) as ctx:
                 check_readable("c1", REPO)
         self.assertIn("gitlab.example.org", str(ctx.exception))
@@ -224,19 +243,25 @@ class TestCheckReadable(TestCase):
                 check_readable("c1", REPO)
 
     def test_a_private_repository_without_credentials_is_refused_naming_the_host(self):
-        with mock.patch.object(repo_visibility, "is_private", return_value=True), \
-                mock.patch.object(repo_visibility.store, "find_credential", return_value=None):
+        with (
+            mock.patch.object(repo_visibility, "is_private", return_value=True),
+            mock.patch.object(repo_visibility.store, "find_credential", return_value=None),
+        ):
             with self.assertRaises(errors.bad_request.ValidationError) as ctx:
                 check_readable("c1", REPO)
         self.assertIn("gitlab.example.org", str(ctx.exception))
         self.assertIn("git_credentials.set", str(ctx.exception))
 
     def test_a_private_repository_with_stored_credentials_is_accepted(self):
-        with mock.patch.object(repo_visibility, "is_private", return_value=True), \
-                mock.patch.object(repo_visibility.store, "find_credential", return_value=object()):
+        with (
+            mock.patch.object(repo_visibility, "is_private", return_value=True),
+            mock.patch.object(repo_visibility.store, "find_credential", return_value=object()),
+        ):
             check_readable("c1", REPO)
 
     def test_an_unreachable_host_with_stored_credentials_is_accepted(self):
-        with mock.patch.object(repo_visibility, "is_private", return_value=None), \
-                mock.patch.object(repo_visibility.store, "find_credential", return_value=object()):
+        with (
+            mock.patch.object(repo_visibility, "is_private", return_value=None),
+            mock.patch.object(repo_visibility.store, "find_credential", return_value=object()),
+        ):
             check_readable("c1", REPO)

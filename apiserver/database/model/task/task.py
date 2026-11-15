@@ -82,17 +82,13 @@ DEFAULT_ARTIFACT_MODE = ArtifactModes.output
 class Artifact(EmbeddedDocument):
     key = StringField(required=True)
     type = StringField(required=True)
-    mode = StringField(
-        choices=get_options(ArtifactModes), default=DEFAULT_ARTIFACT_MODE
-    )
+    mode = StringField(choices=get_options(ArtifactModes), default=DEFAULT_ARTIFACT_MODE)
     uri = StringField()
     hash = StringField()
     content_size = LongField()
     timestamp = LongField()
     type_data = EmbeddedDocumentField(ArtifactTypeData)
-    display_data = SafeSortedListField(
-        ListField(UnionField((int, float, str, NoneType)))
-    )
+    display_data = SafeSortedListField(ListField(UnionField((int, float, str, NoneType))))
 
 
 class ParamsItem(EmbeddedDocument, ProperDictMixin):
@@ -254,13 +250,9 @@ class Task(AttributedDocument):
     )
 
     id = StringField(primary_key=True)
-    name = StrippedStringField(
-        required=True, user_set_allowed=True, sparse=False, min_length=3
-    )
+    name = StrippedStringField(required=True, user_set_allowed=True, sparse=False, min_length=3)
     # Label of this one experiment. Never part of the task's identity: the name stays the task name.
-    display_name = StrippedStringField(
-        user_set_allowed=True, sparse=False, min_length=1, max_length=200
-    )
+    display_name = StrippedStringField(user_set_allowed=True, sparse=False, min_length=1, max_length=200)
 
     type = StringField(required=True, choices=get_options(TaskType))
     status = StringField(default=TaskStatus.created, choices=get_options(TaskStatus))
@@ -299,9 +291,7 @@ class Task(AttributedDocument):
     runtime = SafeDictField(default=dict)
     models: Models = EmbeddedDocumentField(Models, default=Models)
     container = SafeMapField(field=NullableStringField())
-    enqueue_status = StringField(
-        choices=get_options(TaskStatus), exclude_by_default=True
-    )
+    enqueue_status = StringField(choices=get_options(TaskStatus), exclude_by_default=True)
     last_changed_by = StringField()
 
     def get_index_company(self) -> str:

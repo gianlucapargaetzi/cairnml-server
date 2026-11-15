@@ -55,8 +55,7 @@ def _assert_no_queue(error: ApiError):
 
 
 def _push(person: Person, project_id: str, label: str) -> str:
-    return person.api.authed("tasks.create", {"name": new_name(label), "type": TASK_TYPE,
-                                              "project": project_id})["id"]
+    return person.api.authed("tasks.create", {"name": new_name(label), "type": TASK_TYPE, "project": project_id})["id"]
 
 
 def _allocate(owner: Person, project_id: str, queue_id: str):
@@ -96,8 +95,10 @@ def admin(client_home):
 @pytest.fixture(scope="module")
 def task_projects(people):
     """A root project of the owner and one of the grantee, where each of them creates the tasks it enqueues."""
-    projects = {label: workspace.create_project(people[label].api, new_name(f"queue-{label}-tasks"))
-                for label in (OWNER, GRANTEE)}
+    projects = {
+        label: workspace.create_project(people[label].api, new_name(f"queue-{label}-tasks"))
+        for label in (OWNER, GRANTEE)
+    }
     yield projects
     for label, project_id in projects.items():
         workspace.delete_project(people[label].api, project_id)
@@ -127,8 +128,9 @@ def make_root(people):
         project_id = workspace.create_project(people[OWNER].api, new_name(f"queue-{label}"))
         created.append(project_id)
         for member_label, role in members:
-            people[OWNER].api.authed("projects.add_member", {"project": project_id,
-                                                             "user": people[member_label].user_id, "role": role})
+            people[OWNER].api.authed(
+                "projects.add_member", {"project": project_id, "user": people[member_label].user_id, "role": role}
+            )
         return project_id
 
     yield make
@@ -192,8 +194,10 @@ def test_the_owner_sets_the_metadata_of_its_queue(people, make_queue):
     """
     queue_id = make_queue("metadata")
     owner = people[OWNER].api
-    owner.authed("queues.add_or_update_metadata", {"queue": queue_id, "metadata": [
-        {"key": "team", "type": "str", "value": "ml-platform"}]})
+    owner.authed(
+        "queues.add_or_update_metadata",
+        {"queue": queue_id, "metadata": [{"key": "team", "type": "str", "value": "ml-platform"}]},
+    )
     queue = owner.authed("queues.get_by_id", {"queue": queue_id})["queue"]
     assert "team" in queue["metadata"], queue["metadata"]
 
@@ -235,8 +239,13 @@ def test_a_grantee_cannot_add_a_grant_or_set_metadata(people, make_queue):
     grantee = people[GRANTEE].api
 
     _assert_forbidden(_refused(grantee, "queues.add_user", {"queue": queue_id, "user": people[OUTSIDER].user_id}))
-    _assert_forbidden(_refused(grantee, "queues.add_or_update_metadata", {"queue": queue_id, "metadata": [
-        {"key": "team", "type": "str", "value": "grantee"}]}))
+    _assert_forbidden(
+        _refused(
+            grantee,
+            "queues.add_or_update_metadata",
+            {"queue": queue_id, "metadata": [{"key": "team", "type": "str", "value": "grantee"}]},
+        )
+    )
 
 
 def test_a_grantee_cannot_set_the_queue_public(people, make_queue):

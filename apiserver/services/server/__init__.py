@@ -20,9 +20,7 @@ from apiserver.service_repo import ServiceRepo, APICall, endpoint
 
 @endpoint("server.get_stats")
 def get_stats(call: APICall):
-    call.result.data = StatisticsReporter.get_statistics(
-        company_id=call.identity.company
-    )
+    call.result.data = StatisticsReporter.get_statistics(company_id=call.identity.company)
 
 
 @endpoint("server.config")
@@ -100,9 +98,7 @@ def report_stats(call: APICall, company: str, request: ReportStatsOptionRequest)
                 )
                 updated = query.update(defaults__stats_option=stats_option)
                 if not updated:
-                    raise errors.server_error.InternalError(
-                        f"Failed setting report_stats to {enabled}"
-                    )
+                    raise errors.server_error.InternalError(f"Failed setting report_stats to {enabled}")
         data = stats_option.to_mongo()
         data["current_version"] = get_version()
         result = ReportStatsOptionResponse(**data)

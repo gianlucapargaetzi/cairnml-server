@@ -49,7 +49,8 @@ def get_all(call: APICall, company_id: str, request: GetAllRequest):
 
 
 @endpoint(
-    "workers.get_count", request_data_model=GetCountRequest,
+    "workers.get_count",
+    request_data_model=GetCountRequest,
 )
 def get_count(call: APICall, company_id: str, request: GetCountRequest):
     call.result.data = {
@@ -73,9 +74,7 @@ def register(call: APICall, company_id, request: RegisterRequest):
         timeout = config.get("apiserver.workers.default_timeout", 60 * 60)
 
     if not timeout or timeout <= 0:
-        raise bad_request.WorkerRegistrationFailed(
-            "invalid timeout", timeout=timeout, worker=worker
-        )
+        raise bad_request.WorkerRegistrationFailed("invalid timeout", timeout=timeout, worker=worker)
 
     worker_bll.register_worker(
         company_id=company_id,
@@ -97,9 +96,7 @@ def unregister(call: APICall, company_id, req_model: WorkerRequest):
     worker_bll.unregister_worker(company_id, call.identity.user, req_model.worker)
 
 
-@endpoint(
-    "workers.status_report", min_version="2.4", request_data_model=StatusReportRequest
-)
+@endpoint("workers.status_report", min_version="2.4", request_data_model=StatusReportRequest)
 def status_report(call: APICall, company_id, request: StatusReportRequest):
     worker_bll.status_report(
         company_id=company_id,
@@ -120,15 +117,9 @@ def status_report(call: APICall, company_id, request: StatusReportRequest):
     response_data_model=GetMetricKeysResponse,
     validate_schema=True,
 )
-def get_metric_keys(
-    call: APICall, company_id, req_model: GetMetricKeysRequest
-) -> GetMetricKeysResponse:
-    ret = worker_bll.stats.get_worker_stats_keys(
-        company_id, worker_ids=req_model.worker_ids
-    )
-    return GetMetricKeysResponse(
-        categories=[MetricCategory(name=k, metric_keys=v) for k, v in ret.items()]
-    )
+def get_metric_keys(call: APICall, company_id, req_model: GetMetricKeysRequest) -> GetMetricKeysResponse:
+    ret = worker_bll.stats.get_worker_stats_keys(company_id, worker_ids=req_model.worker_ids)
+    return GetMetricKeysResponse(categories=[MetricCategory(name=k, metric_keys=v) for k, v in ret.items()])
 
 
 @endpoint(
@@ -138,9 +129,7 @@ def get_metric_keys(
     response_data_model=GetActivityReportResponse,
     validate_schema=True,
 )
-def get_activity_report(
-    call: APICall, company_id, req_model: GetActivityReportRequest
-) -> GetActivityReportResponse:
+def get_activity_report(call: APICall, company_id, req_model: GetActivityReportRequest) -> GetActivityReportResponse:
     def get_activity_series(active_only: bool = False) -> ActivityReportSeries:
         ret = worker_bll.stats.get_activity_report(
             company_id=company_id,
@@ -152,13 +141,9 @@ def get_activity_report(
         if not ret:
             return ActivityReportSeries(dates=[], counts=[])
         count_by_date = extract_properties_to_lists(["date", "count"], ret)
-        return ActivityReportSeries(
-            dates=count_by_date["date"], counts=count_by_date["count"]
-        )
+        return ActivityReportSeries(dates=count_by_date["date"], counts=count_by_date["count"])
 
-    return GetActivityReportResponse(
-        total=get_activity_series(), active=get_activity_series(active_only=True)
-    )
+    return GetActivityReportResponse(total=get_activity_series(), active=get_activity_series(active_only=True))
 
 
 @endpoint(
@@ -177,12 +162,7 @@ def get_stats(call: APICall, company_id, request: GetStatsRequest):
         resource_series = []
         if "resource_series" in stats:
             for name, values in stats["resource_series"].items():
-                resource_series.append(
-                    MetricResourceSeries(
-                        name=name,
-                        values=values
-                    )
-                )
+                resource_series.append(MetricResourceSeries(name=name, values=values))
         return AggregationStats(
             aggregation=aggregation,
             dates=stats["dates"],
@@ -197,10 +177,7 @@ def get_stats(call: APICall, company_id, request: GetStatsRequest):
                 metrics=[
                     MetricStats(
                         metric=metric,
-                        stats=[
-                            _get_agg_stats(aggregation, a_stats)
-                            for aggregation, a_stats in m_stats.items()
-                        ]
+                        stats=[_get_agg_stats(aggregation, a_stats) for aggregation, a_stats in m_stats.items()],
                     )
                     for metric, m_stats in w_stats.items()
                 ],

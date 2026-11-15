@@ -15,6 +15,7 @@ from support.workspace import new_name, run_json
 
 pytestmark = pytest.mark.ui
 
+
 @pytest.fixture
 def signed_in(browser):
     context = browser.new_context(viewport={"width": 1280, "height": 800})

@@ -89,7 +89,9 @@ def duration_sec(started: Optional[datetime], completed: Optional[datetime]) -> 
     return max(0, int((completed - started).total_seconds()))
 
 
-def build_payload(project: str, task_id: str, name: str, status: str, duration: Optional[int], link: Optional[str]) -> dict:
+def build_payload(
+    project: str, task_id: str, name: str, status: str, duration: Optional[int], link: Optional[str]
+) -> dict:
     return {
         "project": project,
         "task_id": task_id,
@@ -180,9 +182,7 @@ def deliver(job: dict) -> None:
     """Runs on a worker thread: looks up the project's webhook, delivers it and writes the audit event."""
     try:
         project = (
-            Project.objects(company=job["company"], id=job["project"])
-            .only("name", "notification_webhook")
-            .first()
+            Project.objects(company=job["company"], id=job["project"]).only("name", "notification_webhook").first()
         )
         url = project.notification_webhook if project else None
         if not url:

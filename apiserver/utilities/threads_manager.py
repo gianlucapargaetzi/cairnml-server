@@ -16,9 +16,7 @@ class ThreadsManager:
                 with self.lock:
                     thread = self.objects.get(thread_name)
                     if not thread:
-                        thread = Thread(
-                            target=f, name=f"{self.name}_{thread_name}", args=args, kwargs=kwargs
-                        )
+                        thread = Thread(target=f, name=f"{self.name}_{thread_name}", args=args, kwargs=kwargs)
                         thread.daemon = daemon
                         thread.start()
                         self.objects[thread_name] = thread

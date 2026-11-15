@@ -61,9 +61,7 @@ def _assert_owner(call: APICall, root: Project) -> None:
     to use the queues they allocate.
     """
     if root.user != call.identity.user:
-        raise errors.forbidden.NoWritePermission(
-            "only the project owner can change the queues of the project"
-        )
+        raise errors.forbidden.NoWritePermission("only the project owner can change the queues of the project")
 
 
 def _queue_summaries(company_id: str, queue_ids) -> list:
@@ -87,10 +85,7 @@ def get_members(call: APICall, company_id: str, request: GetMembersRequest):
     root = _load_root(company_id, root_id)
     call.result.data = {
         "owner": root.user,
-        "members": [
-            {"user": m.user, "role": m.role, "added": m.added, "added_by": m.added_by}
-            for m in root.members
-        ],
+        "members": [{"user": m.user, "role": m.role, "added": m.added, "added_by": m.added_by} for m in root.members],
     }
 
 
@@ -145,9 +140,7 @@ def remove_member(call: APICall, company_id: str, request: RemoveMemberRequest):
     ProjectAccessBLL.assert_can(call.identity, request.project, "admin")
 
     _find_member(_load_root(company_id, root_id), request.user)
-    Project.objects(id=root_id, company=company_id).update_one(
-        pull__members__user=request.user
-    )
+    Project.objects(id=root_id, company=company_id).update_one(pull__members__user=request.user)
     # what the member shared with the project goes with them (R19)
     revoke_member_shares(company_id, root_id, request.user, actor=call.identity.user)
     # a credential the member assigned to a repository only that project let them see goes with their access to it
@@ -163,9 +156,7 @@ def set_visibility(call: APICall, company_id: str, request: SetVisibilityRequest
     if request.visibility not in get_options(ProjectVisibility):
         raise errors.bad_request.FieldsValueError(visibility=request.visibility)
 
-    Project.objects(id=root_id, company=company_id).update_one(
-        set__visibility=request.visibility
-    )
+    Project.objects(id=root_id, company=company_id).update_one(set__visibility=request.visibility)
 
     return UpdateResponse(updated=1)
 
@@ -181,9 +172,7 @@ def transfer_ownership(call: APICall, company_id: str, request: TransferOwnershi
     _find_member(root, request.new_owner)
 
     now = datetime.utcnow()
-    members = [
-        m for m in root.members if m.user not in (request.new_owner, root.user)
-    ]
+    members = [m for m in root.members if m.user not in (request.new_owner, root.user)]
     members.append(
         ProjectMember(
             user=root.user,
@@ -205,8 +194,7 @@ def transfer_ownership(call: APICall, company_id: str, request: TransferOwnershi
         remove_grant(company_id, "queue", queue_id, "projects", root_id, actor=call.identity.user)
     for queue_id in kept:
         remove_grant(company_id, "queue", queue_id, "projects", root_id, actor=call.identity.user)
-        record_grant(company_id, request.new_owner, "queue", queue_id, "projects", root_id,
-                     actor=call.identity.user)
+        record_grant(company_id, request.new_owner, "queue", queue_id, "projects", root_id, actor=call.identity.user)
     repositories_bll.regrant_project_links(company_id, root_id, request.new_owner, actor=call.identity.user)
 
     return UpdateResponse(updated=1)
@@ -233,9 +221,7 @@ def get_queues(call: APICall, company_id: str, request: GetQueuesRequest):
 
 
 @endpoint("projects.get_assignable_queues")
-def get_assignable_queues(
-    call: APICall, company_id: str, request: GetAssignableQueuesRequest
-):
+def get_assignable_queues(call: APICall, company_id: str, request: GetAssignableQueuesRequest):
     root_id = _resolve_root_id(call, request.project)
     root = _load_root(company_id, root_id)
     _assert_owner(call, root)
@@ -261,9 +247,7 @@ def add_queues(call: APICall, company_id: str, request: AddQueuesRequest):
 
     already = set(resource_ids_shared_with(company_id, "queue", root_id))
     if already.intersection(request.queues):
-        raise errors.bad_request.ValidationError(
-            "a queue is already allocated to the project"
-        )
+        raise errors.bad_request.ValidationError("a queue is already allocated to the project")
 
     assignable = QueueAccessBLL.assignable_queue_ids(company_id, call.identity.user)
     for queue_id in request.queues:
@@ -303,8 +287,14 @@ def usable(call: APICall, company_id: str, request: UsableRequest):
         raise errors.forbidden.NoWritePermission("only the members of the project may see what it can use")
     _load_root(company_id, root_id)
 
-    can_manage = ProjectAccessBLL.get_role(call.identity, request.project) in ("owner", ProjectRole.collaborator, "admin")
+    can_manage = ProjectAccessBLL.get_role(call.identity, request.project) in (
+        "owner",
+        ProjectRole.collaborator,
+        "admin",
+    )
     call.result.data = {
         "can_manage": can_manage,
-        "repositories": repositories_bll.list_for(company_id, call.identity.user, call.identity.role in ADMIN_ROLES, root_id),
+        "repositories": repositories_bll.list_for(
+            company_id, call.identity.user, call.identity.role in ADMIN_ROLES, root_id
+        ),
     }

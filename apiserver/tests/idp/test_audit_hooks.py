@@ -30,18 +30,26 @@ class TestAuditHooks(TestCase):
 
     def test_enrolment_and_exchange_and_revoke_are_recorded(self):
         key = Ed25519PrivateKey.generate()
-        device = call("devices.enroll", {"kind": "client", "public_key": _public_pem(key)},
-                      token=idp_token(sub=f"audit-{uuid.uuid4().hex}")).json()["data"]["id"]
+        device = call(
+            "devices.enroll",
+            {"kind": "client", "public_key": _public_pem(key)},
+            token=idp_token(sub=f"audit-{uuid.uuid4().hex}"),
+        ).json()["data"]["id"]
         self.assertGreaterEqual(events("device.enrolled", device=device), 1)
-        token = call("devices.exchange", {"assertion": make_assertion(key, device, PUBLIC_URL)}).json()["data"]["access_token"]
+        token = call("devices.exchange", {"assertion": make_assertion(key, device, PUBLIC_URL)}).json()["data"][
+            "access_token"
+        ]
         self.assertGreaterEqual(events("token.issued", device=device), 1)
         call("devices.revoke", {"id": device}, token=token)
         self.assertGreaterEqual(events("device.revoked", device=device), 1)
 
     def test_a_refused_exchange_is_recorded(self):
         key = Ed25519PrivateKey.generate()
-        device = call("devices.enroll", {"kind": "client", "public_key": _public_pem(key)},
-                      token=idp_token(sub=f"audit-{uuid.uuid4().hex}")).json()["data"]["id"]
+        device = call(
+            "devices.enroll",
+            {"kind": "client", "public_key": _public_pem(key)},
+            token=idp_token(sub=f"audit-{uuid.uuid4().hex}"),
+        ).json()["data"]["id"]
         other = Ed25519PrivateKey.generate()
         call("devices.exchange", {"assertion": make_assertion(other, device, PUBLIC_URL)})
         self.assertGreaterEqual(events("token.refused", device=device), 1)
@@ -63,6 +71,11 @@ class TestAuditHooks(TestCase):
 
     def test_a_cross_site_cookie_change_is_recorded(self):
         before = AuditEvent.objects(action="csrf.refused").count()
-        requests.post(f"{API}/devices.get_all", json={}, headers={"Origin": "http://evil.example"},
-                      cookies={"cairnml_token_basic": "x"}, timeout=20)
+        requests.post(
+            f"{API}/devices.get_all",
+            json={},
+            headers={"Origin": "http://evil.example"},
+            cookies={"cairnml_token_basic": "x"},
+            timeout=20,
+        )
         self.assertGreater(AuditEvent.objects(action="csrf.refused").count(), before)

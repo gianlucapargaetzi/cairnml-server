@@ -26,7 +26,8 @@ def _view(record: Share) -> dict:
 def list_shares(call: APICall, company: str, _request):
     data = call.data or {}
     shares = access_bll.list_shares(
-        company, call.identity.user, data.get("resource_type", ""), data.get("resource_id", ""))
+        company, call.identity.user, data.get("resource_type", ""), data.get("resource_id", "")
+    )
     call.result.data = {"shares": [_view(record) for record in shares]}
 
 
@@ -34,8 +35,15 @@ def list_shares(call: APICall, company: str, _request):
 def share(call: APICall, company: str, _request):
     data = call.data or {}
     record = access_bll.share(
-        company, call.identity.user, data.get("resource_type", ""), data.get("resource_id", ""),
-        data.get("scope", ""), data.get("project") or "", data.get("level", ""), data.get("user") or "")
+        company,
+        call.identity.user,
+        data.get("resource_type", ""),
+        data.get("resource_id", ""),
+        data.get("scope", ""),
+        data.get("project") or "",
+        data.get("level", ""),
+        data.get("user") or "",
+    )
     call.result.data = {"share": _view(record)}
 
 

@@ -59,21 +59,15 @@ class TestWorkersService(TestService):
         test_worker = f"test_{uuid4().hex}"
         tag = uuid4().hex
         system_tag = uuid4().hex
-        self.api.workers.register(
-            worker=test_worker, tags=[tag], system_tags=[system_tag], timeout=5
-        )
+        self.api.workers.register(worker=test_worker, tags=[tag], system_tags=[system_tag], timeout=5)
 
         # system_tags support
-        worker = self.api.workers.get_all(tags=[tag], system_tags=[system_tag]).workers[
-            0
-        ]
+        worker = self.api.workers.get_all(tags=[tag], system_tags=[system_tag]).workers[0]
         self.assertEqual(worker.id, test_worker)
         self.assertEqual(worker.tags, [tag])
         self.assertEqual(worker.system_tags, [system_tag])
 
-        workers = self.api.workers.get_all(
-            tags=[tag], system_tags=[f"-{system_tag}"]
-        ).workers
+        workers = self.api.workers.get_all(tags=[tag], system_tags=[f"-{system_tag}"]).workers
         self.assertFalse(workers)
 
     def test_filters(self):
@@ -122,12 +116,9 @@ class TestWorkersService(TestService):
                 if w == workers[0]:
                     data["task"] = task_id
                 self.api.workers.status_report(**data)
-                timestamp += 60*1000
+                timestamp += 60 * 1000
 
-        return {
-            w: s
-            for w, s in zip(workers, worker_stats[0])
-        }
+        return {w: s for w, s in zip(workers, worker_stats[0])}
 
     def _create_running_task(self, task_name):
         task_input = dict(name=task_name, type="testing")
@@ -142,14 +133,8 @@ class TestWorkersService(TestService):
         time.sleep(5)  # give to es time to refresh
         res = self.api.workers.get_metric_keys(worker_ids=list(workers))
         assert {"cpu", "memory"} == set(c.name for c in res["categories"])
-        assert all(
-            c.metric_keys == ["cpu_usage"] for c in res["categories"] if c.name == "cpu"
-        )
-        assert all(
-            c.metric_keys == ["memory_used"]
-            for c in res["categories"]
-            if c.name == "memory"
-        )
+        assert all(c.metric_keys == ["cpu_usage"] for c in res["categories"] if c.name == "cpu")
+        assert all(c.metric_keys == ["memory_used"] for c in res["categories"] if c.name == "memory")
 
         with self.api.raises(bad_request.WorkerStatsNotFound):
             self.api.workers.get_metric_keys(worker_ids=["Non existing worker id"])
@@ -160,7 +145,7 @@ class TestWorkersService(TestService):
 
         time.sleep(5)  # give to ES time to refresh
         from_date = start
-        to_date = start + 40*10
+        to_date = start + 40 * 10
         # no variants
         res = self.api.workers.get_stats(
             items=[
@@ -185,13 +170,9 @@ class TestWorkersService(TestService):
 
         for worker in res.workers:
             worker_id = worker.worker
-            for metric, metric_stats in zip(
-                worker.metrics, ({"avg", "max"}, {"avg", "max"}, {"max"})
-            ):
+            for metric, metric_stats in zip(worker.metrics, ({"avg", "max"}, {"avg", "max"}, {"max"})):
                 metric_name = metric.metric
-                self.assertEqual(
-                    set(stat.aggregation for stat in metric.stats), metric_stats
-                )
+                self.assertEqual(set(stat.aggregation for stat in metric.stats), metric_stats)
                 for stat in metric.stats:
                     expected = workers[worker_id][metric_name]
                     self.assertTrue(11 >= len(stat.dates) >= 10)
@@ -259,9 +240,7 @@ class TestWorkersService(TestService):
 
         time.sleep(5)  # give to es time to refresh
         # no variants
-        res = self.api.workers.get_activity_report(
-            from_date=start, to_date=start + 10*40, interval=2
-        )
+        res = self.api.workers.get_activity_report(from_date=start, to_date=start + 10 * 40, interval=2)
         self.assertWorkerSeries(res["total"], 2, 10)
         self.assertWorkerSeries(res["active"], 1, 10)
 

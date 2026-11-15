@@ -17,9 +17,7 @@ def get_random_string(length):
     return token
 
 
-def get_client_id(
-    length: int = 30, allowed_chars: str = string.ascii_uppercase + string.digits
-) -> str:
+def get_client_id(length: int = 30, allowed_chars: str = string.ascii_uppercase + string.digits) -> str:
     """
     Create a random client id composed of 'length' upper case characters or digits
     """

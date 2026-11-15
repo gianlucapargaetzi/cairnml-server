@@ -12,9 +12,7 @@ class TestTasksEdit(TestService):
         super().setUp(version="2.12")
 
     def new_task(self, **kwargs):
-        self.update_missing(
-            kwargs, type="testing", name="test"
-        )
+        self.update_missing(kwargs, type="testing", name="test")
         return self.create_temp("tasks", **kwargs)
 
     def new_model(self, **kwargs):
@@ -97,9 +95,7 @@ class TestTasksEdit(TestService):
         execution = dict(parameters=dict(test="Test"))
         tags = ["hello"]
         system_tags = ["development", "test"]
-        task = self.new_task(
-            script=script, execution=execution, tags=tags, system_tags=system_tags
-        )
+        task = self.new_task(script=script, execution=execution, tags=tags, system_tags=system_tags)
 
         new_name = "new test"
         new_tags = ["by"]
@@ -158,9 +154,7 @@ class TestTasksEdit(TestService):
 
         # unless check for refs is done
         with self.api.raises(InvalidModelId):
-            self._clone_task(
-                task=task, new_task_name="clone test2", validate_references=True
-            )
+            self._clone_task(task=task, new_task_name="clone test2", validate_references=True)
 
         # if the model is overriden then it is always checked
         with self.api.raises(InvalidModelId):
@@ -172,9 +166,7 @@ class TestTasksEdit(TestService):
 
     def _clone_task(self, task, **kwargs):
         new_task = self.api.tasks.clone(task=task, **kwargs).id
-        self.defer(
-            self.api.tasks.delete, task=new_task, move_to_trash=False, force=True
-        )
+        self.defer(self.api.tasks.delete, task=new_task, move_to_trash=False, force=True)
         return new_task
 
     def test_make_public(self):

@@ -55,5 +55,6 @@ def init_mongo_data():
     except Exception as ex:
         log.exception(f"Failed initializing mongodb: {str(ex)}")
 
+
 # check_mongo_empty and get_last_server_version are re-exported: server_init.app_sequence imports them from this package.
 __all__ = ["check_mongo_empty", "get_last_server_version", "init_mongo_data", "pre_populate_data"]

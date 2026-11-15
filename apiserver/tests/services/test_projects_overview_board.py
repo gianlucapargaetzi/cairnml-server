@@ -33,10 +33,18 @@ def member(user, role):
 def project(company):
     project_id = f"board-{uuid4().hex[:8]}"
     Project(
-        id=project_id, company=company, user="owner1", name=project_id, basename=project_id, created=datetime.utcnow(),
+        id=project_id,
+        company=company,
+        user="owner1",
+        name=project_id,
+        basename=project_id,
+        created=datetime.utcnow(),
         visibility=ProjectVisibility.private,
-        members=[member("collab", ProjectRole.collaborator), member("writer", ProjectRole.read_write),
-                 member("viewer", ProjectRole.read)],
+        members=[
+            member("collab", ProjectRole.collaborator),
+            member("writer", ProjectRole.read_write),
+            member("viewer", ProjectRole.read),
+        ],
     ).save()
     return project_id
 

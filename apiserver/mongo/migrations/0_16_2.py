@@ -14,6 +14,4 @@ def migrate_backend(db: Database):
             continue
 
         new_artifacts = {get_artifact_id(a): a for a in artifacts}
-        collection.update_one(
-            {"_id": doc["_id"]}, {"$set": {artifacts_field: new_artifacts}}
-        )
+        collection.update_one({"_id": doc["_id"]}, {"$set": {artifacts_field: new_artifacts}})

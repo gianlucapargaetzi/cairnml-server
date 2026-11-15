@@ -38,8 +38,13 @@ def project_with(url):
 
 
 JOB = dict(
-    company="c1", project="p1", task_id="t1", name="train", status=TaskStatus.failed,
-    duration=3600, link="https://cairnml.example/cairnml/projects/p1/tasks/t1",
+    company="c1",
+    project="p1",
+    task_id="t1",
+    name="train",
+    status=TaskStatus.failed,
+    duration=3600,
+    link="https://cairnml.example/cairnml/projects/p1/tasks/t1",
 )
 
 
@@ -79,9 +84,11 @@ class TestUrlValidation(TestCase):
 
 class TestPayload(TestCase):
     def deliver(self, project, job=JOB):
-        with project_query(project), \
-                mock.patch.object(webhooks, "send", return_value=200) as send, \
-                mock.patch.object(webhooks.audit, "record") as record:
+        with (
+            project_query(project),
+            mock.patch.object(webhooks, "send", return_value=200) as send,
+            mock.patch.object(webhooks.audit, "record") as record,
+        ):
             webhooks.deliver(job)
         return send, record
 
@@ -117,10 +124,12 @@ class TestPayload(TestCase):
         record.assert_called_once_with("system", "webhook.sent", company="c1", project="p1", status_code=200)
 
     def test_a_failed_delivery_is_audited_as_failed(self):
-        with project_query(project_with(URL)), \
-                mock.patch.object(webhooks, "send", side_effect=requests.ConnectionError), \
-                mock.patch.object(webhooks, "_pause"), \
-                mock.patch.object(webhooks.audit, "record") as record:
+        with (
+            project_query(project_with(URL)),
+            mock.patch.object(webhooks, "send", side_effect=requests.ConnectionError),
+            mock.patch.object(webhooks, "_pause"),
+            mock.patch.object(webhooks.audit, "record") as record,
+        ):
             webhooks.deliver(JOB)
         record.assert_called_once_with("system", "webhook.failed", company="c1", project="p1", status_code=None)
 
@@ -134,15 +143,25 @@ class TestPayload(TestCase):
 
 class TestAddressRules(TestCase):
     BLOCKED = [
-        "127.0.0.1", "169.254.169.254", "10.0.0.4", "192.168.1.9", "172.16.0.5",
-        "100.64.0.1", "fe80::1", "fd00::4", "::ffff:127.0.0.1",
+        "127.0.0.1",
+        "169.254.169.254",
+        "10.0.0.4",
+        "192.168.1.9",
+        "172.16.0.5",
+        "100.64.0.1",
+        "fe80::1",
+        "fd00::4",
+        "::ffff:127.0.0.1",
     ]
 
     def test_a_blocked_address_is_never_contacted_and_not_retried(self):
         for address in self.BLOCKED:
-            with self.subTest(address=address), resolving(address), \
-                    mock.patch.object(requests.Session, "post") as post, \
-                    mock.patch.object(webhooks, "_pause") as sleep:
+            with (
+                self.subTest(address=address),
+                resolving(address),
+                mock.patch.object(requests.Session, "post") as post,
+                mock.patch.object(webhooks, "_pause") as sleep,
+            ):
                 sent, code = webhooks.deliver_with_retries(URL, {})
             self.assertEqual((sent, code), (False, None))
             post.assert_not_called()
@@ -167,8 +186,10 @@ class TestAddressRules(TestCase):
 
 class TestRetries(TestCase):
     def test_a_failing_receiver_is_tried_once_and_retried_three_times(self):
-        with mock.patch.object(webhooks, "send", side_effect=requests.ConnectionError) as send, \
-                mock.patch.object(webhooks, "_pause") as sleep:
+        with (
+            mock.patch.object(webhooks, "send", side_effect=requests.ConnectionError) as send,
+            mock.patch.object(webhooks, "_pause") as sleep,
+        ):
             sent, code = webhooks.deliver_with_retries(URL, {})
         self.assertEqual((sent, code), (False, None))
         self.assertEqual(send.call_count, 1 + webhooks.MAX_RETRIES)
@@ -177,8 +198,11 @@ class TestRetries(TestCase):
 
     def test_a_server_error_is_retried_until_the_receiver_answers(self):
         responses = [mock.Mock(status_code=500), mock.Mock(status_code=503), mock.Mock(status_code=204)]
-        with mock.patch.object(requests.Session, "post", side_effect=responses) as post, \
-                resolving(PUBLIC), mock.patch.object(webhooks, "_pause"):
+        with (
+            mock.patch.object(requests.Session, "post", side_effect=responses) as post,
+            resolving(PUBLIC),
+            mock.patch.object(webhooks, "_pause"),
+        ):
             self.assertEqual(webhooks.deliver_with_retries(URL, {}), (True, 204))
         self.assertEqual(post.call_count, 3)
 
@@ -190,11 +214,12 @@ class TestRetries(TestCase):
 
 class TestStatusChangeTrigger(TestCase):
     def change(self, new_status, current):
-        task = Task(id="t1", company="c1", project="p1", name="train", status=current,
-                    started=datetime.utcnow())
-        with mock.patch.object(task_utils.Task, "objects") as objects, \
-                mock.patch.object(task_utils, "update_project_time"), \
-                mock.patch.object(webhooks, "_pool") as pool:
+        task = Task(id="t1", company="c1", project="p1", name="train", status=current, started=datetime.utcnow())
+        with (
+            mock.patch.object(task_utils.Task, "objects") as objects,
+            mock.patch.object(task_utils, "update_project_time"),
+            mock.patch.object(webhooks, "_pool") as pool,
+        ):
             objects.return_value.update.return_value = 1
             ChangeStatusRequest(task=task, new_status=new_status, force=True, user_id="u1").execute()
         return pool

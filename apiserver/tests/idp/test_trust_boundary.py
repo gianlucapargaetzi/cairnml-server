@@ -58,15 +58,25 @@ class TestSecureCookieOverHttps:
         values = {"apiserver.auth.cookies.secure": addresses.pop("secure", False), **addresses}
         return cookie_settings_problems(lambda key, default=None: values.get(key, default))
 
-    @pytest.mark.parametrize("address", [
-        "apiserver.idp.public_origin", "apiserver.idp.public_url", "apiserver.idp.web_url",
-    ])
+    @pytest.mark.parametrize(
+        "address",
+        [
+            "apiserver.idp.public_origin",
+            "apiserver.idp.public_url",
+            "apiserver.idp.web_url",
+        ],
+    )
     def test_an_https_address_in_any_setting_needs_a_secure_cookie(self, address):
         assert len(self.problems(**{address: "https://cairnml.example", "secure": False})) == 1
 
-    @pytest.mark.parametrize("address", [
-        "apiserver.idp.public_origin", "apiserver.idp.public_url", "apiserver.idp.web_url",
-    ])
+    @pytest.mark.parametrize(
+        "address",
+        [
+            "apiserver.idp.public_origin",
+            "apiserver.idp.public_url",
+            "apiserver.idp.web_url",
+        ],
+    )
     def test_an_https_address_with_a_secure_cookie_starts(self, address):
         assert self.problems(**{address: "https://cairnml.example", "secure": True}) == []
 

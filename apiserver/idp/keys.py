@@ -30,9 +30,7 @@ def load_private_key(pem: bytes) -> Ed25519PrivateKey:
 
 def public_key_pem(key: Ed25519PrivateKey | Ed25519PublicKey) -> str:
     public = key.public_key() if isinstance(key, Ed25519PrivateKey) else key
-    return public.public_bytes(
-        serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo
-    ).decode()
+    return public.public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo).decode()
 
 
 def load_public_key(pem: str) -> Ed25519PublicKey:

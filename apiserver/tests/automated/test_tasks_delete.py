@@ -50,9 +50,7 @@ class TestTasksResetDelete(TestService):
         self.assertEqual(res.urls.artifact_urls, [])
 
         task = self.new_task()
-        (_, published_model_urls), (model, draft_model_urls) = self.create_task_models(
-            task
-        )
+        (_, published_model_urls), (model, draft_model_urls) = self.create_task_models(task)
         artifact_urls = self.send_artifacts(task)
         event_urls = self.send_debug_image_events(task)
         event_urls.update(self.send_plot_events(task))
@@ -114,12 +112,8 @@ class TestTasksResetDelete(TestService):
             artifact_urls,
             event_urls,
         ) = self.create_task_with_data(project=project)
-        res = self.api.projects.delete(
-            project=project, force=True, delete_contents=True
-        )
-        self.assertEqual(
-            set(res.urls.model_urls), published_model_urls | draft_model_urls
-        )
+        res = self.api.projects.delete(project=project, force=True, delete_contents=True)
+        self.assertEqual(set(res.urls.model_urls), published_model_urls | draft_model_urls)
         self.assertEqual(res.deleted, 1)
         self.assertEqual(res.disassociated_tasks, 0)
         self.assertEqual(res.deleted_tasks, 1)
@@ -129,13 +123,9 @@ class TestTasksResetDelete(TestService):
         with self.api.raises(errors.bad_request.InvalidTaskId):
             self.api.tasks.get_by_id(task=task)
 
-    def create_task_with_data(
-        self, **kwargs
-    ) -> Tuple[str, Tuple[Set[str], Set[str]], Set[str], Set[str]]:
+    def create_task_with_data(self, **kwargs) -> Tuple[str, Tuple[Set[str], Set[str]], Set[str], Set[str]]:
         task = self.new_task(**kwargs)
-        (_, published_model_urls), (model, draft_model_urls) = self.create_task_models(
-            task, **kwargs
-        )
+        (_, published_model_urls), (model, draft_model_urls) = self.create_task_models(task, **kwargs)
         artifact_urls = self.send_artifacts(task)
         event_urls = self.send_debug_image_events(task)
         event_urls.update(self.send_plot_events(task))
@@ -145,9 +135,7 @@ class TestTasksResetDelete(TestService):
     def assert_delete_task(self, task_id, force=False, return_file_urls=False):
         tasks = self.api.tasks.get_all_ex(id=[task_id]).tasks
         self.assertEqual(tasks[0].id, task_id)
-        res = self.api.tasks.delete(
-            task=task_id, force=force, return_file_urls=return_file_urls
-        )
+        res = self.api.tasks.delete(task=task_id, force=force, return_file_urls=return_file_urls)
         self.assertTrue(res.deleted)
         tasks = self.api.tasks.get_all_ex(id=[task_id]).tasks
         self.assertEqual(tasks, [])
@@ -181,12 +169,8 @@ class TestTasksResetDelete(TestService):
         url1 = "http://link1"
         url2 = "http://link2"
         events = [
-            self.create_event(
-                model, "training_debug_image", 0, url=url1, model_event=True
-            ),
-            self.create_event(
-                model, "plot", 0, plot_str=f'{{"source": "{url2}"}}', model_event=True
-            ),
+            self.create_event(model, "training_debug_image", 0, url=url1, model_event=True),
+            self.create_event(model, "plot", 0, plot_str=f'{{"source": "{url2}"}}', model_event=True),
         ]
         self.send_batch(events)
         return {url1, url2}
@@ -212,8 +196,7 @@ class TestTasksResetDelete(TestService):
             '{"data": [{"y": ["lying", "sitting", "standing", "people", "backgroun"], "x": ["lying", "sitting", "standing", "people", "backgroun"], "z": [[758, 163, 0, 0, 23], [63, 858, 3, 0, 0], [0, 50, 188, 21, 35], [0, 22, 8, 40, 4], [12, 91, 26, 29, 368]], "type": "heatmap"}], "layout": {"title": "Confusion Matrix for iter 100", "xaxis": {"title": "Predicted value"}, "yaxis": {"title": "Real value"}}}',
         ]
         events = [
-            self.create_event(task, "plot", iteration, plot_str=plot_str)
-            for iteration, plot_str in enumerate(plots)
+            self.create_event(task, "plot", iteration, plot_str=plot_str) for iteration, plot_str in enumerate(plots)
         ]
         self.send_batch(events)
         return {
@@ -241,14 +224,20 @@ class TestTasksResetDelete(TestService):
     delete_params = dict(can_fail=True, force=True)
 
     def new_task(self, **kwargs):
-        self.update_missing(
-            kwargs, name=self.name, type="testing"
+        self.update_missing(kwargs, name=self.name, type="testing")
+        return self.create_temp(
+            "tasks",
+            delete_params=self.delete_params,
+            **kwargs,
         )
-        return self.create_temp("tasks", delete_params=self.delete_params, **kwargs,)
 
     def new_model(self, **kwargs):
         self.update_missing(kwargs, name=self.name, uri="file:///a/b", labels={})
-        return self.create_temp("models", delete_params=self.delete_params, **kwargs,)
+        return self.create_temp(
+            "models",
+            delete_params=self.delete_params,
+            **kwargs,
+        )
 
     def new_project(self, **kwargs):
         self.update_missing(kwargs, name=self.name, description="")

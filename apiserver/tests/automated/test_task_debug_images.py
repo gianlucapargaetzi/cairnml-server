@@ -10,9 +10,7 @@ class TestTaskDebugImages(TestService):
         super().setUp(version=version)
 
     def _temp_task(self, name="test task events"):
-        task_input = dict(
-            name=name, type="training"
-        )
+        task_input = dict(name=name, type="training")
         return self.create_temp("tasks", **task_input)
 
     @staticmethod
@@ -32,9 +30,7 @@ class TestTaskDebugImages(TestService):
         variant = "Variant1"
 
         # test empty
-        res = self.api.events.get_debug_image_sample(
-            task=task, metric=metric, variant=variant
-        )
+        res = self.api.events.get_debug_image_sample(task=task, metric=metric, variant=variant)
         self.assertEqual(res.min_iteration, None)
         self.assertEqual(res.max_iteration, None)
         self.assertEqual(res.event, None)
@@ -55,9 +51,7 @@ class TestTaskDebugImages(TestService):
         self.send_batch(events)
 
         # if iteration is not specified then return the event from the last one
-        res = self.api.events.get_debug_image_sample(
-            task=task, metric=metric, variant=variant
-        )
+        res = self.api.events.get_debug_image_sample(task=task, metric=metric, variant=variant)
         self._assertEqualEvent(res.event, events[-1])
         self.assertEqual(res.max_iteration, iterations - 1)
         self.assertEqual(res.min_iteration, max(0, iterations - unique_images))
@@ -95,30 +89,20 @@ class TestTaskDebugImages(TestService):
         self.send_batch(events)
 
         # init scroll
-        res = self.api.events.get_debug_image_sample(
-            task=task, metric=metric, variant=variant1
-        )
+        res = self.api.events.get_debug_image_sample(task=task, metric=metric, variant=variant1)
         self._assertEqualEvent(res.event, events[-2])
 
         # navigate forwards
-        res = self.api.events.next_debug_image_sample(
-            task=task, scroll_id=res.scroll_id, navigate_earlier=False
-        )
+        res = self.api.events.next_debug_image_sample(task=task, scroll_id=res.scroll_id, navigate_earlier=False)
         self._assertEqualEvent(res.event, events[-1])
-        res = self.api.events.next_debug_image_sample(
-            task=task, scroll_id=res.scroll_id, navigate_earlier=False
-        )
+        res = self.api.events.next_debug_image_sample(task=task, scroll_id=res.scroll_id, navigate_earlier=False)
         self.assertEqual(res.event, None)
 
         # navigate backwards
         for i in range(3):
-            res = self.api.events.next_debug_image_sample(
-                task=task, scroll_id=res.scroll_id
-            )
+            res = self.api.events.next_debug_image_sample(task=task, scroll_id=res.scroll_id)
             self._assertEqualEvent(res.event, events[-2 - i])
-        res = self.api.events.next_debug_image_sample(
-            task=task, scroll_id=res.scroll_id
-        )
+        res = self.api.events.next_debug_image_sample(task=task, scroll_id=res.scroll_id)
         self.assertEqual(res.event, None)
 
     def _assertEqualEvent(self, ev1: dict, ev2: dict):
@@ -131,9 +115,7 @@ class TestTaskDebugImages(TestService):
         # test empty
         res = self.api.events.debug_images(metrics=[{"task": task}], iters=5)
         self.assertFalse(res.metrics[0].iterations)
-        res = self.api.events.debug_images(
-            metrics=[{"task": task}], iters=5, scroll_id=res.scroll_id, refresh=True
-        )
+        res = self.api.events.debug_images(metrics=[{"task": task}], iters=5, scroll_id=res.scroll_id, refresh=True)
         self.assertFalse(res.metrics[0].iterations)
 
         # test not empty
@@ -153,9 +135,7 @@ class TestTaskDebugImages(TestService):
             for variant in variants
         ]
         self.send_batch(events)
-        scroll_id = self._assertTaskMetrics(
-            task=task, expected_metrics=metrics, iterations=1
-        )
+        scroll_id = self._assertTaskMetrics(task=task, expected_metrics=metrics, iterations=1)
 
         # test refresh
         update = {
@@ -175,9 +155,7 @@ class TestTaskDebugImages(TestService):
         ]
         self.send_batch(events)
         # without refresh the metric states are not updated
-        scroll_id = self._assertTaskMetrics(
-            task=task, expected_metrics=metrics, iterations=0, scroll_id=scroll_id
-        )
+        scroll_id = self._assertTaskMetrics(task=task, expected_metrics=metrics, iterations=0, scroll_id=scroll_id)
 
         # with refresh there are new metrics and existing ones are updated
         self._assertTaskMetrics(
@@ -198,9 +176,7 @@ class TestTaskDebugImages(TestService):
         scroll_id: str = None,
         refresh=False,
     ) -> str:
-        res = self.api.events.debug_images(
-            metrics=[{"task": task}], iters=1, scroll_id=scroll_id, refresh=refresh
-        )
+        res = self.api.events.debug_images(metrics=[{"task": task}], iters=1, scroll_id=scroll_id, refresh=refresh)
         if not iterations:
             self.assertTrue(all(m.iterations == [] for m in res.metrics))
             return res.scroll_id
@@ -209,9 +185,7 @@ class TestTaskDebugImages(TestService):
         for metric_data in res.metrics:
             self.assertEqual(len(metric_data.iterations), iterations)
             for it_data in metric_data.iterations:
-                self.assertEqual(
-                    set((e.metric, e.variant) for e in it_data.events), expected_variants
-                )
+                self.assertEqual(set((e.metric, e.variant) for e in it_data.events), expected_variants)
 
         return res.scroll_id
 
@@ -223,7 +197,8 @@ class TestTaskDebugImages(TestService):
 
         # test empty
         res = self.api.events.debug_images(
-            metrics=[{"task": task, "metric": metric}], iters=5,
+            metrics=[{"task": task, "metric": metric}],
+            iters=5,
         )
         self.assertFalse(res.metrics[0].iterations)
 
@@ -257,9 +232,7 @@ class TestTaskDebugImages(TestService):
             scroll_id = assert_debug_images(scroll_id=scroll_id, expected_page=page)
 
         # test backwards navigation
-        scroll_id = assert_debug_images(
-            scroll_id=scroll_id, expected_page=0, navigate_earlier=False
-        )
+        scroll_id = assert_debug_images(scroll_id=scroll_id, expected_page=0, navigate_earlier=False)
 
         # beyond the latest iteration and back
         res = self.api.events.debug_images(
@@ -296,9 +269,7 @@ class TestTaskDebugImages(TestService):
         left_iterations = max(0, max(unique_images) - expected_page * iters)
         self.assertEqual(len(data["iterations"]), min(iters, left_iterations))
         for it in data["iterations"]:
-            events_per_iter = sum(
-                1 for unique in unique_images if unique > max_iter - it["iter"]
-            )
+            events_per_iter = sum(1 for unique in unique_images if unique > max_iter - it["iter"])
             self.assertEqual(len(it["events"]), events_per_iter)
         return res.scroll_id
 

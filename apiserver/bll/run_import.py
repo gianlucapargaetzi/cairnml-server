@@ -153,7 +153,9 @@ def read_scalars(text: str) -> List[dict]:
             try:
                 iteration = int(float(epoch))
             except ValueError:
-                raise errors.bad_request.ValidationError("results.csv: epoch must be a number", field=SCALARS_NAME) from None
+                raise errors.bad_request.ValidationError(
+                    "results.csv: epoch must be a number", field=SCALARS_NAME
+                ) from None
         for column, raw in row.items():
             if column is None or column.strip() == "epoch" or raw in (None, ""):
                 continue
@@ -177,15 +179,13 @@ def read_args(text: str) -> Dict[str, str]:
     if not isinstance(data, dict):
         raise errors.bad_request.ValidationError("args.yaml: must be a mapping", field=ARGS_NAME)
     return {
-        str(key): value if isinstance(value, str) else json.dumps(value, default=str)
-        for key, value in data.items()
+        str(key): value if isinstance(value, str) else json.dumps(value, default=str) for key, value in data.items()
     }
 
 
 def hyperparams_from_args(args: Dict[str, str]) -> dict:
     section = {
-        name: {"section": ARGS_SECTION, "name": name, "value": value, "type": "str"}
-        for name, value in args.items()
+        name: {"section": ARGS_SECTION, "name": name, "value": value, "type": "str"} for name, value in args.items()
     }
     fields = {"hyperparams": {ARGS_SECTION: section}} if section else {}
     params_prepare_for_save(fields)
@@ -198,7 +198,7 @@ def planned_artifacts(root: str, names: Sequence[str]) -> List[Planned]:
     for member in names:
         if member.endswith("/"):
             continue
-        relative = member[len(root) + 1:]
+        relative = member[len(root) + 1 :]
         if relative.startswith(WEIGHTS_DIR):
             planned.append(Planned(relative, member, "model"))
         elif relative.startswith(EXPORTS_DIR) or relative == PLOT_NAME:
@@ -346,9 +346,7 @@ def run_import(company: str, identity: Identity, chunk_id: str) -> dict:
                 raise
 
             if manifest.tags:
-                org_bll.update_tags(
-                    company, Tags.Task, projects=[project.id], tags=manifest.tags, system_tags=[]
-                )
+                org_bll.update_tags(company, Tags.Task, projects=[project.id], tags=manifest.tags, system_tags=[])
             update_project_time(project.id)
 
     datachunks.delete(company=company, chunks=[chunk])

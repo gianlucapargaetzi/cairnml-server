@@ -35,16 +35,18 @@ def new_login() -> dict:
 
 
 def authorize_url(issuer: str, client_id: str, redirect_uri: str, state: str, nonce: str, challenge: str) -> str:
-    query = urlencode({
-        "client_id": client_id,
-        "redirect_uri": redirect_uri,
-        "response_type": "code",
-        "scope": "openid profile",
-        "state": state,
-        "nonce": nonce,
-        "code_challenge": challenge,
-        "code_challenge_method": "S256",
-    })
+    query = urlencode(
+        {
+            "client_id": client_id,
+            "redirect_uri": redirect_uri,
+            "response_type": "code",
+            "scope": "openid profile",
+            "state": state,
+            "nonce": nonce,
+            "code_challenge": challenge,
+            "code_challenge_method": "S256",
+        }
+    )
     return f"{issuer.rstrip('/')}/protocol/openid-connect/auth?{query}"
 
 
@@ -54,18 +56,23 @@ _KEY = "idp:login:"
 def start_login(store, issuer: str, client_id: str, redirect_uri: str) -> str:
     """Create a login, remember its state for LOGIN_TTL_SEC, and return the IdP's sign-in URL."""
     login = new_login()
-    store.set(f"{_KEY}{login['state']}", json.dumps({"nonce": login["nonce"], "verifier": login["verifier"]}),
-              ex=LOGIN_TTL_SEC)
-    return authorize_url(issuer, client_id, redirect_uri, login["state"], login["nonce"],
-                         pkce_challenge(login["verifier"]))
+    store.set(
+        f"{_KEY}{login['state']}",
+        json.dumps({"nonce": login["nonce"], "verifier": login["verifier"]}),
+        ex=LOGIN_TTL_SEC,
+    )
+    return authorize_url(
+        issuer, client_id, redirect_uri, login["state"], login["nonce"], pkce_challenge(login["verifier"])
+    )
 
 
 class LoginRefused(Exception):
     pass
 
 
-def finish_login(store, http, verifier, issuer: str, client_id: str, redirect_uri: str,
-                 state: str, code: str, admin_role: str):
+def finish_login(
+    store, http, verifier, issuer: str, client_id: str, redirect_uri: str, state: str, code: str, admin_role: str
+):
     """Exchange the code for tokens and create the CairnML user. Returns (user, identity).
 
     Each state is used once: it is removed from the store before anything else happens.
@@ -76,8 +83,13 @@ def finish_login(store, http, verifier, issuer: str, client_id: str, redirect_ur
     pending = json.loads(raw)
     response = http.post(
         f"{issuer.rstrip('/')}/protocol/openid-connect/token",
-        data={"grant_type": "authorization_code", "code": code, "redirect_uri": redirect_uri,
-              "client_id": client_id, "code_verifier": pending["verifier"]},
+        data={
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": redirect_uri,
+            "client_id": client_id,
+            "code_verifier": pending["verifier"],
+        },
         timeout=10,
     )
     if response.status_code != 200:

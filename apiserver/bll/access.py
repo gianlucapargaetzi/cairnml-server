@@ -68,8 +68,9 @@ def _project_share_applies(company: str, share: Share, user: str, project_roots:
     )
 
 
-def _share_level(company: str, share: Share, user: str, project_roots: Set[str], include_projects: bool,
-                 check_active: bool) -> Optional[str]:
+def _share_level(
+    company: str, share: Share, user: str, project_roots: Set[str], include_projects: bool, check_active: bool
+) -> Optional[str]:
     """The level one share gives the user, or None when it gives them none."""
     if share.scope == "public":
         return "read"
@@ -80,8 +81,16 @@ def _share_level(company: str, share: Share, user: str, project_roots: Set[str],
     return share.level if _project_share_applies(company, share, user, project_roots, check_active) else None
 
 
-def level_of(company: str, user: str, is_admin: bool, resource_type: str, resource_id: str,
-             project_roots: Set[str], include_projects: bool = True, check_active: bool = True) -> Optional[str]:
+def level_of(
+    company: str,
+    user: str,
+    is_admin: bool,
+    resource_type: str,
+    resource_id: str,
+    project_roots: Set[str],
+    include_projects: bool = True,
+    check_active: bool = True,
+) -> Optional[str]:
     """The highest level the user holds on the resource, or None when nothing gives them one. With check_active a
     deactivated user holds no level at all, whatever their ownership, role or share. include_projects=False leaves out
     the project shares: a queue allocated to a project does not count, as for an agent that serves a queue.
@@ -100,8 +109,9 @@ def level_of(company: str, user: str, is_admin: bool, resource_type: str, resour
     return best
 
 
-def queue_ids_held(company: str, user: str, project_roots: Set[str], include_projects: bool = True,
-                   check_active: bool = True) -> Set[str]:
+def queue_ids_held(
+    company: str, user: str, project_roots: Set[str], include_projects: bool = True, check_active: bool = True
+) -> Set[str]:
     """The queues the user holds a level on without being an admin: the ones they own, public ones, the ones granted to
     them, and with include_projects the ones allocated to a root project that applies to them (see level_of)."""
     if not user or (check_active and not is_active(user)):
@@ -111,8 +121,9 @@ def queue_ids_held(company: str, user: str, project_roots: Set[str], include_pro
     if include_projects:
         scopes |= Q(scope="projects", project__in=list(project_roots))
     for share in Share.objects(Q(company=company, resource_type="queue") & scopes):
-        if share.resource_id not in held and _share_level(company, share, user, project_roots, include_projects,
-                                                          check_active):
+        if share.resource_id not in held and _share_level(
+            company, share, user, project_roots, include_projects, check_active
+        ):
             held.add(share.resource_id)
     return held
 
@@ -122,8 +133,9 @@ def queue_ids_allocated(company: str, user: str, project_roots: Set[str], check_
     if not user or not project_roots:
         return set()
     shares = Share.objects(company=company, resource_type="queue", scope="projects", project__in=list(project_roots))
-    return {share.resource_id for share in shares
-            if _share_level(company, share, user, project_roots, True, check_active)}
+    return {
+        share.resource_id for share in shares if _share_level(company, share, user, project_roots, True, check_active)
+    }
 
 
 def shared_project_ids(company: str, resource_type: str, resource_id: str) -> Set[str]:
@@ -134,20 +146,27 @@ def shared_project_ids(company: str, resource_type: str, resource_id: str) -> Se
 
 def project_shares(company: str, resource_type: str, project: str, resource_ids: list) -> dict:
     """The project's share record of each resource, keyed by the resource id: its own level, id and inherited flag."""
-    shares = Share.objects(company=company, resource_type=resource_type, scope="projects", project=project,
-                           resource_id__in=list(resource_ids))
+    shares = Share.objects(
+        company=company,
+        resource_type=resource_type,
+        scope="projects",
+        project=project,
+        resource_id__in=list(resource_ids),
+    )
     return {share.resource_id: share for share in shares}
 
 
 def resource_ids_shared_with(company: str, resource_type: str, project: str) -> list:
     """The resources shared with a root project, in the order they were shared, whether or not the share applies today."""
     shares = Share.objects(company=company, resource_type=resource_type, scope="projects", project=project).order_by(
-        "created")
+        "created"
+    )
     return [share.resource_id for share in shares]
 
 
-def require(company: str, user: str, is_admin: bool, resource_type: str, resource_id: str,
-            project_roots: Set[str], action: str) -> None:
+def require(
+    company: str, user: str, is_admin: bool, resource_type: str, resource_id: str, project_roots: Set[str], action: str
+) -> None:
     """Raises when the user may not perform the action: not-found when they hold no level at all, and forbidden when
     they hold a level that does not allow the action."""
     level = level_of(company, user, is_admin, resource_type, resource_id, project_roots)
@@ -175,16 +194,43 @@ def _require_active(actor: str) -> None:
 
 
 def _require_sharing(company: str, actor: str, resource_type: str, resource_id: str) -> None:
-    require(company, actor, _is_admin(company, actor), resource_type, resource_id, _roots_of(company, actor),
-            "manage_sharing")
+    require(
+        company,
+        actor,
+        _is_admin(company, actor),
+        resource_type,
+        resource_id,
+        _roots_of(company, actor),
+        "manage_sharing",
+    )
 
 
-def _create(company: str, granted_by: str, resource_type: str, resource_id: str, scope: str, project: str,
-            level: str, user: str, *, inherited: bool = False, run_id: Optional[str] = None) -> Share:
+def _create(
+    company: str,
+    granted_by: str,
+    resource_type: str,
+    resource_id: str,
+    scope: str,
+    project: str,
+    level: str,
+    user: str,
+    *,
+    inherited: bool = False,
+    run_id: Optional[str] = None,
+) -> Share:
     record = Share(
-        id=uuid.uuid4().hex, company=company, resource_type=resource_type, resource_id=resource_id, scope=scope,
-        project=project if scope == "projects" else "", user=user if scope == "user" else "", level=level,
-        granted_by=granted_by, created=datetime.utcnow(), inherited=inherited, run_id=run_id,
+        id=uuid.uuid4().hex,
+        company=company,
+        resource_type=resource_type,
+        resource_id=resource_id,
+        scope=scope,
+        project=project if scope == "projects" else "",
+        user=user if scope == "user" else "",
+        level=level,
+        granted_by=granted_by,
+        created=datetime.utcnow(),
+        inherited=inherited,
+        run_id=run_id,
     )
     try:
         record.save()
@@ -204,8 +250,9 @@ def list_shares(company: str, actor: str, resource_type: str, resource_id: str) 
     return list(Share.objects(company=company, resource_type=resource_type, resource_id=resource_id))
 
 
-def share(company: str, actor: str, resource_type: str, resource_id: str, scope: str, project: str,
-          level: str, user: str = "") -> Share:
+def share(
+    company: str, actor: str, resource_type: str, resource_id: str, scope: str, project: str, level: str, user: str = ""
+) -> Share:
     """Grants the resource at the level to a project, to everyone (public) or to one user (user scope, queues only).
     The actor must be active and hold manage_sharing on the resource."""
     _require_active(actor)
@@ -222,14 +269,18 @@ def _project_steward(company: str, project_id: str, actor: str) -> bool:
     if project is None or not actor:
         return False
     return project.user == actor or any(
-        member.user == actor and member.role == ProjectRole.collaborator for member in project.members)
+        member.user == actor and member.role == ProjectRole.collaborator for member in project.members
+    )
 
 
 def _may_revoke_from_project(company: str, actor: str, record: Share) -> bool:
     """A repository or queue share of a project may be revoked by the project's owner and collaborators, besides
     the holders of manage_sharing on the resource (see _require_sharing)."""
-    return (record.scope == "projects" and record.resource_type in ("repository", "queue")
-            and _project_steward(company, record.project, actor))
+    return (
+        record.scope == "projects"
+        and record.resource_type in ("repository", "queue")
+        and _project_steward(company, record.project, actor)
+    )
 
 
 def unshare(company: str, actor: str, share_id: str) -> None:
@@ -249,10 +300,13 @@ def unshare(company: str, actor: str, share_id: str) -> None:
 # --- allocation of a queue or a dataset to a project is granted by the owner of the project (R20), and the owner of a
 # --- project may allocate what they only use. Both are idempotent.
 
-def find_share(company: str, resource_type: str, resource_id: str, scope: str, project: str = "",
-               user: str = "") -> Optional[Share]:
-    return Share.objects(company=company, resource_type=resource_type, resource_id=resource_id, scope=scope,
-                         project=project, user=user).first()
+
+def find_share(
+    company: str, resource_type: str, resource_id: str, scope: str, project: str = "", user: str = ""
+) -> Optional[Share]:
+    return Share.objects(
+        company=company, resource_type=resource_type, resource_id=resource_id, scope=scope, project=project, user=user
+    ).first()
 
 
 def refuse_inactive(actor: str) -> None:
@@ -261,9 +315,20 @@ def refuse_inactive(actor: str) -> None:
         raise errors.forbidden.NoWritePermission("a deactivated user may not change sharing")
 
 
-def record_grant(company: str, granted_by: str, resource_type: str, resource_id: str, scope: str, project: str = "",
-                 user: str = "", level: str = "read", *, actor: str, inherited: bool = False,
-                 run_id: Optional[str] = None) -> Share:
+def record_grant(
+    company: str,
+    granted_by: str,
+    resource_type: str,
+    resource_id: str,
+    scope: str,
+    project: str = "",
+    user: str = "",
+    level: str = "read",
+    *,
+    actor: str,
+    inherited: bool = False,
+    run_id: Optional[str] = None,
+) -> Share:
     """The share of a grant the old field has just gained, written for the actor who changed the field. An existing
     share of the same grant is kept as it is. inherited and run_id mark a share the server made because a run used
     the resource (bll/repository_runs)."""
@@ -271,16 +336,19 @@ def record_grant(company: str, granted_by: str, resource_type: str, resource_id:
     existing = find_share(company, resource_type, resource_id, scope, project, user)
     if existing is not None:
         return existing
-    return _create(company, granted_by, resource_type, resource_id, scope, project, level, user,
-                   inherited=inherited, run_id=run_id)
+    return _create(
+        company, granted_by, resource_type, resource_id, scope, project, level, user, inherited=inherited, run_id=run_id
+    )
 
 
-def remove_grant(company: str, resource_type: str, resource_id: str, scope: str, project: str = "",
-                 user: str = "", *, actor: str) -> None:
+def remove_grant(
+    company: str, resource_type: str, resource_id: str, scope: str, project: str = "", user: str = "", *, actor: str
+) -> None:
     """The share of a grant the old field has just lost. Nothing happens when there is none."""
     refuse_inactive(actor)
-    Share.objects(company=company, resource_type=resource_type, resource_id=resource_id, scope=scope,
-                  project=project, user=user).delete()
+    Share.objects(
+        company=company, resource_type=resource_type, resource_id=resource_id, scope=scope, project=project, user=user
+    ).delete()
 
 
 def drop_resource_shares(company: str, resource_type: str, resource_id: str, *, actor: str) -> None:
@@ -299,6 +367,7 @@ def revoke_member_shares(company: str, project: str, member: str, *, actor: str)
 # --- Notices of inherited repositories. A run links the repositories it used to its project (bll/repository_runs);
 # --- the user who ran the run sees each such share as a notice, while they still have use on the project.
 
+
 def _entitled_to_notice(company: str, user: str, share: Share, project_roots: Set[str]) -> bool:
     """Whether the user is entitled to the notice of an inherited repository link: they ran the run it was made for, and the
     link still gives them use on the project (the user is an active member of it, see level_of)."""
@@ -316,21 +385,24 @@ def notices(company: str, user: str) -> list:
     if not user or not is_active(user):
         return []
     roots = _roots_of(company, user)
-    shares = Share.objects(company=company, resource_type="repository", scope="projects", inherited=True,
-                           dismissed_by__ne=user).order_by("-created")
+    shares = Share.objects(
+        company=company, resource_type="repository", scope="projects", inherited=True, dismissed_by__ne=user
+    ).order_by("-created")
     found = []
     for share in shares:
         if not _entitled_to_notice(company, user, share, roots):
             continue
         dataset = Repository.objects(company=company, id=share.resource_id).only("name").first()
         project = Project.objects(company=company, id=share.project).only("name").first()
-        found.append({
-            "id": share.id,
-            "run_id": share.run_id,
-            "dataset": dataset.name if dataset else "",
-            "project": project.name if project else "",
-            "created": share.created.isoformat() if share.created else None,
-        })
+        found.append(
+            {
+                "id": share.id,
+                "run_id": share.run_id,
+                "dataset": dataset.name if dataset else "",
+                "project": project.name if project else "",
+                "created": share.created.isoformat() if share.created else None,
+            }
+        )
     return found
 
 

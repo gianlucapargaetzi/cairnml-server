@@ -103,9 +103,7 @@ def get_entities_count(call: APICall, company, request: EntitiesCountRequest):
         "reports": Task,
     }
 
-    def calc_entities_count(
-        field: str, data: dict, entity_cls: Type[AttributedDocument]
-    ) -> int:
+    def calc_entities_count(field: str, data: dict, entity_cls: Type[AttributedDocument]) -> int:
         if field == "reports":
             data["type"] = TaskType.report
         elif field == "pipeline_runs":
@@ -245,9 +243,7 @@ def _get_download_getter_fn(
         call_data = Metadata.escape_query_parameters(call_data)
         get_fn = get_model_data
     else:
-        raise errors.bad_request.ValidationError(
-            f"Unsupported entity type: {str(entity_type)}"
-        )
+        raise errors.bad_request.ValidationError(f"Unsupported entity type: {str(entity_type)}")
 
     def getter(page: int, page_size: int) -> Sequence[dict]:
         call_data.pop("scroll_id", None)
@@ -262,9 +258,7 @@ def _get_download_getter_fn(
 
 
 @endpoint("organization.prepare_download_for_get_all")
-def prepare_download_for_get_all(
-    call: APICall, company: str, request: PrepareDownloadForGetAllRequest
-):
+def prepare_download_for_get_all(call: APICall, company: str, request: PrepareDownloadForGetAllRequest):
     # validate input params
     field_names = set()
     for fm in request.field_mappings:
@@ -305,6 +299,7 @@ def prepare_download_for_get_all(
 
 _dangerous_chars = ("=", "+", "-", "@", "\t", "\r")
 
+
 def _sanitize_csv(value: str) -> str:
     """
     Prevent csv injection:
@@ -315,13 +310,12 @@ def _sanitize_csv(value: str) -> str:
         return f"'{value}"
     return value
 
+
 @endpoint("organization.download_for_get_all")
 def download_for_get_all(call: APICall, company, request: DownloadForGetAllRequest):
     request_data = redis.get(f"get_all_download_{request.prepare_id}")
     if not request_data:
-        raise errors.bad_request.InvalidId(
-            "prepare ID not found", prepare_id=request.prepare_id
-        )
+        raise errors.bad_request.InvalidId("prepare ID not found", prepare_id=request.prepare_id)
 
     try:
         call_data = json.loads(request_data)
@@ -345,10 +339,7 @@ def download_for_get_all(call: APICall, company, request: DownloadForGetAllReque
         field_mappings = {
             mapping.get("name", mapping["field"]): {
                 "field_path": get_field_path(mapping["field"]),
-                "values": {
-                    v.get("key"): v.get("value")
-                    for v in (mapping.get("values") or [])
-                },
+                "values": {v.get("key"): v.get("value") for v in (mapping.get("values") or [])},
             }
             for mapping in call_data.get("field_mappings", [])
         }
@@ -363,9 +354,7 @@ def download_for_get_all(call: APICall, company, request: DownloadForGetAllReque
             yield csv.writer(SingleLine()).writerow(field_mappings)
             return
 
-        def get_entity_field_as_str(
-            data: dict, field_path: Sequence[str], values: Mapping
-        ) -> str:
+        def get_entity_field_as_str(data: dict, field_path: Sequence[str], values: Mapping) -> str:
             val = nested_get(data, field_path, "")
             if isinstance(val, dict):
                 val = val.get("id", "")
@@ -376,9 +365,7 @@ def download_for_get_all(call: APICall, company, request: DownloadForGetAllReque
 
         def get_projected_fields(data: dict) -> Sequence[str]:
             return [
-                get_entity_field_as_str(
-                    data, field_path=m["field_path"], values=m["values"]
-                )
+                get_entity_field_as_str(data, field_path=m["field_path"], values=m["values"])
                 for m in field_mappings.values()
             ]
 
@@ -428,9 +415,7 @@ def download_for_get_all(call: APICall, company, request: DownloadForGetAllReque
 
         return project.basename[: conf.get("download.max_project_name_length", 60)]
 
-    call.result.filename = "-".join(
-        filter(None, ("cairnml", get_project_name(), f"{request.entity_type}s.csv"))
-    )
+    call.result.filename = "-".join(filter(None, ("cairnml", get_project_name(), f"{request.entity_type}s.csv")))
     call.result.content_type = "text/csv"
     call.result.raw_data = stream_with_context(generate())
 

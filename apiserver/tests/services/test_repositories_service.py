@@ -1,5 +1,6 @@
 """The repositories service: the only service for code repositories, datasets and registries. What a person's machine and a job
 get, assigning by address, and that the old services are gone."""
+
 from datetime import datetime
 from types import SimpleNamespace
 from uuid import uuid4
@@ -40,13 +41,22 @@ def world(monkeypatch):
     for user, role in (("admin", "admin"), ("owner", "user"), ("member", "user"), ("stranger", "user")):
         AuthUser(id=user, name=user.title(), company=company, role=role, created=now).save()
     root = f"p-{company}"
-    Project(id=root, company=company, user="owner", name="P", basename="P", created=now, last_update=now,
-            members=[ProjectMember(user="member", role=ProjectRole.read, added=now, added_by="owner")]).save()
+    Project(
+        id=root,
+        company=company,
+        user="owner",
+        name="P",
+        basename="P",
+        created=now,
+        last_update=now,
+        members=[ProjectMember(user="member", role=ProjectRole.read, added=now, added_by="owner")],
+    ).save()
     state = SimpleNamespace(company=company, root=root, private=True, audits=[], audit_details=[])
     monkeypatch.setattr(store, "key_material", lambda: "test-key-material")
     _patch(monkeypatch, "is_private", lambda address: state.private)
     _patch(monkeypatch, "_check_reads", lambda entry, repo: None)
     _patch(monkeypatch, "_company_reach", lambda repo: (None, "no company GitHub App is set up"))
+
     def record_audit(actor, action, **detail):
         state.audits.append((actor, action))
         state.audit_details.append(detail)
@@ -59,14 +69,22 @@ def world(monkeypatch):
 
 
 def call(user, data, role="user", token_kind="client", job_task=None):
-    return SimpleNamespace(data=data, identity=SimpleNamespace(user=user, role=role),
-                           auth=SimpleNamespace(token_kind=token_kind, job_task=job_task), result=SimpleNamespace(data=None))
+    return SimpleNamespace(
+        data=data,
+        identity=SimpleNamespace(user=user, role=role),
+        auth=SimpleNamespace(token_kind=token_kind, job_task=job_task),
+        result=SimpleNamespace(data=None),
+    )
 
 
 def run(endpoint, world, user, data, **kwargs):
     """Run a handler as the call machinery does: with the request class of its endpoint built from the body."""
     c = call(user, data, **kwargs)
-    name = next(n for n in ServiceRepo.endpoint_names() if n.startswith("repositories.") and getattr(svc, n.split(".")[1]) is endpoint)
+    name = next(
+        n
+        for n in ServiceRepo.endpoint_names()
+        if n.startswith("repositories.") and getattr(svc, n.split(".")[1]) is endpoint
+    )
     model = ServiceRepo._get_endpoint(name, PartialVersion("2.40")).request_data_model
     try:
         request = model(**data) if model else None
@@ -79,32 +97,66 @@ def run(endpoint, world, user, data, **kwargs):
 
 
 def credential(world, entry_id, user, scope="user"):
-    UserAccess(id=entry_id, company=world.company, user=user, kind="app", app_id="1", label=entry_id, scope=scope, host="github.com",
-               path="", secret=store.encrypt("pem", store.key_material()), created=datetime.utcnow()).save()
+    UserAccess(
+        id=entry_id,
+        company=world.company,
+        user=user,
+        kind="app",
+        app_id="1",
+        label=entry_id,
+        scope=scope,
+        host="github.com",
+        path="",
+        secret=store.encrypt("pem", store.key_material()),
+        created=datetime.utcnow(),
+    ).save()
 
 
 # --- the services ---------------------------------------------------------------------------------------------------------------
 
+
 def test_the_old_services_are_gone_and_the_new_one_is_there():
     names = ServiceRepo.endpoint_names()
     assert not [n for n in names if n.startswith(("datasets.", "dataset_registry.", "repo_access."))]
-    assert {"repositories.get_all", "repositories.add", "repositories.assign", "repositories.unassign", "repositories.check",
-            "repositories.set_shared", "repositories.check_sharing", "repositories.link", "repositories.unlink", "repositories.refresh", "repositories.git_token",
-            "repositories.clone", "repositories.find", "repositories.resolve", "repositories.requirement",
-            "repositories.get_details", "repositories.delete"} <= set(names)
+    assert {
+        "repositories.get_all",
+        "repositories.add",
+        "repositories.assign",
+        "repositories.unassign",
+        "repositories.check",
+        "repositories.set_shared",
+        "repositories.check_sharing",
+        "repositories.link",
+        "repositories.unlink",
+        "repositories.refresh",
+        "repositories.git_token",
+        "repositories.clone",
+        "repositories.find",
+        "repositories.resolve",
+        "repositories.requirement",
+        "repositories.get_details",
+        "repositories.delete",
+    } <= set(names)
     assert not {"user_access.grant", "user_access.revoke", "user_access.project_grants"} & set(names)
 
 
 def test_the_old_modules_and_records_are_gone():
     from importlib.util import find_spec
 
-    for module in ("apiserver.bll.datasets", "apiserver.bll.dataset_registry", "apiserver.bll.dataset_inheritance",
-                   "apiserver.bll.dataset_cache", "apiserver.bll.repo_access", "apiserver.database.model.dataset",
-                   "apiserver.database.model.code_repository"):
+    for module in (
+        "apiserver.bll.datasets",
+        "apiserver.bll.dataset_registry",
+        "apiserver.bll.dataset_inheritance",
+        "apiserver.bll.dataset_cache",
+        "apiserver.bll.repo_access",
+        "apiserver.database.model.dataset",
+        "apiserver.database.model.code_repository",
+    ):
         assert find_spec(module) is None, module
 
 
 # --- a person's token ------------------------------------------------------------------------------------------------------------
+
 
 def test_a_public_repository_is_read_without_a_token_by_anyone_who_sees_it(world):
     world.private = False
@@ -139,6 +191,7 @@ def test_only_the_owner_writes(world):
 
 # --- assigning, by address ---------------------------------------------------------------------------------------------------------
 
+
 def test_assigning_by_address_lists_the_repository_for_the_user_and_assigns(world):
     credential(world, "mine", "stranger")
     row = run(svc.assign, world, "stranger", {"repository": URL, "role": "dataset", "credential": "mine"})["repository"]
@@ -171,15 +224,21 @@ def test_the_admin_shares_a_repository_and_a_user_cannot(world):
     credential(world, "company-app", "admin", scope="company")
     refused = run(svc.check_sharing, world, "admin", {"id": repo.id}, role="admin")
     assert refused["ok"] is False and "company credential" in refused["message"]
-    assert run(svc.check_sharing, world, "admin", {"id": repo.id, "credential": "company-app"}, role="admin") == {"ok": True, "message": ""}
-    with pytest.raises(errors.bad_request.ValidationError):                      # sharing needs the credential
+    assert run(svc.check_sharing, world, "admin", {"id": repo.id, "credential": "company-app"}, role="admin") == {
+        "ok": True,
+        "message": "",
+    }
+    with pytest.raises(errors.bad_request.ValidationError):  # sharing needs the credential
         run(svc.set_shared, world, "admin", {"id": repo.id, "shared": True}, role="admin")
-    row = run(svc.set_shared, world, "admin", {"id": repo.id, "shared": True, "credential": "company-app"}, role="admin")["repository"]
+    row = run(
+        svc.set_shared, world, "admin", {"id": repo.id, "shared": True, "credential": "company-app"}, role="admin"
+    )["repository"]
     assert row["shared"] and row["owner_name"] == "Company"
     assert [r["name"] for r in run(svc.get_all, world, "stranger", {})["repositories"]] == ["cars"]
 
 
 # --- finding and cloning ----------------------------------------------------------------------------------------------------------
+
 
 def test_a_reference_is_found_by_name_by_address_and_by_id(world):
     repo = bll.add(world.company, "owner", False, URL, "dataset")
@@ -190,9 +249,18 @@ def test_a_reference_is_found_by_name_by_address_and_by_id(world):
 
 
 def make_job(world, enqueuer="member"):
-    task = Task(id=uuid4().hex, company=world.company, user="owner", name="train", type="training", created=datetime.utcnow(),
-                started=datetime.utcnow(), status=TaskStatus.in_progress, project=world.root,
-                execution=Execution(enqueued_by=enqueuer))
+    task = Task(
+        id=uuid4().hex,
+        company=world.company,
+        user="owner",
+        name="train",
+        type="training",
+        created=datetime.utcnow(),
+        started=datetime.utcnow(),
+        status=TaskStatus.in_progress,
+        project=world.root,
+        execution=Execution(enqueued_by=enqueuer),
+    )
     task.save()
     return task
 
@@ -201,13 +269,19 @@ def test_a_job_finds_and_clones_what_its_project_lists(world):
     world.private = False
     repo = bll.record_use(world.company, URL, "dataset", "owner", world.root)
     job = make_job(world)
-    assert run(svc.find, world, "owner", {"ref": "cars"}, token_kind="job", job_task=job.id)["repository"]["id"] == repo.id
+    assert (
+        run(svc.find, world, "owner", {"ref": "cars"}, token_kind="job", job_task=job.id)["repository"]["id"] == repo.id
+    )
     answer = run(svc.clone, world, "owner", {"ref": "cars", "commit": "abc"}, token_kind="job", job_task=job.id)
-    assert answer["repository"] == "https://github.com/acme/cars.git" and answer["token"] is None and answer["commit"] == "abc"
+    assert (
+        answer["repository"] == "https://github.com/acme/cars.git"
+        and answer["token"] is None
+        and answer["commit"] == "abc"
+    )
 
 
 def test_a_job_does_not_find_what_neither_its_user_nor_its_project_sees(world):
-    bll.add(world.company, "owner", False, URL, "dataset")            # owned by the owner, listed in no project
+    bll.add(world.company, "owner", False, URL, "dataset")  # owned by the owner, listed in no project
     job = make_job(world, enqueuer="stranger")
     with pytest.raises(errors.bad_request.ValidationError, match="no such dataset"):
         run(svc.find, world, "stranger", {"ref": "cars"}, token_kind="job", job_task=job.id)
@@ -231,7 +305,9 @@ def test_a_registry_is_read_the_moment_it_is_listed(world, monkeypatch):
 
     monkeypatch.setattr(registry_bll, "reader_for", lambda repo, user, project_root=None: Reader())
     world.private = False
-    answer = run(svc.add, world, "owner", {"url": "https://github.com/acme/registry", "role": "registry", "project": world.root})
+    answer = run(
+        svc.add, world, "owner", {"url": "https://github.com/acme/registry", "role": "registry", "project": world.root}
+    )
     assert [e["name"] for e in answer["repository"]["entries"]] == ["cars"]
 
 
@@ -251,8 +327,8 @@ def test_a_public_repository_nobody_listed_yet_gets_no_token_and_no_record(world
     world.private = False
     answer = run(svc.git_token, world, "owner", {"repository": "https://github.com/acme/registry", "level": "read"})
     assert answer["token"] is None and world.audits[-1] == ("owner", "git_token.public")
-    assert Repository.objects(company=world.company).count() == 0            # a run lists it when it records what it used
-    with pytest.raises(errors.bad_request.ValidationError):                  # a push needs a record and a credential
+    assert Repository.objects(company=world.company).count() == 0  # a run lists it when it records what it used
+    with pytest.raises(errors.bad_request.ValidationError):  # a push needs a record and a credential
         run(svc.git_token, world, "owner", {"repository": "https://github.com/acme/registry", "level": "read_write"})
 
 
@@ -263,6 +339,7 @@ def test_a_private_repository_nobody_listed_is_still_refused_with_the_hint(world
 
 
 # --- checking ------------------------------------------------------------------------------------------------------------------------
+
 
 def test_checking_returns_the_callers_own_result_and_audits_it(world, monkeypatch):
     credential(world, "good", "member")
@@ -280,6 +357,11 @@ def test_checking_returns_the_callers_own_result_and_audits_it(world, monkeypatc
     member = run(svc.check, world, "member", {"id": repo.id})["repository"]
     assert owner["state"] == "no_access" and "not installed" in owner["state_message"]
     assert member["state"] == "ok" and member["state_message"] == ""
-    assert [d["state"] for d in world.audit_details if "state" in d] == ["no_access", "ok"]   # each audit says what its caller sees
+    assert [d["state"] for d in world.audit_details if "state" in d] == [
+        "no_access",
+        "ok",
+    ]  # each audit says what its caller sees
     assert {r["name"]: r["state"] for r in run(svc.get_all, world, "member", {})["repositories"]} == {"cars": "ok"}
-    assert {r["name"]: r["state"] for r in run(svc.get_all, world, "owner", {})["repositories"]} == {"cars": "no_access"}
+    assert {r["name"]: r["state"] for r in run(svc.get_all, world, "owner", {})["repositories"]} == {
+        "cars": "no_access"
+    }

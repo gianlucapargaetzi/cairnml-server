@@ -20,10 +20,21 @@ MAX_SETTINGS_BYTES = 4096
 MAX_BOARD_BYTES = 131072
 DIVIDER = "divider"
 
-CARD_TYPES = frozenset({
-    "project-state", "recent-tasks", "metric-snapshot", "contributions", "description", "plot", "dataset-content",
-    "agents", "repositories", "progress", DIVIDER,
-})
+CARD_TYPES = frozenset(
+    {
+        "project-state",
+        "recent-tasks",
+        "metric-snapshot",
+        "contributions",
+        "description",
+        "plot",
+        "dataset-content",
+        "agents",
+        "repositories",
+        "progress",
+        DIVIDER,
+    }
+)
 
 
 def _fail(reason: str):

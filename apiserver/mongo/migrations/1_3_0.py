@@ -17,7 +17,8 @@ def _convert_metadata(db: Database, name):
             if isinstance(item, dict) and "key" in item
         }
         collection.update_one(
-            {"_id": doc["_id"]}, {"$set": {"metadata": metadata}},
+            {"_id": doc["_id"]},
+            {"$set": {"metadata": metadata}},
         )
 
 

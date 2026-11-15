@@ -38,8 +38,9 @@ def environment(home: Path, login_user: str = "", login_password: str = "") -> d
     return env
 
 
-def run(command: str, home: Path, *, login_user="", login_password="", timeout=240, args=(), extra_env=None,
-        stdin_text=None) -> Result:
+def run(
+    command: str, home: Path, *, login_user="", login_password="", timeout=240, args=(), extra_env=None, stdin_text=None
+) -> Result:
     """Runs a console script from the venv. The sign-in (if any) is the given account."""
     env = environment(home, login_user, login_password)
     env.update(extra_env or {})

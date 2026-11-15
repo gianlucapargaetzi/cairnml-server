@@ -44,10 +44,7 @@ def make_root(company, id_="root1", owner="owner1", visibility=ProjectVisibility
         basename=f"Project-{id_}",
         created=datetime.utcnow(),
         visibility=visibility,
-        members=[
-            ProjectMember(user=u, role=r, added=datetime.utcnow(), added_by=owner)
-            for u, r in members
-        ],
+        members=[ProjectMember(user=u, role=r, added=datetime.utcnow(), added_by=owner) for u, r in members],
     )
     project.save()
     return project

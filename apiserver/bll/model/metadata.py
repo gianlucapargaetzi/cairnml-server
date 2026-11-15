@@ -16,21 +16,14 @@ log = config.logger(__file__)
 
 class Metadata:
     @staticmethod
-    def metadata_from_api(
-        api_data: Union[Mapping[str, MetadataItem], Sequence[MetadataItem]]
-    ) -> dict:
+    def metadata_from_api(api_data: Union[Mapping[str, MetadataItem], Sequence[MetadataItem]]) -> dict:
         if not api_data:
             return {}
 
         if isinstance(api_data, dict):
-            return {
-                ParameterKeyEscaper.escape(k): v.to_struct()
-                for k, v in api_data.items()
-            }
+            return {ParameterKeyEscaper.escape(k): v.to_struct() for k, v in api_data.items()}
 
-        return {
-            ParameterKeyEscaper.escape(item.key): item.to_struct() for item in api_data
-        }
+        return {ParameterKeyEscaper.escape(item.key): item.to_struct() for item in api_data}
 
     @classmethod
     def edit_metadata(
@@ -53,10 +46,7 @@ class Metadata:
     @classmethod
     def delete_metadata(cls, obj: Document, keys: Sequence[str], **more_updates) -> int:
         return obj.update(
-            **{
-                f"unset__metadata__{ParameterKeyEscaper.escape(key)}": 1
-                for key in set(keys)
-            },
+            **{f"unset__metadata__{ParameterKeyEscaper.escape(key)}": 1 for key in set(keys)},
             **more_updates,
         )
 
@@ -69,9 +59,7 @@ class Metadata:
         parts = path.split(".")
         if len(parts) < 2 or len(parts) > 3:
             raise errors.bad_request.ValidationError("invalid field", path=path)
-        return ".".join(
-            ParameterKeyEscaper.escape(ParameterKeyEscaper.unescape(p)) for p in parts
-        )
+        return ".".join(ParameterKeyEscaper.escape(ParameterKeyEscaper.unescape(p)) for p in parts)
 
     @classmethod
     def escape_paths(cls, paths: Sequence[str]) -> Sequence[str]:
@@ -79,10 +67,7 @@ class Metadata:
             "metadata.",
             "-metadata.",
         ):
-            paths = [
-                cls._process_path(path) if path.startswith(prefix) else path
-                for path in paths
-            ]
+            paths = [cls._process_path(path) if path.startswith(prefix) else path for path in paths]
         return paths
 
     @classmethod
@@ -91,10 +76,7 @@ class Metadata:
             return call_data
 
         keys = list(call_data)
-        call_data = {
-            safe_key: call_data[key]
-            for key, safe_key in zip(keys, Metadata.escape_paths(keys))
-        }
+        call_data = {safe_key: call_data[key] for key, safe_key in zip(keys, Metadata.escape_paths(keys))}
 
         projection = GetMixin.get_projection(call_data)
         if projection:

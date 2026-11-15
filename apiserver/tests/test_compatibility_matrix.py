@@ -1,5 +1,6 @@
 """The compatibility matrix (docs/compatibility/matrix.md) covers the tracked areas, uses the four status values, gives a
 migration path for each row, and links only to pages and headings that exist."""
+
 import re
 from pathlib import Path
 
@@ -66,13 +67,18 @@ def test_every_link_points_at_an_existing_page_and_heading():
             path = DOCS / page
             assert path.is_file(), f"{row[0]}: {page} does not exist"
             if fragment:
-                headings = [_anchor(line.lstrip("#")) for line in path.read_text(encoding="utf-8").splitlines()
-                            if line.startswith("#")]
+                headings = [
+                    _anchor(line.lstrip("#"))
+                    for line in path.read_text(encoding="utf-8").splitlines()
+                    if line.startswith("#")
+                ]
                 assert fragment in headings, f"{row[0]}: no heading #{fragment} in {page}"
 
 
-@pytest.mark.parametrize("page", ["README.md", "matrix.md", "cli-migration.md", "dataset-migration.md",
-                                  "auth-and-storage.md", "agent-metering.md"])
+@pytest.mark.parametrize(
+    "page",
+    ["README.md", "matrix.md", "cli-migration.md", "dataset-migration.md", "auth-and-storage.md", "agent-metering.md"],
+)
 def test_the_compatibility_pages_exist(page):
     assert (DOCS / page).is_file()
 

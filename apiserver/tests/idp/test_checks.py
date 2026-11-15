@@ -55,10 +55,12 @@ class TestJobChecks(TestCase):
 class TestWebSessionChecks(TestCase):
     def test_enabled_user_may_use_a_web_session(self):
         from apiserver.idp.checks import check_user
+
         check_user(owner())
 
     def test_disabled_user_may_not_use_a_web_session(self):
         from apiserver.idp.checks import check_user
+
         with self.assertRaises(AccessDenied):
             check_user(owner(disabled=True))
 
@@ -69,25 +71,30 @@ class TestJobIssueChecks(TestCase):
 
     def test_agent_running_its_own_queued_task_may_get_a_job_token(self):
         from apiserver.idp.checks import check_job_issue
+
         check_job_issue("queued", "dev_a", self.agent())
         check_job_issue("in_progress", "dev_a", self.agent())
 
     def test_a_client_device_may_not_get_a_job_token(self):
         from apiserver.idp.checks import check_job_issue
+
         with self.assertRaises(AccessDenied):
             check_job_issue("queued", "dev_a", self.agent(kind="client"))
 
     def test_another_agents_task_is_refused(self):
         from apiserver.idp.checks import check_job_issue
+
         with self.assertRaises(AccessDenied):
             check_job_issue("queued", "dev_b", self.agent())
 
     def test_a_finished_task_is_refused(self):
         from apiserver.idp.checks import check_job_issue
+
         with self.assertRaises(AccessDenied):
             check_job_issue("stopped", "dev_a", self.agent())
 
     def test_a_missing_device_is_refused(self):
         from apiserver.idp.checks import check_job_issue
+
         with self.assertRaises(AccessDenied):
             check_job_issue("queued", "dev_a", None)

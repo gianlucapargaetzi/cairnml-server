@@ -35,10 +35,12 @@ def app_with(http):
 
 class TestPublicReads(TestCase):
     def test_a_public_repository_is_read_without_a_token(self):
-        http = FakeHttp({
-            "/repos/acme/registry": Response(200, {"private": False, "default_branch": "main"}),
-            "/repos/acme/registry/commits/main": Response(200, {"sha": "abc"}),
-        })
+        http = FakeHttp(
+            {
+                "/repos/acme/registry": Response(200, {"private": False, "default_branch": "main"}),
+                "/repos/acme/registry/commits/main": Response(200, {"sha": "abc"}),
+            }
+        )
         app = app_with(http)
         self.assertEqual(app.default_branch_head("acme/registry"), ("main", "abc"))
         self.assertEqual(http.authorized, [])
@@ -53,11 +55,13 @@ class TestPublicReads(TestCase):
 
     def test_a_public_folder_is_read_file_by_file(self):
         listing = [{"name": "cars.yaml", "type": "file"}, {"name": "sub", "type": "dir"}]
-        http = FakeHttp({
-            "/repos/acme/registry": Response(200, {"private": False}),
-            "/repos/acme/registry/contents/datasets": Response(200, listing),
-            "/repos/acme/registry/contents/datasets/cars.yaml": Response(200, content=b"source: web\n"),
-        })
+        http = FakeHttp(
+            {
+                "/repos/acme/registry": Response(200, {"private": False}),
+                "/repos/acme/registry/contents/datasets": Response(200, listing),
+                "/repos/acme/registry/contents/datasets/cars.yaml": Response(200, content=b"source: web\n"),
+            }
+        )
         texts = app_with(http).read_dir_texts("acme/registry", "datasets")
         self.assertEqual(texts, {"cars.yaml": "source: web\n"})
         self.assertEqual(http.authorized, [])

@@ -56,10 +56,7 @@ def make_project(
         visibility=visibility,
         parent=parent.id if parent else None,
         path=[*(parent.path or []), parent.id] if parent else [],
-        members=[
-            ProjectMember(user=u, role=r, added=datetime.utcnow(), added_by=owner)
-            for u, r in members
-        ],
+        members=[ProjectMember(user=u, role=r, added=datetime.utcnow(), added_by=owner) for u, r in members],
     )
     project.save()
     return project
@@ -170,7 +167,7 @@ def test_project_tags_for_a_user_without_a_filter_is_limited_to_their_visible_pr
     recorder = Recorder((["t"], []))
     monkeypatch.setattr(svc.project_bll, "get_project_tags", recorder)
     svc.get_project_tags(FakeCall(identity(company, "stranger")), company, ProjectTagsRequest())
-    (_, kwargs), = recorder.calls
+    ((_, kwargs),) = recorder.calls
     assert kwargs["projects"] is not None
     assert public.id in kwargs["projects"]
 
@@ -180,7 +177,7 @@ def test_project_tags_for_admin_without_a_filter_stays_unrestricted(company, mon
     recorder = Recorder(([], []))
     monkeypatch.setattr(svc.project_bll, "get_project_tags", recorder)
     svc.get_project_tags(FakeCall(identity(company, "boss", role=Role.admin)), company, ProjectTagsRequest())
-    (_, kwargs), = recorder.calls
+    ((_, kwargs),) = recorder.calls
     assert not kwargs["projects"]  # no filter: the request default (empty list) passes through unchanged
 
 
@@ -201,54 +198,74 @@ def test_unique_metric_variants_for_admin_without_a_project_stays_unrestricted(c
     svc.get_unique_metric_variants(
         FakeCall(identity(company, "boss", role=Role.admin)), company, GetUniqueMetricsRequest()
     )
-    (args, _), = recorder.calls
+    ((args, _),) = recorder.calls
     assert args[1] is None
 
 
 # (endpoint, request factory, (object, method) it hands the work to, its stub result, its empty shape)
 EMPTY_CASES = [
     pytest.param(
-        svc.get_task_tags, ProjectTagsRequest, (svc.org_bll, "get_tags"),
-        {"tags": [], "system_tags": []}, {"tags": [], "system_tags": []},
+        svc.get_task_tags,
+        ProjectTagsRequest,
+        (svc.org_bll, "get_tags"),
+        {"tags": [], "system_tags": []},
+        {"tags": [], "system_tags": []},
         id="task_tags",
     ),
     pytest.param(
-        svc.get_model_tags, ProjectTagsRequest, (svc.org_bll, "get_tags"),
-        {"tags": [], "system_tags": []}, {"tags": [], "system_tags": []},
+        svc.get_model_tags,
+        ProjectTagsRequest,
+        (svc.org_bll, "get_tags"),
+        {"tags": [], "system_tags": []},
+        {"tags": [], "system_tags": []},
         id="model_tags",
     ),
     pytest.param(
-        svc.get_model_metadata_keys, GetParamsRequest, (svc.project_queries, "get_model_metadata_keys"),
-        (0, 0, []), {"total": 0, "remaining": 0, "keys": []},
+        svc.get_model_metadata_keys,
+        GetParamsRequest,
+        (svc.project_queries, "get_model_metadata_keys"),
+        (0, 0, []),
+        {"total": 0, "remaining": 0, "keys": []},
         id="model_metadata_keys",
     ),
     pytest.param(
         svc.get_model_metadata_values,
         lambda: ProjectModelMetadataValuesRequest(key="k"),
         (svc.project_queries, "get_model_metadata_distinct_values"),
-        (0, []), {"total": 0, "values": []},
+        (0, []),
+        {"total": 0, "values": []},
         id="model_metadata_values",
     ),
     pytest.param(
-        svc.get_hyper_parameters, GetParamsRequest, (svc.project_queries, "get_aggregated_project_parameters"),
-        (0, 0, []), {"total": 0, "remaining": 0, "parameters": []},
+        svc.get_hyper_parameters,
+        GetParamsRequest,
+        (svc.project_queries, "get_aggregated_project_parameters"),
+        (0, 0, []),
+        {"total": 0, "remaining": 0, "parameters": []},
         id="hyper_parameters",
     ),
     pytest.param(
         svc.get_hyperparam_values,
         lambda: ProjectHyperparamValuesRequest(section="s", name="n"),
         (svc.project_queries, "get_task_hyperparam_distinct_values"),
-        (0, []), {"total": 0, "values": []},
+        (0, []),
+        {"total": 0, "values": []},
         id="hyperparam_values",
     ),
     pytest.param(
-        svc.get_task_parents, ProjectTaskParentsRequest, (svc.ProjectBLL, "get_task_parents"),
-        [], {"parents": []},
+        svc.get_task_parents,
+        ProjectTaskParentsRequest,
+        (svc.ProjectBLL, "get_task_parents"),
+        [],
+        {"parents": []},
         id="task_parents",
     ),
     pytest.param(
-        svc.get_user_names, ProjectUserNamesRequest, (svc.ProjectBLL, "get_entity_users"),
-        [], {"users": []},
+        svc.get_user_names,
+        ProjectUserNamesRequest,
+        (svc.ProjectBLL, "get_entity_users"),
+        [],
+        {"users": []},
         id="user_names",
     ),
 ]
@@ -275,7 +292,7 @@ def test_project_less_read_for_admin_stays_unrestricted(
     recorder = Recorder(stub_result)
     monkeypatch.setattr(target[0], target[1], recorder)
     endpoint(FakeCall(identity(company, "boss", role=Role.admin)), company, make_request())
-    (_, kwargs), = recorder.calls
+    ((_, kwargs),) = recorder.calls
     # No filter: the downstream call receives no project list (None, or the request default of an empty list)
     assert not kwargs.get("projects", kwargs.get("project_ids"))
 
@@ -345,7 +362,9 @@ def test_move_into_a_project_resets_visibility_and_members_of_the_moved_root(com
 @pytest.mark.needs_redis
 def test_move_out_of_a_project_resets_the_promoted_sub_project(company):
     root = make_project(company, "mvroot")
-    sub = make_project(company, "mvchild", parent=root, visibility=ProjectVisibility.public, members=[("u2", ProjectRole.read)])
+    sub = make_project(
+        company, "mvchild", parent=root, visibility=ProjectVisibility.public, members=[("u2", ProjectRole.read)]
+    )
     svc.move(
         FakeCall(identity(company, "owner1")),
         company,
@@ -374,7 +393,9 @@ def test_move_between_sub_locations_keeps_the_moved_project_settings(company):
 
 
 def test_reset_access_clears_visibility_and_members(company):
-    root = make_project(company, "rsroot", visibility=ProjectVisibility.public, members=[("u2", ProjectRole.collaborator)])
+    root = make_project(
+        company, "rsroot", visibility=ProjectVisibility.public, members=[("u2", ProjectRole.collaborator)]
+    )
     ProjectAccessBLL.reset_access(root.id)
     refreshed = Project.objects(id="rsroot").first()
     assert refreshed.visibility == ProjectVisibility.private
@@ -384,9 +405,7 @@ def test_reset_access_clears_visibility_and_members(company):
 def test_make_public_refuses_a_read_write_member(company):
     make_project(company, "pubproj", members=[("u2", ProjectRole.read_write)])
     with pytest.raises(errors.forbidden.NoWritePermission):
-        svc.make_public(
-            FakeCall(identity(company, "u2")), company, MakePublicRequest(ids=["pubproj"])
-        )
+        svc.make_public(FakeCall(identity(company, "u2")), company, MakePublicRequest(ids=["pubproj"]))
     assert Project.objects(id="pubproj").first().company == company
 
 

@@ -42,8 +42,9 @@ def _json(response: requests.Response, what: str) -> Any:
 
 
 class KeycloakDirectory:
-    def __init__(self, issuer: str, client_id: str, client_secret: str,
-                 http=None, clock=time.time, timeout: float = 10.0) -> None:
+    def __init__(
+        self, issuer: str, client_id: str, client_secret: str, http=None, clock=time.time, timeout: float = 10.0
+    ) -> None:
         self._issuer = issuer.rstrip("/")
         self._admin = self._issuer.replace("/realms/", "/admin/realms/", 1)
         self._client_id, self._secret = client_id, client_secret
@@ -58,8 +59,7 @@ class KeycloakDirectory:
         try:
             response = self._http.post(
                 f"{self._issuer}/protocol/openid-connect/token",
-                data={"grant_type": "client_credentials", "client_id": self._client_id,
-                      "client_secret": self._secret},
+                data={"grant_type": "client_credentials", "client_id": self._client_id, "client_secret": self._secret},
                 timeout=self._timeout,
             )
         except requests.RequestException:
@@ -94,8 +94,8 @@ class KeycloakDirectory:
             token = self._access_token()
             try:
                 response = self._http.get(
-                    self._admin + path, headers={"Authorization": f"Bearer {token}"},
-                    timeout=self._timeout)
+                    self._admin + path, headers={"Authorization": f"Bearer {token}"}, timeout=self._timeout
+                )
             except requests.RequestException:
                 raise DirectoryError("IdP unreachable") from None
             if response.status_code == 401 and attempt == 1:
@@ -116,8 +116,12 @@ class KeycloakDirectory:
             if not isinstance(items, list):
                 raise DirectoryError("malformed user list")
             for item in items:
-                if (not isinstance(item, dict) or not isinstance(item.get("id"), str)
-                        or not isinstance(item.get("username"), str) or not isinstance(item.get("enabled"), bool)):
+                if (
+                    not isinstance(item, dict)
+                    or not isinstance(item.get("id"), str)
+                    or not isinstance(item.get("username"), str)
+                    or not isinstance(item.get("enabled"), bool)
+                ):
                     raise DirectoryError("malformed user list")
                 users.append((item["id"], item["username"], item["enabled"]))
             if len(items) < USER_PAGE:

@@ -26,19 +26,28 @@ MANIFEST = "project: examples\ntask: yolo run\ncomment: from the lab\ntags: [imp
 
 # ---- pure parsing ------------------------------------------------------------------------------------------------
 
+
 def test_a_manifest_with_project_and_task_is_read():
     manifest = run_import.parse_manifest(MANIFEST)
-    assert (manifest.project, manifest.task, manifest.comment, manifest.tags) == ("examples", "yolo run", "from the lab", ["imported"])
+    assert (manifest.project, manifest.task, manifest.comment, manifest.tags) == (
+        "examples",
+        "yolo run",
+        "from the lab",
+        ["imported"],
+    )
 
 
-@pytest.mark.parametrize("text, field", [
-    ("task: a\n", "project"),
-    ("project: p\n", "task"),
-    ("project: ''\ntask: a\n", "project"),
-    ("project: p\ntask: a\nflavour: x\n", "flavour"),
-    ("project: p\ntask: a\nformat: 2\n", "format"),
-    ("project: p\ntask: a\ntags: nope\n", "tags"),
-])
+@pytest.mark.parametrize(
+    "text, field",
+    [
+        ("task: a\n", "project"),
+        ("project: p\n", "task"),
+        ("project: ''\ntask: a\n", "project"),
+        ("project: p\ntask: a\nflavour: x\n", "flavour"),
+        ("project: p\ntask: a\nformat: 2\n", "format"),
+        ("project: p\ntask: a\ntags: nope\n", "tags"),
+    ],
+)
 def test_a_bad_manifest_names_the_field(text, field):
     with pytest.raises(errors.bad_request.ValidationError) as caught:
         run_import.parse_manifest(text)
@@ -81,14 +90,23 @@ def test_arguments_become_parameters_in_the_args_section():
 
 
 def test_weights_and_exports_and_the_plot_are_artifacts():
-    names = [f"{RUN}/weights/best.pt", f"{RUN}/espdl/model.espdl", f"{RUN}/results.png", f"{RUN}/args.yaml", f"{RUN}/weights/"]
+    names = [
+        f"{RUN}/weights/best.pt",
+        f"{RUN}/espdl/model.espdl",
+        f"{RUN}/results.png",
+        f"{RUN}/args.yaml",
+        f"{RUN}/weights/",
+    ]
     planned = run_import.planned_artifacts(RUN, names)
     assert [(p.name, p.artifact_type) for p in planned] == [
-        ("weights/best.pt", "model"), ("espdl/model.espdl", "file"), ("results.png", "file"),
+        ("weights/best.pt", "model"),
+        ("espdl/model.espdl", "file"),
+        ("results.png", "file"),
     ]
 
 
 # ---- the import, against MongoDB and a fake object store ---------------------------------------------------------
+
 
 class FakeBody:
     def __init__(self, data):
@@ -96,7 +114,7 @@ class FakeBody:
 
     def iter_chunks(self, chunk_size):
         for start in range(0, len(self._data), chunk_size):
-            yield self._data[start:start + chunk_size]
+            yield self._data[start : start + chunk_size]
 
 
 class FakeStore:
@@ -148,8 +166,15 @@ def run_zip(**extra):
 
 @pytest.fixture
 def world(monkeypatch):
-    Project(id="proj-import", company=COMPANY, user=OWNER, name="examples", basename="examples",
-            created=datetime.utcnow(), visibility=ProjectVisibility.private).save()
+    Project(
+        id="proj-import",
+        company=COMPANY,
+        user=OWNER,
+        name="examples",
+        basename="examples",
+        created=datetime.utcnow(),
+        visibility=ProjectVisibility.private,
+    ).save()
     store = FakeStore()
     events = FakeEvents()
     monkeypatch.setattr(datachunks, "_internal", lambda: store)
@@ -165,10 +190,20 @@ def stage(store, data, user=OWNER):
     key = f"_imports/{chunk_id}/run.zip"
     store.objects[(DatachunkKind.artifact.value, key)] = data
     Datachunk(
-        id=chunk_id, company=COMPANY, user=user, task="", project="", kind=DatachunkKind.artifact,
-        bucket=DatachunkKind.artifact.value, key=key, name="run.zip", size=len(data),
-        sha256=hashlib.sha256(data).hexdigest(), state=DatachunkState.stored,
-        created=datetime.utcnow(), stored=datetime.utcnow(),
+        id=chunk_id,
+        company=COMPANY,
+        user=user,
+        task="",
+        project="",
+        kind=DatachunkKind.artifact,
+        bucket=DatachunkKind.artifact.value,
+        key=key,
+        name="run.zip",
+        size=len(data),
+        sha256=hashlib.sha256(data).hexdigest(),
+        state=DatachunkState.stored,
+        created=datetime.utcnow(),
+        stored=datetime.utcnow(),
     ).save()
     return chunk_id
 

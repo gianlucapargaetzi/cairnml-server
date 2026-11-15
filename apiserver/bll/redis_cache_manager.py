@@ -21,9 +21,7 @@ class RedisCacheManager(Generic[T]):
     self.expiration_interval - expiration interval in seconds
     """
 
-    def __init__(
-        self, state_class: Type[T], redis: StrictRedis, expiration_interval: int
-    ):
+    def __init__(self, state_class: Type[T], redis: StrictRedis, expiration_interval: int):
         self.state_class = state_class
         self.redis = redis
         self.expiration_interval = expiration_interval
@@ -74,9 +72,7 @@ class RedisCacheManager(Generic[T]):
         :param validate_state: user callback to validate the state if retrieved from cache
         Should throw an exception if the state is not valid. If not passed then no validation is done
         """
-        state = self.get_or_create_state_core(
-            state_id=state_id, init_state=init_state, validate_state=validate_state
-        )
+        state = self.get_or_create_state_core(state_id=state_id, init_state=init_state, validate_state=validate_state)
 
         try:
             yield state

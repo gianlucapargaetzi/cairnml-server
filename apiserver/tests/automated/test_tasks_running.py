@@ -18,9 +18,7 @@ class TestTasksRunning(TestService):
         task_id = self._create_running_task()
         worker_id = "worker1"
         self.api.workers.register(worker=worker_id)
-        self.api.workers.status_report(
-            worker=worker_id, task=task_id, timestamp=int(time.time())
-        )
+        self.api.workers.status_report(worker=worker_id, task=task_id, timestamp=int(time.time()))
         data = self.api.tasks.stop(task=task_id).fields
         assert data.status == self.STATUS_RUNNING
         assert data.status_message == "stopping"
@@ -54,4 +52,3 @@ class TestTasksRunning(TestService):
 
         self.api.tasks.started(task=task_id)
         return task_id
-

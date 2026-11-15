@@ -35,8 +35,15 @@ def _idp_key():
 
 def idp_token(sub="sub-alice", username="alice", roles=(), key=None, azp=SDK_CLIENT):
     now = int(time.time())
-    claims = {"iss": IDP_ISSUER, "sub": sub, "preferred_username": username, "azp": azp,
-              "iat": now, "exp": now + 300, "realm_access": {"roles": list(roles)}}
+    claims = {
+        "iss": IDP_ISSUER,
+        "sub": sub,
+        "preferred_username": username,
+        "azp": azp,
+        "iat": now,
+        "exp": now + 300,
+        "realm_access": {"roles": list(roles)},
+    }
     return jwt.encode(claims, key or _idp_key(), algorithm="RS256", headers={"kid": "test-key"})
 
 
@@ -48,13 +55,20 @@ def call(endpoint, body=None, token=None):
 class TestDeviceEndpoints(TestCase):
     def setUp(self):
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
         self.device_key = Ed25519PrivateKey.generate()
-        self.public_pem = self.device_key.public_key().public_bytes(
-            serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo).decode()
+        self.public_pem = (
+            self.device_key.public_key()
+            .public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo)
+            .decode()
+        )
 
     def enrol(self, kind="client", roles=(), sub="sub-alice"):
-        return call("devices.enroll", {"kind": kind, "name": "test", "public_key": self.public_pem},
-                    token=idp_token(sub=sub, roles=roles))
+        return call(
+            "devices.enroll",
+            {"kind": kind, "name": "test", "public_key": self.public_pem},
+            token=idp_token(sub=sub, roles=roles),
+        )
 
     def test_enrol_a_laptop_with_a_valid_sign_in(self):
         response = self.enrol()
@@ -63,13 +77,11 @@ class TestDeviceEndpoints(TestCase):
 
     def test_enrol_refuses_a_forged_sign_in(self):
         other = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-        response = call("devices.enroll", {"kind": "client", "public_key": self.public_pem},
-                        token=idp_token(key=other))
+        response = call("devices.enroll", {"kind": "client", "public_key": self.public_pem}, token=idp_token(key=other))
         self.assertEqual(response.status_code, 401)
 
     def test_enrol_refuses_a_bad_public_key(self):
-        response = call("devices.enroll", {"kind": "client", "public_key": "not a key"},
-                        token=idp_token())
+        response = call("devices.enroll", {"kind": "client", "public_key": "not a key"}, token=idp_token())
         self.assertEqual(response.status_code, 400)
 
     def test_agent_enrolment_is_allowed_for_a_non_admin(self):

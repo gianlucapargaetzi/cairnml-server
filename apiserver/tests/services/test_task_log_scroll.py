@@ -16,7 +16,9 @@ def response(timestamps):
     return {
         "hits": {
             "total": {"value": len(timestamps)},
-            "hits": [{"_id": f"e{i}", "_source": {"timestamp": ts, "msg": f"line {i}"}} for i, ts in enumerate(timestamps)],
+            "hits": [
+                {"_id": f"e{i}", "_source": {"timestamp": ts, "msg": f"line {i}"}} for i, ts in enumerate(timestamps)
+            ],
         },
     }
 
@@ -29,7 +31,9 @@ def event_bll(es):
 
 def legacy_log(bll, batch_size, order="desc", scroll_id=None):
     with patch("apiserver.bll.event.event_bll.check_empty_data", return_value=False):
-        return bll.scroll_task_events("company", "task", order, EventType.task_log, batch_size=batch_size, scroll_id=scroll_id)
+        return bll.scroll_task_events(
+            "company", "task", order, EventType.task_log, batch_size=batch_size, scroll_id=scroll_id
+        )
 
 
 def test_a_first_page_shorter_than_its_size_ends_the_log_with_no_scroll():
@@ -54,7 +58,7 @@ def test_a_full_first_page_returns_a_cursor_after_its_last_timestamp():
 
     assert [ev["timestamp"] for ev in events] == [1, 2, 3, 4]
     assert scroll_id.startswith("tlc1.")
-    assert json.loads(base64.urlsafe_b64decode(scroll_id[len("tlc1."):])) == {"order": "desc", "after": 4}
+    assert json.loads(base64.urlsafe_b64decode(scroll_id[len("tlc1.") :])) == {"order": "desc", "after": 4}
 
 
 def test_the_next_page_searches_after_the_cursor_in_the_cursor_order():
@@ -128,7 +132,11 @@ def test_the_api_2_9_task_log_read_opens_no_scroll():
 
     with patch.object(events_iterator, "check_empty_data", return_value=False):
         result = iterator.get_task_events(
-            event_type=EventType.task_log, company_id="company", task_id="task", batch_size=5, navigate_earlier=True,
+            event_type=EventType.task_log,
+            company_id="company",
+            task_id="task",
+            batch_size=5,
+            navigate_earlier=True,
         )
 
     assert len(result.events) == 5

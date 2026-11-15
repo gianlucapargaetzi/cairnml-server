@@ -2,13 +2,14 @@
 """
 Apply elasticsearch mappings to given hosts.
 """
+
 import argparse
 import json
 import logging
 from pathlib import Path
 from typing import Optional, Sequence, Tuple
 
-from apiserver.config_repo import  config
+from apiserver.config_repo import config
 from elasticsearch import Elasticsearch, exceptions
 
 from apiserver.utilities.dicts import nested_set
@@ -25,6 +26,8 @@ _setting_overrides = {
     "number_of_shards": "number_of_shards",
     "total_fields_limit": "index.mapping.total_fields.limit",
 }
+
+
 def apply_mappings_to_cluster(
     hosts: Sequence,
     key: Optional[str] = None,
@@ -49,9 +52,7 @@ def apply_mappings_to_cluster(
                 setting = overrides.get(name, None)
                 if setting is not None:
                     nested_set(body, ("template", "settings", target), setting)
-                    log.info(
-                        f"ES template setting {target} is set to {setting} for {template_name}"
-                    )
+                    log.info(f"ES template setting {target} is set to {setting} for {template_name}")
             res = es.indices.put_index_template(name=template_name, body=body)
             return {"index_template": template_name, "result": res}
 
@@ -97,9 +98,7 @@ def apply_mappings_to_cluster(
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
-    )
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--key", help="host key, e.g. events, datasets etc.")
     parser.add_argument(
         "--hosts",

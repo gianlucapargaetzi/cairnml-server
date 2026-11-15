@@ -1,5 +1,6 @@
 """An agent's queue is named after its machine, with a short hash of its owner: the same owner and machine get the same
 queue back, and two owners with machines of one name get different queues."""
+
 from datetime import datetime
 from uuid import uuid4
 

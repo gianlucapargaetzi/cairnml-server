@@ -67,9 +67,7 @@ class AppSequence:
             Compress(self.app)
 
         self.app.config["SECRET_KEY"] = session_secret()
-        self.app.config["JSONIFY_PRETTYPRINT_REGULAR"] = config.get(
-            "apiserver.pretty_json"
-        )
+        self.app.config["JSONIFY_PRETTYPRINT_REGULAR"] = config.get("apiserver.pretty_json")
 
     @staticmethod
     def _get_db_instance_key() -> str:
@@ -84,9 +82,7 @@ class AppSequence:
             name=self._get_db_instance_key(),
             timeout=config.get("apiserver.db_init_timout", 120),
         ):
-            upgrade_monitoring = config.get(
-                "apiserver.elastic.upgrade_monitoring.v16_migration_verification", True
-            )
+            upgrade_monitoring = config.get("apiserver.elastic.upgrade_monitoring.v16_migration_verification", True)
             try:
                 empty_es = check_elastic_empty()
             except ElasticConnectionError as err:
@@ -106,19 +102,13 @@ class AppSequence:
                 info.missed_es_upgrade = True
 
             if info.es_connection_error and not info.missed_es_upgrade:
-                raise Exception(
-                    "Error starting server: failed connecting to ElasticSearch service"
-                )
+                raise Exception("Error starting server: failed connecting to ElasticSearch service")
 
             if not info.missed_es_upgrade:
                 init_es_data()
                 init_mongo_data()
 
-        if (
-            not info.missed_es_upgrade
-            and empty_db
-            and config.get("apiserver.pre_populate.enabled", False)
-        ):
+        if not info.missed_es_upgrade and empty_db and config.get("apiserver.pre_populate.enabled", False):
             pre_populate_data()
 
     def _load_services(self):

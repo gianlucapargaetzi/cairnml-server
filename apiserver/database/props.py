@@ -46,9 +46,7 @@ class PropsMixin(object):
     @classmethod
     def get_all_fields_with_instance(cls):
         if cls.__cached_all_fields_with_instance is None:
-            cls.__cached_all_fields_with_instance = get_fields(
-                cls, return_instance=True, subfields=True
-            )
+            cls.__cached_all_fields_with_instance = get_fields(cls, return_instance=True, subfields=True)
         return cls.__cached_all_fields_with_instance
 
     @classmethod
@@ -56,14 +54,12 @@ class PropsMixin(object):
         if cls.__cached_fields_with_instance is None:
             cls.__cached_fields_with_instance = {}
         if doc_cls not in cls.__cached_fields_with_instance:
-            cls.__cached_fields_with_instance[doc_cls] = get_fields(
-                doc_cls, return_instance=True
-            )
+            cls.__cached_fields_with_instance[doc_cls] = get_fields(doc_cls, return_instance=True)
         return cls.__cached_fields_with_instance[doc_cls]
 
     @staticmethod
     def _get_fields_with_attr(cls_, attr):
-        """ Get all fields with the specified attribute (supports nested fields) """
+        """Get all fields with the specified attribute (supports nested fields)"""
         res = get_fields_attr(cls_, attr=attr)
 
         def resolve_doc(v):
@@ -82,18 +78,12 @@ class PropsMixin(object):
         fields = {k: resolve_doc(v) for k, v in res.items()}
 
         def collect_embedded_docs(doc_cls, embedded_doc_field_getter):
-            for field, embedded_doc_field in get_fields(
-                cls_, of_type=doc_cls, return_instance=True
-            ):
-                embedded_doc_cls = embedded_doc_field_getter(
-                    embedded_doc_field
-                ).document_type
+            for field, embedded_doc_field in get_fields(cls_, of_type=doc_cls, return_instance=True):
+                embedded_doc_cls = embedded_doc_field_getter(embedded_doc_field).document_type
                 fields.update(
                     {
                         ".".join((field, subfield)): doc
-                        for subfield, doc in PropsMixin._get_fields_with_attr(
-                            embedded_doc_cls, attr
-                        ).items()
+                        for subfield, doc in PropsMixin._get_fields_with_attr(embedded_doc_cls, attr).items()
                     }
                 )
 
@@ -111,15 +101,9 @@ class PropsMixin(object):
         translated_parts = []
         for depth, part in enumerate(parts):
             if current_cls is None:
-                raise ValueError(
-                    "Invalid path (non-document encountered at %s)" % parts[: depth - 1]
-                )
+                raise ValueError("Invalid path (non-document encountered at %s)" % parts[: depth - 1])
             try:
-                field_name, field = next(
-                    (k, v)
-                    for k, v in cls.get_fields_with_instance(current_cls)
-                    if k == part
-                )
+                field_name, field = next((k, v) for k, v in cls.get_fields_with_instance(current_cls) if k == part)
             except StopIteration:
                 raise ValueError("Invalid field path %s" % parts[:depth]) from None
 
@@ -154,9 +138,7 @@ class PropsMixin(object):
     def get_extra_projection(cls, fields: Sequence) -> tuple:
         if isinstance(fields, str):
             fields = [fields]
-        return tuple(
-            set(fields).union(cls.get_fields()).difference(cls.get_exclude_fields())
-        )
+        return tuple(set(fields).union(cls.get_fields()).difference(cls.get_exclude_fields()))
 
     @classmethod
     def get_exclude_fields(cls):

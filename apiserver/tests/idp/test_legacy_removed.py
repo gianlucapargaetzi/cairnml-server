@@ -23,13 +23,18 @@ class TestLegacyRemoved(TestCase):
 
     def test_a_token_without_a_kind_is_refused(self):
         from apiserver.service_repo.auth import Identity
+
         identity = Identity(user="u", company="c", role="user")
         old = Token.create_encoded_token(identity, expiration_sec=300)
-        response = requests.post(f"{API}/devices.get_all", json={}, headers={"Authorization": f"Bearer {old}"}, timeout=20)
+        response = requests.post(
+            f"{API}/devices.get_all", json={}, headers={"Authorization": f"Bearer {old}"}, timeout=20
+        )
         self.assertEqual(response.status_code, 401)
 
     def test_basic_credentials_over_http_are_refused(self):
-        response = requests.post(f"{API}/devices.get_all", json={}, auth=HTTPBasicAuth("anything", "secret"), timeout=20)
+        response = requests.post(
+            f"{API}/devices.get_all", json={}, auth=HTTPBasicAuth("anything", "secret"), timeout=20
+        )
         self.assertEqual(response.status_code, 401)
 
     def test_the_credential_endpoints_are_gone(self):

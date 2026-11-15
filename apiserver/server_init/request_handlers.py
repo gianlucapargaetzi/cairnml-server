@@ -34,9 +34,7 @@ class RequestHandlers:
     }
 
     def _get_cookie_settings(self, cookie_key=None):
-        settings = (
-            self._custom_cookie_settings.get(cookie_key) or self._basic_cookie_settings
-        ).copy()
+        settings = (self._custom_cookie_settings.get(cookie_key) or self._basic_cookie_settings).copy()
         if isinstance(settings["domain"], list):
             host_without_port, _, _ = request.host.partition(":")
             domain = first(
@@ -52,9 +50,7 @@ class RequestHandlers:
     def _set_company_cookie_overrides(self, company_id: str, cookie_kwargs: dict):
         try:
             # use no default value to allow setting a null domain as well
-            cookie_kwargs["domain"] = config.get(
-                f"apiserver.auth.cookies_domain_override.{company_id}"
-            )
+            cookie_kwargs["domain"] = config.get(f"apiserver.auth.cookies_domain_override.{company_id}")
         except KeyError:
             pass
 
@@ -81,9 +77,7 @@ class RequestHandlers:
         try:
             call = self._create_api_call(request)
             load_data_callback = partial(self._load_call_data, req=request)
-            content, content_type, company = ServiceRepo.handle_call(
-                call, load_data_callback=load_data_callback
-            )
+            content, content_type, company = ServiceRepo.handle_call(call, load_data_callback=load_data_callback)
 
             if call.result.redirect:
                 response = redirect(call.result.redirect.url, call.result.redirect.code)
@@ -162,11 +156,7 @@ class RequestHandlers:
             return v
 
         for k, v in md.lists():
-            v = (
-                [convert_value(x) for x in v]
-                if (len(v) > 1 or k.endswith("[]"))
-                else convert_value(v[0])
-            )
+            v = [convert_value(x) for x in v] if (len(v) > 1 or k.endswith("[]")) else convert_value(v[0])
             nested_set(body, k.rstrip("[]").split("."), v)
 
     def _update_call_data(self, call, req):
@@ -177,9 +167,7 @@ class RequestHandlers:
                 try:
                     event = json.loads(line)
                     if not isinstance(event, dict):
-                        raise BadRequest(
-                            f"json lines must contain objects, found: {type(event).__name__}"
-                        )
+                        raise BadRequest(f"json lines must contain objects, found: {type(event).__name__}")
                     items.append(event)
                 except ValueError as e:
                     msg = f"{e} in batch item #{i}"
@@ -194,9 +182,7 @@ class RequestHandlers:
             call.data = body
 
     def _call_or_empty_with_error(self, call, req, msg, code=500, subcode=0):
-        call = call or APICall(
-            "", remote_addr=req.remote_addr, headers=dict(req.headers), files=req.files
-        )
+        call = call or APICall("", remote_addr=req.remote_addr, headers=dict(req.headers), files=req.files)
         call.set_error_result(msg=msg, code=code, subcode=subcode)
         return call
 
@@ -243,23 +229,15 @@ class RequestHandlers:
         try:
             # Parse the request path
             path = req.path
-            if self._request_strip_prefix and path.startswith(
-                self._request_strip_prefix
-            ):
+            if self._request_strip_prefix and path.startswith(self._request_strip_prefix):
                 path = path[len(self._request_strip_prefix) :]
             endpoint_version, endpoint_name = ServiceRepo.parse_endpoint_path(path)
 
             # Resolve authorization: if cookies contain an authorization token, use it as a starting point.
             # in any case, request headers always take precedence.
             auth_cookie = self._get_session_auth_cookie(req)
-            headers = (
-                {}
-                if not auth_cookie
-                else {"Authorization": f"{AuthType.bearer_token} {auth_cookie}"}
-            )
-            headers.update(
-                list(req.headers.items())
-            )  # add (possibly override with) the headers
+            headers = {} if not auth_cookie else {"Authorization": f"{AuthType.bearer_token} {auth_cookie}"}
+            headers.update(list(req.headers.items()))  # add (possibly override with) the headers
 
             # Construct call instance
             call = APICall(
@@ -278,14 +256,10 @@ class RequestHandlers:
         except BadRequest as ex:
             call = self._call_or_empty_with_error(call, req, ex.description, 400)
         except BaseError as ex:
-            call = self._call_or_empty_with_error(
-                call, req, ex.msg, ex.code, ex.subcode
-            )
+            call = self._call_or_empty_with_error(call, req, ex.msg, ex.code, ex.subcode)
         except Exception as ex:
             log.exception("Error creating call")
-            call = self._call_or_empty_with_error(
-                call, req, ex.args[0] if ex.args else type(ex).__name__, 500
-            )
+            call = self._call_or_empty_with_error(call, req, ex.args[0] if ex.args else type(ex).__name__, 500)
 
         return call
 
@@ -298,9 +272,7 @@ class RequestHandlers:
         except BaseError as ex:
             call.set_error_result(msg=ex.msg, code=ex.code, subcode=ex.subcode)
         except APIError as ex:
-            call.set_error_result(
-                msg=ex.msg, code=ex.code, subcode=ex.subcode, error_data=ex.error_data
-            )
+            call.set_error_result(msg=ex.msg, code=ex.code, subcode=ex.subcode, error_data=ex.error_data)
         except Exception as ex:
             call.set_error_result(msg=ex.args[0] if ex.args else type(ex).__name__)
 

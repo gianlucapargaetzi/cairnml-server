@@ -24,8 +24,13 @@ def company():
 
 def make_root(company, id_="root1", owner="owner1", visibility=ProjectVisibility.private, members=()):
     project = Project(
-        id=id_, company=company, user=owner, name=id_, basename=id_,
-        created=datetime.utcnow(), visibility=visibility,
+        id=id_,
+        company=company,
+        user=owner,
+        name=id_,
+        basename=id_,
+        created=datetime.utcnow(),
+        visibility=visibility,
         members=[ProjectMember(user=u, role=r, added=datetime.utcnow(), added_by=owner) for u, r in members],
     )
     project.save()
@@ -33,7 +38,9 @@ def make_root(company, id_="root1", owner="owner1", visibility=ProjectVisibility
 
 
 def make_task(company, project, owner, id_="task1"):
-    task = Task(id=id_, company=company, user=owner, name=id_, project=project, type="training", created=datetime.utcnow())
+    task = Task(
+        id=id_, company=company, user=owner, name=id_, project=project, type="training", created=datetime.utcnow()
+    )
     task.save()
     return task
 
@@ -64,9 +71,7 @@ def test_get_all_redacts_a_private_tasks_name_from_a_stranger(company):
     make_task(company, "root1", "owner1")
     register_worker(company, "task1", f"w-{uuid4().hex[:8]}")
 
-    workers = worker_bll.get_all_with_projection(
-        company, last_seen=3600, identity=identity(company, "stranger")
-    )
+    workers = worker_bll.get_all_with_projection(company, last_seen=3600, identity=identity(company, "stranger"))
     assert len(workers) == 1
     assert workers[0].task is None
     assert workers[0].project is None
@@ -78,9 +83,7 @@ def test_get_all_shows_the_task_to_a_member(company):
     make_task(company, "root1", "owner1")
     register_worker(company, "task1", f"w-{uuid4().hex[:8]}")
 
-    workers = worker_bll.get_all_with_projection(
-        company, last_seen=3600, identity=identity(company, "u2")
-    )
+    workers = worker_bll.get_all_with_projection(company, last_seen=3600, identity=identity(company, "u2"))
     assert len(workers) == 1
     assert workers[0].task is not None
     assert workers[0].task.id == "task1"

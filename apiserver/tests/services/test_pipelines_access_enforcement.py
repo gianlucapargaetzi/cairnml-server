@@ -25,15 +25,22 @@ def company():
 
 def make_root(company, id_="root1", owner="owner1", visibility=ProjectVisibility.private):
     project = Project(
-        id=id_, company=company, user=owner, name=id_, basename=id_,
-        created=datetime.utcnow(), visibility=visibility,
+        id=id_,
+        company=company,
+        user=owner,
+        name=id_,
+        basename=id_,
+        created=datetime.utcnow(),
+        visibility=visibility,
     )
     project.save()
     return project
 
 
 def make_task(company, project, owner, id_="task1"):
-    task = Task(id=id_, company=company, user=owner, name=id_, project=project, type="training", created=datetime.utcnow())
+    task = Task(
+        id=id_, company=company, user=owner, name=id_, project=project, type="training", created=datetime.utcnow()
+    )
     task.save()
     return task
 

@@ -13,8 +13,8 @@ from pathlib import Path
 REPORT_DIR = Path(__file__).resolve().parents[1] / "reports"
 MISSING_EXPECTATION = "(not written: add an Expect: paragraph to the test's docstring)"
 
-_items = {}   # node id -> item
-_rows = {}    # node id -> row being built from the phases of the test
+_items = {}  # node id -> item
+_rows = {}  # node id -> row being built from the phases of the test
 _started = datetime.now()
 
 
@@ -25,7 +25,7 @@ def split_docstring(doc: str):
     for paragraph in inspect.cleandoc(doc or "").split("\n\n"):
         flat = " ".join(paragraph.split())
         if flat.startswith("Expect:"):
-            expected.append(flat[len("Expect:"):].strip())
+            expected.append(flat[len("Expect:") :].strip())
         elif not description:
             description = flat
     return description, " ".join(expected)
@@ -47,8 +47,9 @@ def _short_failure(longrepr) -> str:
 
 def record(report) -> None:
     """Called for every phase of every test (setup, call, teardown). A test's outcome is its worst phase."""
-    row = _rows.setdefault(report.nodeid, {"nodeid": report.nodeid, "outcome": "passed", "message": "",
-                                           "duration": 0.0})
+    row = _rows.setdefault(
+        report.nodeid, {"nodeid": report.nodeid, "outcome": "passed", "message": "", "duration": 0.0}
+    )
     row["duration"] += report.duration
     if report.outcome == "failed":
         row["outcome"] = "error" if report.when != "call" else "failed"
@@ -64,17 +65,21 @@ def _rows_for_report():
     for nodeid, item in _items.items():
         description, expected = split_docstring(getattr(getattr(item, "function", None), "__doc__", ""))
         row = _rows.get(nodeid, {"outcome": "not run", "message": "", "duration": 0.0})
-        result.append({
-            "module": nodeid.split("::")[0],
-            "name": item.name,
-            "description": description or "(no description written)",
-            "expected": expected or MISSING_EXPECTATION,
-            "outcome": row["message"] if row["outcome"] in ("failed", "error", "skipped")
-            else ("as expected" if row["outcome"] == "passed" else "not run"),
-            "status": {"passed": "PASS", "failed": "FAIL", "error": "ERROR", "skipped": "SKIP"}.get(
-                row["outcome"], "NOT RUN"),
-            "duration": row["duration"],
-        })
+        result.append(
+            {
+                "module": nodeid.split("::")[0],
+                "name": item.name,
+                "description": description or "(no description written)",
+                "expected": expected or MISSING_EXPECTATION,
+                "outcome": row["message"]
+                if row["outcome"] in ("failed", "error", "skipped")
+                else ("as expected" if row["outcome"] == "passed" else "not run"),
+                "status": {"passed": "PASS", "failed": "FAIL", "error": "ERROR", "skipped": "SKIP"}.get(
+                    row["outcome"], "NOT RUN"
+                ),
+                "duration": row["duration"],
+            }
+        )
     return result
 
 
@@ -93,11 +98,23 @@ def write() -> None:
 
 
 def _markdown(rows, stamp, summary) -> str:
-    lines = [f"# End-to-end report, {stamp}", "", f"{len(rows)} tests: {summary}, total {_total(rows)}", "",
-             "| Test | Description | Expected behaviour | Outcome | Pass/fail | Duration |", "|---|---|---|---|---|---|"]
+    lines = [
+        f"# End-to-end report, {stamp}",
+        "",
+        f"{len(rows)} tests: {summary}, total {_total(rows)}",
+        "",
+        "| Test | Description | Expected behaviour | Outcome | Pass/fail | Duration |",
+        "|---|---|---|---|---|---|",
+    ]
     for row in rows:
-        cells = [f"`{row['name']}`", row["description"], row["expected"], row["outcome"], row["status"],
-                 _seconds(row["duration"])]
+        cells = [
+            f"`{row['name']}`",
+            row["description"],
+            row["expected"],
+            row["outcome"],
+            row["status"],
+            _seconds(row["duration"]),
+        ]
         lines.append("| " + " | ".join(cell.replace("|", "\\|") for cell in cells) + " |")
     return "\n".join(lines) + "\n"
 
@@ -118,9 +135,16 @@ def _html(rows, stamp, summary) -> str:
             "<tr class='{cls}'><td><code>{name}</code><div class='module'>{module}</div></td>"
             "<td>{description}</td><td>{expected}</td><td>{outcome}</td><td class='status'>{status}</td>"
             "<td class='duration'>{duration}</td></tr>".format(
-                cls=row["status"].lower(), name=html.escape(row["name"]), module=html.escape(row["module"]),
-                description=html.escape(row["description"]), expected=html.escape(row["expected"]),
-                outcome=html.escape(row["outcome"]), status=row["status"], duration=_seconds(row["duration"])))
+                cls=row["status"].lower(),
+                name=html.escape(row["name"]),
+                module=html.escape(row["module"]),
+                description=html.escape(row["description"]),
+                expected=html.escape(row["expected"]),
+                outcome=html.escape(row["outcome"]),
+                status=row["status"],
+                duration=_seconds(row["duration"]),
+            )
+        )
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>End-to-end report</title>

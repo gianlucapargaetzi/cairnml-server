@@ -51,9 +51,7 @@ class PrepareDownloadForGetAllRequest(models.Base):
     entity_type = ActualEnumField(EntityType)
     allow_public = fields.BoolField(default=True)
     search_hidden = fields.BoolField(default=False)
-    only_fields = fields.ListField(
-        items_types=[str], validators=[Length(1)], required=True
-    )
+    only_fields = fields.ListField(items_types=[str], validators=[Length(1)], required=True)
     field_mappings: Sequence[FieldMapping] = fields.ListField(
         items_types=[FieldMapping], validators=[Length(1)], required=True
     )
@@ -61,6 +59,7 @@ class PrepareDownloadForGetAllRequest(models.Base):
 
 class DownloadForGetAllRequest(models.Base):
     prepare_id = fields.StringField(required=True)
+
 
 class UsageAggFields(StringEnum):
     duration = auto()
@@ -75,15 +74,11 @@ class WorkloadBreakdownKeys(StringEnum):
 
 
 class GetProjectWorkloadsRequest(models.Base):
-    projects = fields.ListField(
-        [str], required=True, validators=[Length(minimum_value=1)]
-    )
+    projects = fields.ListField([str], required=True, validators=[Length(minimum_value=1)])
     from_date: str = fields.StringField(required=True)
     to_date: str = fields.StringField(required=True)
     include_development = fields.BoolField(default=False)
     breakdown_keys: Sequence[str] = fields.ListField(
         items_types=[str], item_validators=[Enum(*WorkloadBreakdownKeys.values())]
     )
-    usage_fields: Sequence[str] = fields.ListField(
-        items_types=[str], item_validators=[Enum(*UsageAggFields.values())]
-    )
+    usage_fields: Sequence[str] = fields.ListField(items_types=[str], item_validators=[Enum(*UsageAggFields.values())])

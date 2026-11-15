@@ -6,15 +6,7 @@ from apiserver.tests.automated import TestService
 
 class TestPipelines(TestService):
     task_hyperparams = {
-        "properties":
-            {
-                "version": {
-                    "section": "properties",
-                    "name": "version",
-                    "type": "str",
-                    "value": "3.2"
-                }
-            }
+        "properties": {"version": {"section": "properties", "name": "version", "type": "str", "value": "3.2"}}
     }
 
     def test_controller_operations(self):
@@ -22,11 +14,7 @@ class TestPipelines(TestService):
         project, task = self._temp_project_and_task(name=task_name)
         steps = [
             self.api.tasks.create(
-                name=f"Pipeline step {i}",
-                project=project,
-                type="training",
-                system_tags=["pipeline"],
-                parent=task
+                name=f"Pipeline step {i}", project=project, type="training", system_tags=["pipeline"], parent=task
             ).id
             for i in range(2)
         ]
@@ -62,10 +50,7 @@ class TestPipelines(TestService):
         project, task = self._temp_project_and_task(name=task_name)
         args = [{"name": "hello", "value": "test"}]
         pipeline_tasks = [
-            self.api.pipelines.start_pipeline(
-                task=task, queue=queue, args=args
-            ).pipeline
-            for _ in range(2)
+            self.api.pipelines.start_pipeline(task=task, queue=queue, args=args).pipeline for _ in range(2)
         ]
         tasks = self.api.tasks.get_all_ex(project=project).tasks
         self.assertEqual({task, *pipeline_tasks}, {t.id for t in tasks})
@@ -111,16 +96,12 @@ class TestPipelines(TestService):
         # watched queue
         queue = self._temp_queue("test pipelines")
         project, task = self._temp_project_and_task(name="pipelines test1")
-        res = self.api.pipelines.start_pipeline(
-            task=task, queue=queue, verify_watched_queue=True
-        )
+        res = self.api.pipelines.start_pipeline(task=task, queue=queue, verify_watched_queue=True)
         self.assertEqual(res.queue_watched, False)
 
         self.api.workers.register(worker="test pipelines", queues=[queue])
         project, task = self._temp_project_and_task(name="pipelines test2")
-        res = self.api.pipelines.start_pipeline(
-            task=task, queue=queue, verify_watched_queue=True
-        )
+        res = self.api.pipelines.start_pipeline(task=task, queue=queue, verify_watched_queue=True)
         self.assertEqual(res.queue_watched, True)
 
     def _temp_project_and_task(self, name) -> Tuple[str, str]:

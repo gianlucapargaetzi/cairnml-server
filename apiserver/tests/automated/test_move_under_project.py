@@ -44,9 +44,7 @@ class TestMoveUnderProject(TestService):
         self.api.projects.delete(project=project, force=True)
 
     def _temp_task(self):
-        task_input = dict(
-            name=self.entity_name, type="training"
-        )
+        task_input = dict(name=self.entity_name, type="training")
         return self.create_temp("tasks", **task_input)
 
     def _temp_model(self):

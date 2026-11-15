@@ -44,9 +44,7 @@ class ServingModel(Base):
 
 class RegisterRequest(ServingModel):
     timeout = IntField(
-        default=int(
-            config.get("services.serving.default_container_timeout_sec", 10 * 60)
-        ),
+        default=int(config.get("services.serving.default_container_timeout_sec", 10 * 60)),
         validators=[Min(1)],
     )
     """ registration timeout in seconds (default is 10min) """

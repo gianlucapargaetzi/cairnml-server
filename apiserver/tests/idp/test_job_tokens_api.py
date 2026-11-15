@@ -17,15 +17,19 @@ pytestmark = pytest.mark.integration  # needs MongoDB, Elasticsearch or a runnin
 
 
 def _public_pem(key):
-    return key.public_key().public_bytes(
-        serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo).decode()
+    return (
+        key.public_key()
+        .public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo)
+        .decode()
+    )
 
 
 def _agent(sub):
     """Enrol an agent as an admin and return (device id, agent access token)."""
     key = Ed25519PrivateKey.generate()
-    enrolled = call("devices.enroll", {"kind": "agent", "public_key": _public_pem(key)},
-                    token=idp_token(sub=sub, roles=("admin",)))
+    enrolled = call(
+        "devices.enroll", {"kind": "agent", "public_key": _public_pem(key)}, token=idp_token(sub=sub, roles=("admin",))
+    )
     device_id = enrolled.json()["data"]["id"]
     assertion = make_assertion(key, device_id, PUBLIC_URL)
     token = call("devices.exchange", {"assertion": assertion}).json()["data"]["access_token"]
@@ -35,8 +39,12 @@ def _agent(sub):
 def _new_task():
     from apiserver.tests.idp.bearer import suite_bearer
 
-    response = requests.post(f"{API}/tasks.create", json={"name": f"job-{uuid.uuid4().hex[:8]}", "type": "training"},
-                             headers={"Authorization": f"Bearer {suite_bearer()}"}, timeout=20)
+    response = requests.post(
+        f"{API}/tasks.create",
+        json={"name": f"job-{uuid.uuid4().hex[:8]}", "type": "training"},
+        headers={"Authorization": f"Bearer {suite_bearer()}"},
+        timeout=20,
+    )
     return response.json()["data"]["id"]
 
 
@@ -75,9 +83,14 @@ class TestJobTokens(TestCase):
 
     def test_a_laptop_cannot_get_a_job_token(self):
         key = Ed25519PrivateKey.generate()
-        device = call("devices.enroll", {"kind": "client", "public_key": _public_pem(key)},
-                      token=idp_token(sub=f"laptop-{uuid.uuid4().hex}")).json()["data"]["id"]
-        token = call("devices.exchange", {"assertion": make_assertion(key, device, PUBLIC_URL)}).json()["data"]["access_token"]
+        device = call(
+            "devices.enroll",
+            {"kind": "client", "public_key": _public_pem(key)},
+            token=idp_token(sub=f"laptop-{uuid.uuid4().hex}"),
+        ).json()["data"]["id"]
+        token = call("devices.exchange", {"assertion": make_assertion(key, device, PUBLIC_URL)}).json()["data"][
+            "access_token"
+        ]
         Task.objects(id=self.task_id).update_one(set__last_device=device)
         self.assertEqual(self.job_token(token=token).status_code, 401)
 
@@ -115,9 +128,14 @@ class TestGitToken(TestCase):
             return
         self.assertEqual(response.status_code, 400)
         self.assertTrue(
-            any(text in response.text for text in (
-                "the GitHub App is not installed on", "GitHub is not configured", "GitHub could not be reached",
-            )),
+            any(
+                text in response.text
+                for text in (
+                    "the GitHub App is not installed on",
+                    "GitHub is not configured",
+                    "GitHub could not be reached",
+                )
+            ),
             response.text,
         )
 
@@ -150,10 +168,14 @@ class TestStartedByAgent(TestCase):
 
     def test_a_laptop_that_starts_nothing_gets_no_job_token(self):
         key = Ed25519PrivateKey.generate()
-        laptop = call("devices.enroll", {"kind": "client", "public_key": _public_pem(key)},
-                      token=idp_token(sub=f"laptop-{uuid.uuid4().hex}")).json()["data"]["id"]
-        laptop_token = call("devices.exchange", {"assertion": make_assertion(key, laptop, PUBLIC_URL)}
-                            ).json()["data"]["access_token"]
+        laptop = call(
+            "devices.enroll",
+            {"kind": "client", "public_key": _public_pem(key)},
+            token=idp_token(sub=f"laptop-{uuid.uuid4().hex}"),
+        ).json()["data"]["id"]
+        laptop_token = call("devices.exchange", {"assertion": make_assertion(key, laptop, PUBLIC_URL)}).json()["data"][
+            "access_token"
+        ]
         call("tasks.started", {"task": self.task_id}, token=self.agent_token)
         response = call("devices.job_token", {"task": self.task_id}, token=laptop_token)
         self.assertEqual(response.status_code, 401)

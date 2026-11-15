@@ -23,10 +23,7 @@ log = config.logger(__file__)
 def check_mongo_empty() -> bool:
     for alias in utils.get_options(Database):
         collection_names = get_db(alias).list_collection_names()
-        if collection_names and any(
-            name in collection_names
-            for name in ["company", "user", "versions"]
-        ):
+        if collection_names and any(name in collection_names for name in ["company", "user", "versions"]):
             return False
 
     return True
@@ -91,10 +88,7 @@ def _apply_migrations(log: Logger):
     try:
         new_scripts = {
             ver: path
-            for ver, path in (
-                (parse(f.stem.replace("_", ".")), f)
-                for f in _migration_dir.glob("*.py")
-            )
+            for ver, path in ((parse(f.stem.replace("_", ".")), f) for f in _migration_dir.glob("*.py"))
             if ver > last_version
         }
     except ValueError as ex:
@@ -131,9 +125,7 @@ def _apply_migrations(log: Logger):
                     func(get_db(alias), **kwargs)
                 except Exception:
                     log.exception(f"Failed applying {script}:{func_name}()")
-                    raise ValueError(
-                        "Migration failed, aborting. Please restore backup."
-                    ) from None
+                    raise ValueError("Migration failed, aborting. Please restore backup.") from None
 
         DatabaseVersion(
             id=utils.id(),

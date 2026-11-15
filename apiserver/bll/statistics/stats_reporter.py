@@ -50,15 +50,11 @@ class StatisticsReporter:
         if not cls.supported:
             return
 
-        report_interval = timedelta(
-            hours=config.get("apiserver.statistics.report_interval_hours", 24)
-        )
+        report_interval = timedelta(hours=config.get("apiserver.statistics.report_interval_hours", 24))
         sleep(report_interval.total_seconds())
         while True:
             try:
-                for company in Company.objects(
-                    defaults__stats_option__enabled=True
-                ).only("id"):
+                for company in Company.objects(defaults__stats_option__enabled=True).only("id"):
                     stats = cls.get_statistics(company.id)
                     cls.send_queue.put(stats)
 
@@ -112,9 +108,7 @@ class StatisticsReporter:
                 "queues": {"count": Queue.objects(company=company_id).count()},
                 "users": {"count": UserProfile.objects(company=company_id).count()},
                 "resources": ResourceMonitor.get_stats(),
-                "experiments": next(
-                    iter(cls._get_experiments_stats(company_id).values()), {}
-                ),
+                "experiments": next(iter(cls._get_experiments_stats(company_id).values()), {}),
             },
             "agents": cls._get_agents_statistics(company_id),
         }
@@ -122,9 +116,7 @@ class StatisticsReporter:
     @classmethod
     def _get_agents_statistics(cls, company_id: str) -> Sequence[dict]:
         result = cls._get_resource_stats_per_agent(company_id, key="resources")
-        dpath.merge(
-            result, cls._get_experiments_stats_per_agent(company_id, key="experiments")
-        )
+        dpath.merge(result, cls._get_experiments_stats_per_agent(company_id, key="experiments"))
         return [{"uuid": agent_id, **data} for agent_id, data in result.items()]
 
     @classmethod
@@ -161,11 +153,7 @@ class StatisticsReporter:
 
         def _get_cardinality_fields(categories: Sequence[dict]) -> dict:
             names = {"cpu": "num_cores"}
-            return {
-                names[c["key"]]: nested_get(c, ("count", "value"))
-                for c in categories
-                if c["key"] in names
-            }
+            return {names[c["key"]]: nested_get(c, ("count", "value")) for c in categories if c["key"] in names}
 
         def _get_metric_fields(metrics: Sequence[dict]) -> dict:
             names = {
@@ -197,9 +185,7 @@ class StatisticsReporter:
 
     @classmethod
     def _get_experiments_stats_per_agent(cls, company_id: str, key: str) -> dict:
-        agent_relevant_threshold = timedelta(
-            days=config.get("apiserver.statistics.agent_relevant_threshold_days", 30)
-        )
+        agent_relevant_threshold = timedelta(days=config.get("apiserver.statistics.agent_relevant_threshold_days", 30))
         to_timestamp = int(time.time())
         from_timestamp = to_timestamp - int(agent_relevant_threshold.total_seconds())
         workers = cls._get_active_workers(company_id, from_timestamp, to_timestamp)
@@ -207,15 +193,10 @@ class StatisticsReporter:
             return {}
 
         stats = cls._get_experiments_stats(company_id, list(workers.keys()))
-        return {
-            worker_id: {key: {**workers[worker_id], **stat}}
-            for worker_id, stat in stats.items()
-        }
+        return {worker_id: {key: {**workers[worker_id], **stat}} for worker_id, stat in stats.items()}
 
     @classmethod
-    def _get_active_workers(
-        cls, company_id, from_timestamp: int, to_timestamp: int
-    ) -> dict:
+    def _get_active_workers(cls, company_id, from_timestamp: int, to_timestamp: int) -> dict:
         es_req = {
             "size": 0,
             "query": QueryBuilder.dates_range(from_timestamp, to_timestamp),
@@ -228,10 +209,7 @@ class StatisticsReporter:
         }
         res = cls._run_worker_stats_query(company_id, es_req)
         buckets = nested_get(res, ("aggregations", "workers", "buckets"), default=[])
-        return {
-            b["key"]: {"last_activity_time": b["last_activity_time"]["value"]}
-            for b in buckets
-        }
+        return {b["key"]: {"last_activity_time": b["last_activity_time"]["value"]} for b in buckets}
 
     @classmethod
     def _run_worker_stats_query(cls, company_id, es_req) -> dict:
@@ -241,9 +219,7 @@ class StatisticsReporter:
         )
 
     @classmethod
-    def _get_experiments_stats(
-        cls, company_id, workers: Optional[Sequence] = None
-    ) -> dict:
+    def _get_experiments_stats(cls, company_id, workers: Optional[Sequence] = None) -> dict:
         pipeline = [
             {
                 "$match": {
@@ -285,10 +261,7 @@ class StatisticsReporter:
                 }
             },
         ]
-        return {
-            group["_id"]: {k: v for k, v in group.items() if k != "_id"}
-            for group in Task.aggregate(pipeline)
-        }
+        return {group["_id"]: {k: v for k, v in group.items() if k != "_id"} for group in Task.aggregate(pipeline)}
 
 
 class WarningFilter(logging.Filter):
@@ -303,10 +276,6 @@ class WarningFilter(logging.Filter):
         logging.getLogger("urllib3.connectionpool").addFilter(cls())
 
     def filter(self, record):
-        if (
-            record.levelno == logging.WARNING
-            and len(record.args) > 2
-            and record.args[2] == "/stats"
-        ):
+        if record.levelno == logging.WARNING and len(record.args) > 2 and record.args[2] == "/stats":
             return False
         return True

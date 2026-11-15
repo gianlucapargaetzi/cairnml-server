@@ -85,9 +85,7 @@ class MetricEventsIterator:
         companies = {
             task_id: company_id
             for task_id, company_id in companies.items()
-            if not check_empty_data(
-                self.es, company_id=company_id, event_type=self.event_type
-            )
+            if not check_empty_data(self.es, company_id=company_id, event_type=self.event_type)
         }
         if not companies:
             return MetricEventsResult()
@@ -109,10 +107,7 @@ class MetricEventsIterator:
         ) as state:
             res = MetricEventsResult(next_scroll_id=state.id)
             specific_variants_requested = any(
-                variants
-                for t, metrics in task_metrics.items()
-                if metrics
-                for m, variants in metrics.items()
+                variants for t, metrics in task_metrics.items() if metrics for m, variants in metrics.items()
             )
             with ThreadPoolExecutor(EventSettings.max_workers) as pool:
                 res.metric_events = list(
@@ -152,21 +147,15 @@ class MetricEventsIterator:
 
             requested_metrics = task_metrics[task.id]
             return {
-                stats.metric: stats.event_stats_by_type[
-                    self.event_type.value
-                ].last_update
+                stats.metric: stats.event_stats_by_type[self.event_type.value].last_update
                 for stats in metric_stats.values()
                 if self.event_type.value in stats.event_stats_by_type
                 and (not requested_metrics or stats.metric in requested_metrics)
             }
 
-        update_times = {
-            task.id: get_last_update_times_for_task_metrics(task) for task in tasks
-        }
+        update_times = {task.id: get_last_update_times_for_task_metrics(task) for task in tasks}
         task_metric_states = {
-            task_state.task: {
-                metric_state.metric: metric_state for metric_state in task_state.metrics
-            }
+            task_state.task: {metric_state.metric: metric_state for metric_state in task_state.metrics}
             for task_state in state.tasks
         }
         task_metrics_to_recalc = {}
@@ -196,18 +185,11 @@ class MetricEventsIterator:
                 task=task,
                 metrics=[
                     *updated_state.metrics,
-                    *(
-                        old_metric
-                        for old_metric in old_state.metrics
-                        if old_metric.metric not in updated_metrics
-                    ),
+                    *(old_metric for old_metric in old_state.metrics if old_metric.metric not in updated_metrics),
                 ],
             )
 
-        state.tasks = [
-            merge_with_updated_task_states(task_state, updated_task_states)
-            for task_state in state.tasks
-        ]
+        state.tasks = [merge_with_updated_task_states(task_state, updated_task_states) for task_state in state.tasks]
 
     def _init_task_states(
         self, companies: Mapping[str, str], task_metrics: Mapping[str, dict]
@@ -222,7 +204,10 @@ class MetricEventsIterator:
             )
 
         return [
-            TaskScrollState(task=task, metrics=metric_states,)
+            TaskScrollState(
+                task=task,
+                metrics=metric_states,
+            )
             for task, metric_states in zip(task_metrics, task_metric_states)
         ]
 
@@ -250,12 +235,8 @@ class MetricEventsIterator:
             must.append(get_metric_variants_condition(metrics))
         query = {"bool": {"must": must}}
 
-        search_args = dict(
-            es=self.es, company_id=company_id, event_type=self.event_type
-        )
-        max_metrics, max_variants = get_max_metric_and_variant_counts(
-            query=query, **search_args
-        )
+        search_args = dict(es=self.es, company_id=company_id, event_type=self.event_type)
+        max_metrics, max_variants = get_max_metric_and_variant_counts(query=query, **search_args)
         max_variants = int(max_variants // 2)
         variant_state_aggs, fill_variant_state_data = self._get_variant_state_aggs()
         es_req: dict = {
@@ -276,11 +257,7 @@ class MetricEventsIterator:
                                 "size": max_variants,
                                 "order": {"_key": "asc"},
                             },
-                            **(
-                                {"aggs": variant_state_aggs}
-                                if variant_state_aggs
-                                else {}
-                            ),
+                            **({"aggs": variant_state_aggs} if variant_state_aggs else {}),
                         },
                     },
                 }
@@ -306,10 +283,7 @@ class MetricEventsIterator:
             MetricState(
                 metric=metric["key"],
                 timestamp=nested_get(metric, ("last_event_timestamp", "value")),
-                variants=[
-                    init_variant_state(variant)
-                    for variant in nested_get(metric, ("variants", "buckets"))
-                ],
+                variants=[init_variant_state(variant) for variant in nested_get(metric, ("variants", "buckets"))],
             )
             for metric in nested_get(es_res, ("aggregations", "metrics", "buckets"))
         ]
@@ -407,9 +381,7 @@ class MetricEventsIterator:
             return task_state.task, []
 
         invalid_iterations = {
-            (m.metric, v.variant): v.last_invalid_iteration
-            for m in task_state.metrics
-            for v in m.variants
+            (m.metric, v.variant): v.last_invalid_iteration for m in task_state.metrics for v in m.variants
         }
         allow_uninitialized = (
             False

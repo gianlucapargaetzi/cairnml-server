@@ -84,13 +84,22 @@ def registry_details(entry: RegistryEntry, registry: Repository) -> dict:
     }
 
 
-def details(company: str, user: str, is_admin: bool, *, repository: Optional[str] = None, entry: Optional[str] = None,
-            commit: Optional[str] = None) -> dict:
+def details(
+    company: str,
+    user: str,
+    is_admin: bool,
+    *,
+    repository: Optional[str] = None,
+    entry: Optional[str] = None,
+    commit: Optional[str] = None,
+) -> dict:
     """The details of a registry's entry (stored, no GitHub call) when ``entry`` (its id, or its reference) is given, otherwise
     those of the repository (its id, its address or its reference). Refused as missing when the user does not see it."""
     if entry:
-        found = RegistryEntry.objects(company=company, id=entry).first() or RegistryEntry.objects(
-            company=company, reference=entry).first()
+        found = (
+            RegistryEntry.objects(company=company, id=entry).first()
+            or RegistryEntry.objects(company=company, reference=entry).first()
+        )
         registry = Repository.objects(company=company, id=found.registry).first() if found else None
         if found is None or registry is None or not repos.can_see(company, user, is_admin, registry):
             raise errors.bad_request.ValidationError(f"no such dataset: {entry}")

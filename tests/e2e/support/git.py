@@ -9,14 +9,17 @@ from contextlib import contextmanager
 from pathlib import Path
 
 IDENTITY = {
-    "GIT_AUTHOR_NAME": "E2E Test", "GIT_AUTHOR_EMAIL": "e2e@example.test",
-    "GIT_COMMITTER_NAME": "E2E Test", "GIT_COMMITTER_EMAIL": "e2e@example.test",
+    "GIT_AUTHOR_NAME": "E2E Test",
+    "GIT_AUTHOR_EMAIL": "e2e@example.test",
+    "GIT_COMMITTER_NAME": "E2E Test",
+    "GIT_COMMITTER_EMAIL": "e2e@example.test",
 }
 
 
 def git(cwd: Path, *args: str) -> str:
-    out = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True,
-                         env={**os.environ, **IDENTITY}, timeout=120)
+    out = subprocess.run(
+        ["git", *args], cwd=cwd, capture_output=True, text=True, env={**os.environ, **IDENTITY}, timeout=120
+    )
     assert out.returncode == 0, f"git {' '.join(args)} failed: {out.stderr}"
     return out.stdout.strip()
 
@@ -55,7 +58,10 @@ def served(root: Path):
         port = probe.getsockname()[1]
     daemon = subprocess.Popen(
         ["git", "daemon", "--export-all", f"--base-path={root.as_posix()}", "--listen=127.0.0.1", f"--port={port}"],
-        stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
     try:
         deadline = time.monotonic() + 10
         while True:

@@ -41,9 +41,7 @@ class Token(Payload):
         entities=None,
         **_,
     ):
-        super(Token, self).__init__(
-            AuthType.bearer_token, identity=identity, entities=entities
-        )
+        super(Token, self).__init__(AuthType.bearer_token, identity=identity, entities=entities)
         self.exp = exp
         self.iat = iat
         self.nbf = nbf
@@ -93,9 +91,7 @@ class Token(Payload):
 
     @classmethod
     def decode(cls, encoded_token, verify=True):
-        options = (
-            {"verify_signature": False, "verify_exp": True} if not verify else None
-        )
+        options = {"verify_signature": False, "verify_exp": True} if not verify else None
         return jwt.decode(
             encoded_token,
             token_secret,
@@ -113,14 +109,10 @@ class Token(Payload):
                 raise errors.unauthorized.InvalidToken("token missing identity")
             return token
         except Exception as e:
-            raise errors.unauthorized.InvalidToken(
-                "failed parsing token", reason=e.args[0]
-            ) from e
+            raise errors.unauthorized.InvalidToken("failed parsing token", reason=e.args[0]) from e
 
     @classmethod
-    def create_encoded_token(
-        cls, identity, expiration_sec=None, entities=None, **extra_payload
-    ):
+    def create_encoded_token(cls, identity, expiration_sec=None, entities=None, **extra_payload):
         if identity.role not in (Role.system,):
             # limit expiration time for all roles but an internal service
             expiration_sec = expiration_sec or cls.default_expiration_sec
@@ -128,9 +120,7 @@ class Token(Payload):
         now = datetime.utcnow()
         session_id = uuid4().hex
 
-        token = cls(
-            identity=identity, entities=entities, iat=now, session_id=session_id
-        )
+        token = cls(identity=identity, entities=entities, iat=now, session_id=session_id)
 
         if expiration_sec:
             # add 'expiration' claim
