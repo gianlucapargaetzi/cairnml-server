@@ -1,0 +1,74 @@
+"""
+{{ service.name }} service
+{% if description %}
+
+{{ description }}
+{% endif %}
+"""
+{{ header }}
+from typing import List, Optional, Any
+import six
+from datetime import datetime
+from dateutil.parser import parse as parse_datetime
+from {{ session_package }} import (
+    Request,
+    Response,
+    NonStrictDataModel,
+    schema_property,
+)
+{% for c in classes %}
+
+
+class {{ c.name }}({{ c.base }}):
+{% if c.doc or c.params_doc %}
+    """
+{% for line in c.doc %}
+    {{ line }}
+{% endfor %}
+{% if c.doc and c.params_doc %}
+
+{% endif %}
+{% for line in c.params_doc %}
+    {{ line }}
+{% endfor %}
+    """
+{% else %}
+    """ """
+{% endif %}
+
+{% if c.extra %}
+    _service = "{{ c.extra.service }}"
+    _action = "{{ c.extra.action }}"
+    _version = "{{ c.extra.version }}"
+{% endif %}
+    _schema = {{ c.schema }}
+
+{{ c.signature }}
+        super({{ c.name }}, self).__init__(**kwargs)
+{% for n in c.order %}
+        self.{{ n }} = {{ n }}
+{% endfor %}
+{% for p in c.props %}
+
+    @schema_property("{{ p.name }}")
+    def {{ p.name }}(self) -> {{ p.annotation }}:
+        return self._property_{{ p.name }}
+
+    @{{ p.name }}.setter
+    def {{ p.name }}(self, value: {{ p.annotation }}) -> None:
+        if value is None:
+            self._property_{{ p.name }} = None
+            return
+{% for line in p.setter %}
+        {{ line }}
+{% endfor %}
+        self._property_{{ p.name }} = value
+{% endfor %}
+{% endfor %}
+
+
+response_mapping = {
+{% for request, response in mapping %}
+    {{ request }}: {{ response }},
+{% endfor %}
+}
