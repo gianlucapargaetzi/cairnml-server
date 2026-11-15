@@ -29,3 +29,9 @@ def test_queues_delete_ends_at_its_refusal():
     tree = ast.parse((ROOT / "services/queues.py").read_text())
     (delete,) = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "delete"]
     assert isinstance(delete.body[-1], ast.Raise), "statements after the raise in queues.delete"
+
+
+def test_the_old_git_credential_model_and_its_migration_are_gone():
+    assert not (ROOT / "database/model/git_credential.py").exists(), "the GitCredential model file still exists"
+    assert "migrate_from_git_credentials" not in defined_names("idp/git_credentials.py")
+    assert "migrate_from_git_credentials" not in (ROOT / "server_init/app_sequence.py").read_text()

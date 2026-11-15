@@ -16,7 +16,6 @@ from urllib.parse import urlsplit
 from cryptography.fernet import Fernet, InvalidToken
 
 from apiserver.apierrors import errors
-from apiserver.database.model.git_credential import GitCredential
 from apiserver.database.model.user_access import UserAccess
 from apiserver.idp.audit import record as audit
 from apiserver.idp.secrets import SecretMissing, read_secret
@@ -156,22 +155,6 @@ def find_credential(company: str, repository: str):
     """The company's stored credential that applies to a repository URL, or None."""
     host, path = host_and_path(repository)
     return most_specific(_company_tokens(company, host), path)
-
-
-def migrate_from_git_credentials() -> int:
-    """Moves the credentials of the old store (the GitCredential collection) into the access store, once. The secret is
-    already encrypted with the same key, so it moves as it is. Safe to run again: nothing is moved twice."""
-    moved = 0
-    now = datetime.utcnow()
-    for old in GitCredential.objects():
-        if not _company_tokens(old.company, old.host).filter(path=old.path).first():
-            UserAccess(id=old.id, company=old.company, user=COMPANY_OWNER, scope="company", kind="token",
-                       label=f"{old.username}@{old.host}" + (f"/{old.path}" if old.path else ""),
-                       host=old.host, path=old.path, username=old.username, secret=old.secret,
-                       created=old.created or now, updated=old.updated or now).save()
-            moved += 1
-        old.delete()
-    return moved
 
 
 def secret_of(entry) -> str:
