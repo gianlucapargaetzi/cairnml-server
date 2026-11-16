@@ -309,7 +309,7 @@ def run_import(company: str, identity: Identity, chunk_id: str) -> dict:
                         "uri": f"{datachunks.LOCATION_PREFIX}artifact/{task_id}/{quote(planned.name, safe='/')}",
                         "hash": sha256,
                         "content_size": size,
-                        "timestamp": int(now.timestamp() * 1000),
+                        "timestamp": int(now.timestamp()),
                     }
                     artifacts[get_artifact_id(artifact)] = Artifact(**artifact)
 
