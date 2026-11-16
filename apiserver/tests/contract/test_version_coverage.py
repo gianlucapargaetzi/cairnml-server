@@ -34,9 +34,9 @@ def _blocks_needing_an_implementation():
 def test_a_changed_version_has_its_own_implementation(name, version):
     endpoint = ServiceRepo._get_endpoint(name, PartialVersion(version))
     assert endpoint is not None, f"{name} has no implementation at {version}"
-    assert (
-        str(endpoint.min_version) == version
-    ), f"{name} at {version} is served by the implementation of {endpoint.min_version}"
+    assert str(endpoint.min_version) == version, (
+        f"{name} at {version} is served by the implementation of {endpoint.min_version}"
+    )
 
 
 def test_every_block_is_served_by_some_implementation():

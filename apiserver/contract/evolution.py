@@ -194,24 +194,32 @@ def _changelog_section(text: str, version: str) -> Optional[str]:
     return match.group(1) if match else None
 
 
+VERSION_SOURCES = (
+    ("apiserver/service_repo/api_version.py", r'API_VERSION\s*=\s*"([\d.]+)"'),
+    # before api_version.py existed, the constant was the maximum version of the registry
+    ("apiserver/service_repo/service_repo.py", r'_max_version = PartialVersion\("([\d.]+)"\)'),
+)
+
+
+def _git_show(ref: str, path: str) -> Optional[str]:
+    result = subprocess.run(["git", "show", f"{ref}:{path}"], cwd=REPO_ROOT, capture_output=True, text=True)
+    return result.stdout if result.returncode == 0 else None
+
+
 def _schema_from_ref(ref: str, destination: Path) -> Tuple[Path, str]:
     """The schema folder and the API version of a git ref, exported into destination."""
     archive = subprocess.run(
-        ["git", "archive", ref, "apiserver/schema/services", "apiserver/service_repo/api_version.py"],
+        ["git", "archive", ref, "apiserver/schema/services"],
         cwd=REPO_ROOT,
         check=True,
         capture_output=True,
     )
-    subprocess.run(
-        ["tar", "-x", "-C", str(destination)],
-        input=archive.stdout,
-        check=True,
-    )
-    version_file = (destination / "apiserver/service_repo/api_version.py").read_text()
-    api = re.search(r'API_VERSION\s*=\s*"([\d.]+)"', version_file)
-    if not api:
-        raise ValueError(f"no API_VERSION in {ref}")
-    return destination / "apiserver/schema/services", api.group(1)
+    subprocess.run(["tar", "-x", "-C", str(destination)], input=archive.stdout, check=True)
+    for path, pattern in VERSION_SOURCES:
+        text = _git_show(ref, path)
+        if text is not None and re.search(pattern, text):
+            return destination / "apiserver/schema/services", re.search(pattern, text).group(1)
+    raise ValueError(f"no API version found in {ref}")
 
 
 def assess(
