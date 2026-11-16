@@ -1,11 +1,10 @@
-from apiserver.tests.idp.bearer import suite_bearer
 from datetime import datetime
 from time import sleep
 from typing import Sequence
 
 from apiserver.apierrors.errors import bad_request
 from apiserver.database.utils import partition_tags
-from apiserver.tests.api_client import APIClient, AttrDict
+from apiserver.tests.api_client import AttrDict
 from apiserver.tests.automated import TestService
 from apiserver.config_repo import config
 
@@ -13,7 +12,7 @@ log = config.logger(__file__)
 
 
 class TestTags(TestService):
-    def setUp(self, version="2.4"):
+    def setUp(self, version="2.41"):
         super().setUp(version)
 
     def testPartition(self):
@@ -32,39 +31,6 @@ class TestTags(TestService):
         tags, system_tags = partition_tags("task", ["test", "development", "annotator20", "Annotation"])
         self.assertTagsEqual(tags, ["test"])
         self.assertTagsEqual(system_tags, ["development", "annotator20", "Annotation"])
-
-    def testBackwardsCompatibility(self):
-        new_api = self.api
-        self.api = APIClient(base_url="http://localhost/cairnml/api/v2.2", session_token=suite_bearer())
-        entity_tags = {
-            "model": "archived",
-            "project": "public",
-            "task": "development",
-        }
-
-        for name, system_tag in entity_tags.items():
-            create_func = getattr(self, f"_temp_{name}")
-            _id = create_func(tags=[system_tag, "test"])
-            names = f"{name}s"
-
-            # when accessed through the old api all the tags are in the tags field
-            self.assertGetById(service=names, entity=name, _id=_id, tags=[system_tag, "test"])
-            entities = self._send(names, "get_all", name="Test tags", tags=[f"-{system_tag}"])[names]
-            self.assertNotFound(_id, entities)
-
-            # when accessed through the new api the tags are in tags and system_tags fields
-            self.assertGetById(
-                service=names,
-                entity=name,
-                _id=_id,
-                tags=["test"],
-                system_tags=[system_tag],
-                api=new_api,
-            )
-
-            # update operation, remove system tag through the old api
-            self._send(names, "update", tags=["test"], **{name: _id})
-            self.assertGetById(service=names, entity=name, _id=_id, tags=["test"])
 
     def testProjectTags(self):
         pr_id = self._temp_project(system_tags=["default"])

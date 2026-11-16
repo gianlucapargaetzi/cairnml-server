@@ -46,12 +46,6 @@ class TaskRequest(models.Base):
     task = fields.StringField(required=True)
 
 
-class UpdateForTaskRequest(TaskRequest):
-    uri = fields.StringField()
-    iteration = fields.IntField()
-    override_model_id = fields.StringField()
-
-
 class UpdateModelRequest(ModelRequest):
     task = fields.StringField()
     iteration = fields.IntField()

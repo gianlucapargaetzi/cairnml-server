@@ -58,8 +58,8 @@ queue_bll = QueueBLL(worker_bll)
 
 
 def conform_queue_data(call: APICall, queue_data: Union[Sequence[dict], dict]):
-    conform_output_tags(call, queue_data)
-    unescape_metadata(call, queue_data)
+    conform_output_tags(queue_data)
+    unescape_metadata(queue_data)
 
 
 def _with_owner(queue_data: Union[Sequence[dict], dict]) -> Union[Sequence[dict], dict]:
@@ -69,7 +69,7 @@ def _with_owner(queue_data: Union[Sequence[dict], dict]) -> Union[Sequence[dict]
     return queue_data
 
 
-@endpoint("queues.get_by_id", min_version="2.4")
+@endpoint("queues.get_by_id")
 def get_by_id(call: APICall, company_id, request: GetByIdRequest):
     QueueAccessBLL.assert_can_use(call.identity, company_id, request.queue)
     queue = queue_bll.get_by_id(company_id, request.queue, max_task_entries=request.max_task_entries)
@@ -78,7 +78,7 @@ def get_by_id(call: APICall, company_id, request: GetByIdRequest):
     call.result.data = {"queue": queue_dict}
 
 
-@endpoint("queues.get_default", min_version="2.4", response_data_model=GetDefaultResp)
+@endpoint("queues.get_default", response_data_model=GetDefaultResp)
 def get_by_id_2_4(call: APICall):
     queue = queue_bll.get_default(call.identity.company)
     call.result.data_model = GetDefaultResp(id=queue.id, name=queue.name)
@@ -95,7 +95,7 @@ def _hidden_query(data: dict) -> Q:
     return Q(system_tags__nin=hidden_tags)
 
 
-@endpoint("queues.get_projects", min_version="2.4")
+@endpoint("queues.get_projects")
 def get_projects(call: APICall, company_id, request: QueueRequest):
     """Root projects the queue is allocated to. Admins see all of them, others only the ones they own or are in"""
     QueueAccessBLL.assert_can_use(call.identity, company_id, request.queue)
@@ -108,9 +108,9 @@ def get_projects(call: APICall, company_id, request: QueueRequest):
     call.result.data = {"projects": [{"id": project.id, "name": project.name} for project in projects]}
 
 
-@endpoint("queues.get_all_ex", min_version="2.4")
+@endpoint("queues.get_all_ex")
 def get_all_ex(call: APICall, company: str, request: GetAllRequest):
-    conform_tag_fields(call, call.data)
+    conform_tag_fields(call.data)
     ret_params = {}
 
     call_data = Metadata.escape_query_parameters(call.data)
@@ -128,9 +128,9 @@ def get_all_ex(call: APICall, company: str, request: GetAllRequest):
     call.result.data = {"queues": queues, **ret_params}
 
 
-@endpoint("queues.get_all", min_version="2.4")
+@endpoint("queues.get_all")
 def get_all(call: APICall, company: str, request: GetAllRequest):
-    conform_tag_fields(call, call.data)
+    conform_tag_fields(call.data)
     ret_params = {}
     call_data = Metadata.escape_query_parameters(call.data)
     queues = queue_bll.get_all(
@@ -147,7 +147,6 @@ def get_all(call: APICall, company: str, request: GetAllRequest):
 
 @endpoint(
     "queues.update",
-    min_version="2.4",
     response_data_model=UpdateResponse,
 )
 def update(call: APICall, company_id, request: UpdateRequest):
@@ -160,7 +159,7 @@ def update(call: APICall, company_id, request: UpdateRequest):
         )
     if "public" in data:
         refuse_inactive(call.identity.user)
-    conform_tag_fields(call, data, validate=True)
+    conform_tag_fields(data, validate=True)
     escape_metadata(data)
     updated, fields = queue_bll.update(company_id=company_id, queue_id=request.queue, **data)
     if "public" in data:
@@ -169,7 +168,7 @@ def update(call: APICall, company_id, request: UpdateRequest):
     call.result.data_model = UpdateResponse(updated=updated, fields=fields)
 
 
-@endpoint("queues.delete", min_version="2.4")
+@endpoint("queues.delete")
 def delete(call: APICall, company_id, request: DeleteRequest):
     QueueAccessBLL.assert_can_manage(call.identity, company_id, request.queue)
     # a queue goes with its agent: revoking the agent removes nothing here, and queues are not deleted by hand
@@ -231,7 +230,7 @@ def move_task_to_queue(call: APICall, company_id, request: MoveTaskToQueueReques
     call.result.data = {"moved": 1}
 
 
-@endpoint("queues.add_task", min_version="2.4")
+@endpoint("queues.add_task")
 def add_task(call: APICall, company_id, request: AddTaskRequest):
     QueueAccessBLL.assert_can_use(call.identity, company_id, request.queue)
     _assert_tasks_access(company_id, call.identity, [request.task], "write")
@@ -264,7 +263,7 @@ def get_next_task(call: APICall, company_id, request: GetNextTaskRequest):
         call.result.data = data
 
 
-@endpoint("queues.remove_task", min_version="2.4")
+@endpoint("queues.remove_task")
 def remove_task(call: APICall, company_id, request: RemoveTaskRequest):
     QueueAccessBLL.assert_can_use(call.identity, company_id, request.queue)
     _assert_tasks_access(company_id, call.identity, [request.task], "write")
@@ -298,7 +297,6 @@ def clear_queue(call: APICall, company_id, request: QueueRequest):
 
 @endpoint(
     "queues.move_task_forward",
-    min_version="2.4",
     response_data_model=MoveTaskResponse,
 )
 def move_task_forward(call: APICall, company_id, request: MoveTaskRequest):
@@ -317,7 +315,6 @@ def move_task_forward(call: APICall, company_id, request: MoveTaskRequest):
 
 @endpoint(
     "queues.move_task_backward",
-    min_version="2.4",
     response_data_model=MoveTaskResponse,
 )
 def move_task_backward(call: APICall, company_id, request: MoveTaskRequest):
@@ -336,7 +333,6 @@ def move_task_backward(call: APICall, company_id, request: MoveTaskRequest):
 
 @endpoint(
     "queues.move_task_to_front",
-    min_version="2.4",
     response_data_model=MoveTaskResponse,
 )
 def move_task_to_front(call: APICall, company_id, request: TaskRequest):
@@ -355,7 +351,6 @@ def move_task_to_front(call: APICall, company_id, request: TaskRequest):
 
 @endpoint(
     "queues.move_task_to_back",
-    min_version="2.4",
     response_data_model=MoveTaskResponse,
 )
 def move_task_to_back(call: APICall, company_id, request: TaskRequest):
@@ -374,7 +369,6 @@ def move_task_to_back(call: APICall, company_id, request: TaskRequest):
 
 @endpoint(
     "queues.get_queue_metrics",
-    min_version="2.4",
     response_data_model=GetMetricsResponse,
 )
 def get_queue_metrics(call: APICall, company_id, request: GetMetricsRequest) -> GetMetricsResponse:
@@ -424,7 +418,7 @@ def get_queue_metrics(call: APICall, company_id, request: GetMetricsRequest) -> 
     )
 
 
-@endpoint("queues.add_or_update_metadata", min_version="2.13")
+@endpoint("queues.add_or_update_metadata")
 def add_or_update_metadata(call: APICall, company_id: str, request: AddOrUpdateMetadataRequest):
     QueueAccessBLL.assert_can_manage(call.identity, company_id, request.queue)
     queue_id = request.queue
@@ -432,7 +426,7 @@ def add_or_update_metadata(call: APICall, company_id: str, request: AddOrUpdateM
     return {"updated": Metadata.edit_metadata(queue, items=request.metadata, replace_metadata=request.replace_metadata)}
 
 
-@endpoint("queues.delete_metadata", min_version="2.13")
+@endpoint("queues.delete_metadata")
 def delete_metadata(call: APICall, company_id: str, request: DeleteMetadataRequest):
     QueueAccessBLL.assert_can_manage(call.identity, company_id, request.queue)
     queue_id = request.queue
@@ -440,7 +434,7 @@ def delete_metadata(call: APICall, company_id: str, request: DeleteMetadataReque
     return {"updated": Metadata.delete_metadata(queue, keys=request.keys)}
 
 
-@endpoint("queues.peek_task", min_version="2.15")
+@endpoint("queues.peek_task")
 def peek_task(call: APICall, company_id: str, request: QueueRequest):
     QueueAccessBLL.assert_can_use(call.identity, company_id, request.queue)
     queue_id = request.queue
@@ -457,7 +451,7 @@ def peek_task(call: APICall, company_id: str, request: QueueRequest):
     return {"task": task_id}
 
 
-@endpoint("queues.get_num_entries", min_version="2.15")
+@endpoint("queues.get_num_entries")
 def get_num_entries(call: APICall, company_id: str, request: QueueRequest):
     QueueAccessBLL.assert_can_use(call.identity, company_id, request.queue)
     return {"num": queue_bll.count_entries(company=company_id, queue_id=request.queue)}

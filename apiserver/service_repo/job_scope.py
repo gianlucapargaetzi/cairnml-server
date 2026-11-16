@@ -29,8 +29,6 @@ JOB_MODEL_ACTIONS = {
     "models.edit",
     "models.update",
     "models.set_ready",
-    "models.get_by_task_id",
-    "models.update_for_task",
     "models.add_or_update_metadata",
     "models.delete_metadata",
 }
@@ -209,10 +207,6 @@ def _check_model_scope(name: str, call, job_task: str) -> None:
         # any task, and the job may create it. A model that names a task must name the job's own task.
         task = (call.data or {}).get("task")
         if task in (None, "") or task == job_task:
-            return
-        raise errors.bad_request.InvalidTaskId(id="", company="")
-    if name == "models.update_for_task":
-        if (call.data or {}).get("task") == job_task:
             return
         raise errors.bad_request.InvalidTaskId(id="", company="")
 

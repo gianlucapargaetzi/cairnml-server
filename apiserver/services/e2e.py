@@ -31,7 +31,7 @@ def _check_allowed(call: APICall) -> str:
     return prefix
 
 
-@endpoint("system.e2e_deletions", min_version="2.1")
+@endpoint("system.e2e_deletions")
 def e2e_deletions(call: APICall, company_id, _):
     """The async delete's own records for the given urls: what it has not finished yet, and why a deletion failed.
     A url that is not listed has been deleted from storage (the delete service removes its record when it is done)."""
@@ -54,7 +54,7 @@ def e2e_deletions(call: APICall, company_id, _):
     call.result.data = {"pending": pending}
 
 
-@endpoint("system.e2e_reset", min_version="2.1")
+@endpoint("system.e2e_reset")
 def e2e_reset(call: APICall, company_id, _):
     prefix = _check_allowed(call)
     body = call.data or {}

@@ -24,7 +24,7 @@ IDP_ISSUER = "http://cairnml-idp:8180/cairnml/idp/realms/cairnml"
 SDK_CLIENT = "cairnml-sdk"
 SERVER = os.environ.get("SM_API_URL", "http://localhost/cairnml/api")
 PUBLIC_URL = os.environ.get("TEST_PUBLIC_URL", "http://localhost/cairnml/api")
-API = f"{SERVER}/v2.8"
+API = f"{SERVER}/v2.41"
 
 
 def _idp_key():

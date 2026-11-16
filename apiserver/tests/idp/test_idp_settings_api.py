@@ -10,7 +10,7 @@ pytestmark = pytest.mark.integration  # needs MongoDB, Elasticsearch or a runnin
 
 # The API is reached through the proxy on port 80, under /cairnml/api. SM_API_URL is the address the test client types.
 API_ADDRESS = os.environ.get("SM_API_URL", "http://localhost/cairnml/api").rstrip("/")
-API = f"{API_ADDRESS}/v2.8"
+API = f"{API_ADDRESS}/v2.41"
 ROOT = API_ADDRESS[: -len("/api")]
 
 

@@ -70,7 +70,7 @@ def test_logout_ends_the_identity_providers_session_and_returns_to_the_sign_in()
     )
     assert parse_qs(url.query) == {
         "client_id": ["cairnml-web"],
-        "post_logout_redirect_uri": ["http://192.168.1.20/cairnml/api/v2.8/login.idp_start"],
+        "post_logout_redirect_uri": ["http://192.168.1.20/cairnml/api/v2.41/login.idp_start"],
     }
 
 

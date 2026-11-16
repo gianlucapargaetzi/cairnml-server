@@ -71,7 +71,7 @@ def _device_views(devices) -> list:
     return [_device_view(d, owners.get(d.user)) for d in devices]
 
 
-@endpoint("devices.enroll", min_version="2.8", request_data_model=EnrollRequest)
+@endpoint("devices.enroll", request_data_model=EnrollRequest)
 def enroll(call: APICall, _company, request: EnrollRequest):
     if request.kind not in (DeviceKind.client, DeviceKind.agent):
         raise errors.bad_request.InvalidId("kind must be client or agent")
@@ -120,7 +120,7 @@ def enroll(call: APICall, _company, request: EnrollRequest):
     return result
 
 
-@endpoint("devices.idp_settings", min_version="2.8")
+@endpoint("devices.idp_settings")
 def idp_settings(call: APICall, _company, _):
     """What a device needs to start the identity-provider sign-in. No secret is returned."""
     return {
@@ -135,7 +135,7 @@ def idp_settings(call: APICall, _company, _):
     }
 
 
-@endpoint("devices.exchange", min_version="2.8", request_data_model=ExchangeRequest)
+@endpoint("devices.exchange", request_data_model=ExchangeRequest)
 def exchange(call: APICall, _company, request: ExchangeRequest):
     try:
         device_id = unverified_issuer(request.assertion)
@@ -191,14 +191,14 @@ def exchange(call: APICall, _company, request: ExchangeRequest):
     return {"access_token": token, "expires_in": config.get("apiserver.idp.access_token_ttl_sec")}
 
 
-@endpoint("devices.get_all", min_version="2.8")
+@endpoint("devices.get_all")
 def get_all(call: APICall, _company, _):
     identity = call.identity
     query = {} if identity.role in ADMIN_ROLES else {"user": identity.user}
     return {"devices": _device_views(Device.objects(**query))}
 
 
-@endpoint("devices.revoke", min_version="2.8", request_data_model=RevokeRequest)
+@endpoint("devices.revoke", request_data_model=RevokeRequest)
 def revoke(call: APICall, _company, request: RevokeRequest):
     identity = call.identity
     device = Device.objects(id=request.id).first()
@@ -212,7 +212,7 @@ def revoke(call: APICall, _company, request: RevokeRequest):
     return _device_view(device, AuthUser.objects(id=device.user).first())
 
 
-@endpoint("devices.reassign", min_version="2.8", request_data_model=ReassignRequest)
+@endpoint("devices.reassign", request_data_model=ReassignRequest)
 def reassign(call: APICall, _company, request: ReassignRequest):
     identity = call.identity
     if identity.role not in ADMIN_ROLES:
@@ -253,7 +253,7 @@ def _caller_device_id(call: APICall) -> str:
     return claims.get("device")
 
 
-@endpoint("devices.job_token", min_version="2.8", request_data_model=JobTokenRequest)
+@endpoint("devices.job_token", request_data_model=JobTokenRequest)
 def job_token(call: APICall, _company, request: JobTokenRequest):
     device = Device.objects(id=_caller_device_id(call)).first()
     task = Task.objects(id=request.task).only("status", "last_device", "user").first()
@@ -278,7 +278,7 @@ def job_token(call: APICall, _company, request: JobTokenRequest):
     return {"access_token": token, "expires_in": config.get("apiserver.idp.job_token_ttl_sec")}
 
 
-@endpoint("devices.git_token", min_version="2.8", request_data_model=GitTokenRequest)
+@endpoint("devices.git_token", request_data_model=GitTokenRequest)
 def git_token(call: APICall, company, request: GitTokenRequest):
     """A read-only token for the task's repository, for the job or the agent running it. On GitHub that is a
     GitHub App token; on another host it is the Git credential stored for the host (and path prefix)."""

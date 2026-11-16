@@ -5,7 +5,7 @@ log = config.logger(__file__)
 
 
 class TestTasksDiff(TestService):
-    def setUp(self, version="2.0"):
+    def setUp(self, version="2.41"):
         super(TestTasksDiff, self).setUp(version=version)
 
     def new_task(self, **kwargs):

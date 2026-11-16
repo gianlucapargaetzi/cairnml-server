@@ -3,6 +3,7 @@ names ``id``, ``repository`` and ``repositories`` are refused as unknown fields.
 
 import pytest
 
+from apiserver.service_repo import API_VERSION
 from apiserver.apierrors import errors
 from apiserver.apierrors.apierror import APIError
 from apiserver.bll import repositories as bll
@@ -14,7 +15,7 @@ from apiserver.tests.services import test_repositories_service as base
 from apiserver.tests.services.test_repositories_service import URL, call
 
 world = base.world  # the fixture of the service tests
-VERSION = PartialVersion("2.40")
+VERSION = PartialVersion(API_VERSION)
 
 # the actions that name a repository, with the extra fields each needs to get past its own checks
 ID_ACTIONS = {
@@ -214,7 +215,7 @@ USER_ACCESS = ["get_all", "add_app", "delete", "check"]
 
 @pytest.mark.parametrize("action", USER_ACCESS)
 def test_user_access_unknown_field_is_refused(action):
-    model = ServiceRepo._get_endpoint(f"user_access.{action}", PartialVersion("2.38")).request_data_model
+    model = ServiceRepo._get_endpoint(f"user_access.{action}", PartialVersion(API_VERSION)).request_data_model
     assert model is not None, f"user_access.{action} has no request class"
     with pytest.raises(TypeError, match="bogus"):
         model(bogus=1)
@@ -231,7 +232,7 @@ def test_user_access_unknown_field_is_refused(action):
     ],
 )
 def test_user_access_known_bodies_are_accepted(action, body):
-    model = ServiceRepo._get_endpoint(f"user_access.{action}", PartialVersion("2.38")).request_data_model
+    model = ServiceRepo._get_endpoint(f"user_access.{action}", PartialVersion(API_VERSION)).request_data_model
     assert model is not None
     model(**body).validate()
 

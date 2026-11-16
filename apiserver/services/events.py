@@ -32,14 +32,11 @@ from apiserver.apimodels.events import (
     TaskMetric,
     MultiTaskPlotsRequest,
     MultiTaskMetricsRequest,
-    LegacyLogEventsRequest,
     TaskRequest,
     GetMetricsAndVariantsRequest,
     ModelRequest,
-    LegacyMetricEventsRequest,
     GetScalarMetricDataRequest,
     VectorMetricsIterHistogramRequest,
-    LegacyMultiTaskEventsRequest,
 )
 from apiserver.bll.event import EventBLL
 from apiserver.bll.event.event_bll import LOCKED_TASK_STATUSES
@@ -118,52 +115,7 @@ def add_batch(call: APICall, company_id, _):
     call.result.data = dict(added=added, errors=err_count, errors_info=err_info)
 
 
-@endpoint("events.get_task_log")
-def get_task_log_v1_5(call, company_id, request: LegacyLogEventsRequest):
-    task_id = request.task
-    task = task_bll.assert_exists(company_id, task_id, allow_public=True, only=("company", "company_origin"))[0]
-    order = request.order
-    scroll_id = request.scroll_id
-    batch_size = request.batch_size
-    events, scroll_id, total_events = event_bll.scroll_task_events(
-        task.get_index_company(),
-        task_id,
-        order,
-        event_type=EventType.task_log,
-        batch_size=batch_size,
-        scroll_id=scroll_id,
-    )
-    call.result.data = dict(events=events, returned=len(events), total=total_events, scroll_id=scroll_id)
-
-
-@endpoint("events.get_task_log", min_version="1.7")
-def get_task_log_v1_7(call, company_id, request: LegacyLogEventsRequest):
-    task_id = request.task
-    task = task_bll.assert_exists(company_id, task_id, allow_public=True, only=("company", "company_origin"))[0]
-
-    order = request.order
-    from_ = call.data.get("from") or "head"
-    scroll_id = request.scroll_id
-    batch_size = request.batch_size
-
-    scroll_order = "asc" if (from_ == "head") else "desc"
-
-    events, scroll_id, total_events = event_bll.scroll_task_events(
-        company_id=task.get_index_company(),
-        task_id=task_id,
-        order=scroll_order,
-        event_type=EventType.task_log,
-        batch_size=batch_size,
-        scroll_id=scroll_id,
-    )
-
-    if scroll_order != order:
-        events = events[::-1]
-
-    call.result.data = dict(events=events, returned=len(events), total=total_events, scroll_id=scroll_id)
-
-
-@endpoint("events.get_task_log", min_version="2.9", request_data_model=LogEventsRequest)
+@endpoint("events.get_task_log", request_data_model=LogEventsRequest)
 def get_task_log(call, company_id, request: LogEventsRequest):
     task_id = request.task
     task = task_bll.assert_exists(company_id, task_id, allow_public=True, only=("company", "company_origin"))[0]
@@ -544,35 +496,6 @@ def get_task_single_value_metrics(call, company_id: str, request: SingleValueMet
     )
 
 
-@endpoint("events.get_multi_task_plots")
-def get_multi_task_plots_v1_7(call, company_id, request: LegacyMultiTaskEventsRequest):
-    task_ids = request.tasks
-    iters = request.iters
-    scroll_id = request.scroll_id
-
-    companies = _get_task_or_model_index_companies(company_id, task_ids, identity=call.identity)
-
-    # Get last 10K events by iteration and group them by unique metric+variant, returning top events for combination
-    result = event_bll.get_task_events(
-        company_id=list(companies),
-        task_id=task_ids,
-        event_type=EventType.metrics_plot,
-        sort=[{"iter": {"order": "desc"}}],
-        size=10000,
-        scroll_id=scroll_id,
-    )
-
-    task_names = {t.id: task_label(t) for t in itertools.chain.from_iterable(companies.values())}
-    return_events = _get_top_iter_unique_events_per_task(result.events, max_iters=iters, task_names=task_names)
-
-    call.result.data = dict(
-        plots=return_events,
-        returned=len(return_events),
-        total=result.total_events,
-        scroll_id=result.next_scroll_id,
-    )
-
-
 def _get_multitask_plots(
     companies: TaskCompanies,
     last_iters: int,
@@ -599,7 +522,7 @@ def _get_multitask_plots(
     return return_events, result.total_events, result.next_scroll_id
 
 
-@endpoint("events.get_multi_task_plots", min_version="1.8")
+@endpoint("events.get_multi_task_plots")
 def get_multi_task_plots(call, company_id, request: MultiTaskPlotsRequest):
     companies = _get_task_or_model_index_companies(
         company_id, request.tasks, identity=call.identity, model_events=request.model_events
@@ -620,40 +543,6 @@ def get_multi_task_plots(call, company_id, request: MultiTaskPlotsRequest):
     )
 
 
-@endpoint("events.get_task_plots")
-def get_task_plots_v1_7(call, company_id, request: LegacyMetricEventsRequest):
-    task_id = request.task
-    iters = request.iters
-    scroll_id = request.scroll_id
-
-    task = task_bll.assert_exists(company_id, task_id, allow_public=True, only=("company", "company_origin"))[0]
-    # events, next_scroll_id, total_events = event_bll.get_task_events(
-    #     company, task_id,
-    #     event_type="plot",
-    #     sort=[{"iter": {"order": "desc"}}],
-    #     last_iter_count=iters,
-    #     scroll_id=scroll_id)
-
-    # get last 10K events by iteration and group them by unique metric+variant, returning top events for combination
-    result = event_bll.get_task_events(
-        task.get_index_company(),
-        task_id,
-        event_type=EventType.metrics_plot,
-        sort=[{"iter": {"order": "desc"}}],
-        size=10000,
-        scroll_id=scroll_id,
-    )
-
-    return_events = _get_top_iter_unique_events(result.events, max_iters=iters)
-
-    call.result.data = dict(
-        plots=return_events,
-        returned=len(return_events),
-        total=result.total_events,
-        scroll_id=result.next_scroll_id,
-    )
-
-
 def _get_metric_variants_from_request(
     req_metrics: Sequence[ApiMetrics],
 ) -> Optional[MetricVariants]:
@@ -663,7 +552,7 @@ def _get_metric_variants_from_request(
     return {m.metric: m.variants for m in req_metrics}
 
 
-@endpoint("events.get_task_plots", min_version="1.8", request_data_model=TaskPlotsRequest)
+@endpoint("events.get_task_plots", request_data_model=TaskPlotsRequest)
 def get_task_plots(call, company_id, request: TaskPlotsRequest):
     task_id = request.task
     iters = request.iters
@@ -743,77 +632,8 @@ def task_plots(call, company_id, request: MetricEventsRequest):
     )
 
 
-@endpoint("events.debug_images")
-def get_debug_images_v1_7(call, company_id, request: LegacyMetricEventsRequest):
-    task_id = request.task
-    iters = request.iters
-    scroll_id = request.scroll_id
-
-    task = task_bll.assert_exists(company_id, task_id, allow_public=True, only=("company", "company_origin"))[0]
-    # events, next_scroll_id, total_events = event_bll.get_task_events(
-    #     company, task_id,
-    #     event_type="training_debug_image",
-    #     sort=[{"iter": {"order": "desc"}}],
-    #     last_iter_count=iters,
-    #     scroll_id=scroll_id)
-
-    # get last 10K events by iteration and group them by unique metric+variant, returning top events for combination
-    result = event_bll.get_task_events(
-        task.get_index_company(),
-        task_id,
-        event_type=EventType.metrics_image,
-        sort=[{"iter": {"order": "desc"}}],
-        size=10000,
-        scroll_id=scroll_id,
-    )
-
-    return_events = _get_top_iter_unique_events(result.events, max_iters=iters)
-
-    call.result.data = dict(
-        task=task_id,
-        images=return_events,
-        returned=len(return_events),
-        total=result.total_events,
-        scroll_id=result.next_scroll_id,
-    )
-
-
-@endpoint("events.debug_images", min_version="1.8")
-def get_debug_images_v1_8(call, company_id, request: LegacyMetricEventsRequest):
-    task_id = request.task
-    iters = request.iters
-    scroll_id = request.scroll_id
-    model_events = request.model_events
-
-    tasks_or_model = _assert_task_or_model_exists(
-        company_id,
-        task_id,
-        model_events=model_events,
-        identity=call.identity,
-    )[0]
-    result = event_bll.get_task_events(
-        tasks_or_model.get_index_company(),
-        task_id,
-        event_type=EventType.metrics_image,
-        sort=[{"iter": {"order": "desc"}}],
-        last_iter_count=iters,
-        scroll_id=scroll_id,
-    )
-
-    return_events = result.events
-
-    call.result.data = dict(
-        task=task_id,
-        images=return_events,
-        returned=len(return_events),
-        total=result.total_events,
-        scroll_id=result.next_scroll_id,
-    )
-
-
 @endpoint(
     "events.debug_images",
-    min_version="2.7",
     request_data_model=MetricEventsRequest,
     response_data_model=MetricEventsResponse,
 )
@@ -843,7 +663,6 @@ def get_debug_images(call, company_id, request: MetricEventsRequest):
 
 @endpoint(
     "events.get_debug_image_sample",
-    min_version="2.12",
     request_data_model=GetVariantSampleRequest,
 )
 def get_debug_image_sample(call, company_id, request: GetVariantSampleRequest):
@@ -868,7 +687,6 @@ def get_debug_image_sample(call, company_id, request: GetVariantSampleRequest):
 
 @endpoint(
     "events.next_debug_image_sample",
-    min_version="2.12",
     request_data_model=NextHistorySampleRequest,
 )
 def next_debug_image_sample(call, company_id, request: NextHistorySampleRequest):
@@ -1073,25 +891,13 @@ def _get_top_iter_unique_events_per_task(events, max_iters: int, task_names: Map
     )
 
 
-def _get_top_iter_unique_events(events, max_iters):
-    top_unique_events = defaultdict(lambda: [])
-    for ev in events:
-        key = ev.get("metric", "") + ev.get("variant", "")
-        evs = top_unique_events[key]
-        if len(evs) < max_iters:
-            evs.append(ev)
-    unique_events = list(itertools.chain.from_iterable(list(top_unique_events.values())))
-    unique_events.sort(key=lambda e: e["iter"], reverse=True)
-    return unique_events
-
-
 class ScalarMetricsIterRawScroll(Scroll):
     from_key_value = jsonmodels.fields.StringField()
     total = jsonmodels.fields.IntField()
     request: ScalarMetricsIterRawRequest = jsonmodels.fields.EmbeddedField(ScalarMetricsIterRawRequest)
 
 
-@endpoint("events.scalar_metrics_iter_raw", min_version="2.16")
+@endpoint("events.scalar_metrics_iter_raw")
 def scalar_metrics_iter_raw(call: APICall, company_id: str, request: ScalarMetricsIterRawRequest):
     key = request.key or ScalarKeyEnum.iter
     scalar_key = ScalarKey.resolve(key)
@@ -1176,7 +982,7 @@ def scalar_metrics_iter_raw(call: APICall, company_id: str, request: ScalarMetri
     )
 
 
-@endpoint("events.clear_scroll", min_version="2.18")
+@endpoint("events.clear_scroll")
 def clear_scroll(_, __, request: ClearScrollRequest):
     if request.scroll_id:
         event_bll.clear_scroll(request.scroll_id)

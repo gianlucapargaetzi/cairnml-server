@@ -129,7 +129,7 @@ def delete(call: APICall, company: str, request: DeleteRequest):
     call.result.data = {"deleted": bll.delete(company=company, chunks=chunks)}
 
 
-@endpoint("datachunks.dataset_credentials", min_version="2.40", request_data_model=DatasetCredentialsRequest)
+@endpoint("datachunks.dataset_credentials", request_data_model=DatasetCredentialsRequest)
 def get_dataset_credentials(call: APICall, company: str, request: DatasetCredentialsRequest):
     call.result.data = dataset_credentials(
         company=company,

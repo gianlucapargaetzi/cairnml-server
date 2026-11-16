@@ -111,7 +111,7 @@ def get_by_id(call: APICall, company: str, request: ProjectRequest):
         # The webhook address may carry a secret token: it is never returned, only whether one is set
         project_dict = project.to_proper_dict(exclude=["notification_webhook"])
         project_dict["has_notification_webhook"] = bool(project.notification_webhook)
-        conform_output_tags(call, project_dict)
+        conform_output_tags(project_dict)
 
         call.result.data = {"project": project_dict}
 
@@ -175,14 +175,8 @@ def _get_project_stats_filter(
 @endpoint("projects.get_all_ex")
 def get_all_ex(call: APICall, company_id: str, request: ProjectsGetRequest):
     data = call.data
-    conform_tag_fields(call, data)
-    allow_public = (
-        data["allow_public"]
-        if "allow_public" in data
-        else not data["non_public"]
-        if "non_public" in data
-        else request.allow_public
-    )
+    conform_tag_fields(data)
+    allow_public = request.allow_public
 
     requested_ids = data.get("id")
     if isinstance(requested_ids, str):
@@ -233,7 +227,7 @@ def get_all_ex(call: APICall, company_id: str, request: ProjectsGetRequest):
             if EntityVisibility.hidden.value in system_tags:
                 p["hidden"] = True
 
-    conform_output_tags(call, projects)
+    conform_output_tags(projects)
     project_ids = list({project["id"] for project in projects})
     # notification_webhook is excluded by default, so the flag is looked up separately
     with_webhook = {
@@ -308,7 +302,7 @@ def get_all_ex(call: APICall, company_id: str, request: ProjectsGetRequest):
 @endpoint("projects.get_all")
 def get_all(call: APICall, company: str, _):
     data = call.data
-    conform_tag_fields(call, data)
+    conform_tag_fields(data)
     _adjust_search_parameters(
         data,
         shallow_search=data.get("shallow_search", False),
@@ -323,7 +317,7 @@ def get_all(call: APICall, company: str, _):
         allow_public=True,
         ret_params=ret_params,
     )
-    conform_output_tags(call, projects)
+    conform_output_tags(projects)
     call.result.data = {"projects": projects, **ret_params}
 
 
@@ -337,7 +331,7 @@ def create(call: APICall, company: str, _):
 
     with translate_errors_context():
         fields = parse_from_call(call.data, create_fields, Project.get_fields())
-        conform_tag_fields(call, fields, validate=True)
+        conform_tag_fields(fields, validate=True)
 
         return IdResponse(
             id=ProjectBLL.create(
@@ -361,14 +355,14 @@ def update(call: APICall, company: str, request: ProjectRequest):
     """
     ProjectAccessBLL.assert_can(call.identity, request.project, "admin")
     fields = parse_from_call(call.data, create_fields, Project.get_fields(), discard_none_values=False)
-    conform_tag_fields(call, fields, validate=True)
+    conform_tag_fields(fields, validate=True)
     if "notification_webhook" in fields:
         # an empty value clears the webhook
         fields["notification_webhook"] = fields["notification_webhook"] or None
         if fields["notification_webhook"]:
             webhooks.validate_url(fields["notification_webhook"])
     updated = ProjectBLL.update(company=company, project_id=request.project, **fields)
-    conform_output_tags(call, fields)
+    conform_output_tags(fields)
     call.result.data_model = UpdateResponse(updated=updated, fields=fields)
 
 
@@ -514,7 +508,6 @@ def get_model_metadata_values(call: APICall, company_id: str, request: ProjectMo
 
 @endpoint(
     "projects.get_hyper_parameters",
-    min_version="2.9",
     request_data_model=GetParamsRequest,
 )
 def get_hyper_parameters(call: APICall, company_id: str, request: GetParamsRequest):
@@ -540,7 +533,6 @@ def get_hyper_parameters(call: APICall, company_id: str, request: GetParamsReque
 
 @endpoint(
     "projects.get_hyperparam_values",
-    min_version="2.13",
     request_data_model=ProjectHyperparamValuesRequest,
 )
 def get_hyperparam_values(call: APICall, company_id: str, request: ProjectHyperparamValuesRequest):
@@ -582,7 +574,7 @@ def get_project_tags(call: APICall, company, request: ProjectTagsRequest):
     call.result.data = sort_tags_response({"tags": tags, "system_tags": system_tags})
 
 
-@endpoint("projects.get_task_tags", min_version="2.8", request_data_model=ProjectTagsRequest)
+@endpoint("projects.get_task_tags", request_data_model=ProjectTagsRequest)
 def get_task_tags(call: APICall, company, request: ProjectTagsRequest):
     _assert_can_read(call.identity, request.projects)
     effective = _effective_projects(call.identity, request.projects)
@@ -599,7 +591,7 @@ def get_task_tags(call: APICall, company, request: ProjectTagsRequest):
     call.result.data = sort_tags_response(ret)
 
 
-@endpoint("projects.get_model_tags", min_version="2.8", request_data_model=ProjectTagsRequest)
+@endpoint("projects.get_model_tags", request_data_model=ProjectTagsRequest)
 def get_model_tags(call: APICall, company, request: ProjectTagsRequest):
     _assert_can_read(call.identity, request.projects)
     effective = _effective_projects(call.identity, request.projects)
@@ -616,7 +608,7 @@ def get_model_tags(call: APICall, company, request: ProjectTagsRequest):
     call.result.data = sort_tags_response(ret)
 
 
-@endpoint("projects.make_public", min_version="2.9", request_data_model=MakePublicRequest)
+@endpoint("projects.make_public", request_data_model=MakePublicRequest)
 def make_public(call: APICall, company_id, request: MakePublicRequest):
     # changing visibility (here, the older cross-company "public" mechanism) is Owner/Collaborator
     # only, same bar the role matrix gives projects.set_visibility; check every id before any of
@@ -632,7 +624,7 @@ def make_public(call: APICall, company_id, request: MakePublicRequest):
     )
 
 
-@endpoint("projects.make_private", min_version="2.9", request_data_model=MakePublicRequest)
+@endpoint("projects.make_private", request_data_model=MakePublicRequest)
 def make_private(call: APICall, company_id, request: MakePublicRequest):
     for project_id in request.ids:
         ProjectAccessBLL.assert_can(call.identity, project_id, "admin")
@@ -647,7 +639,6 @@ def make_private(call: APICall, company_id, request: MakePublicRequest):
 
 @endpoint(
     "projects.get_task_parents",
-    min_version="2.12",
     request_data_model=ProjectTaskParentsRequest,
 )
 def get_task_parents(call: APICall, company_id: str, request: ProjectTaskParentsRequest):

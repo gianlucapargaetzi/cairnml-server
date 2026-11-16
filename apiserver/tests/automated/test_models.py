@@ -9,7 +9,7 @@ IN_PROGRESS = "in_progress"
 
 
 class TestModelsService(TestService):
-    def setUp(self, version="2.9"):
+    def setUp(self, version="2.41"):
         super().setUp(version=version)
 
     def test_delete_model_for_task(self):
@@ -172,24 +172,17 @@ class TestModelsService(TestService):
     def test_update_model_for_task_iteration(self):
         task_id = self._create_task()
 
-        res = self.api.models.update_for_task(
-            task=task_id,
-            name="test model",
-            uri="file:///b",
-            iteration=999,
-        )
-
-        model_id = res.id
+        model_id = self._output_model_for_task(task_id, iteration=999)
 
         self.defer(self.api.models.delete, can_fail=True, model=model_id, force=True)
 
         self.assertEqual(self.api.tasks.get_by_id(task=task_id).task.last_iteration, 999)
 
-        self.api.models.update_for_task(task=task_id, uri="file:///c", iteration=1000)
+        self._output_model_for_task(task_id, uri="file:///c", iteration=1000)
 
         self.assertEqual(self.api.tasks.get_by_id(task=task_id).task.last_iteration, 1000)
 
-        self.api.models.update_for_task(task=task_id, uri="file:///d", iteration=888)
+        self._output_model_for_task(task_id, uri="file:///d", iteration=888)
 
         self.assertEqual(self.api.tasks.get_by_id(task=task_id).task.last_iteration, 1000)
 
@@ -203,12 +196,7 @@ class TestModelsService(TestService):
         # create model under a project as make it inherit its framework from the task
         project = self.create_temp("projects", name="Frameworks test", description="")
         task = self._create_task(project=project, execution=dict(framework=framework_2))
-        self.api.models.update_for_task(
-            task=task,
-            name="framework output model test",
-            uri="file:///b",
-            iteration=999,
-        )
+        self._output_model_for_task(task, name="framework output model test", iteration=999)
 
         # get all frameworks
         res = self.api.models.get_frameworks()
@@ -279,6 +267,14 @@ class TestModelsService(TestService):
 
         return task_id
 
+    def _output_model_for_task(self, task_id, name="test model", uri="file:///b", iteration=None):
+        model_id = self._create_model(name=name, uri=uri)
+        request = dict(task=task_id, name=name, model=model_id, type="output")
+        if iteration is not None:
+            request["iteration"] = iteration
+        self.api.tasks.add_or_update_model(**request)
+        return model_id
+
     def _create_task_and_model(self):
         execution_model_id = self.create_temp(
             service="models",
@@ -293,6 +289,6 @@ class TestModelsService(TestService):
             execution=dict(model=execution_model_id),
         )
         self.api.tasks.started(task=task_id)
-        output_model_id = self.api.models.update_for_task(task=task_id, uri="file:///b")["id"]
+        output_model_id = self._output_model_for_task(task_id)
 
         return task_id, output_model_id

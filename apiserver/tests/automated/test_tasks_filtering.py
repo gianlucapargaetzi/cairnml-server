@@ -5,7 +5,7 @@ from apiserver.tests.automated import TestService
 
 class TestTasksFiltering(TestService):
     def setUp(self, **kwargs):
-        super().setUp(version="2.13")
+        super().setUp(version="2.41")
 
     def test_hyperparam_values(self):
         project = self.temp_project()

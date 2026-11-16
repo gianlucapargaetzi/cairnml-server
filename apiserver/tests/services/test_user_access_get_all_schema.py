@@ -6,6 +6,7 @@ from uuid import uuid4
 
 import pytest
 
+from apiserver.service_repo import API_VERSION
 from apiserver.database.model.auth import AuthUser
 from apiserver.database.model.project import Project
 from apiserver.database.model.user_access import UserAccess
@@ -44,8 +45,8 @@ def company():
 
 def test_response_keys_equal_the_schema(company):
     conf = SchemaReader.read_file(SchemaReader.root / "user_access.conf")
-    declared = set(conf["get_all"]["2.38"]["response"]["properties"])
-    model = ServiceRepo._get_endpoint("user_access.get_all", PartialVersion("2.38")).request_data_model
+    declared = set(conf["get_all"][API_VERSION]["response"]["properties"])
+    model = ServiceRepo._get_endpoint("user_access.get_all", PartialVersion(API_VERSION)).request_data_model
     request = model() if model else None
     call = SimpleNamespace(data={}, identity=SimpleNamespace(user="u1", role="user"), result=SimpleNamespace(data=None))
     svc.get_all(call, company, request)

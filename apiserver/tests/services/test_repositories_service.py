@@ -7,6 +7,7 @@ from uuid import uuid4
 
 import pytest
 
+from apiserver.service_repo import API_VERSION
 from apiserver.apierrors import errors
 from apiserver.bll import repositories as bll
 from apiserver.database.model.auth import AuthUser
@@ -85,7 +86,7 @@ def run(endpoint, world, user, data, **kwargs):
         for n in ServiceRepo.endpoint_names()
         if n.startswith("repositories.") and getattr(svc, n.split(".")[1]) is endpoint
     )
-    model = ServiceRepo._get_endpoint(name, PartialVersion("2.40")).request_data_model
+    model = ServiceRepo._get_endpoint(name, PartialVersion(API_VERSION)).request_data_model
     try:
         request = model(**data) if model else None
         if request is not None:

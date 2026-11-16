@@ -9,7 +9,12 @@ log = config.logger(__file__)
 
 class TestTasksEdit(TestService):
     def setUp(self, **kwargs):
-        super().setUp(version="2.12")
+        super().setUp(version="2.41")
+
+    def output_model_for_task(self, task):
+        model_id = self.create_temp("models", name="output", uri="file:///b", labels={})
+        self.api.tasks.add_or_update_model(task=task, name="output", model=model_id, type="output")
+        return model_id
 
     def new_task(self, **kwargs):
         self.update_missing(kwargs, type="testing", name="test")
@@ -71,7 +76,7 @@ class TestTasksEdit(TestService):
         # on task reset output model deleted
         task = self.new_task()
         self.api.tasks.started(task=task)
-        model_id = self.api.models.update_for_task(task=task, uri="file:///b")["id"]
+        model_id = self.output_model_for_task(task)
         self.api.tasks.reset(task=task)
         with self.api.raises(InvalidModelId):
             self.api.models.get_by_id(model=model_id)
@@ -79,7 +84,7 @@ class TestTasksEdit(TestService):
         # unless it is input of some task
         task = self.new_task()
         self.api.tasks.started(task=task)
-        model_id = self.api.models.update_for_task(task=task, uri="file:///b")["id"]
+        model_id = self.output_model_for_task(task)
         self.new_task(execution=dict(model=model_id))
         self.api.tasks.reset(task=task)
         self.api.models.get_by_id(model=model_id)

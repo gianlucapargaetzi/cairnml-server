@@ -121,10 +121,14 @@ def kind_of(schema: dict, definitions: dict, where: str, depth: int = 0) -> Kind
     if type_ is None:
         return Kind("any")
     if not isinstance(type_, str):
-        raise Unsupported(f"{where}: a list of types is not supported yet")
+        # only the nullable form, one type and null, is a type: the field has that type
+        # HOCON reads null as None
+        non_null = [t for t in type_ if t not in ("null", None)]
+        if len(non_null) != 1 or len(non_null) + 1 != len(type_):
+            raise Unsupported(f"{where}: a list of types {type_!r} is not supported yet")
+        type_ = non_null[0]
+        schema = {**schema, "type": type_}
     if type_ == "array":
-        if depth:
-            raise Unsupported(f"{where}: arrays of arrays are not supported yet")
         item = kind_of(schema.get("items") or {}, definitions, f"{where}[]", depth + 1)
         return Kind("list", item=item)
     if type_ not in _SIMPLE:
@@ -189,6 +193,7 @@ def _types(kind: Kind) -> str:
         "float": "six.integer_types + (float,)",
         "bool": "(bool,)",
         "dict": "(dict,)",
+        "list": "(list, tuple)",
     }[kind.name]
 
 
@@ -198,10 +203,11 @@ def _types(kind: Kind) -> str:
 
 @dataclass
 class Prop:
-    name: str
+    name: str  # the Python attribute
     hint: str
     required: bool
     setter: List[str]
+    wire: str = ""  # the name in the JSON, when it is not a Python identifier (for example "input.view.dataset")
 
     @property
     def annotation(self) -> str:
@@ -230,24 +236,42 @@ def _nullable(schema: dict) -> dict:
     return result
 
 
+def _identifiers(fields: dict, where: str) -> dict:
+    """The Python name of each JSON field: the name itself, with the characters that cannot be in an identifier
+    replaced by underscores (a schema key such as "input.view.dataset" keeps its JSON name in schema_property)."""
+    names = {}
+    for field_name in fields:
+        python = re.sub(r"\W", "_", field_name)
+        if python[:1].isdigit():
+            python = "_" + python
+        if keyword.iskeyword(python):
+            raise Unsupported(f"{where}: the field name {field_name!r} is a Python keyword")
+        if python in names.values():
+            raise Unsupported(f"{where}: the field name {field_name!r} gives the Python name {python!r} twice")
+        names[field_name] = python
+    return names
+
+
 def _build_class(*, name, base, description, fields, required, schema, definitions, where, extra=None):
     kinds = {}
     for field_name, field_schema in fields.items():
-        if keyword.iskeyword(field_name):
-            raise Unsupported(f"{where}: the field name {field_name!r} is a Python keyword")
         kinds[field_name] = kind_of(field_schema, definitions, f"{where}.{field_name}")
+    python = _identifiers(fields, where)
     order = [n for n in fields if n in required] + [n for n in fields if n not in required]
-    props = [Prop(n, kinds[n].hint, n in required, _setter_lines(n, kinds[n])) for n in order]
+    props = [
+        Prop(python[n], kinds[n].hint, n in required, _setter_lines(n, kinds[n]), wire=n if python[n] != n else "")
+        for n in order
+    ]
     params = []
     for n in order:
         if n in required:
-            params.append(f"{n}: {kinds[n].hint}")
+            params.append(f"{python[n]}: {kinds[n].hint}")
         else:
             default = fields[n].get("default")
             if isinstance(default, (list, dict)):
                 raise Unsupported(f"{where}.{n}: a list or object default is not supported (mutable default)")
             hint = kinds[n].hint
-            params.append(f"{n}: {hint if hint == 'Any' else f'Optional[{hint}]'} = {_inline(default)}")
+            params.append(f"{python[n]}: {hint if hint == 'Any' else f'Optional[{hint}]'} = {_inline(default)}")
     params.append("**kwargs: Any")
     one_line = f"    def __init__(self, {', '.join(params)}) -> None:"
     if len(one_line) <= LINE_WIDTH:
@@ -259,8 +283,8 @@ def _build_class(*, name, base, description, fields, required, schema, definitio
     params_doc = []
     for n in order:
         text = _clean(fields[n].get("description", ""))
-        params_doc.append(f":param {n}: {text}".rstrip())
-        params_doc.append(f":type {n}: {kinds[n].doc}")
+        params_doc.append(f":param {python[n]}: {text}".rstrip())
+        params_doc.append(f":type {python[n]}: {kinds[n].doc}")
     return {
         "name": name,
         "base": base,
@@ -269,27 +293,66 @@ def _build_class(*, name, base, description, fields, required, schema, definitio
         "schema": literal(schema, 4, "_schema = "),
         "signature": signature,
         "props": props,
-        "order": order,
+        "order": [python[n] for n in order],
         "extra": extra,
+        "batched": None,
     }
 
 
 def _request_fields(action: Action):
     if not action.request:
-        raise Unsupported(f"{action.full_name}: no `request` (batch requests are not supported yet)")
+        raise Unsupported(f"{action.full_name}: no `request` and no `batch_request`")
     request = action.request
     if "properties" not in request and request.get("type", "object") != "object":
         raise Unsupported(f"{action.full_name}: the request is not an object")
     return request.get("properties") or {}, set(request.get("required") or [])
 
 
+def _enum_class(def_name: str, definition: dict, where: str) -> dict:
+    """A class of the values of an enumeration definition; its members are named after the values."""
+    members = []
+    seen = set()
+    for value in definition["enum"]:
+        if value is None:
+            continue
+        python = re.sub(r"\W", "_", str(value))
+        if python[:1].isdigit() or keyword.iskeyword(python):
+            python = "_" + python
+        if python in seen:
+            raise Unsupported(f"{where}: the values of the enumeration give the member {python!r} twice")
+        seen.add(python)
+        members.append({"name": python, "value": _inline(value)})
+    return {"name": camel(def_name), "members": members}
+
+
+def _batch_class(service: Service, action: Action, meta: dict) -> dict:
+    where = f"{service.name}.{action.name}"
+    batched = action.batch_request.get("action")
+    target = service.actions.get(batched)
+    if target is None or target.batch_request:
+        raise Unsupported(f"{where}: the batched action {batched!r} is not a request of this service")
+    return {
+        "name": camel(action.name) + "Request",
+        "base": "BatchRequest",
+        "doc": [_clean(action.description)] if action.description else [],
+        "params_doc": [],
+        "batched": camel(batched) + "Request",
+        "extra": meta,
+    }
+
+
 def render_service(service: Service, session_package: str) -> str:
     actions = [service.actions[name] for name in sorted(service.actions)]
-    fragments = [a.request for a in actions] + [a.response for a in actions]
+    fragments = [a.request for a in actions if not a.batch_request] + [a.response for a in actions]
     for action in actions:
-        _request_fields(action)  # fail early with the action's name
+        if not action.batch_request:
+            _request_fields(action)  # fail early with the action's name
     used = reachable_definitions(fragments, service.definitions)
 
+    enums = []
+    for def_name, definition in used.items():
+        if "enum" in definition:
+            enums.append(_enum_class(def_name, definition, f"{service.name}.{def_name}"))
     models = []
     for def_name, definition in used.items():
         if definition.get("type") != "object" or "properties" not in definition:
@@ -313,26 +376,31 @@ def render_service(service: Service, session_package: str) -> str:
     models.sort(key=lambda m: m["name"])
 
     classes = []
+    batches = []
     for action in actions:
         where = f"{service.name}.{action.name}"
         meta = {"service": service.name, "action": action.name, "version": action.version}
-        fields, required = _request_fields(action)
-        request_defs = reachable_definitions([action.request], service.definitions)
-        schema = dict(action.request)
-        schema["definitions"] = request_defs
-        classes.append(
-            _build_class(
-                name=camel(action.name) + "Request",
-                base="Request",
-                description=action.description,
-                fields=fields,
-                required=required,
-                schema=schema,
-                definitions=service.definitions,
-                where=where + ".request",
-                extra=meta,
+        if action.batch_request:
+            # a batch class names a request class, so it comes after all the request classes
+            batches.append(_batch_class(service, action, meta))
+        else:
+            fields, required = _request_fields(action)
+            request_defs = reachable_definitions([action.request], service.definitions)
+            schema = dict(action.request)
+            schema["definitions"] = request_defs
+            classes.append(
+                _build_class(
+                    name=camel(action.name) + "Request",
+                    base="Request",
+                    description=action.description,
+                    fields=fields,
+                    required=required,
+                    schema=schema,
+                    definitions=service.definitions,
+                    where=where + ".request",
+                    extra=meta,
+                )
             )
-        )
         response = action.response
         response_defs = reachable_definitions([response], service.definitions)
         schema = _nullable(response)
@@ -357,6 +425,8 @@ def render_service(service: Service, session_package: str) -> str:
         description=_clean(service.description),
         header=HEADER,
         session_package=session_package,
-        classes=models + classes,
+        classes=models + classes + batches,
+        enums=enums,
+        batched=bool(batches),
         mapping=[(camel(a.name) + "Request", camel(a.name) + "Response") for a in actions],
     )

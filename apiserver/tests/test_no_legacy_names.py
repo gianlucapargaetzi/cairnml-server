@@ -13,16 +13,7 @@ LEGACY = re.compile(r"trains|allegro", re.IGNORECASE)
 SKIP_DIRS = {"tests", "__pycache__", "dist", "egg-info"}
 
 # (relative path, line stripped) -> reason
-ALLOWED = {
-    (
-        "service_repo/apicall.py",
-        'return tuple("-".join(("X", p, name)) for p in ("Cairnml", "Trains"))',
-    ): "old upstream clients send X-Trains-Client; they are recognised and told to upgrade",
-    (
-        "server_init/client_versions.py",
-        'CLIENT_HEADERS = ("X-CairnML-Client", "X-Trains-Client")',
-    ): "the same old client header, asserted by tests/server_init/test_client_versions.py",
-}
+ALLOWED = {}
 
 
 def _source_files():

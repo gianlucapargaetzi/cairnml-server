@@ -9,7 +9,7 @@ log = config.logger(__file__)
 
 class TestProjectsEdit(TestService):
     def setUp(self, **kwargs):
-        super().setUp(version="2.9")
+        super().setUp(version="2.41")
 
     def test_make_public(self):
         p1 = self.create_temp("projects", name="Test public", description="test")

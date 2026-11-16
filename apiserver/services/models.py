@@ -22,8 +22,6 @@ from apiserver.apimodels.models import (
     ModelsDeleteManyRequest,
     ModelsGetRequest,
     ModelRequest,
-    TaskRequest,
-    UpdateForTaskRequest,
     UpdateModelRequest,
 )
 from apiserver.apimodels.tasks import UpdateTagsRequest
@@ -43,16 +41,9 @@ from apiserver.bll.util import run_batch_operation
 from apiserver.config_repo import config
 from apiserver.database.model.model import Model
 from apiserver.database.model.project import Project
-from apiserver.database.model.task.task import (
-    Task,
-    TaskStatus,
-    ModelItem,
-    TaskModelNames,
-    TaskModelTypes,
-)
+from apiserver.database.model.task.task import Task
 from apiserver.database.utils import (
     parse_from_call,
-    get_company_or_none_constraint,
     filter_fields,
 )
 from apiserver.service_repo import APICall, endpoint
@@ -60,7 +51,6 @@ from apiserver.service_repo.auth import Identity
 from apiserver.services.utils import (
     conform_tag_fields,
     conform_output_tags,
-    ModelsBackwardsCompatibility,
     unescape_metadata,
     escape_metadata,
     process_include_subprojects,
@@ -72,9 +62,9 @@ project_bll = ProjectBLL()
 event_bll = EventBLL()
 
 
-def conform_model_data(call: APICall, model_data: Union[Sequence[dict], dict]):
-    conform_output_tags(call, model_data)
-    unescape_metadata(call, model_data)
+def conform_model_data(model_data: Union[Sequence[dict], dict]):
+    conform_output_tags(model_data)
+    unescape_metadata(model_data)
 
 
 _MODEL_ACCESS_FIELDS = ("id", "company", "project", "user")
@@ -164,49 +154,13 @@ def get_by_id(call: APICall, company_id, request: ModelRequest):
             id=model_id,
             company=company_id,
         )
-    conform_model_data(call, models[0])
+    conform_model_data(models[0])
     call.result.data = {"model": models[0]}
-
-
-@endpoint("models.get_by_task_id")
-def get_by_task_id(call: APICall, company_id, request: TaskRequest):
-    if call.requested_endpoint_version > ModelsBackwardsCompatibility.max_version:
-        raise errors.moved_permanently.NotSupported("use models.get_by_id/get_all apis")
-
-    task_id = request.task
-
-    from apiserver.services.tasks import _scope_query as _scope_tasks_query
-
-    task = Task.get_many(
-        company=company_id,
-        query=_scope_tasks_query(Q(id=task_id), call.identity),
-        override_projection=["models"],
-        allow_public=True,
-        return_dicts=False,
-    ).first()
-    if not task:
-        raise errors.bad_request.InvalidTaskId(id=task_id, company=company_id)
-    if not task.models or not task.models.output:
-        raise errors.bad_request.MissingTaskFields(field="models.output")
-
-    model_id = task.models.output[-1].model
-    model = Model.objects(
-        _scope_query(Q(id=model_id) & get_company_or_none_constraint(company_id), call.identity)
-    ).first()
-    if not model:
-        raise errors.bad_request.InvalidModelId(
-            "no such public or company model",
-            id=model_id,
-            company=company_id,
-        )
-    model_dict = model.to_proper_dict()
-    conform_model_data(call, model_dict)
-    call.result.data = {"model": model_dict}
 
 
 @endpoint("models.get_all_ex", request_data_model=ModelsGetRequest)
 def get_all_ex(call: APICall, company_id, request: ModelsGetRequest):
-    conform_tag_fields(call, call.data)
+    conform_tag_fields(call.data)
     call_data = Metadata.escape_query_parameters(call.data)
     process_include_subprojects(call_data)
     ret_params = {}
@@ -217,7 +171,7 @@ def get_all_ex(call: APICall, company_id, request: ModelsGetRequest):
         allow_public=request.allow_public,
         ret_params=ret_params,
     )
-    conform_model_data(call, models)
+    conform_model_data(models)
 
     if not request.include_stats:
         call.result.data = {"models": models, **ret_params}
@@ -237,7 +191,7 @@ def get_all_ex(call: APICall, company_id, request: ModelsGetRequest):
 
 @endpoint("models.get_by_id_ex", required_fields=["id"])
 def get_by_id_ex(call: APICall, company_id, _):
-    conform_tag_fields(call, call.data)
+    conform_tag_fields(call.data)
     call_data = Metadata.escape_query_parameters(call.data)
     models = Model.get_many_with_join(
         company=company_id,
@@ -245,13 +199,13 @@ def get_by_id_ex(call: APICall, company_id, _):
         query=_visible_models_query(call.identity),
         allow_public=True,
     )
-    conform_model_data(call, models)
+    conform_model_data(models)
     call.result.data = {"models": models}
 
 
 @endpoint("models.get_all")
 def get_all(call: APICall, company_id, _):
-    conform_tag_fields(call, call.data)
+    conform_tag_fields(call.data)
     call_data = Metadata.escape_query_parameters(call.data)
     process_include_subprojects(call_data)
     ret_params = {}
@@ -263,7 +217,7 @@ def get_all(call: APICall, company_id, _):
         allow_public=True,
         ret_params=ret_params,
     )
-    conform_model_data(call, models)
+    conform_model_data(models)
     call.result.data = {"models": models, **ret_params}
 
 
@@ -326,7 +280,7 @@ def parse_model_fields(call, valid_fields):
         call.data.pop("task")
     ProjectAccessBLL.assert_project_field_writable(call.identity, call.data)
     fields = parse_from_call(call.data, valid_fields, Model.get_fields())
-    conform_tag_fields(call, fields, validate=True)
+    conform_tag_fields(fields, validate=True)
     escape_metadata(fields)
     return fields
 
@@ -347,98 +301,6 @@ def _reset_cached_tags(company: str, projects: Sequence[str]):
         Tags.Model,
         projects=projects,
     )
-
-
-@endpoint("models.update_for_task")
-def update_for_task(call: APICall, company_id, request: UpdateForTaskRequest):
-    if call.requested_endpoint_version > ModelsBackwardsCompatibility.max_version:
-        raise errors.moved_permanently.NotSupported("use tasks.add_or_update_model")
-
-    task_id = request.task
-    uri = request.uri
-    iteration = request.iteration
-    override_model_id = request.override_model_id
-    if not (uri or override_model_id) or (uri and override_model_id):
-        raise errors.bad_request.MissingRequiredFields(
-            "exactly one field is required", fields=("uri", "override_model_id")
-        )
-
-    query = dict(id=task_id, company=company_id)
-    task = get_task_with_write_access(
-        task_id=task_id,
-        company_id=company_id,
-        identity=call.identity,
-        only=("models", "execution", "name", "status", "project"),
-    )
-
-    allowed_states = [TaskStatus.created, TaskStatus.in_progress]
-    if task.status not in allowed_states:
-        raise errors.bad_request.InvalidTaskStatus(
-            f"model can only be updated for tasks in the {allowed_states} states",
-            **query,
-        )
-
-    if override_model_id:
-        model = ModelBLL.get_company_model_by_id(company_id=company_id, model_id=override_model_id)
-        # Linking a model to a task reveals it through the task, so the caller must be able to read it
-        _assert_model_access(call.identity, model, "read")
-    else:
-        if "name" not in call.data:
-            # use task name if name not provided
-            call.data["name"] = task.name
-
-        if "comment" not in call.data:
-            call.data["comment"] = f"Created by task `{task.name}` ({task.id})"
-
-        if task.models and task.models.output:
-            # model exists, update
-            model_id = task.models.output[-1].model
-            res = _update_model(call, company_id, model_id=model_id, object_owner=call.identity.user).to_struct()
-            res.update({"id": model_id, "created": False})
-            call.result.data = res
-            return
-
-        # new model, create
-        if task.project:
-            ProjectAccessBLL.assert_can(call.identity, task.project, "write", object_owner=call.identity.user)
-        fields = parse_model_fields(call, create_fields)
-
-        # create and save model
-        now = datetime.utcnow()
-        model = Model(
-            id=database.utils.id(),
-            created=now,
-            last_update=now,
-            last_change=now,
-            last_changed_by=call.identity.user,
-            user=call.identity.user,
-            company=company_id,
-            project=task.project,
-            framework=task.execution.framework,
-            parent=task.models.input[0].model if task.models and task.models.input else None,
-            design=task.execution.model_desc,
-            labels=task.execution.model_labels,
-            ready=(task.status == TaskStatus.published),
-            **fields,
-        )
-        model.save()
-        _update_cached_tags(company_id, project=model.project, fields=fields)
-
-    TaskBLL.update_statistics(
-        task_id=task_id,
-        company_id=company_id,
-        user_id=call.identity.user,
-        last_iteration_max=iteration,
-        models__output=[
-            ModelItem(
-                model=model.id,
-                name=TaskModelNames[TaskModelTypes.output],
-                updated=datetime.utcnow(),
-            )
-        ],
-    )
-
-    call.result.data = {"id": model.id, "created": True}
 
 
 @endpoint(
@@ -463,7 +325,7 @@ def create(call: APICall, company_id, req_model: CreateModelRequest):
         validate_task(company_id, call.identity, req_data)
 
     fields = filter_fields(Model, req_data)
-    conform_tag_fields(call, fields, validate=True)
+    conform_tag_fields(fields, validate=True)
     escape_metadata(fields)
 
     # create and save model
@@ -511,7 +373,7 @@ def prepare_update_fields(call, company_id, fields: dict):
         if invalid_values:
             raise errors.bad_request.ValidationError("labels values must be integers", values=invalid_values)
 
-    conform_tag_fields(call, fields, validate=True)
+    conform_tag_fields(fields, validate=True)
     escape_metadata(fields)
     return fields
 
@@ -566,7 +428,7 @@ def edit(call: APICall, company_id, request: UpdateModelRequest):
                 _reset_cached_tags(company_id, projects=[new_project, model.project])
             else:
                 _update_cached_tags(company_id, project=model.project, fields=fields)
-        conform_model_data(call, fields)
+        conform_model_data(fields)
         call.result.data_model = UpdateResponse(updated=updated, fields=fields)
     else:
         call.result.data_model = UpdateResponse(updated=0)
@@ -606,7 +468,7 @@ def _update_model(call: APICall, company_id, model_id, object_owner=None):
             _reset_cached_tags(company_id, projects=[new_project, model.project])
         else:
             _update_cached_tags(company_id, project=model.project, fields=updated_fields)
-    conform_model_data(call, updated_fields)
+    conform_model_data(updated_fields)
     return UpdateResponse(updated=updated_count, fields=updated_fields)
 
 
@@ -800,7 +662,7 @@ def unarchive_many(call: APICall, company_id, request: BatchRequest):
     )
 
 
-@endpoint("models.make_public", min_version="2.9", request_data_model=MakePublicRequest)
+@endpoint("models.make_public", request_data_model=MakePublicRequest)
 def make_public(call: APICall, company_id, request: MakePublicRequest):
     # changing visibility (here, the older cross-company "public" mechanism) is Owner/Collaborator
     # only, same bar the role matrix gives projects.set_visibility
@@ -814,7 +676,7 @@ def make_public(call: APICall, company_id, request: MakePublicRequest):
     )
 
 
-@endpoint("models.make_private", min_version="2.9", request_data_model=MakePublicRequest)
+@endpoint("models.make_private", request_data_model=MakePublicRequest)
 def make_private(call: APICall, company_id, request: MakePublicRequest):
     _assert_models_access(company_id, call.identity, request.ids, "admin")
     call.result.data = Model.set_public(
@@ -865,7 +727,7 @@ def update_tags(call: APICall, company_id: str, request: UpdateTagsRequest):
     }
 
 
-@endpoint("models.add_or_update_metadata", min_version="2.13")
+@endpoint("models.add_or_update_metadata")
 def add_or_update_metadata(call: APICall, company_id: str, request: AddOrUpdateMetadataRequest):
     model_id = request.model
     model = ModelBLL.get_company_model_by_id(company_id=company_id, model_id=model_id)
@@ -883,7 +745,7 @@ def add_or_update_metadata(call: APICall, company_id: str, request: AddOrUpdateM
     }
 
 
-@endpoint("models.delete_metadata", min_version="2.13")
+@endpoint("models.delete_metadata")
 def delete_metadata(call: APICall, company_id: str, request: DeleteMetadataRequest):
     model_id = request.model
     model = ModelBLL.get_company_model_by_id(

@@ -6,7 +6,7 @@ from apiserver.tests.automated import TestService
 
 
 class TestTaskDebugImages(TestService):
-    def setUp(self, version="2.12"):
+    def setUp(self, version="2.41"):
         super().setUp(version=version)
 
     def _temp_task(self, name="test task events"):

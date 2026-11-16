@@ -18,6 +18,7 @@ from typing import Callable, List, Optional
 from urllib.parse import urlencode, urlsplit
 
 from apiserver.config_repo import config
+from apiserver.service_repo import API_VERSION
 
 log = config.logger(__file__)
 
@@ -132,7 +133,7 @@ def idp_logout_url(id_token_hint: str = "") -> str:
     to end; without it the provider asks the person to confirm the logout first."""
     params = {
         "client_id": config.get("apiserver.idp.web_client_id"),
-        "post_logout_redirect_uri": api_url().rstrip("/") + "/v2.8/login.idp_start",
+        "post_logout_redirect_uri": api_url().rstrip("/") + f"/v{API_VERSION}/login.idp_start",
     }
     if id_token_hint:
         params["id_token_hint"] = id_token_hint

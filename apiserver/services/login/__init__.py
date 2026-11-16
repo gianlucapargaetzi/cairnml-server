@@ -3,10 +3,8 @@ from apiserver.apimodels.login import (
     GetSupportedModesResponse,
     BasicMode,
     BasicGuestMode,
-    ServerErrors,
 )
-from apiserver.config import info
-from apiserver.service_repo import endpoint, APICall
+from apiserver.service_repo import endpoint, APICall, API_VERSION
 from apiserver.service_repo.auth import revoke_auth_token
 
 
@@ -17,15 +15,11 @@ def supported_modes(call: APICall, _, __: GetSupportedModesRequest):
         basic=BasicMode(enabled=False, guest=BasicGuestMode()),
         sso={},
         sso_providers=[],
-        server_errors=ServerErrors(
-            missed_es_upgrade=info.missed_es_upgrade,
-            es_connection_error=info.es_connection_error,
-        ),
         authenticated=call.auth is not None,
     )
 
 
-@endpoint("login.logout", min_version="2.13")
+@endpoint("login.logout")
 def logout(call: APICall, _, __):
     from http.cookies import CookieError, SimpleCookie
 
@@ -67,10 +61,10 @@ _idp_http = _requests.Session()
 
 
 def _redirect_uri() -> str:
-    return f"{_public_origin.api_url().rstrip('/')}/v2.8/login.idp_callback"
+    return f"{_public_origin.api_url().rstrip('/')}/v{API_VERSION}/login.idp_callback"
 
 
-@endpoint("login.idp_start", min_version="2.8")
+@endpoint("login.idp_start")
 def idp_start(call: APICall, _company, _):
     # The browser signs in at the identity provider's address as the browser reaches it (through the proxy).
     call.result.redirect = _start(
@@ -78,7 +72,7 @@ def idp_start(call: APICall, _company, _):
     )
 
 
-@endpoint("login.idp_callback", min_version="2.8", request_data_model=IdpCallbackRequest)
+@endpoint("login.idp_callback", request_data_model=IdpCallbackRequest)
 def idp_callback(call: APICall, _company, request: IdpCallbackRequest):
     issuer = _config.get("apiserver.idp.issuer")
     client = _config.get("apiserver.idp.web_client_id")

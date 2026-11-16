@@ -223,7 +223,7 @@ def _get_download_getter_fn(
             query=_scope_tasks_query(_hidden_query(call_data), call.identity),
             allow_public=allow_public,
         )
-        conform_task_data(call, tasks)
+        conform_task_data(tasks)
         return tasks
 
     def get_model_data() -> Sequence[dict]:
@@ -233,7 +233,7 @@ def _get_download_getter_fn(
             query=_scope_models_query(Q(), call.identity),
             allow_public=allow_public,
         )
-        conform_model_data(call, models)
+        conform_model_data(models)
         return models
 
     if entity_type == EntityType.task:

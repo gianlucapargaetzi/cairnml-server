@@ -4,14 +4,12 @@ from hashlib import md5
 from flask import Flask
 from flask_compress import Compress
 from flask_cors import CORS
-from packaging.version import Version
 
 from apiserver.bll import github_status
 from apiserver.bll.queue.queue_metrics import MetricsRefresher
 from apiserver.bll.task.non_responsive_tasks_watchdog import NonResponsiveTasksWatchdog
 from apiserver.database import db
 from apiserver.bll.statistics.stats_reporter import StatisticsReporter
-from apiserver.config import info
 from apiserver.config_repo import config
 from apiserver.server_init.config_checks import check_startup_config
 from apiserver.idp.secrets import session_secret
@@ -25,7 +23,6 @@ from apiserver.mongo.initialize import (
     init_mongo_data,
     pre_populate_data,
     check_mongo_empty,
-    get_last_server_version,
 )
 from apiserver.server_init.request_handlers import RequestHandlers
 from apiserver.service_repo import ServiceRepo
@@ -82,33 +79,17 @@ class AppSequence:
             name=self._get_db_instance_key(),
             timeout=config.get("apiserver.db_init_timout", 120),
         ):
-            upgrade_monitoring = config.get("apiserver.elastic.upgrade_monitoring.v16_migration_verification", True)
             try:
-                empty_es = check_elastic_empty()
+                check_elastic_empty()
             except ElasticConnectionError as err:
-                if not upgrade_monitoring:
-                    raise
                 log.error(err)
-                info.es_connection_error = True
+                raise Exception("Error starting server: failed connecting to ElasticSearch service") from err
 
             empty_db = check_mongo_empty()
-            if (
-                upgrade_monitoring
-                and not empty_db
-                and (info.es_connection_error or empty_es)
-                and get_last_server_version() < Version("0.16.0")
-            ):
-                log.info("ES database seems not migrated")
-                info.missed_es_upgrade = True
+            init_es_data()
+            init_mongo_data()
 
-            if info.es_connection_error and not info.missed_es_upgrade:
-                raise Exception("Error starting server: failed connecting to ElasticSearch service")
-
-            if not info.missed_es_upgrade:
-                init_es_data()
-                init_mongo_data()
-
-        if not info.missed_es_upgrade and empty_db and config.get("apiserver.pre_populate.enabled", False):
+        if empty_db and config.get("apiserver.pre_populate.enabled", False):
             pre_populate_data()
 
     def _load_services(self):

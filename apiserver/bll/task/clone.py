@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Callable, NamedTuple, Optional, Sequence, Tuple
 
+from apiserver.apierrors import errors
 from apiserver.apimodels.tasks import CloneRequest, TaskInputModel
 from apiserver.bll.project import ProjectBLL
 from apiserver.database import utils as dbutils
@@ -142,8 +143,6 @@ class ExecutionResult(NamedTuple):
     execution: dict
     input_models: Optional[Sequence[ModelItem]]
     container: Optional[dict]
-    # what the legacy "parameters" or "configuration" override leaves for params_prepare_for_save; None without overrides
-    legacy_params: Optional[dict]
 
 
 def apply_execution_overrides(
@@ -153,11 +152,18 @@ def apply_execution_overrides(
     container: Optional[dict],
     now: datetime,
 ) -> ExecutionResult:
-    """Apply the execution overrides to the execution of the clone. The special keys (model, docker_cmd, the legacy
-    parameters) are taken out of the overrides in place; the model and the docker command only count when no input
-    models or no container were given."""
+    """Apply the execution overrides to the execution of the clone. The special keys (model, docker_cmd) are taken out
+    of the overrides in place; the model and the docker command only count when no input models or no container were
+    given. The hyper parameters and the configuration are not execution overrides: they are refused here."""
     if not execution_overrides:
-        return ExecutionResult(execution_dict, input_models, container, None)
+        return ExecutionResult(execution_dict, input_models, container)
+
+    for key in ("parameters", "configuration"):
+        if key in execution_overrides:
+            raise errors.bad_request.ValidationError(
+                f"execution.{key} cannot be overridden, use the hyperparams or the configuration of the clone instead",
+                field=key,
+            )
 
     execution_model = execution_overrides.pop("model", None)
     if not input_models and execution_model:
@@ -176,16 +182,10 @@ def apply_execution_overrides(
 
     artifacts_prepare_for_save({"execution": execution_overrides})
 
-    legacy_params = {}
-    for legacy_param in ("parameters", "configuration"):
-        legacy_value = execution_overrides.pop(legacy_param, None)
-        if legacy_value is not None:
-            legacy_params = legacy_value
-
     escape_dict_field(execution_overrides, "model_labels")
 
     execution_dict.update(execution_overrides)
-    return ExecutionResult(execution_dict, input_models, container, legacy_params)
+    return ExecutionResult(execution_dict, input_models, container)
 
 
 def drop_queue_and_output_artifacts(execution_dict: dict) -> None:

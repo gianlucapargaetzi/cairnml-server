@@ -14,8 +14,18 @@ from {{ session_package }} import (
     Request,
     Response,
     NonStrictDataModel,
-    schema_property,
+{% if batched %}    BatchRequest,
+{% endif %}{% if enums %}    StringEnum,
+{% endif %}    schema_property,
 )
+{% for e in enums %}
+
+
+class {{ e.name }}(StringEnum):
+{% for m in e.members %}
+    {{ m.name }} = {{ m.value }}
+{% endfor %}
+{% endfor %}
 {% for c in classes %}
 
 
@@ -41,6 +51,9 @@ class {{ c.name }}({{ c.base }}):
     _action = "{{ c.extra.action }}"
     _version = "{{ c.extra.version }}"
 {% endif %}
+{% if c.batched %}
+    _batched_request_cls = {{ c.batched }}
+{% else %}
     _schema = {{ c.schema }}
 
 {{ c.signature }}
@@ -50,7 +63,7 @@ class {{ c.name }}({{ c.base }}):
 {% endfor %}
 {% for p in c.props %}
 
-    @schema_property("{{ p.name }}")
+    @schema_property("{{ p.wire or p.name }}")
     def {{ p.name }}(self) -> {{ p.annotation }}:
         return self._property_{{ p.name }}
 
@@ -64,6 +77,7 @@ class {{ c.name }}({{ c.base }}):
 {% endfor %}
         self._property_{{ p.name }} = value
 {% endfor %}
+{% endif %}
 {% endfor %}
 
 
