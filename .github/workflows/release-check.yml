@@ -137,7 +137,7 @@ jobs:
         run: python -m apiserver.client_generator generate --target sdk --out sdk/cairnml/backend_api/services --check
       - name: The hand-written callers agree with the schema
         run: python -m apiserver.client_generator check-callers --target sdk --root sdk/cairnml --allow sdk/scripts/api-allow.txt
-      - run: python -m pytest sdk/tests -q
+      - run: cd sdk && python -m pytest tests -q
 
   agent-with-sdk:
     name: agent tests with the SDK's main
