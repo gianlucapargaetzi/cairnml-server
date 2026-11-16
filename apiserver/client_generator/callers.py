@@ -53,6 +53,9 @@ def _string(node):
     return node.value if isinstance(node, ast.Constant) and isinstance(node.value, str) else None
 
 
+BATCH_KEYWORDS = ("requests", "validate_requests", "allow_raw_requests")
+
+
 class _Visitor(ast.NodeVisitor):
     def __init__(self, path, schema, generated, allow, findings):
         self.path, self.schema, self.generated, self.allow, self.findings = path, schema, generated, allow, findings
@@ -91,9 +94,18 @@ class _Visitor(ast.NodeVisitor):
             if f"{service}.{snake}" not in self.allow.exempt:
                 self.report(node, f"{service}.{snake} is not in the schema ({service}.{class_name})")
             return
-        known = set((self.schema[service].actions[action].request.get("properties") or {}))
+        described = self.schema[service].actions[action]
+        request = described.request or {}
+        if described.batch_request:
+            known = set(BATCH_KEYWORDS)  # the batch base class takes these, not the fields of an action
+        elif any(key in request for key in ("anyOf", "oneOf", "allOf")):
+            return  # the request is one of several shapes: the generated class does not list its fields
+        else:
+            # a field is named in Python as the generator names it: a character that is not in an identifier is "_"
+            known = {re.sub(r"\W", "_", name) for name in (request.get("properties") or {})}
         for keyword in node.keywords:
-            if keyword.arg and keyword.arg not in known:
+            # underscore names are the base class's own options (for example _allow_extra_fields_)
+            if keyword.arg and not keyword.arg.startswith("_") and keyword.arg not in known:
                 self.report(node, f"{service}.{action} has no field `{keyword.arg}`")
 
     def _named_call(self, node, service, action, version):
