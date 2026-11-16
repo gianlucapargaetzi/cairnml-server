@@ -429,14 +429,10 @@ def test_model_labels_of_the_source_are_kept_as_ints(company, stubs):
     assert dict(stored(new).execution.model_labels) == {"a": 1}
 
 
-def test_legacy_execution_parameters_and_configuration_have_no_effect_on_the_task(company, stubs):
-    overrides = {"parameters": {"a": "1"}, "configuration": {"b": "2"}}
-    src = make_source(company)
-    new, _ = clone(src, execution_overrides=overrides)
-    row = stored(new)
-    assert set(row.hyperparams) == {"General"}
-    assert set(row.configuration) == {"cfg"}
-    assert overrides == {}
+def test_legacy_execution_parameters_and_configuration_overrides_are_refused(company, stubs):
+    for key in ("parameters", "configuration"):
+        with pytest.raises(errors.bad_request.ValidationError, match=f"execution.{key} cannot be overridden"):
+            clone(make_source(company), execution_overrides={key: {"a": "1"}})
 
 
 def test_execution_overrides_artifacts_are_prepared_and_output_ones_dropped(company, stubs):

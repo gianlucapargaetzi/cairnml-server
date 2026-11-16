@@ -22,14 +22,8 @@ class BasicMode(Base):
     guest = callable_default(EmbeddedField)(BasicGuestMode, default=BasicGuestMode)
 
 
-class ServerErrors(Base):
-    missed_es_upgrade = BoolField(default=False)
-    es_connection_error = BoolField(default=False)
-
-
 class GetSupportedModesResponse(Base):
     basic = EmbeddedField(BasicMode)
-    server_errors = EmbeddedField(ServerErrors)
     sso = DictField([str, type(None)])
     sso_providers = ListField([dict])
     authenticated = BoolField(default=False)

@@ -31,7 +31,6 @@ worker_bll = WorkerBLL()
 
 @endpoint(
     "workers.get_all",
-    min_version="2.4",
     request_data_model=GetAllRequest,
     response_data_model=GetAllResponse,
 )
@@ -64,7 +63,7 @@ def get_count(call: APICall, company_id: str, request: GetCountRequest):
     }
 
 
-@endpoint("workers.register", min_version="2.4", request_data_model=RegisterRequest)
+@endpoint("workers.register", request_data_model=RegisterRequest)
 def register(call: APICall, company_id, request: RegisterRequest):
     worker = request.worker
     timeout = request.timeout
@@ -91,12 +90,12 @@ def register(call: APICall, company_id, request: RegisterRequest):
     )
 
 
-@endpoint("workers.unregister", min_version="2.4", request_data_model=WorkerRequest)
+@endpoint("workers.unregister", request_data_model=WorkerRequest)
 def unregister(call: APICall, company_id, req_model: WorkerRequest):
     worker_bll.unregister_worker(company_id, call.identity.user, req_model.worker)
 
 
-@endpoint("workers.status_report", min_version="2.4", request_data_model=StatusReportRequest)
+@endpoint("workers.status_report", request_data_model=StatusReportRequest)
 def status_report(call: APICall, company_id, request: StatusReportRequest):
     worker_bll.status_report(
         company_id=company_id,
@@ -112,7 +111,6 @@ def status_report(call: APICall, company_id, request: StatusReportRequest):
 
 @endpoint(
     "workers.get_metric_keys",
-    min_version="2.4",
     request_data_model=GetMetricKeysRequest,
     response_data_model=GetMetricKeysResponse,
     validate_schema=True,
@@ -124,7 +122,6 @@ def get_metric_keys(call: APICall, company_id, req_model: GetMetricKeysRequest) 
 
 @endpoint(
     "workers.get_activity_report",
-    min_version="2.4",
     request_data_model=GetActivityReportRequest,
     response_data_model=GetActivityReportResponse,
     validate_schema=True,
@@ -148,7 +145,6 @@ def get_activity_report(call: APICall, company_id, req_model: GetActivityReportR
 
 @endpoint(
     "workers.get_stats",
-    min_version="2.4",
     response_data_model=GetStatsResponse,
     validate_schema=True,
 )

@@ -215,13 +215,11 @@ class TaskBLL:
         script_dict = script_with_overrides(task, spec.script_overrides, cls.strip_script_fields)
 
         execution_dict = task.execution.to_proper_dict() if task.execution else {}
-        execution_dict, input_models, container, legacy_params = apply_execution_overrides(
+        execution_dict, input_models, container = apply_execution_overrides(
             execution_dict, spec.execution_overrides, input_models, spec.container, now
         )
-        if legacy_params is not None:
-            params_dict["execution"] = legacy_params
 
-        params_prepare_for_save(params_dict, previous_task=task)
+        params_prepare_for_save(params_dict)
         drop_queue_and_output_artifacts(execution_dict)
 
         project, new_project_data = resolve_target_project(spec, company_id, user_id, identity)

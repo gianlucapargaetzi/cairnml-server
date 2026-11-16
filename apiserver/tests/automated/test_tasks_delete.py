@@ -7,7 +7,7 @@ from apiserver.tests.automated import TestService
 
 class TestTasksResetDelete(TestService):
     def setUp(self, **kwargs):
-        super().setUp(version="2.13")
+        super().setUp(version="2.41")
 
     def test_delete(self):
         # draft task can be deleted

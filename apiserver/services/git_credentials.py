@@ -6,7 +6,7 @@ from apiserver.idp import git_credentials as store
 from apiserver.service_repo import APICall, endpoint
 
 
-@endpoint("git_credentials.set", min_version="2.8", request_data_model=SetGitCredentialRequest)
+@endpoint("git_credentials.set", request_data_model=SetGitCredentialRequest)
 def set_credential(call: APICall, company: str, request: SetGitCredentialRequest):
     call.result.data = {
         "credential": store.set_credential(
@@ -15,13 +15,13 @@ def set_credential(call: APICall, company: str, request: SetGitCredentialRequest
     }
 
 
-@endpoint("git_credentials.delete", min_version="2.8", request_data_model=DeleteGitCredentialRequest)
+@endpoint("git_credentials.delete", request_data_model=DeleteGitCredentialRequest)
 def delete_credential(call: APICall, company: str, request: DeleteGitCredentialRequest):
     call.result.data = {
         "deleted": store.delete_credential(company, request.host, request.path, actor=call.identity.user)
     }
 
 
-@endpoint("git_credentials.get_all", min_version="2.8")
+@endpoint("git_credentials.get_all")
 def get_all(call: APICall, company: str, _):
     call.result.data = {"credentials": store.list_credentials(company)}

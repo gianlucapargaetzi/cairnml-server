@@ -116,7 +116,7 @@ To check the setup, commit and push a change to a repository the App is installe
 
 A job from a repository on a Git host other than GitHub (for example GitLab) is checked by asking the host, without credentials, whether it serves the repository. A public repository is accepted. A private one, or one the server cannot ask, is refused unless credentials are stored for its host or for a path prefix on it. The agent then gets those credentials when it fetches the repository.
 
-An admin stores them with the `git_credentials.set` call of the API, version 2.8 or later, with a JSON body such as `{"host": "gitlab.example.com", "path": "team/", "username": "<user>", "secret": "<access token>"}`. `path` may be left out, which applies the credential to every repository on the host. The secret is encrypted at rest and is never returned. The web app and the SDK have no screen or command for this yet. `git_credentials.delete` removes an entry, and `git_credentials.get_all` lists the hosts and paths, without secrets.
+An admin stores them with the `git_credentials.set` call of the API, version 2.41, with a JSON body such as `{"host": "gitlab.example.com", "path": "team/", "username": "<user>", "secret": "<access token>"}`. `path` may be left out, which applies the credential to every repository on the host. The secret is encrypted at rest and is never returned. The web app and the SDK have no screen or command for this yet. `git_credentials.delete` removes an entry, and `git_credentials.get_all` lists the hosts and paths, without secrets.
 
 ## Network and security
 
@@ -224,9 +224,8 @@ Each component has its own version number, and the numbers are not related: serv
 The SDK and the agent are fixed to the commits named in their pin files. The web app's pin names the branch `main`, so every build takes the newest commit of the web app's `main`. The version of the web app is the `version` in its `package.json` at that commit. The pins are the only record of which versions go together. This repository's tests do not check other combinations.
 
 - **Use the SDK and the agent at the commits the pins name.** A client installed from another source may work, but it is not tested with this server.
-- **Old clients get a warning, not a refusal.** The SDK and the agent send their name and version in the `X-CairnML-Client` header. When a client is older than the minimum set in `apiserver.client_versions` (`min_sdk_version` 0.0.3, `min_agent_version` 0.0.3 in the shipped configuration), the server still serves it, adds an `X-CairnML-Upgrade` header to each response that says what to upgrade, and logs the warning once in `docker compose logs apiserver`.
 - **Differences from upstream ClearML.** The commands, the dataset workflow, the sign-in and the storage differ from upstream. The [compatibility matrix](docs/compatibility/README.md) lists each area with its status and migration path: CLI commands ([CLI migration](docs/compatibility/cli-migration.md)), datasets ([Dataset migration](docs/compatibility/dataset-migration.md)), sign-in and storage ([Auth and storage](docs/compatibility/auth-and-storage.md)). The agent's app metering and proxy path is not supported ([Agent metering](docs/compatibility/agent-metering.md)).
-- **API version.** Clients name the API version in the address (`/cairnml/api/v2.8/...`). The device sign-in (enrolment, token exchange, job tokens) needs API version 2.8 or later, so a client that uses only older API versions cannot enrol.
+- **API version.** Clients name the API version in the address (`/cairnml/api/v2.41/...`). The server serves only that version: a request for any other version is refused. The device sign-in (enrolment, token exchange, job tokens) uses the same version.
 
 ## Running the server's tests
 

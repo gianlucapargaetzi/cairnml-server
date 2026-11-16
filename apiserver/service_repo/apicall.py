@@ -298,7 +298,7 @@ class MissingIdentity(Exception):
 
 
 def _get_headers(name: str) -> Tuple[str, ...]:
-    return tuple("-".join(("X", p, name)) for p in ("Cairnml", "Trains"))
+    return ("-".join(("X", "Cairnml", name)),)
 
 
 class APICall(DataContainer):
@@ -605,15 +605,8 @@ class APICall(DataContainer):
             include_stack if include_stack is not None else config.get("apiserver.return_stack_to_caller", False)
         )
 
-        def make_version_number(version: PartialVersion) -> Union[None, float, str]:
-            """
-            Client versions <=2.0 expect expect endpoint versions in float format, otherwise throwing an exception
-            """
-            if version is None:
-                return None
-            if self.requested_endpoint_version < PartialVersion("2.1"):
-                return float(str(version))
-            return str(version)
+        def make_version_number(version: PartialVersion) -> Union[None, str]:
+            return None if version is None else str(version)
 
         if self.result.raw_data and not self.failed:
             # endpoint returned raw data and no error was detected, return raw data, no fancy dicts

@@ -7,6 +7,7 @@ from typing import cast, Iterable, List, MutableMapping, Optional, Tuple, Callab
 import jsonmodels.models
 
 from apiserver.apierrors import APIError, errors
+from apiserver.service_repo.api_version import API_VERSION
 from apiserver.config_repo import config
 from apiserver.database.errors import translate_errors_context
 from apiserver.service_repo.job_scope import validate_job_scope
@@ -40,7 +41,7 @@ class ServiceRepo(object):
     """If the check is set, parsing will fail for endpoint request with the version that is grater than the current 
     maximum """
 
-    _max_version = PartialVersion("2.39")
+    _max_version = PartialVersion(API_VERSION)
     """ Maximum version number (the highest min_version value across all endpoints) """
 
     _endpoint_exp = (

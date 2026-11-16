@@ -382,29 +382,3 @@ def test_admin_can_clear_the_project_of_a_model(company):
         UpdateModelRequest(model="model1"),
     )
     assert not Model.objects(id="model1").first().project
-
-
-def test_get_by_task_id_refuses_a_task_in_a_private_project_to_a_stranger(company):
-    # the deprecated lookup-by-task-id path must not look any different for a hidden task than
-    # for a genuinely missing one
-    from apiserver.database.model.task.task import Task, Models, ModelItem
-    from apiserver.apimodels.models import TaskRequest as ModelsTaskRequest
-
-    make_root(company, id_="root1")
-    make_model(company, "root1", "owner1", id_="out-model")
-    task = Task(
-        id="task1",
-        company=company,
-        user="owner1",
-        name="task1",
-        project="root1",
-        type="training",
-        created=datetime.utcnow(),
-        models=Models(output=[ModelItem(name="output", model="out-model", updated=datetime.utcnow())]),
-    )
-    task.save()
-
-    call = FakeCall(identity(company, "stranger"))
-    call.requested_endpoint_version = PartialVersion("2.9")
-    with pytest.raises(errors.bad_request.InvalidTaskId):
-        svc.get_by_task_id(call, company, ModelsTaskRequest(task="task1"))

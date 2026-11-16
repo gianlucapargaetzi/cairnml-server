@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from apiserver.service_repo import API_VERSION
 from apiserver.client_generator.schema_model import (
     load_schema,
     reachable_definitions,
@@ -30,7 +31,8 @@ def test_model_lists_the_same_actions_and_versions_as_the_server_reader(tmp_path
         for action in service.actions.values()
     }
     assert actual == expected
-    assert len(actual) > 200 and sum(len(v) for v in actual.values()) > 300
+    assert len(actual) > 200
+    assert all(v == [API_VERSION] for v in actual.values())
 
 
 def test_only_the_newest_definition_of_an_action_is_modelled():

@@ -35,7 +35,7 @@ def _event_view(event: AuditEvent) -> dict:
     }
 
 
-@endpoint("audit.get_all", min_version="2.8", request_data_model=AuditListRequest)
+@endpoint("audit.get_all", request_data_model=AuditListRequest)
 def get_all(call: APICall, company, request: AuditListRequest):
     """Newest first. Admins only (see the schema). An admin reads the events of their own company; root and system read all."""
     query = {}

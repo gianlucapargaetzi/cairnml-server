@@ -7,7 +7,7 @@ log = config.logger(__file__)
 
 class TestProjection(TestService):
     def setUp(self, **kwargs):
-        super().setUp(version="2.6")
+        super().setUp(version="2.41")
 
     def _temp_task(self, **kwargs):
         self.update_missing(

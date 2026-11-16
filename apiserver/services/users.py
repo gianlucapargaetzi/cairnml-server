@@ -61,14 +61,6 @@ def get_by_id(call: APICall, company_id, request: UserRequest):
 @endpoint("users.get_all_ex")
 def get_all_ex(call: APICall, company_id, _):
     with translate_errors_context("retrieving users"):
-        res = UserProfile.get_many_with_join(company=company_id, query_dict=call.data)
-
-        call.result.data = {"users": res}
-
-
-@endpoint("users.get_all_ex", min_version="2.8")
-def get_all_ex2_8(call: APICall, company_id, _):
-    with translate_errors_context("retrieving users"):
         data = call.data
         active_in_projects = call.data.get("active_in_projects", None)
         if active_in_projects is not None:

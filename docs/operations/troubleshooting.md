@@ -78,7 +78,7 @@ added, it has to be turned on once for the `cairnml-sdk` client (see the README,
 Work through these in order:
 
 1. **The agent is running** on its machine, with the server's address it was enrolled with.
-2. **The agent can reach the server** at `http://<server-ip>/cairnml/api` (or the port set by `CAIRNML_HTTP_PORT`). Check the port from the agent's machine, for example with `curl -fsS http://<server-ip>/cairnml/api/v2.8/login.supported_modes -H 'Content-Type: application/json' -d '{}'`. It should answer with JSON.
+2. **The agent can reach the server** at `http://<server-ip>/cairnml/api` (or the port set by `CAIRNML_HTTP_PORT`). Check the port from the agent's machine, for example with `curl -fsS http://<server-ip>/cairnml/api/v2.41/login.supported_modes -H 'Content-Type: application/json' -d '{}'`. It should answer with JSON.
 3. **The agent is enrolled**, and the signed-in user who enrolled it may use the queue. See [A machine cannot enrol](#a-machine-cannot-enrol).
 4. **The agent reports to a live server.** A worker that has not reported for `services.workers.default_worker_timeout_sec` (600 seconds by default) is no longer listed. Restart the agent, and it appears at its next report.
 
@@ -116,17 +116,6 @@ The server checks a job from a GitHub repository when it is queued, and refuses 
 | `no commit is recorded for <owner>/<repo>: commit and push first` | Commit and push the code before you run the job. |
 | `commit not found on GitHub: push it first` | The commit is not on GitHub. Push it. |
 | `GitHub could not be reached to check the job` | The server cannot reach GitHub. Check the machine's outbound HTTPS, and `GITHUB_API_URL` in `deploy/.env`. |
-
-## An SDK or agent is older than the server expects
-
-The server does not refuse a client for its version. When the SDK or an agent is older than the minimum in the server's
-configuration (`apiserver.client_versions`), its calls still work, but the server:
-
-- adds an `X-CairnML-Upgrade` header to each response, which names the client and the version it needs, and
-- logs one warning, in `docker compose logs apiserver`: `the SDK (cairnml) 0.0.2 is older than this server's minimum 0.0.3: upgrade cairnml`.
-
-Upgrade the named client to the commit the server's pin names (see the README, section "Compatibility"). The warning
-is the only sign of an old client, so look for it when a client behaves oddly after an upgrade of the server.
 
 ## A dataset is refused or not listed
 

@@ -6,7 +6,7 @@ from apiserver.tests.automated import TestService
 
 class TestTasksArtifacts(TestService):
     def setUp(self, **kwargs):
-        super().setUp(version="2.10")
+        super().setUp(version="2.41")
 
     def new_task(self, **kwargs) -> str:
         self.update_missing(

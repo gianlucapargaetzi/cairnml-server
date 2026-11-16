@@ -6,6 +6,7 @@ from jsonmodels.errors import FieldNotSupported
 
 from apiserver.services_schema import schema
 from apiserver.utilities.partial_version import PartialVersion
+from .api_version import API_VERSION
 from .apicall import APICall
 from .schema_validator import SchemaValidator
 
@@ -22,7 +23,7 @@ class Endpoint(object):
         self,
         name: Text,
         func: EndpointFunc,
-        min_version: Text = "1.0",
+        min_version: Text = API_VERSION,
         required_fields: Sequence[Text] = None,
         request_data_model: models.Base = None,
         response_data_model: models.Base = None,

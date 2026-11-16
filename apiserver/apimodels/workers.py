@@ -59,8 +59,8 @@ class StatusReportRequest(WorkerRequest):
     )  # list of queues this worker listens to. if None, this will not update the worker's queues list.
     timestamp = IntField(required=True)
     machine_stats = EmbeddedField(MachineStats)
-    agent_version = StringField()  # not sent by agents older than 2.39
-    run_mode = StringField()  # "docker", "venv" or "host"; not sent by agents older than 2.39
+    agent_version = StringField()
+    run_mode = StringField()  # "docker", "venv" or "host"
 
 
 class IdNameEntry(Base):
