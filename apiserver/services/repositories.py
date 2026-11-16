@@ -4,6 +4,7 @@ bll/repositories. The only service for them."""
 from apiserver.apierrors import errors
 from apiserver.apimodels import repositories as models
 from apiserver.bll import repositories as bll
+from apiserver.bll import repository_access
 from apiserver.bll import (
     dataset_versions,
     repository_details,
@@ -304,7 +305,7 @@ def git_token(call: APICall, company: str, request: models.GitTokenRequest):
     parsed = bll.repo_address.parse(reference)
     repo = bll.find(company, reference) if parsed is not None else None
     if repo is None or not bll.can_see(company, call.identity.user, _is_admin(call), repo):
-        if parsed is not None and level == "read" and bll.is_private(parsed.url) is False:
+        if parsed is not None and level == "read" and repository_access.is_private(parsed.url) is False:
             # a public repository nobody listed yet needs no token and no record: a run lists it when it records what it used
             audit(
                 call.identity.user,
