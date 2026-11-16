@@ -47,17 +47,18 @@ def main(argv=None) -> int:
             return _usage(f"{args.root} does not exist")
         try:
             allow = read_allow(args.allow) if args.allow else Allow()
-            findings = check_callers(args.root, schema, set(target.services), allow)
+            findings = check_callers(args.root, schema, set(target.resolve(schema)), allow)
         except (OSError, ValueError, SyntaxError) as error:
             return _usage(str(error))
         for finding in findings:
             print(finding)
         return 1 if findings else 0
 
-    services = args.services.split(",") if args.services else list(target.services)
+    available = target.resolve(schema)
+    services = args.services.split(",") if args.services else list(available)
     for name in services:
-        if name not in target.services:
-            return _usage(f"{name!r} is not a service of the target {args.target!r} ({', '.join(target.services)})")
+        if name not in available:
+            return _usage(f"{name!r} is not a service of the target {args.target!r} ({', '.join(available)})")
         if name not in schema:
             return _usage(f"{name!r} is not in the schema folder {args.schema}")
     rendered = {}

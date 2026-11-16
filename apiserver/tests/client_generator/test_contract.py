@@ -16,7 +16,7 @@ from apiserver.client_generator.targets import TARGETS
 
 ROOT = Path(__file__).parents[2]  # apiserver/
 SCHEMA = load_schema(ROOT / "schema" / "services")
-GENERATED = sorted({s for t in TARGETS.values() for s in t.services})
+GENERATED = sorted({s for t in TARGETS.values() for s in t.resolve(SCHEMA)})
 
 
 def handlers(services_dir=ROOT / "services"):

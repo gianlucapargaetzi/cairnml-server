@@ -6,7 +6,7 @@ test_model_lists_the_same_actions_and_versions_as_the_server_reader keeps this r
 """
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Iterable, Tuple
 
@@ -35,8 +35,9 @@ class Action:
     version: str
     versions: Tuple[str, ...]
     description: str
-    request: dict  # empty for an action that has a batch_request instead (not generated yet)
+    request: dict  # empty for an action that has a batch_request instead
     response: dict
+    batch_request: dict = field(default_factory=dict)  # {"action": the batched action}; empty otherwise
 
     @property
     def full_name(self) -> str:
@@ -71,6 +72,7 @@ def _load_service(path: Path) -> Service:
             description=newest.get("description", ""),
             request=newest.get("request") or {},
             response=newest.get("response") or {},
+            batch_request=newest.get("batch_request") or {},
         )
     return Service(
         name=name,

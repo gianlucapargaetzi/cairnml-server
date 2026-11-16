@@ -41,6 +41,9 @@ class {{ c.name }}({{ c.base }}):
     _action = "{{ c.extra.action }}"
     _version = "{{ c.extra.version }}"
 {% endif %}
+{% if c.batched %}
+    _batched_request_cls = {{ c.batched }}
+{% else %}
     _schema = {{ c.schema }}
 
 {{ c.signature }}
@@ -64,6 +67,7 @@ class {{ c.name }}({{ c.base }}):
 {% endfor %}
         self._property_{{ p.name }} = value
 {% endfor %}
+{% endif %}
 {% endfor %}
 
 
