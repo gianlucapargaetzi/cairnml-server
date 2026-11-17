@@ -68,7 +68,14 @@ def _generate_web(args, schema) -> int:
                 path.write_text(text)
     # the shared parts of the client (base path, configuration, parameter encoding): written once
     # api.ts is the options type the generated services import from their own folder; the others are shared by the client
-    places = {src.name: (args.out / "api-services" if src.name == "api.ts" else args.out) for src in sorted(static.glob("*.ts"))}
+    # the files the services import from their own folder (api options, the transport) sit beside them; the response
+    # wrapper of the transport sits with the models; the rest are shared by the whole client
+    beside_services = {"api.ts", "api-requests.service.ts"}
+    places = {
+        src.name: (args.out / "api-services" if src.name in beside_services
+                   else args.out / "model" if src.name == "api-request.ts" else args.out)
+        for src in sorted(static.glob("*.ts"))
+    }
     for path in (places[src.name] / src.name for src in sorted(static.glob("*.ts"))):
         text = (static / path.name).read_text()
         if args.check:
