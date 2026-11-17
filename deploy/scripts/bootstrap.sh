@@ -62,7 +62,7 @@ path, origin = sys.argv[1], sys.argv[2]
 realm = json.load(open(path))
 for client in realm["clients"]:
     if client["clientId"] == "cairnml-web":
-        client["redirectUris"] = [origin + "/cairnml/api/v2.8/login.idp_callback"]
+        client["redirectUris"] = [origin + "/cairnml/api/v2.41/login.idp_callback"]
         client["webOrigins"] = [origin]
 json.dump(realm, open(path, "w"), indent=2)
 PY
@@ -258,7 +258,7 @@ docker compose up -d --build --remove-orphans
 
 echo "waiting for the CairnML server..."
 for _ in $(seq 1 90); do
-  curl -fsS -X POST "http://localhost:${CAIRNML_HTTP_PORT:-80}/cairnml/api/v2.8/login.supported_modes" \
+  curl -fsS -X POST "http://localhost:${CAIRNML_HTTP_PORT:-80}/cairnml/api/v2.41/login.supported_modes" \
     -H 'Content-Type: application/json' -d '{}' >/dev/null 2>&1 && { echo "CairnML server is up"; break; }
   sleep 2
 done

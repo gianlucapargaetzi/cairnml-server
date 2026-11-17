@@ -12,15 +12,14 @@
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
-fetch() { # fetch <folder> <repository> <pin file>
-  local folder=$1 repo=$2 pin=$3 ref commit
-  ref=$(cat "$pin")
+fetch() { # fetch <folder> <repository> <commit or branch>
+  local folder=$1 repo=$2 ref=$3 commit
   if [[ "$ref" =~ ^[0-9a-f]{40}$ ]]; then
     commit=$ref
   else
     commit=$(git ls-remote "https://github.com/gianlucapargaetzi/$repo.git" "refs/heads/$ref" | cut -f1)
     if [ -z "$commit" ]; then
-      echo "$repo has no branch $ref (named in $pin)" >&2
+      echo "$repo has no branch $ref" >&2
       exit 1
     fi
   fi
@@ -39,5 +38,5 @@ fetch cairnml-agent cairnml-agent "${AGENT_REF:-main}"
 if [ -n "${CAIRNML_WEB_DIR:-}" ]; then
   echo "web/ is not fetched: the web app is in $CAIRNML_WEB_DIR"
 else
-  fetch web cairnml-web docker/build/web-ref
+  fetch web cairnml-web "$(cat docker/build/web-ref)"
 fi
