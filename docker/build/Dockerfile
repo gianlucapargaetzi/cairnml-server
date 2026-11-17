@@ -39,6 +39,8 @@ RUN --mount=type=bind,from=sdk,source=/,target=/tmp/cairnml-sdk,rw \
 # The Angular application builder writes the app into build/browser; that folder replaces nginx's default page.
 # The entrypoint writes runtime configuration into the web root, so the server user owns it.
 COPY --chown=cairnml:cairnml --from=webapp_builder /opt/open-webapp/build/browser /usr/share/nginx/html
+# The "What's new" bundle, written by the workflow (docker/build/whats-new.json): the web app reads it.
+COPY --chmod=644 docker/build/whats-new.json /usr/share/nginx/html/whats-new.json
 COPY --from=webapp_builder /opt/open-webapp/dist/report-widgets /usr/share/nginx/widgets
 
 EXPOSE 8080

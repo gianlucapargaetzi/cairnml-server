@@ -19,6 +19,10 @@ on:
       agent_sha:
         description: The cairnml-agent commit that the agent release tagged
         required: true
+      web_sha:
+        description: "The cairnml-web commit the release picked (empty: the commit named in web-ref)"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -38,8 +42,11 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: gianlucapargaetzi/cairnml-web
-          ref: ${{ steps.web.outputs.ref }}
+          ref: ${{ inputs.web_sha || steps.web.outputs.ref }}
           path: web
+      # The "What's new" bundle: the release notes of the server, the web app and the SDK, served with the web app.
+      - name: Write the What's new bundle
+        run: python3 apiserver/release/whats_new.py --server CHANGELOG.md --web web/CHANGELOG.md --sdk sdk/CHANGELOG.md --out docker/build/whats-new.json
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
       - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
@@ -75,7 +82,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: gianlucapargaetzi/cairnml-web
-          ref: ${{ steps.web.outputs.ref }}
+          ref: ${{ inputs.web_sha || steps.web.outputs.ref }}
           path: web
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -87,6 +94,9 @@ jobs:
           repository: gianlucapargaetzi/cairnml-agent
           ref: ${{ inputs.agent_sha }}
           path: agent
+      # The "What's new" bundle: the release notes of the server, the web app and the SDK, served with the web app.
+      - name: Write the What's new bundle
+        run: python3 apiserver/release/whats_new.py --server CHANGELOG.md --web web/CHANGELOG.md --sdk sdk/CHANGELOG.md --out docker/build/whats-new.json
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
       - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:

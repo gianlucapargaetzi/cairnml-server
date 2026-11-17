@@ -35,6 +35,12 @@ on:
         value: ${{ jobs.plan.outputs.agent_ref }}
       agent_version:
         value: ${{ jobs.plan.outputs.agent_version }}
+      web_release:
+        value: ${{ jobs.plan.outputs.web_release }}
+      web_ref:
+        value: ${{ jobs.plan.outputs.web_ref }}
+      web_version:
+        value: ${{ jobs.plan.outputs.web_version }}
 
 permissions:
   contents: read
@@ -53,6 +59,9 @@ jobs:
       agent_release: ${{ steps.plan.outputs.agent_release }}
       agent_ref: ${{ steps.plan.outputs.agent_ref }}
       agent_version: ${{ steps.plan.outputs.agent_version }}
+      web_release: ${{ steps.plan.outputs.web_release }}
+      web_ref: ${{ steps.plan.outputs.web_ref }}
+      web_version: ${{ steps.plan.outputs.web_version }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -67,12 +76,18 @@ jobs:
           repository: gianlucapargaetzi/cairnml-agent
           path: agent
           fetch-depth: 0
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: gianlucapargaetzi/cairnml-web
+          path: web
+          fetch-depth: 0
       - id: plan
         env:
           REQUIRE_RELEASE: ${{ inputs.require_release }}
         run: |
           python - <<'PY'
           import os, re, subprocess, sys, urllib.error, urllib.request
+          from pathlib import Path
 
           def git(repo, *args):
               return subprocess.run(["git", "-C", repo, *args], capture_output=True, text=True, check=True).stdout.strip()
@@ -96,18 +111,32 @@ jobs:
           def file_version(path):
               return re.search(r"__version__ = .(.+).", open(path).read()).group(1)
 
+          def package_version(path):
+              import json
+              return json.load(open(path))["version"]
+
           components = [
               ("server", ".", file_version("apiserver/version.py"), None),
               ("sdk", "sdk", file_version("sdk/cairnml/version.py"), "cairnml"),
               ("agent", "agent", file_version("agent/cairnml_agent/version.py"), "cairnml-agent"),
+              ("web", "web", package_version("web/package.json"), None),
           ]
+          # the release notes each component publishes: CHANGELOG.md at its root, with a "## <version>" section
+          changelogs = {"server": ".", "sdk": "sdk", "agent": "agent", "web": "web"}
+          sys.path.insert(0, ".")
+          from apiserver.release.whats_new import has_section
           problems, out = [], {}
           for name, repo, version, pypi in components:
               head = git(repo, "rev-parse", "HEAD")
               last = latest_tag(repo)
               ahead = int(git(repo, "rev-list", "--count", f"{last}..HEAD")) if last else None
               lastv = last[1:] if last else None
-              releasing = last is None or key(version) > key(lastv)
+              if name == "web" and last is None:
+                  # the web app has no release tag yet: its baseline is tagged by hand, then it is released like the rest
+                  releasing = False
+                  print(f"{name:7} no release tag yet: tag the current version to start releasing the web app")
+              else:
+                  releasing = last is None or key(version) > key(lastv)
               if last and key(version) < key(lastv):
                   problems.append(f"{name}: version {version} is lower than the last release {last}")
               if releasing:
@@ -115,6 +144,9 @@ jobs:
                       problems.append(f"{name}: no commits since {last}, nothing to release")
                   if pypi and on_pypi(pypi, version):
                       problems.append(f"{name}: {version} is already on PyPI")
+                  changelog = Path(changelogs[name], "CHANGELOG.md")
+                  if not changelog.exists() or not has_section(changelog.read_text(), version):
+                      problems.append(f"{name}: {changelog} has no section '## {version}' with the release notes")
                   ref, used = head, version
                   print(f"{name:7} RELEASING {version} (last release {last}, {ahead} commit(s) since) at {ref[:8]}")
               else:
@@ -126,8 +158,8 @@ jobs:
               out[f"{name}_version"] = used or ""
           if os.environ["REQUIRE_RELEASE"] == "true" and os.environ["GITHUB_REF"] != "refs/heads/main":
               problems.append("a release is started from main only")
-          if os.environ["REQUIRE_RELEASE"] == "true" and not any(out[f"{n}_release"] == "true" for n in ("server", "sdk", "agent")):
-              problems.append("none of the three is releasing: bump a version file")
+          if os.environ["REQUIRE_RELEASE"] == "true" and not any(out[f"{n}_release"] == "true" for n in ("server", "sdk", "agent", "web")):
+              problems.append("none of the four is releasing: bump a version file")
           with open(os.environ["GITHUB_OUTPUT"], "a") as f:
               for k, v in out.items():
                   f.write(f"{k}={v}\n")

@@ -1,3 +1,17 @@
+## 0.0.6
+
+The server serves one API version, 2.41, and its endpoints are generated into the SDK and the web app from its schema.
+
+- The API change check blocks a breaking change unless the API version is raised and this changelog names the endpoint.
+  It also checks changes inside shared definitions, and a field that changes to or from a union of shapes.
+- The release is planned from the version files of the server, the SDK, the agent and the web app. A releasing component
+  must have its section in its CHANGELOG.md. The image is built from the commits the release picked, and carries the
+  "What's new" bundle of the release notes.
+- Removed endpoints are refused at 2.41: models.get_by_task_id, models.update_for_task, projects.get_all_ex's non_public,
+  login.supported_modes' server_errors.
+- queues.get_all_ex and projects.get_queues return the fields the web app reads (entries count, workers, the share level and
+  id of a queue), and the schema declares them.
+
 # Changelog
 
 Each API version has a section. A change that breaks a client (a removed or changed endpoint, a field that became

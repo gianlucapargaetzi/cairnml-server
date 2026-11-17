@@ -42,3 +42,4 @@ graphify-out/
 CLAUDE.md
 .superpowers/
 docs/superpowers/
+docker/build/whats-new.json
