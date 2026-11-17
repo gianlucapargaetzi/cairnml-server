@@ -159,7 +159,13 @@ class Models:
             head = HEADER.format(service=self.service.name, version="2.41")
             self.files[stem] = head + "\n" + _enum_definition(type_name, values, definition.get("description"))
             return
-        self._object(type_name, definition, imports=[], doc=definition.get("description", ""))
+        # the objects nested in a definition are named after the definition, not after the action that uses it
+        outer_root = self.root
+        self.root = type_name
+        try:
+            self._object(type_name, definition, imports=[], doc=definition.get("description", ""))
+        finally:
+            self.root = outer_root
 
     def action(self, action: Action) -> Tuple[str, str]:
         """Writes the request and the response of one action; returns their type names."""
