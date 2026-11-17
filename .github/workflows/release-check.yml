@@ -3,25 +3,14 @@ name: release-check
 # Is the next release valid? Run by hand before a release, or called by the release workflow. It publishes nothing.
 #
 # Plan: each of the server, the SDK (cairnml) and the agent (cairnml-agent) is either releasing or staying.
-#  - Releasing: a version higher than its latest release tag, with commits since. The server's version is the input (a
-#    tag like v0.0.6 is accepted; empty: the server stays) and must equal apiserver/version.py at the checked-out
-#    commit. The SDK's and the agent's is the version in their version.py. It is used at its main.
+#  - Releasing: the version in its version file (apiserver/version.py, cairnml/version.py, cairnml_agent/version.py) is
+#    higher than its latest release tag, and there are commits since. It is used at its main.
 #  - Staying: used at its latest release tag. Commits that are not bumped are only reported.
 # Then the three are tested together at exactly those commits. No PyPI package of this project is installed.
 on:
   workflow_dispatch:
-    inputs:
-      server_version:
-        description: Server version to release, without the v (for example 0.0.6). Empty, the server stays.
-        required: false
-        default: ""
   workflow_call:
     inputs:
-      server_version:
-        description: Server version to release, without the v. Empty, the server stays.
-        required: false
-        type: string
-        default: ""
       require_release:
         description: Fail when none of the three is releasing
         required: false
@@ -80,7 +69,6 @@ jobs:
           fetch-depth: 0
       - id: plan
         env:
-          SERVER_VERSION: ${{ inputs.server_version }}
           REQUIRE_RELEASE: ${{ inputs.require_release }}
         run: |
           python - <<'PY'
@@ -109,28 +97,20 @@ jobs:
               return re.search(r"__version__ = .(.+).", open(path).read()).group(1)
 
           components = [
-              ("server", ".", os.environ["SERVER_VERSION"].strip().lstrip("v") or None, None),
+              ("server", ".", file_version("apiserver/version.py"), None),
               ("sdk", "sdk", file_version("sdk/cairnml/version.py"), "cairnml"),
               ("agent", "agent", file_version("agent/cairnml_agent/version.py"), "cairnml-agent"),
           ]
           problems, out = [], {}
           for name, repo, version, pypi in components:
               head = git(repo, "rev-parse", "HEAD")
-              # the tag that is being released is not "the last release"
-              last = latest_tag(repo, f"v{version}" if name == "server" and version else None)
+              last = latest_tag(repo)
               ahead = int(git(repo, "rev-list", "--count", f"{last}..HEAD")) if last else None
               lastv = last[1:] if last else None
-              if name == "server":
-                  releasing = version is not None
-              else:
-                  releasing = last is None or key(version) > key(lastv)
-                  if last and key(version) < key(lastv):
-                      problems.append(f"{name}: version {version} is lower than the last release {last}")
+              releasing = last is None or key(version) > key(lastv)
+              if last and key(version) < key(lastv):
+                  problems.append(f"{name}: version {version} is lower than the last release {last}")
               if releasing:
-                  if name == "server" and file_version("apiserver/version.py") != version:
-                      problems.append(f"server: release {version} does not match apiserver/version.py ({file_version('apiserver/version.py')})")
-                  if last and version is not None and key(version) <= key(lastv):
-                      problems.append(f"{name}: {version} is not higher than the last release {last}")
                   if last and ahead == 0:
                       problems.append(f"{name}: no commits since {last}, nothing to release")
                   if pypi and on_pypi(pypi, version):
@@ -144,8 +124,10 @@ jobs:
               out[f"{name}_release"] = "true" if releasing else "false"
               out[f"{name}_ref"] = ref
               out[f"{name}_version"] = used or ""
+          if os.environ["REQUIRE_RELEASE"] == "true" and os.environ["GITHUB_REF"] != "refs/heads/main":
+              problems.append("a release is started from main only")
           if os.environ["REQUIRE_RELEASE"] == "true" and not any(out[f"{n}_release"] == "true" for n in ("server", "sdk", "agent")):
-              problems.append("none of the three is releasing: give a server version, or bump the SDK or the agent version")
+              problems.append("none of the three is releasing: bump a version file")
           with open(os.environ["GITHUB_OUTPUT"], "a") as f:
               for k, v in out.items():
                   f.write(f"{k}={v}\n")
