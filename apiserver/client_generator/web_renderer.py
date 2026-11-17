@@ -260,12 +260,12 @@ def render_api(service: Service) -> str:
             + "    }\n"
         )
     import_lines = "".join(
-        f"import {{ {n} }} from '~/business-logic/model/{service.name}/{lower_first(n)}';\n" for n in sorted(imports)
+        f"import {{ {n} }} from '../model/{service.name}/{lower_first(n)}';\n" for n in sorted(imports)
     )
     return (
         HEADER.format(service=service.name, version="2.41")
         + "\n/* eslint-disable @typescript-eslint/no-unused-vars, @typescript-eslint/member-ordering */\n\n"
-        + "import {HTTP} from '~/app.constants';\n"
+        + "import {HTTP} from '../../app.constants';\n"
         + "import {SmApiRequestsService} from './api-requests.service';\n"
         + "import {Inject, Injectable, Optional} from '@angular/core';\n"
         + "import {HttpHeaders} from '@angular/common/http';\n"
