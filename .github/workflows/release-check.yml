@@ -3,8 +3,9 @@ name: release-check
 # Is the next release valid? Run by hand before a release, or called by the release workflow. It publishes nothing.
 #
 # Plan: each of the server, the SDK (cairnml) and the agent (cairnml-agent) is either releasing or staying.
-#  - Releasing: a version higher than its latest release tag, with commits since. The server's version is the input
-#    (empty: the server stays); the SDK's and the agent's is the version in their version.py. It is used at its main.
+#  - Releasing: a version higher than its latest release tag, with commits since. The server's version is the input (a
+#    tag like v0.0.6 is accepted; empty: the server stays) and must equal apiserver/version.py at the checked-out
+#    commit. The SDK's and the agent's is the version in their version.py. It is used at its main.
 #  - Staying: used at its latest release tag. Commits that are not bumped are only reported.
 # Then the three are tested together at exactly those commits. No PyPI package of this project is installed.
 on:
@@ -31,6 +32,8 @@ on:
         value: ${{ jobs.plan.outputs.server_release }}
       server_ref:
         value: ${{ jobs.plan.outputs.server_ref }}
+      server_version:
+        value: ${{ jobs.plan.outputs.server_version }}
       sdk_release:
         value: ${{ jobs.plan.outputs.sdk_release }}
       sdk_ref:
@@ -54,6 +57,7 @@ jobs:
     outputs:
       server_release: ${{ steps.plan.outputs.server_release }}
       server_ref: ${{ steps.plan.outputs.server_ref }}
+      server_version: ${{ steps.plan.outputs.server_version }}
       sdk_release: ${{ steps.plan.outputs.sdk_release }}
       sdk_ref: ${{ steps.plan.outputs.sdk_ref }}
       sdk_version: ${{ steps.plan.outputs.sdk_version }}
@@ -88,8 +92,8 @@ jobs:
           def key(v):
               return tuple(int(p) for p in v.split("."))
 
-          def latest_tag(repo):
-              tags = [t for t in git(repo, "tag").split() if re.fullmatch(r"v\d+\.\d+\.\d+", t)]
+          def latest_tag(repo, exclude=None):
+              tags = [t for t in git(repo, "tag").split() if re.fullmatch(r"v\d+\.\d+\.\d+", t) and t != exclude]
               return max(tags, key=lambda t: key(t[1:]), default=None)
 
           def on_pypi(name, version):
@@ -105,14 +109,15 @@ jobs:
               return re.search(r"__version__ = .(.+).", open(path).read()).group(1)
 
           components = [
-              ("server", ".", os.environ["SERVER_VERSION"].strip() or None, None),
+              ("server", ".", os.environ["SERVER_VERSION"].strip().lstrip("v") or None, None),
               ("sdk", "sdk", file_version("sdk/cairnml/version.py"), "cairnml"),
               ("agent", "agent", file_version("agent/cairnml_agent/version.py"), "cairnml-agent"),
           ]
           problems, out = [], {}
           for name, repo, version, pypi in components:
               head = git(repo, "rev-parse", "HEAD")
-              last = latest_tag(repo)
+              # the tag that is being released is not "the last release"
+              last = latest_tag(repo, f"v{version}" if name == "server" and version else None)
               ahead = int(git(repo, "rev-list", "--count", f"{last}..HEAD")) if last else None
               lastv = last[1:] if last else None
               if name == "server":
@@ -122,6 +127,8 @@ jobs:
                   if last and key(version) < key(lastv):
                       problems.append(f"{name}: version {version} is lower than the last release {last}")
               if releasing:
+                  if name == "server" and file_version("apiserver/version.py") != version:
+                      problems.append(f"server: release {version} does not match apiserver/version.py ({file_version('apiserver/version.py')})")
                   if last and version is not None and key(version) <= key(lastv):
                       problems.append(f"{name}: {version} is not higher than the last release {last}")
                   if last and ahead == 0:
