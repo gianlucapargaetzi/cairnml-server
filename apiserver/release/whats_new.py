@@ -49,8 +49,17 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="python -m apiserver.release.whats_new", description=__doc__)
     for name in COMPONENTS:
         parser.add_argument(f"--{name}", type=Path, help=f"the {name} changelog")
-    parser.add_argument("--out", type=Path, required=True, help="the bundle to write")
+    parser.add_argument("--out", type=Path, help="the bundle to write")
+    parser.add_argument("--notes", type=Path, help="print the notes of one release from this changelog")
+    parser.add_argument("--version", help="the release whose notes --notes prints")
     args = parser.parse_args(argv)
+    if args.notes:
+        # the release notes of one version, for a GitHub release: an empty text when the changelog has no section
+        text = args.notes.read_text() if args.notes.exists() else ""
+        print(sections(text).get(args.version or "", ""))
+        return 0
+    if args.out is None:
+        parser.error("--out is required unless --notes is given")
     texts = {
         name: getattr(args, name).read_text() if getattr(args, name) and getattr(args, name).exists() else None
         for name in COMPONENTS

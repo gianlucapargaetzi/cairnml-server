@@ -104,10 +104,40 @@ jobs:
           RUN="$(gh run list --repo gianlucapargaetzi/cairnml-agent --workflow publish.yml --event release --limit 1 --json databaseId --jq '.[0].databaseId')"
           gh run watch "$RUN" --repo gianlucapargaetzi/cairnml-agent --exit-status
 
+  web:
+    name: release the web app
+    needs: [check, approve]
+    if: ${{ !cancelled() && needs.approve.result == 'success' && needs.check.outputs.web_release == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
+        id: app
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_KEY }}
+          owner: gianlucapargaetzi
+          repositories: cairnml-web
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: gianlucapargaetzi/cairnml-web
+          ref: ${{ needs.check.outputs.web_ref }}
+          path: web
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          path: server
+      - name: Tag and release the web app with its release notes from CHANGELOG.md
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          V: ${{ needs.check.outputs.web_version }}
+          SHA: ${{ needs.check.outputs.web_ref }}
+        run: |
+          python3 server/apiserver/release/whats_new.py --notes web/CHANGELOG.md --version "$V" > notes.md
+          gh release create "v$V" --repo gianlucapargaetzi/cairnml-web --target "$SHA" --title "v$V" --notes-file notes.md
+
   image:
     name: build and publish the server image
-    needs: [check, approve, server, sdk, agent]
-    if: ${{ !cancelled() && needs.approve.result == 'success' && needs.server.result == 'success' && (needs.sdk.result == 'success' || needs.sdk.result == 'skipped') && (needs.agent.result == 'success' || needs.agent.result == 'skipped') }}
+    needs: [check, approve, server, sdk, agent, web]
+    if: ${{ !cancelled() && needs.approve.result == 'success' && needs.server.result == 'success' && (needs.sdk.result == 'success' || needs.sdk.result == 'skipped') && (needs.agent.result == 'success' || needs.agent.result == 'skipped') && (needs.web.result == 'success' || needs.web.result == 'skipped') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
@@ -123,9 +153,10 @@ jobs:
           V: ${{ needs.check.outputs.server_version }}
           SDK_SHA: ${{ needs.check.outputs.sdk_ref }}
           AGENT_SHA: ${{ needs.check.outputs.agent_ref }}
+          WEB_SHA: ${{ needs.check.outputs.web_ref }}
         run: |
           gh workflow run docker.yml --repo "$GITHUB_REPOSITORY" --ref "v$V" \
-            -f version="$V" -f sdk_sha="$SDK_SHA" -f agent_sha="$AGENT_SHA"
+            -f version="$V" -f sdk_sha="$SDK_SHA" -f agent_sha="$AGENT_SHA" -f web_sha="$WEB_SHA"
           sleep 20
           RUN="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow docker.yml --event workflow_dispatch --limit 1 --json databaseId --jq '.[0].databaseId')"
           gh run watch "$RUN" --repo "$GITHUB_REPOSITORY" --exit-status
