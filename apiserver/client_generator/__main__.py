@@ -67,7 +67,9 @@ def _generate_web(args, schema) -> int:
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(text)
     # the shared parts of the client (base path, configuration, parameter encoding): written once
-    for path in (args.out / src.name for src in sorted(static.glob("*.ts"))):
+    # api.ts is the options type the generated services import from their own folder; the others are shared by the client
+    places = {src.name: (args.out / "api-services" if src.name == "api.ts" else args.out) for src in sorted(static.glob("*.ts"))}
+    for path in (places[src.name] / src.name for src in sorted(static.glob("*.ts"))):
         text = (static / path.name).read_text()
         if args.check:
             if not path.is_file() or path.read_text() != text:
