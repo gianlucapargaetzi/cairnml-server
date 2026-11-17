@@ -12,6 +12,12 @@ on:
       server_version:
         description: Version of the server to release, without the v (for example 0.0.6)
         required: true
+  workflow_call:
+    inputs:
+      server_version:
+        description: Version of the server to release, without the v
+        required: true
+        type: string
 
 permissions:
   contents: read

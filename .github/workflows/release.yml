@@ -1,0 +1,142 @@
+name: release
+
+# Releases the three projects in order: server, SDK (cairnml), agent (cairnml-agent). Started by hand.
+#
+# 1. release-check: the versions are new, and the three mains work together. Nothing is released if it fails.
+# 2. server: tags and releases the server (this starts the Docker image publish).
+# 3. SDK: releases the version in its version.py. Its publish workflow then waits for the "pypi" approval.
+# 4. agent: releases the version in its version.py, once the SDK is published.
+# 5. pins: opens a PR in this repo that sets docker/build/sdk-ref and agent-ref to the released commits.
+#
+# Each release is created with the GitHub App (secrets RELEASE_APP_ID, RELEASE_APP_KEY), because a release made with
+# the default token does not start the publish workflows. The "release" environment must have required reviewers:
+# it is what stops the run before the server is tagged.
+on:
+  workflow_dispatch:
+    inputs:
+      server_version:
+        description: Server version to release, without the v (for example 0.0.6)
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    uses: ./.github/workflows/release-check.yml
+    with:
+      server_version: ${{ inputs.server_version }}
+
+  server:
+    name: release the server
+    needs: check
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+      - uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
+        id: app
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_KEY }}
+          owner: gianlucapargaetzi
+          repositories: cairnml-server
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Tag and release the server at the commit of main
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          V: ${{ inputs.server_version }}
+        run: gh release create "v$V" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "v$V" --generate-notes
+
+  sdk:
+    name: release the SDK
+    needs: server
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
+        id: app
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_KEY }}
+          owner: gianlucapargaetzi
+          repositories: cairnml
+      - name: Release the SDK version of its main and wait for its PyPI publish
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          REPO=gianlucapargaetzi/cairnml
+          gh api "repos/$REPO/contents/cairnml/version.py" --jq .content | base64 -d > version.py
+          V="$(python3 -c "import re;print(re.search(r'__version__ = .(.+).', open('version.py').read()).group(1))")"
+          SHA="$(gh api "repos/$REPO/commits/main" --jq .sha)"
+          gh release create "v$V" --repo "$REPO" --target "$SHA" --title "v$V" --generate-notes
+          sleep 20
+          RUN="$(gh run list --repo "$REPO" --workflow publish.yml --event release --limit 1 --json databaseId --jq '.[0].databaseId')"
+          gh run watch "$RUN" --repo "$REPO" --exit-status
+          echo "$SHA" > sdk-sha
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: sdk-sha
+          path: sdk-sha
+
+  agent:
+    name: release the agent
+    needs: sdk
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
+        id: app
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_KEY }}
+          owner: gianlucapargaetzi
+          repositories: cairnml-agent
+      - name: Release the agent version of its main and wait for its PyPI publish
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          REPO=gianlucapargaetzi/cairnml-agent
+          gh api "repos/$REPO/contents/cairnml_agent/version.py" --jq .content | base64 -d > version.py
+          V="$(python3 -c "import re;print(re.search(r'__version__ = .(.+).', open('version.py').read()).group(1))")"
+          SHA="$(gh api "repos/$REPO/commits/main" --jq .sha)"
+          gh release create "v$V" --repo "$REPO" --target "$SHA" --title "v$V" --generate-notes
+          sleep 20
+          RUN="$(gh run list --repo "$REPO" --workflow publish.yml --event release --limit 1 --json databaseId --jq '.[0].databaseId')"
+          gh run watch "$RUN" --repo "$REPO" --exit-status
+          echo "$SHA" > agent-sha
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: agent-sha
+          path: agent-sha
+
+  pins:
+    name: open the image pin PR
+    needs: [sdk, agent]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
+        id: app
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_KEY }}
+          owner: gianlucapargaetzi
+          repositories: cairnml-server
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          token: ${{ steps.app.outputs.token }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          path: shas
+      - name: Point the image build at the released SDK and agent
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          V: ${{ inputs.server_version }}
+        run: |
+          git config user.email release@example.invalid
+          git config user.name release
+          git checkout -b "release/pins-v$V"
+          cat shas/sdk-sha/sdk-sha > docker/build/sdk-ref
+          cat shas/agent-sha/agent-sha > docker/build/agent-ref
+          git add docker/build/sdk-ref docker/build/agent-ref
+          git commit -m "Image pins for the v$V release"
+          git push -u origin "release/pins-v$V"
+          gh pr create --base main --head "release/pins-v$V" --title "Image pins for the v$V release" \
+            --body "Points docker/build/sdk-ref and agent-ref at the released SDK and agent commits. Opened by the release workflow."
