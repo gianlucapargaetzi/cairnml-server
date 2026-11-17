@@ -37,4 +37,4 @@ def test_an_action_request_and_response_have_their_names():
 
 def test_the_shared_client_files_are_in_the_generator():
     static = Path(__file__).parents[2] / "client_generator" / "web_static"
-    assert sorted(p.name for p in static.glob("*.ts")) == ["configuration.ts", "encoder.ts", "variables.ts"]
+    assert sorted(p.name for p in static.glob("*.ts")) == ["api.ts", "configuration.ts", "encoder.ts", "variables.ts"]
