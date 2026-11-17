@@ -1,31 +1,65 @@
 name: release-check
 
-# Is the next release valid? Run by hand before releasing anything. It publishes nothing.
+# Is the next release valid? Run by hand before a release, or called by the release workflow. It publishes nothing.
 #
-# It checks that the three versions are ready (bumped, not yet tagged, not yet on PyPI) and that the main branches of
-# the server, the SDK (cairnml) and the agent (cairnml-agent) work together: the server's unit tests with the SDK's
-# main, the SDK's client against the server's schema and tests, and the agent's tests with the SDK's main. No PyPI
-# package of this project is installed.
+# Plan: each of the server, the SDK (cairnml) and the agent (cairnml-agent) is either releasing or staying.
+#  - Releasing: a version higher than its latest release tag, with commits since. The server's version is the input
+#    (empty: the server stays); the SDK's and the agent's is the version in their version.py. It is used at its main.
+#  - Staying: used at its latest release tag. Commits that are not bumped are only reported.
+# Then the three are tested together at exactly those commits. No PyPI package of this project is installed.
 on:
   workflow_dispatch:
     inputs:
       server_version:
-        description: Version of the server to release, without the v (for example 0.0.6)
-        required: true
+        description: Server version to release, without the v (for example 0.0.6). Empty, the server stays.
+        required: false
+        default: ""
   workflow_call:
     inputs:
       server_version:
-        description: Version of the server to release, without the v
-        required: true
+        description: Server version to release, without the v. Empty, the server stays.
+        required: false
         type: string
+        default: ""
+      require_release:
+        description: Fail when none of the three is releasing
+        required: false
+        type: boolean
+        default: false
+    outputs:
+      server_release:
+        value: ${{ jobs.plan.outputs.server_release }}
+      server_ref:
+        value: ${{ jobs.plan.outputs.server_ref }}
+      sdk_release:
+        value: ${{ jobs.plan.outputs.sdk_release }}
+      sdk_ref:
+        value: ${{ jobs.plan.outputs.sdk_ref }}
+      sdk_version:
+        value: ${{ jobs.plan.outputs.sdk_version }}
+      agent_release:
+        value: ${{ jobs.plan.outputs.agent_release }}
+      agent_ref:
+        value: ${{ jobs.plan.outputs.agent_ref }}
+      agent_version:
+        value: ${{ jobs.plan.outputs.agent_version }}
 
 permissions:
   contents: read
 
 jobs:
-  versions:
-    name: versions are ready
+  plan:
+    name: what is released
     runs-on: ubuntu-latest
+    outputs:
+      server_release: ${{ steps.plan.outputs.server_release }}
+      server_ref: ${{ steps.plan.outputs.server_ref }}
+      sdk_release: ${{ steps.plan.outputs.sdk_release }}
+      sdk_ref: ${{ steps.plan.outputs.sdk_ref }}
+      sdk_version: ${{ steps.plan.outputs.sdk_version }}
+      agent_release: ${{ steps.plan.outputs.agent_release }}
+      agent_ref: ${{ steps.plan.outputs.agent_ref }}
+      agent_version: ${{ steps.plan.outputs.agent_version }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -40,19 +74,23 @@ jobs:
           repository: gianlucapargaetzi/cairnml-agent
           path: agent
           fetch-depth: 0
-      - name: Each version is new, higher than the last release, and not on PyPI
+      - id: plan
         env:
           SERVER_VERSION: ${{ inputs.server_version }}
+          REQUIRE_RELEASE: ${{ inputs.require_release }}
         run: |
           python - <<'PY'
           import os, re, subprocess, sys, urllib.error, urllib.request
 
+          def git(repo, *args):
+              return subprocess.run(["git", "-C", repo, *args], capture_output=True, text=True, check=True).stdout.strip()
+
           def key(v):
               return tuple(int(p) for p in v.split("."))
 
-          def last_release(repo):
-              tags = subprocess.run(["git", "-C", repo, "tag"], capture_output=True, text=True, check=True).stdout.split()
-              return max((t for t in tags if re.fullmatch(r"v\d+\.\d+\.\d+", t)), key=lambda t: key(t[1:]), default=None), set(tags)
+          def latest_tag(repo):
+              tags = [t for t in git(repo, "tag").split() if re.fullmatch(r"v\d+\.\d+\.\d+", t)]
+              return max(tags, key=lambda t: key(t[1:]), default=None)
 
           def on_pypi(name, version):
               try:
@@ -63,34 +101,55 @@ jobs:
                       return False
                   raise
 
-          def file_version(path, pattern):
-              return re.search(pattern, open(path).read()).group(1)
+          def file_version(path):
+              return re.search(r"__version__ = .(.+).", open(path).read()).group(1)
 
-          items = [
-              ("server", ".", os.environ["SERVER_VERSION"], None),
-              ("sdk", "sdk", file_version("sdk/cairnml/version.py", r'__version__ = .(.+).'), "cairnml"),
-              ("agent", "agent", file_version("agent/cairnml_agent/version.py", r'__version__ = .(.+).'), "cairnml-agent"),
+          components = [
+              ("server", ".", os.environ["SERVER_VERSION"].strip() or None, None),
+              ("sdk", "sdk", file_version("sdk/cairnml/version.py"), "cairnml"),
+              ("agent", "agent", file_version("agent/cairnml_agent/version.py"), "cairnml-agent"),
           ]
-          problems = []
-          for name, repo, version, pypi in items:
-              last, tags = last_release(repo)
-              print(f"{name}: next {version}, last release {last}")
-              if not re.fullmatch(r"\d+\.\d+\.\d+", version):
-                  problems.append(f"{name}: {version!r} is not a version like 1.2.3")
-                  continue
-              if f"v{version}" in tags:
-                  problems.append(f"{name}: v{version} is already tagged: bump the version on main first")
-              elif last and key(version) <= key(last[1:]):
-                  problems.append(f"{name}: {version} is not higher than the last release {last}")
-              if pypi and on_pypi(pypi, version):
-                  problems.append(f"{name}: {version} is already on PyPI")
+          problems, out = [], {}
+          for name, repo, version, pypi in components:
+              head = git(repo, "rev-parse", "HEAD")
+              last = latest_tag(repo)
+              ahead = int(git(repo, "rev-list", "--count", f"{last}..HEAD")) if last else None
+              lastv = last[1:] if last else None
+              if name == "server":
+                  releasing = version is not None
+              else:
+                  releasing = last is None or key(version) > key(lastv)
+                  if last and key(version) < key(lastv):
+                      problems.append(f"{name}: version {version} is lower than the last release {last}")
+              if releasing:
+                  if last and version is not None and key(version) <= key(lastv):
+                      problems.append(f"{name}: {version} is not higher than the last release {last}")
+                  if last and ahead == 0:
+                      problems.append(f"{name}: no commits since {last}, nothing to release")
+                  if pypi and on_pypi(pypi, version):
+                      problems.append(f"{name}: {version} is already on PyPI")
+                  ref, used = head, version
+                  print(f"{name:7} RELEASING {version} (last release {last}, {ahead} commit(s) since) at {ref[:8]}")
+              else:
+                  ref, used = (git(repo, "rev-list", "-n", "1", last), lastv) if last else (head, version)
+                  note = f", {ahead} commit(s) not bumped" if ahead else ""
+                  print(f"{name:7} staying at {last} ({ref[:8]}){note}")
+              out[f"{name}_release"] = "true" if releasing else "false"
+              out[f"{name}_ref"] = ref
+              out[f"{name}_version"] = used or ""
+          if os.environ["REQUIRE_RELEASE"] == "true" and not any(out[f"{n}_release"] == "true" for n in ("server", "sdk", "agent")):
+              problems.append("none of the three is releasing: give a server version, or bump the SDK or the agent version")
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              for k, v in out.items():
+                  f.write(f"{k}={v}\n")
           for p in problems:
               print("PROBLEM", p)
           sys.exit(1 if problems else 0)
           PY
 
   server-with-sdk:
-    name: server tests with the SDK's main
+    name: server tests with the SDK
+    needs: plan
     runs-on: ubuntu-latest
     services:
       redis:
@@ -108,9 +167,12 @@ jobs:
       CAIRNML_SECRETS_DIR: /tmp/cairnml-secrets
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.plan.outputs.server_ref }}
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: gianlucapargaetzi/cairnml
+          ref: ${{ needs.plan.outputs.sdk_ref }}
           path: sdk
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
@@ -124,13 +186,17 @@ jobs:
       - run: python -m pytest -q -m "not integration" apiserver/tests
 
   sdk-with-server:
-    name: SDK against the server's main
+    name: SDK against the server
+    needs: plan
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.plan.outputs.server_ref }}
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: gianlucapargaetzi/cairnml
+          ref: ${{ needs.plan.outputs.sdk_ref }}
           path: sdk
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
@@ -146,16 +212,19 @@ jobs:
       - run: cd sdk && python -m pytest tests -q
 
   agent-with-sdk:
-    name: agent tests with the SDK's main
+    name: agent tests with the SDK
+    needs: plan
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: gianlucapargaetzi/cairnml
+          ref: ${{ needs.plan.outputs.sdk_ref }}
           path: sdk
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: gianlucapargaetzi/cairnml-agent
+          ref: ${{ needs.plan.outputs.agent_ref }}
           path: agent
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
@@ -169,7 +238,7 @@ jobs:
 
   ready:
     name: release is valid
-    needs: [versions, server-with-sdk, sdk-with-server, agent-with-sdk]
+    needs: [plan, server-with-sdk, sdk-with-server, agent-with-sdk]
     runs-on: ubuntu-latest
     steps:
-      - run: echo "Versions are ready and the mains work together. Nothing was published."
+      - run: echo "The plan is valid and the three work together at the planned commits. Nothing was published."
