@@ -50,6 +50,7 @@ def _generate_web(args, schema) -> int:
             rendered[name] = (render_api(schema[name]), render_models(schema[name]))
         except Unsupported as error:
             return _usage(f"{name}: {error}")
+    static = Path(__file__).parent / "web_static"
     stale = 0
     for name, (api, models) in rendered.items():
         targets = {args.out / "api-services" / f"{name}.service.ts": api}
@@ -65,6 +66,16 @@ def _generate_web(args, schema) -> int:
             else:
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(text)
+    # the shared parts of the client (base path, configuration, parameter encoding): written once
+    for path in (args.out / src.name for src in sorted(static.glob("*.ts"))):
+        text = (static / path.name).read_text()
+        if args.check:
+            if not path.is_file() or path.read_text() != text:
+                print(f"{path} is out of date")
+                stale += 1
+        else:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text)
     return 1 if stale else 0
 
 
