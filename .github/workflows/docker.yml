@@ -1,14 +1,24 @@
 name: docker
 
 # - Pull request: builds the image and scans it. Nothing is pushed.
-# - Tag vX.Y.Z: builds, scans, and pushes the image to Docker Hub. The job waits for the owner's approval
-#   (environment "dockerhub"), which also holds the Docker Hub credentials.
+# - Started by the release workflow (workflow_dispatch) after the server tag exists: builds, scans, and pushes the image
+#   to Docker Hub. The job waits for the owner's approval (environment "dockerhub"), which also holds the Docker Hub
+#   credentials. The SDK and the agent are built from the exact commits the release tagged (sdk_sha, agent_sha).
 # The web app comes from the branch named in docker/build/web-ref ("main": the newest commit of cairnml-web's main).
 on:
   pull_request:
     branches: [main]
-  push:
-    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Server version to publish, without the v
+        required: true
+      sdk_sha:
+        description: The cairnml commit that the SDK release tagged
+        required: true
+      agent_sha:
+        description: The cairnml-agent commit that the agent release tagged
+        required: true
 
 permissions:
   contents: read
@@ -51,7 +61,7 @@ jobs:
 
   publish:
     name: publish
-    if: github.event_name == 'push'
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     environment: dockerhub
     permissions:
@@ -67,6 +77,16 @@ jobs:
           repository: gianlucapargaetzi/cairnml-web
           ref: ${{ steps.web.outputs.ref }}
           path: web
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: gianlucapargaetzi/cairnml
+          ref: ${{ inputs.sdk_sha }}
+          path: sdk
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: gianlucapargaetzi/cairnml-agent
+          ref: ${{ inputs.agent_sha }}
+          path: agent
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
       - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
@@ -77,8 +97,7 @@ jobs:
         with:
           images: ${{ env.IMAGE }}
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=${{ inputs.version }}
             type=raw,value=latest
           labels: |
             org.opencontainers.image.licenses=SSPL-1.0
@@ -88,10 +107,13 @@ jobs:
         with:
           context: .
           file: docker/build/Dockerfile
-          build-contexts: cairnml_web=./web
+          build-contexts: |
+            cairnml_web=./web
+            cairnml_sdk=./sdk
+            cairnml_agent=./agent
           build-args: |
-            CAIRNML_FROM=pypi
-            VERSION=${{ github.ref_name }}
+            CAIRNML_FROM=source
+            VERSION=${{ inputs.version }}
             BUILD=${{ github.sha }}
           load: true
           push: false
@@ -107,10 +129,13 @@ jobs:
         with:
           context: .
           file: docker/build/Dockerfile
-          build-contexts: cairnml_web=./web
+          build-contexts: |
+            cairnml_web=./web
+            cairnml_sdk=./sdk
+            cairnml_agent=./agent
           build-args: |
-            CAIRNML_FROM=pypi
-            VERSION=${{ github.ref_name }}
+            CAIRNML_FROM=source
+            VERSION=${{ inputs.version }}
             BUILD=${{ github.sha }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
