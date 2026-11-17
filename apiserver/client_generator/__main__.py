@@ -3,6 +3,7 @@ import sys
 from pathlib import Path
 
 from .callers import Allow, check_callers, read_allow
+from .web_check import check_web
 from .python_renderer import Unsupported, render_service
 from .schema_model import load_schema
 from .targets import TARGETS
@@ -24,6 +25,10 @@ def _parser() -> argparse.ArgumentParser:
     callers = sub.choices["check-callers"]
     callers.add_argument("--root", type=Path, required=True, help="folder or file with the Python callers")
     callers.add_argument("--allow", type=Path, help="allow file with `exempt <service.action> <reason>` lines")
+    web = sub.add_parser("check-web", help="check the web app's TypeScript API layer against the schema")
+    web.add_argument("--schema", type=Path, default=DEFAULT_SCHEMA, help="folder with the schema's .conf files")
+    web.add_argument("--root", type=Path, required=True, help="the web app's src/app/business-logic folder")
+    web.add_argument("--allow", type=Path, help="allow file with `exempt <service.action> <reason>` lines")
     return parser
 
 
@@ -34,6 +39,14 @@ def _usage(message: str) -> int:
 
 def main(argv=None) -> int:
     args = _parser().parse_args(argv)
+    if args.command == "check-web":
+        try:
+            findings = check_web(args.root, load_schema(args.schema), read_allow(args.allow) if args.allow else Allow())
+        except (OSError, ValueError) as error:
+            return _usage(str(error))
+        for finding in findings:
+            print(finding)
+        return 1 if findings else 0
     target = TARGETS.get(args.target)
     if target is None:
         return _usage(f"unknown target {args.target!r} (known: {', '.join(TARGETS)})")
