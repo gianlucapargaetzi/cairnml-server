@@ -107,6 +107,15 @@ _UNSUPPORTED_KEYS = ("oneOf", "anyOf", "allOf", "not", "patternProperties")
 
 
 def kind_of(schema: dict, definitions: dict, where: str, depth: int = 0) -> Kind:
+    if "anyOf" in schema or "oneOf" in schema:
+        members = [m for m in (schema.get("anyOf") or schema.get("oneOf") or []) if m.get("type") != "null"]
+        if len(members) == 1 and "$ref" in members[0]:
+            # a nullable reference (a definition or null): the reference
+            return kind_of(members[0], definitions, where, depth)
+        if not members:
+            raise Unsupported(f"{where}: a union without a shape")
+        # several shapes (for example an id string or an object the server expands): the value is not one type
+        return Kind("any")
     for key in _UNSUPPORTED_KEYS:
         if key in schema:
             raise Unsupported(f"{where}: `{key}` is not supported yet")

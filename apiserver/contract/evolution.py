@@ -140,15 +140,17 @@ def _compare(path, old, new, old_defs, new_defs, is_request, out, depth=0):
 
 
 def _block_changes(name, base_block, head_block, base_defs, head_defs) -> List[Change]:
-    if base_block == head_block:
-        return []
+    # The fields are compared with their definitions resolved, so a field added to or removed from a shared definition
+    # (for example the queue) is found even when the endpoint's own block is the same.
     found: List[Tuple[bool, str]] = []
     for part, is_request in (("request", True), ("response", False)):
         _compare(part, base_block.get(part) or {}, head_block.get(part) or {}, base_defs, head_defs, is_request, found)
-    if not found:
-        # a difference that is not a field: the contract is not known to be compatible
-        return [Change(name, "changed", True, "the contract changed in a way this check does not classify")]
-    return [Change(name, "changed", breaking, text) for breaking, text in found]
+    if found:
+        return [Change(name, "changed", breaking, text) for breaking, text in found]
+    if base_block == head_block:
+        return []
+    # a difference that is not a field: the contract is not known to be compatible
+    return [Change(name, "changed", True, "the contract changed in a way this check does not classify")]
 
 
 def diff(base: Dict[str, Endpoint], head: Dict[str, Endpoint], base_api: str, head_api: str) -> List[Change]:

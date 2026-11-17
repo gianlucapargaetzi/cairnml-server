@@ -141,3 +141,40 @@ def test_a_declared_version_above_the_constant_is_a_problem(tmp_path):
     assert problems and "raise both together" in problems[0]
     _, problems, top = assess(base, headed, "2.41", "2.42", "## API 2.42\n")
     assert top == "2.42" and problems == []
+
+
+SHARED = """
+_definitions {
+  thing {
+    type = object
+    properties {
+      a { type = string }
+      b { type = string }
+    }
+  }
+}
+lookup {
+  "2.41" {
+    request { type = object, properties { id { type = string } } }
+    response { "$ref" = "#/definitions/thing" }
+  }
+}
+"""
+
+
+def test_a_field_removed_from_a_shared_definition_is_breaking_even_though_the_endpoint_block_is_the_same(tmp_path):
+    head = SHARED.replace("      b { type = string }\n", "")
+    base_api = load_api(_write(tmp_path / "base", SHARED))
+    head_api = load_api(_write(tmp_path / "head", head))
+    changes = diff(base_api, head_api, "2.41", "2.41")
+    breaking = [c for c in changes if c.breaking and c.endpoint == "devices.lookup"]
+    assert breaking and any("b: field removed" in c.detail for c in breaking), changes
+    assert evaluate(changes, "2.41", "2.41", "") != []
+
+
+def test_a_field_added_to_a_shared_definition_is_additive(tmp_path):
+    head = SHARED.replace("      b { type = string }\n", "      b { type = string }\n      c { type = string }\n")
+    base_api = load_api(_write(tmp_path / "base", SHARED))
+    head_api = load_api(_write(tmp_path / "head", head))
+    changes = diff(base_api, head_api, "2.41", "2.41")
+    assert [c for c in changes if c.endpoint == "devices.lookup"] and not [c for c in changes if c.breaking]
