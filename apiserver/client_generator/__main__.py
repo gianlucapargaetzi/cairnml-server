@@ -37,8 +37,45 @@ def _usage(message: str) -> int:
     return 2
 
 
+def _generate_web(args, schema) -> int:
+    """Writes the web app's API layer into --out (the business-logic folder): api-services/ and model/<service>/."""
+    from .web_renderer import render_api, render_models
+
+    names = args.services.split(",") if args.services else sorted(schema)
+    rendered = {}
+    for name in names:
+        if name not in schema:
+            return _usage(f"{name!r} is not a service of the schema")
+        try:
+            rendered[name] = (render_api(schema[name]), render_models(schema[name]))
+        except Unsupported as error:
+            return _usage(f"{name}: {error}")
+    stale = 0
+    for name, (api, models) in rendered.items():
+        targets = {args.out / "api-services" / f"{name}.service.ts": api}
+        folder = args.out / "model" / name
+        for stem, text in models.items():
+            targets[folder / f"{stem}.ts"] = text
+        targets[folder / "models.ts"] = "".join(f"export * from '././{stem}';\n" for stem in sorted(models))
+        for path, text in targets.items():
+            if args.check:
+                if not path.is_file() or path.read_text() != text:
+                    print(f"{path} is out of date")
+                    stale += 1
+            else:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(text)
+    return 1 if stale else 0
+
+
 def main(argv=None) -> int:
     args = _parser().parse_args(argv)
+    if args.command == "generate" and args.target == "web":
+        try:
+            schema = load_schema(args.schema)
+        except (OSError, ValueError) as error:
+            return _usage(f"cannot read the schema in {args.schema}: {error}")
+        return _generate_web(args, schema)
     if args.command == "check-web":
         try:
             findings = check_web(args.root, load_schema(args.schema), read_allow(args.allow) if args.allow else Allow())
