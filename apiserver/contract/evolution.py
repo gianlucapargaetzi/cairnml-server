@@ -104,6 +104,25 @@ def _resolve(schema, definitions, depth):
     return _resolve(definitions.get(name, {}), definitions, depth + 1)
 
 
+def _union(schema: dict) -> list:
+    """The members of a schema that is one of several shapes (its null member excluded), or [] for a single shape."""
+    members = schema.get("anyOf") or schema.get("oneOf") or []
+    return [m for m in members if m.get("type") != "null"]
+
+
+def _union_key(schema: dict):
+    """What a union is made of, independent of the order of its members and of descriptions."""
+    members = _union(schema)
+    if not members:
+        return None
+    return tuple(
+        sorted(
+            (m.get("$ref") or m.get("type") or "object", tuple(sorted((m.get("properties") or {}).keys())))
+            for m in members
+        )
+    )
+
+
 def _compare(path, old, new, old_defs, new_defs, is_request, out, depth=0):
     """Appends the changes of a schema fragment to out, as (breaking, text) pairs."""
     if depth > MAX_DEPTH:
@@ -114,6 +133,13 @@ def _compare(path, old, new, old_defs, new_defs, is_request, out, depth=0):
         return
     if old.get("type") is not None and new.get("type") is not None and old.get("type") != new.get("type"):
         out.append((True, f"{path}: type {old.get('type')} became {new.get('type')}"))
+    # a field that is one of several shapes (anyOf / oneOf) is a different type from one shape: a client that reads a
+    # string gets an object once the field widens, so a change from or to a union, or to other members, is breaking
+    old_union, new_union = _union(old), _union(new)
+    if (old_union or new_union) and _union_key(old) != _union_key(new):
+        before = _union_key(old) if old_union else old.get("type")
+        after = _union_key(new) if new_union else new.get("type")
+        out.append((True, f"{path}: type {before} became {after}"))
     old_values, new_values = set(old.get("enum") or []), set(new.get("enum") or [])
     for value in sorted(old_values - new_values, key=str):
         out.append((True, f"{path}: value {value!r} is no longer allowed"))
