@@ -178,3 +178,44 @@ def test_a_field_added_to_a_shared_definition_is_additive(tmp_path):
     head_api = load_api(_write(tmp_path / "head", head))
     changes = diff(base_api, head_api, "2.41", "2.41")
     assert [c for c in changes if c.endpoint == "devices.lookup"] and not [c for c in changes if c.breaking]
+
+
+UNION_BASE = """
+lookup {
+  "2.41" {
+    request { type = object, properties { id { type = string } } }
+    response { type = object, properties { project { type = string } } }
+  }
+}
+"""
+
+
+def _union_changes(tmp_path, head_body):
+    base_api = load_api(_write(tmp_path / "base", UNION_BASE))
+    head_api = load_api(_write(tmp_path / "head", head_body))
+    return diff(base_api, head_api, "2.41", "2.41")
+
+
+def test_a_string_field_that_becomes_a_string_or_object_is_breaking(tmp_path):
+    head = UNION_BASE.replace(
+        "project { type = string }",
+        "project { anyOf = [ { type = string }, { type = object, properties { id { type = string } } } ] }",
+    )
+    breaking = [c for c in _union_changes(tmp_path, head) if c.breaking]
+    assert breaking and any("project" in c.detail and "became" in c.detail for c in breaking), breaking
+
+
+def test_a_union_whose_members_change_is_breaking_and_an_identical_union_is_not(tmp_path):
+    base_union = UNION_BASE.replace(
+        "project { type = string }",
+        "project { anyOf = [ { type = string }, { type = object, properties { id { type = string } } } ] }",
+    )
+    base_api = load_api(_write(tmp_path / "base", base_union))
+    same = load_api(_write(tmp_path / "same", base_union))
+    assert not [c for c in diff(base_api, same, "2.41", "2.41") if c.breaking]
+    wider = base_union.replace(
+        "{ type = object, properties { id { type = string } } } ]",
+        "{ type = object, properties { id { type = string } } } { type = number } ]",
+    )
+    changed = load_api(_write(tmp_path / "wider", wider))
+    assert [c for c in diff(base_api, changed, "2.41", "2.41") if c.breaking]
