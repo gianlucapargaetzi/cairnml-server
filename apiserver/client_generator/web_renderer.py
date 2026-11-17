@@ -92,6 +92,19 @@ class Models:
                 self._def(target)
                 return name
             return self._type(definition, parent, field, imports, extra)
+        if "anyOf" in schema or "oneOf" in schema:
+            # a field that is one of several shapes: each member is rendered, a null member is the field being optional
+            members = schema.get("anyOf") or schema.get("oneOf") or []
+            rendered = []
+            for member in members:
+                if member.get("type") == "null":
+                    continue
+                text = self._type(member, parent, field, imports, extra)
+                if text not in rendered:
+                    rendered.append(text)
+            if not rendered:
+                raise Unsupported(f"{parent}.{field}: a union without a shape")
+            return " | ".join(rendered)
         type_ = schema.get("type")
         if isinstance(type_, list):
             non_null = [t for t in type_ if t not in ("null", None)]
@@ -117,7 +130,8 @@ class Models:
             extra_props = schema.get("additionalProperties")
             if isinstance(extra_props, dict) and extra_props:
                 return f"Record<string, {self._type(extra_props, parent, field, imports, extra)}>"
-            return "object"
+            # an object with no declared fields: any values under any key (the contract does not describe them)
+            return "Record<string, any>"
         if type_ == "string":
             return "string"
         if type_ in ("integer", "number"):
@@ -175,6 +189,16 @@ class Models:
             names.append(name)
             if not schema:
                 self._emit(name, "", [], _doc(action.description, ""))
+                continue
+            if "$ref" in schema:
+                # the request or response is a named definition: the action's type is that definition
+                imports: List[str] = []
+                target = self._type(schema, name, kind, imports, [])
+                stem = lower_first(name)
+                head = HEADER.format(service=self.service.name, version="2.41")
+                self.files[stem] = (
+                    f"{head}\nimport {{ {target} }} from '././{lower_first(target)}';\n\nexport type {name} = {target};\n"
+                )
                 continue
             self.root = ""
             self._object(name, schema, imports=[], doc=action.description if kind == "Request" else "")
