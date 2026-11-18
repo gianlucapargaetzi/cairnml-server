@@ -10,7 +10,7 @@ import keyword
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 import jinja2
 
@@ -78,9 +78,12 @@ def literal(value, indent: int, prefix: str = "", suffix: str = "") -> str:
 
 @dataclass
 class Kind:
-    name: str  # str, datetime, int, float, bool, dict, any, ref, enum, list
-    cls: str = ""  # for ref and enum: the class name
-    item: "Kind" = None  # for list
+    # str, datetime, int, float, bool, dict, any, ref, map, enum, list, dict_map
+    # ref: an object class (values are converted with from_dict); map: a dict class of the values of a map definition
+    # (values are converted by the class itself); dict_map: a dict whose values are converted to item (a ref or map)
+    name: str
+    cls: str = ""  # for ref, map and enum: the class name
+    item: "Kind" = None  # for list and dict_map
 
     @property
     def hint(self) -> str:
@@ -93,6 +96,7 @@ class Kind:
             "float": "float",
             "bool": "bool",
             "dict": "dict",
+            "dict_map": "dict",
             "enum": "str",  # a member is a Enum, a value that is not a member of it stays a string
         }.get(self.name, "Any")
 
@@ -100,14 +104,42 @@ class Kind:
     def doc(self) -> str:
         if self.name == "list":
             return f"Sequence[{self.item.doc}]"
-        return {"datetime": "datetime.datetime", "ref": self.cls, "enum": self.cls}.get(self.name, self.name)
+        if self.name == "dict_map":
+            return "dict"
+        return {"datetime": "datetime.datetime", "ref": self.cls, "map": self.cls, "enum": self.cls}.get(
+            self.name, self.name
+        )
 
 
 _SIMPLE = {"string": "str", "integer": "int", "number": "float", "boolean": "bool", "object": "dict"}
 _UNSUPPORTED_KEYS = ("oneOf", "anyOf", "allOf", "not", "patternProperties")
+# maps of maps nest a few levels; a deeper chain of definitions is a reference cycle through them
+_MAX_DEPTH = 16
+
+
+def _converted_values(schema: dict, definitions: dict, where: str, depth: int) -> Optional[Kind]:
+    """The kind of the values of a map of definitions: an object without properties whose additionalProperties refer
+    to a class (an object with properties, or another map of definitions). None for any other object: it stays a dict,
+    and so does a map of a simple value, of a non-object definition, or of any value."""
+    if schema.get("type") != "object" or "properties" in schema:
+        return None
+    extra = schema.get("additionalProperties")
+    if not isinstance(extra, dict) or "$ref" not in extra:
+        return None
+    item = kind_of(extra, definitions, f"{where}[]", depth + 1)
+    return item if item.name in ("ref", "map") else None
+
+
+def _construct(kind: Kind, value: str) -> str:
+    """The expression that converts a dict value to the class of a ref or map kind."""
+    if kind.name == "map":
+        return f"{kind.cls}({value})"
+    return f"{kind.cls}.from_dict({value})"
 
 
 def kind_of(schema: dict, definitions: dict, where: str, depth: int = 0) -> Kind:
+    if depth > _MAX_DEPTH:
+        raise Unsupported(f"{where}: the definitions nest too deeply (a reference cycle through maps?)")
     if "anyOf" in schema or "oneOf" in schema:
         members = [m for m in (schema.get("anyOf") or schema.get("oneOf") or []) if m.get("type") != "null"]
         if len(members) == 1 and "$ref" in members[0]:
@@ -127,6 +159,8 @@ def kind_of(schema: dict, definitions: dict, where: str, depth: int = 0) -> Kind
             return Kind("ref", cls=camel(name))
         if "enum" in target:
             return Kind("enum", cls=camel(name))
+        if _converted_values(target, definitions, f"{where} -> {name}", depth) is not None:
+            return Kind("map", cls=camel(name))
         # a definition that is a plain type (for example a string enumeration): the field has that type
         return kind_of(target, definitions, f"{where} -> {name}", depth)
     type_ = schema.get("type")
@@ -143,6 +177,10 @@ def kind_of(schema: dict, definitions: dict, where: str, depth: int = 0) -> Kind
     if type_ == "array":
         item = kind_of(schema.get("items") or {}, definitions, f"{where}[]", depth + 1)
         return Kind("list", item=item)
+    if type_ == "object":
+        values = _converted_values(schema, definitions, where, depth)
+        if values is not None:
+            return Kind("dict_map", item=values)
     if type_ not in _SIMPLE:
         raise Unsupported(f"{where}: type {type_!r} is not supported")
     if type_ == "string" and schema.get("format") == "date-time":
@@ -160,10 +198,10 @@ def _setter_lines(name: str, kind: Kind) -> List[str]:
                 "value = [int(v) if isinstance(v, float) and v.is_integer() else v for v in value]",
                 f"self.assert_isinstance(value, {q}, six.integer_types, is_array=True)",
             ]
-        elif item.name == "ref":
+        elif item.name in ("ref", "map"):
             lines += [
                 "if any((isinstance(v, dict) for v in value)):",
-                f"    value = [{item.cls}.from_dict(v) if isinstance(v, dict) else v for v in value]",
+                f"    value = [{_construct(item, 'v')} if isinstance(v, dict) else v for v in value]",
                 "else:",
                 f"    self.assert_isinstance(value, {q}, {item.cls}, is_array=True)",
             ]
@@ -219,6 +257,19 @@ def _setter_lines(name: str, kind: Kind) -> List[str]:
             "else:",
             f"    self.assert_isinstance(value, {q}, {kind.cls})",
         ]
+    if kind.name == "map":
+        return [
+            "if isinstance(value, dict):",
+            f"    value = {_construct(kind, 'value')}",
+            "else:",
+            f"    self.assert_isinstance(value, {q}, {kind.cls})",
+        ]
+    if kind.name == "dict_map":
+        return [
+            f"self.assert_isinstance(value, {q}, (dict,))",
+            f"value = {{k: {_construct(kind.item, 'v')} if isinstance(v, dict) else v for k, v in value.items()}}",
+            f"self.assert_isinstance(value.values(), {q}, ({kind.item.cls},), is_array=True)",
+        ]
     if kind.name == "any":
         return []
     return [f"self.assert_isinstance(value, {q}, {_types(kind)})"]
@@ -230,6 +281,7 @@ def _types(kind: Kind) -> str:
         "float": "six.integer_types + (float,)",
         "bool": "(bool,)",
         "dict": "(dict,)",
+        "dict_map": "(dict,)",
         "list": "(list, tuple)",
     }[kind.name]
 
@@ -333,6 +385,27 @@ def _build_class(*, name, base, description, fields, required, schema, definitio
         "order": [python[n] for n in order],
         "extra": extra,
         "batched": None,
+        "map": None,
+    }
+
+
+def _map_class(def_name: str, definition: dict, definitions: dict, where: str) -> dict:
+    """A dict class of the values of a map definition: each value is converted to the item class when it is a dict."""
+    item = _converted_values(definition, definitions, where, 0)
+    schema = _nullable(definition)
+    own = reachable_definitions([definition], definitions)
+    if own:
+        schema["definitions"] = {k: _nullable(v) for k, v in own.items()}
+    description = definition.get("description", "")
+    return {
+        "name": camel(def_name),
+        "base": "dict, NonStrictDataModel",
+        "doc": [_clean(description)] if description else [],
+        "params_doc": [],
+        "schema": literal(schema, 4, "_schema = "),
+        "extra": None,
+        "batched": None,
+        "map": {"field": def_name, "item": item.cls, "convert": _construct(item, "v")},
     }
 
 
@@ -375,6 +448,7 @@ def _batch_class(service: Service, action: Action, meta: dict) -> dict:
         "params_doc": [],
         "batched": camel(batched) + "Request",
         "extra": meta,
+        "map": None,
     }
 
 
@@ -392,6 +466,10 @@ def render_service(service: Service, session_package: str) -> str:
             enums.append(_enum_class(def_name, definition, f"{service.name}.{def_name}"))
     models = []
     for def_name, definition in used.items():
+        where = f"{service.name}.{def_name}"
+        if _converted_values(definition, service.definitions, where, 0) is not None:
+            models.append(_map_class(def_name, definition, service.definitions, where))
+            continue
         if definition.get("type") != "object" or "properties" not in definition:
             continue  # a plain type: fields that refer to it get its type
         own = reachable_definitions([definition], service.definitions)
