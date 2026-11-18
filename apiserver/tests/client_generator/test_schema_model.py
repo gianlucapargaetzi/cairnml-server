@@ -32,7 +32,8 @@ def test_model_lists_the_same_actions_and_versions_as_the_server_reader(tmp_path
     }
     assert actual == expected
     assert len(actual) > 200
-    assert all(len(v) == 1 for v in actual.values())
+    assert all(1 <= len(v) <= 5 for v in actual.values())  # the cap of five definitions per endpoint
+    assert any(len(v) > 1 for v in actual.values())  # the older definitions of the schema are read too
     assert max((v[0] for v in actual.values()), key=lambda v: tuple(map(int, v.split(".")))) == API_VERSION
 
 

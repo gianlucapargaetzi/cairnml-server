@@ -216,3 +216,72 @@ def test_schema_validation_uses_the_definition_that_serves_the_request(monkeypat
     with pytest.raises(Exception):
         new_request_validator.fast_validate({"a": 1})
     new_request_validator.fast_validate({"b": 1})
+
+
+def test_an_action_header_written_with_a_colon_starts_its_own_scope():
+    text = """
+clear {
+  "2.31" { request { type = object } }
+}
+move: {
+  "2.4" { request { type = object } }
+  "2.4" { request { type = object } }
+}
+"""
+    assert duplicate_definitions(text) == [("move", "2.4")]
+
+
+def test_a_reference_written_as_a_definition_is_checked_for_duplicates():
+    text = """
+ping {
+  "2.1": ${other."2.1"}
+  "2.1" { request { type = object } }
+}
+"""
+    assert duplicate_definitions(text) == [("ping", "2.1")]
+
+
+def _one_minor_below(version):
+    major, minor = (int(part) for part in str(version).split("."))
+    assert minor > 0, f"{version} is the oldest possible minor version of its major: no version below it"
+    return f"{major}.{minor - 1}"
+
+
+def _every_retained_definition():
+    return [
+        (f"{service_name}.{action}", str(endpoint.version))
+        for service_name, service in sorted(schema.services.items())
+        for action, group in sorted(service.endpoint_groups.items())
+        for endpoint in group.endpoints
+    ]
+
+
+def _every_action_oldest_definition():
+    return sorted({(name, version) for name, version in _every_retained_definition() if _is_oldest(name, version)})
+
+
+def _is_oldest(name, version):
+    service_name, action = name.split(".", 1)
+    return str(schema.services[service_name].endpoint_groups[action].oldest_version) == version
+
+
+@pytest.mark.parametrize("name,version", _every_retained_definition(), ids=lambda value: str(value))
+def test_every_retained_definition_is_found_at_its_own_version(name, version):
+    ServiceRepo.load()
+    call = _stub_call(name, version)
+
+    assert ServiceRepo._resolve_endpoint_from_call(call) is not None
+    assert str(call.actual_endpoint_version) == version
+
+
+@pytest.mark.parametrize("name,oldest", _every_action_oldest_definition(), ids=lambda value: str(value))
+def test_one_version_below_the_oldest_definition_of_every_action_is_refused(name, oldest):
+    ServiceRepo.load()
+    below = _one_minor_below(oldest)
+    call = _stub_call(name, below)
+
+    assert ServiceRepo._resolve_endpoint_from_call(call) is None
+    assert call.error[0] == (
+        f"Endpoint {name} is not available at API version {below}; the oldest supported version is {oldest}"
+    )
+    assert call.error[1:] == (404, 1)
