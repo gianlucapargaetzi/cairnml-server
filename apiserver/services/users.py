@@ -120,8 +120,8 @@ create_fields = {
 
 
 @endpoint("users.create", request_data_model=CreateRequest)
-def create(call: APICall):
-    UserBLL.create(call.data_model)
+def create(call: APICall, _, request: CreateRequest):
+    UserBLL.create(request)
 
 
 @endpoint("users.delete")

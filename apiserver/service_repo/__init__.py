@@ -26,6 +26,10 @@ def endpoint(
         # endpoints take (call, company, request_model); the request model is the annotation of the last argument
         func = f
         sig = signature(f)
+        try:
+            sig.bind(None, None, None)
+        except TypeError as ex:
+            raise TypeError(f"endpoint {name}: handler {f.__qualname__} must take (call, company, request)") from ex
         nonlocal request_data_model
         if len(sig.parameters) == 3 and request_data_model is None:
             last_arg = list(sig.parameters.items())[-1][1]

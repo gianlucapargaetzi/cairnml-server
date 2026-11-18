@@ -18,8 +18,8 @@ from apiserver.service_repo import ServiceRepo, APICall, endpoint
 
 
 @endpoint("server.get_stats")
-def get_stats(call: APICall):
-    call.result.data = StatisticsReporter.get_statistics(company_id=call.identity.company)
+def get_stats(call: APICall, company_id, _):
+    call.result.data = StatisticsReporter.get_statistics(company_id=company_id)
 
 
 @endpoint("server.config")
@@ -49,12 +49,12 @@ def get_config(call: APICall, _, request: GetConfigRequest):
 
 
 @endpoint("server.endpoints")
-def get_endpoints(call: APICall):
+def get_endpoints(call: APICall, _, __):
     call.result.data = ServiceRepo.endpoints_summary()
 
 
 @endpoint("server.info")
-def info(call: APICall):
+def info(call: APICall, _, __):
     call.result.data = {
         "version": get_version(),
         "build": get_build_number(),
