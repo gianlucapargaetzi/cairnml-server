@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from apiserver.release.whats_new import bundle, has_section, sections
 
 CHANGELOG = """# Changelog
@@ -52,3 +54,21 @@ def test_the_notes_of_one_release_are_its_section():
         with contextlib.redirect_stdout(out):
             assert main(["--notes", str(path), "--version", "0.0.6"]) == 0
     assert out.getvalue().strip() == "- Release notes of 0.0.6.\n- Second line."
+
+
+REPO = Path(__file__).resolve().parents[2]
+
+
+def test_the_image_build_writes_the_bundle_itself():
+    # A fresh checkout has no docker/build/whats-new.json (it is never committed): the image must generate the bundle.
+    dockerfile = (REPO / "docker" / "build" / "Dockerfile").read_text()
+    assert "docker/build/whats-new.json" not in dockerfile
+    assert "apiserver/release/whats_new.py" in dockerfile
+    assert "CHANGELOG.md" in dockerfile
+    assert "!CHANGELOG.md" in (REPO / ".dockerignore").read_text().splitlines()
+
+
+def test_no_script_writes_the_bundle_outside_the_image_build():
+    for path in ("deploy/scripts/bootstrap.sh", ".github/workflows/docker.yml"):
+        text = (REPO / path).read_text()
+        assert "whats_new.py" not in text, path
