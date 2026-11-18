@@ -113,7 +113,7 @@ services:
       node.name: cairnml
       reindex.remote.whitelist: "'*.*'"
       xpack.security.enabled: "false"
-      ES_JAVA_OPTS: "-Xms1g -Xmx1g"
+      ES_JAVA_OPTS: "-Xms${CAIRNML_ES_HEAP:-2g} -Xmx${CAIRNML_ES_HEAP:-2g}"
     ulimits:
       memlock:
         soft: -1

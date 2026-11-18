@@ -31,6 +31,11 @@ repository holds no state, so a `git clean` or a new clone does not touch it.
 The `.env` file in `deploy/` is not in that folder. It holds the admin's password and the storage root password, so it is
 part of every backup.
 
+**Memory.** With the defaults the whole stack needs a few GiB of RAM, most of it in Elasticsearch. Its JVM heap is set by
+`CAIRNML_ES_HEAP` in `deploy/.env` (default `2g`, the same for the minimum and the maximum), so Elasticsearch does not take
+half of the machine. With the default it uses about 2.7 GiB in `docker stats`. Change the value and recreate the container
+with `docker compose up -d elasticsearch` to apply it.
+
 ## Ports and the firewall
 
 | Port | Who reaches it | Setting |
