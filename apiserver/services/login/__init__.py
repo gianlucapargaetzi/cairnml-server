@@ -3,16 +3,27 @@ from apiserver.apimodels.login import (
     GetSupportedModesResponse,
     BasicMode,
     BasicGuestMode,
+    ServerErrors,
 )
 from apiserver.service_repo import endpoint, APICall
 from apiserver.service_repo.auth import revoke_auth_token
+from apiserver.utilities.partial_version import PartialVersion
+
+# API 2.41 removed the server_errors field; a definition older than that still reports it. The upgrade check that set
+# its flags was removed with it, and a server that cannot reach Elasticsearch does not start, so both flags are False
+# on a running server.
+SERVER_ERRORS_REMOVED_IN = PartialVersion("2.41")
 
 
 @endpoint("login.supported_modes", response_data_model=GetSupportedModesResponse)
 def supported_modes(call: APICall, _, __: GetSupportedModesRequest):
     # Username and password sign-in is removed; the identity provider is the only way in.
+    server_errors = None
+    if call.actual_endpoint_version < SERVER_ERRORS_REMOVED_IN:
+        server_errors = ServerErrors(missed_es_upgrade=False, es_connection_error=False)
     return GetSupportedModesResponse(
         basic=BasicMode(enabled=False, guest=BasicGuestMode()),
+        server_errors=server_errors,
         sso={},
         sso_providers=[],
         authenticated=call.auth is not None,
