@@ -12,12 +12,10 @@ from pathlib import Path
 
 import pytest
 
-from support import client, workspace
+from support import client, versions, workspace
 from support.api import Api, ApiError
 from support.workspace import new_name
 
-# The membership and visibility endpoints exist from this API version (services/projects.conf, 2.37).
-MEMBERSHIP_VERSION = "2.37"
 TASK_TYPE = "training"
 
 OWNER, READ_WRITE, COLLABORATOR, READER, OUTSIDER = "owner", "read_write", "collaborator", "read", "outsider"
@@ -92,7 +90,7 @@ def private_project(people):
     """A private project owned by OWNER: READ_WRITE, COLLABORATOR and READER are members, OUTSIDER is not."""
     owner = people[OWNER]
     project_id = workspace.create_project(owner.api, new_name("access-private"))
-    members = VersionedApi(owner.api, MEMBERSHIP_VERSION)
+    members = VersionedApi(owner.api, versions.MEMBERSHIP)
     for label, role in MEMBER_ROLES.items():
         members.authed("projects.add_member", {"project": project_id, "user": people[label].user_id, "role": role})
     yield project_id
@@ -104,7 +102,7 @@ def public_project(people):
     """A public project owned by OWNER, with one task in it."""
     owner = people[OWNER]
     project_id = workspace.create_project(owner.api, new_name("access-public"))
-    VersionedApi(owner.api, MEMBERSHIP_VERSION).authed(
+    VersionedApi(owner.api, versions.MEMBERSHIP).authed(
         "projects.set_visibility", {"project": project_id, "visibility": "public"}
     )
     yield project_id

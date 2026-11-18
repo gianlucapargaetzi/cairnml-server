@@ -17,5 +17,5 @@ def sign_in(context, user=None, password=None):
     page.fill("#password", password or settings.ADMIN_PASSWORD)
     page.click("#kc-login")
     page.wait_for_url(DASHBOARD, timeout=60_000)
-    page.wait_for_selector("text=RECENT EXPERIMENTS", timeout=60_000)
+    page.wait_for_selector("text=Recent tasks", timeout=60_000)
     return page

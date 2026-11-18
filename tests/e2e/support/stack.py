@@ -33,6 +33,7 @@ from pathlib import Path
 import requests
 
 from . import settings
+from .api import answers
 
 PROJECT_PREFIX = "cairnml-e2e"
 REPO = Path(__file__).resolve().parents[3]
@@ -356,7 +357,7 @@ class IsolatedStack:
     def healthy(self) -> bool:
         """Whether the stack answers now. Checked with short timeouts: a stack that is down fails at once."""
         checks = (
-            lambda: requests.post(f"{self.api_url}/v2.8/login.supported_modes", json={}, timeout=3).status_code == 200,
+            lambda: answers(self.api_url),
             lambda: requests.get(self.web_url + "/", timeout=3).status_code == 200,
             lambda: (
                 requests.get(f"{self.idp_url}/realms/cairnml/.well-known/openid-configuration", timeout=3).status_code
@@ -444,7 +445,7 @@ class IsolatedStack:
 
     def _api_answers(self) -> bool:
         try:
-            return requests.post(f"{self.api_url}/v2.8/login.supported_modes", json={}, timeout=10).status_code == 200
+            return answers(self.api_url)
         except requests.RequestException:
             return False
 

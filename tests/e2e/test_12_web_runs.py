@@ -159,11 +159,12 @@ def test_comparison_view_overlays_both_runs(runs, signed_in_page):
 def test_project_tabs_offer_tasks_and_experiments(runs, signed_in_page):
     """The project header's tabs.
 
-    Expect: the project header shows the TASKS and EXPERIMENTS tabs."""
+    Expect: the project header shows the Tasks and Experiments tabs. The header sets them in capitals with CSS, so the
+    check ignores case."""
     _open(signed_in_page, f"/projects/{runs['project_id']}/overview")
     signed_in_page.wait_for_selector("text=EXPERIMENTS", timeout=CHECK_TIMEOUT_MS)
-    body = signed_in_page.inner_text("body")
-    for tab in ("TASKS", "EXPERIMENTS"):
+    body = signed_in_page.inner_text("body").lower()
+    for tab in ("tasks", "experiments"):
         assert tab in body, f"the project header must show the {tab} tab"
 
 

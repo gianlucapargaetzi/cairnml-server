@@ -11,14 +11,11 @@ from pathlib import Path
 
 import pytest
 
-from support import client, workspace
+from support import agent, client, workspace
 from support.agent import worker_record
 from support.api import Api, ApiError
 from support.workspace import new_name
 
-# The membership endpoints exist from this API version (services/projects.conf, 2.37); the queue metadata endpoint
-# from 2.13. Every call of this module is made at this version.
-QUEUE_API_VERSION = "2.37"
 TASK_TYPE = "training"
 
 OWNER, GRANTEE, MEMBER, OUTSIDER = "owner", "grantee", "member", "outsider"
@@ -30,12 +27,11 @@ class Person:
     home: Path
     api: Api
     user_id: str
+    account: tuple  # (user, password), to sign in again when the person enrols an agent
 
 
 def _device_api(home: Path) -> Api:
-    api = Api(client.device_id_of(home), client.key_path(home))
-    api.version = QUEUE_API_VERSION
-    return api
+    return Api(client.device_id_of(home), client.key_path(home))
 
 
 def _refused(api: Api, endpoint: str, body: dict) -> ApiError:
@@ -78,7 +74,7 @@ def people(keycloak, tmp_path_factory):
             assert result.returncode == 0, result.output
             api = _device_api(home)
             user_id = api.authed("users.get_current_user")["user"]["id"]
-            enrolled[label] = Person(label, home, api, user_id)
+            enrolled[label] = Person(label, home, api, user_id, (username, password))
         yield enrolled
     finally:
         for person in enrolled.values():
@@ -105,18 +101,24 @@ def task_projects(people):
 
 
 @pytest.fixture
-def make_queue(people):
-    """Creates a queue as the owner. The queues are deleted afterwards, with whatever the test left queued in them."""
-    created = []
+def make_queue(people, tmp_path):
+    """Makes a queue the way a user does: the owner enrols an agent on a machine of its own, and the queue is the one that
+    agent serves. Queues come only from agent enrolment and are not deleted by hand, so the agents are revoked afterwards
+    (which leaves the queues in place, as the server does)."""
+    enrolled = []
 
     def make(label: str) -> str:
-        queue_id = people[OWNER].api.authed("queues.create", {"name": new_name(f"queue-{label}")})["id"]
-        created.append(queue_id)
-        return queue_id
+        machine = new_name(f"queue-{label}")
+        home = tmp_path / machine
+        result = agent.init(home, people[OWNER].account, name=machine)
+        assert result.returncode == 0, result.output
+        enrolled.append(client.agent_device_id_of(home))
+        queues = people[OWNER].api.authed("queues.get_all", {})["queues"]
+        return next(q["id"] for q in queues if q.get("display_name") == machine)
 
     yield make
-    for queue_id in created:
-        people[OWNER].api.authed("queues.delete", {"queue": queue_id, "force": True})
+    for device_id in enrolled:
+        people[OWNER].api.authed("devices.revoke", {"id": device_id})
 
 
 @pytest.fixture
@@ -138,10 +140,10 @@ def make_root(people):
         workspace.delete_project(people[OWNER].api, project_id)
 
 
-def test_a_non_admin_creates_a_queue_and_it_is_recorded_as_theirs(people, make_queue):
-    """A plain user creates a queue, and the queue records the user as its owner.
+def test_a_non_admin_enrols_an_agent_and_its_queue_is_recorded_as_theirs(people, make_queue):
+    """A plain user enrols an agent, and the queue that agent serves records the user as its owner.
 
-    Expect: the queue is created, and its created_by is the id of the user who created it.
+    Expect: the queue exists, and its created_by is the id of the user who enrolled the agent.
     """
     queue_id = make_queue("created")
     queue = people[OWNER].api.authed("queues.get_by_id", {"queue": queue_id})["queue"]
@@ -149,16 +151,18 @@ def test_a_non_admin_creates_a_queue_and_it_is_recorded_as_theirs(people, make_q
     assert queue["created_by"] == people[OWNER].user_id
 
 
-def test_the_owner_updates_the_queue(people, make_queue):
-    """The owner renames the queue it created.
+def test_the_owner_may_not_rename_an_agent_queue(people, make_queue):
+    """A queue an agent serves is named after its machine. Its owner may change the visibility of the queue, not its name.
 
-    Expect: the update reports one queue updated, and the queue carries the new display name.
+    Expect: the rename is refused with 400 ('only the visibility of a queue can be changed'), and the name is unchanged.
     """
-    queue_id = make_queue("updated")
-    result = people[OWNER].api.authed("queues.update", {"queue": queue_id, "display_name": "Renamed by owner"})
-    assert result["updated"] == 1
-    queue = people[OWNER].api.authed("queues.get_by_id", {"queue": queue_id})["queue"]
-    assert queue["display_name"] == "Renamed by owner"
+    queue_id = make_queue("renamed")
+    owner = people[OWNER].api
+    before = owner.authed("queues.get_by_id", {"queue": queue_id})["queue"]["display_name"]
+    error = _refused(owner, "queues.update", {"queue": queue_id, "display_name": "Renamed by owner"})
+    assert error.status == 400, f"expected a 400 refusal, got {error}"
+    assert "only the visibility of a queue" in error.message, error.message
+    assert owner.authed("queues.get_by_id", {"queue": queue_id})["queue"]["display_name"] == before
 
 
 def test_the_owner_sets_its_queue_public(people, make_queue):
@@ -358,21 +362,15 @@ def test_a_worker_for_a_queue_the_user_neither_owns_nor_holds_is_refused(people,
     assert worker_record(admin, worker) is None
 
 
-def test_a_worker_for_a_public_queue_is_accepted(people, admin, make_queue):
-    """A public queue may be served by any user's worker, so a registration naming it is accepted.
+def test_an_agent_serves_only_its_own_queue_even_when_it_is_public(people, admin, make_queue):
+    """An agent serves only the queue made when it was enrolled. Another user's worker may not serve a public queue.
 
-    Expect: the registration is accepted, the worker is listed with the queue, and it is unregistered afterwards.
+    Expect: the registration of a worker on another user's public queue is refused with 400 'Invalid queue id', and no
+    worker of that name is registered.
     """
     queue_id = make_queue("worker-public")
-    owner = people[OWNER].api
-    owner.authed("queues.update", {"queue": queue_id, "public": True})
-    queue_name = owner.authed("queues.get_by_id", {"queue": queue_id})["queue"]["name"]
+    people[OWNER].api.authed("queues.update", {"queue": queue_id, "public": True})
     worker = new_name("queue-worker-public")
-    outsider = people[OUTSIDER].api
-    outsider.authed("workers.register", {"worker": worker, "queues": [queue_id]})
-    try:
-        record = worker_record(admin, worker)
-        assert record is not None
-        assert queue_name in [q.get("name") for q in record.get("queues", [])], record
-    finally:
-        outsider.authed("workers.unregister", {"worker": worker})
+
+    _assert_no_queue(_refused(people[OUTSIDER].api, "workers.register", {"worker": worker, "queues": [queue_id]}))
+    assert worker_record(admin, worker) is None

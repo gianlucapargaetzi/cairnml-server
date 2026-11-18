@@ -23,9 +23,9 @@ def test_restarting_the_api_keeps_the_dashboard_rendering(browser, isolated_stac
     assert result.returncode == 0, result.stderr[-2000:]
     isolated_stack._wait(isolated_stack._api_answers, 60, "the API after the restart")
     page.reload()
-    page.wait_for_selector("text=RECENT EXPERIMENTS", timeout=60_000)
+    page.wait_for_selector("text=Recent tasks", timeout=60_000)
     after = page.inner_text("body")
-    for heading in ("RECENT PROJECTS", "RECENT EXPERIMENTS", "MANAGE WORKERS AND QUEUES"):
-        assert heading in after, f"{heading} missing after the restart"
+    for heading in ("Recent projects", "Recent tasks", "Manage agents and queues"):
+        assert heading.lower() in after.lower(), f"{heading} missing after the restart"
     assert before.split("\n")[0] == after.split("\n")[0]
     context.close()
