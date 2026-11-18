@@ -80,9 +80,10 @@ def literal(value, indent: int, prefix: str = "", suffix: str = "") -> str:
 class Kind:
     # str, datetime, int, float, bool, dict, any, ref, map, enum, list, dict_map
     # ref: an object class (values are converted with from_dict); map: a dict class of the values of a map definition
-    # (values are converted by the class itself); dict_map: a dict whose values are converted to item (a ref or map)
+    # (values are converted by the class itself); dict_map: a dict whose values are converted to item (a ref or map);
+    # item: the item of a compound request, one of the object classes in cls (a comma separated list)
     name: str
-    cls: str = ""  # for ref, map and enum: the class name
+    cls: str = ""  # for ref, map, enum and item: the class name
     item: "Kind" = None  # for list and dict_map
 
     @property
@@ -106,6 +107,8 @@ class Kind:
             return f"Sequence[{self.item.doc}]"
         if self.name == "dict_map":
             return "dict"
+        if self.name == "item":
+            return f"Union[{self.cls}]"
         return {"datetime": "datetime.datetime", "ref": self.cls, "map": self.cls, "enum": self.cls}.get(
             self.name, self.name
         )
@@ -190,6 +193,9 @@ def kind_of(schema: dict, definitions: dict, where: str, depth: int = 0) -> Kind
 
 def _setter_lines(name: str, kind: Kind) -> List[str]:
     q = json.dumps(name)
+    if kind.name == "item":
+        # the item of a compound request is one of its shapes; a dict is not converted (its shape is not known)
+        return [f"self.assert_isinstance(value, {q}, ({kind.cls},))"]
     if kind.name == "list":
         lines = [f"self.assert_isinstance(value, {q}, (list, tuple))"]
         item = kind.item
@@ -297,6 +303,7 @@ class Prop:
     required: bool
     setter: List[str]
     wire: str = ""  # the name in the JSON, when it is not a Python identifier (for example "input.view.dataset")
+    constant: Optional[str] = None  # the Python literal of a read-only property (a single-value enumeration)
 
     @property
     def annotation(self) -> str:
@@ -341,16 +348,51 @@ def _identifiers(fields: dict, where: str) -> dict:
     return names
 
 
-def _build_class(*, name, base, description, fields, required, schema, definitions, where, extra=None):
+def _constant(schema: dict) -> Optional[str]:
+    """The Python literal of a property that is a single-value enumeration (a type constant), or None. Such a property
+    is read-only: its value is the constant, and it is not an argument of the constructor."""
+    values = schema.get("enum")
+    if isinstance(values, list) and len(values) == 1 and isinstance(values[0], str):
+        return _inline(values[0])
+    return None
+
+
+def _build_class(*, name, base, description, fields, required, schema, definitions, where, extra=None, item=None):
+    """A class of fields. `item` is (name, kind, description) of the item of a compound request: a required first
+    argument of the constructor that is not a field of the schema."""
     kinds = {}
+    constants = {}
+    descriptions = {}
     for field_name, field_schema in fields.items():
         kinds[field_name] = kind_of(field_schema, definitions, f"{where}.{field_name}")
+        constants[field_name] = _constant(field_schema)
+        descriptions[field_name] = field_schema.get("description", "")
     python = _identifiers(fields, where)
-    order = [n for n in fields if n in required] + [n for n in fields if n not in required]
+    names = list(fields)
+    required = set(required)
+    if item is not None:
+        item_name, item_kind, item_description = item
+        if item_name in fields:
+            raise Unsupported(f"{where}: the item {item_name!r} is also a field of the request")
+        names.insert(0, item_name)
+        required.add(item_name)
+        kinds[item_name] = item_kind
+        constants[item_name] = None
+        descriptions[item_name] = item_description
+        python[item_name] = item_name
+    ordered = [n for n in names if n in required] + [n for n in names if n not in required]
     props = [
-        Prop(python[n], kinds[n].hint, n in required, _setter_lines(n, kinds[n]), wire=n if python[n] != n else "")
-        for n in order
+        Prop(
+            python[n],
+            kinds[n].hint,
+            n in required,
+            _setter_lines(n, kinds[n]),
+            wire=n if python[n] != n else "",
+            constant=constants[n],
+        )
+        for n in ordered
     ]
+    order = [n for n in ordered if constants[n] is None]
     params = []
     for n in order:
         if n in required:
@@ -371,7 +413,7 @@ def _build_class(*, name, base, description, fields, required, schema, definitio
     doc = [_clean(description)] if description else []
     params_doc = []
     for n in order:
-        text = _clean(fields[n].get("description", ""))
+        text = _clean(descriptions[n])
         params_doc.append(f":param {python[n]}: {text}".rstrip())
         params_doc.append(f":type {python[n]}: {kinds[n].doc}")
     return {
@@ -384,6 +426,7 @@ def _build_class(*, name, base, description, fields, required, schema, definitio
         "props": props,
         "order": [python[n] for n in order],
         "extra": extra,
+        "item": item[0] if item is not None else None,
         "batched": None,
         "map": None,
     }
@@ -404,9 +447,39 @@ def _map_class(def_name: str, definition: dict, definitions: dict, where: str) -
         "params_doc": [],
         "schema": literal(schema, 4, "_schema = "),
         "extra": None,
+        "item": None,
         "batched": None,
         "map": {"field": def_name, "item": item.cls, "convert": _construct(item, "v")},
     }
+
+
+# The item of a request whose schema is a choice of shapes (anyOf or oneOf at its top level), by "service.action". The
+# item is the first argument of the request's constructor, and the body the item merged with the request's own options.
+# A request of several shapes that is not listed here is a generation error: the name is not guessed.
+COMPOUND_ITEM_NAMES = {
+    "events.add": "event",
+}
+
+
+def _compound_item(action: Action, definitions: dict):
+    """(name, kind, description) of the item of a compound request, or None for a request of one shape."""
+    request = action.request
+    shapes = request.get("anyOf") or request.get("oneOf")
+    if not shapes:
+        return None
+    name = COMPOUND_ITEM_NAMES.get(action.full_name)
+    if name is None:
+        raise Unsupported(f"{action.full_name}: a request of several shapes needs its item name in COMPOUND_ITEM_NAMES")
+    classes = []
+    for shape in shapes:
+        if "$ref" not in shape:
+            raise Unsupported(f"{action.full_name}: every shape of a compound request must be a definition")
+        kind = kind_of(shape, definitions, f"{action.full_name}.{name}")
+        if kind.name != "ref":
+            raise Unsupported(f"{action.full_name}: the shape {shape['$ref']} is not an object with properties")
+        classes.append(kind.cls)
+    description = f"One of the shapes of the request: {', '.join(classes)}."
+    return name, Kind("item", cls=", ".join(classes)), description
 
 
 def _request_fields(action: Action):
@@ -448,6 +521,7 @@ def _batch_class(service: Service, action: Action, meta: dict) -> dict:
         "params_doc": [],
         "batched": camel(batched) + "Request",
         "extra": meta,
+        "item": None,
         "map": None,
     }
 
@@ -503,10 +577,11 @@ def render_service(service: Service, session_package: str) -> str:
             request_defs = reachable_definitions([action.request], service.definitions)
             schema = dict(action.request)
             schema["definitions"] = request_defs
+            item = _compound_item(action, service.definitions)
             classes.append(
                 _build_class(
                     name=camel(action.name) + "Request",
-                    base="Request",
+                    base="CompoundRequest" if item is not None else "Request",
                     description=action.description,
                     fields=fields,
                     required=required,
@@ -514,6 +589,7 @@ def render_service(service: Service, session_package: str) -> str:
                     definitions=service.definitions,
                     where=where + ".request",
                     extra=meta,
+                    item=item,
                 )
             )
         response = action.response
@@ -543,5 +619,6 @@ def render_service(service: Service, session_package: str) -> str:
         classes=models + classes + batches,
         enums=enums,
         batched=bool(batches),
+        compound=any(c["base"] == "CompoundRequest" for c in classes),
         mapping=[(camel(a.name) + "Request", camel(a.name) + "Response") for a in actions],
     )

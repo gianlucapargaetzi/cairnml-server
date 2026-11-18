@@ -16,6 +16,7 @@ from {{ session_package }} import (
     Response,
     NonStrictDataModel,
 {% if batched %}    BatchRequest,
+{% endif %}{% if compound %}    CompoundRequest,
 {% endif %}{% if enums %}    StringEnum,
 {% endif %}    schema_property,
 )
@@ -52,6 +53,9 @@ class {{ c.name }}({{ c.base }}):
     _action = "{{ c.extra.action }}"
     _version = "{{ c.extra.version }}"
 {% endif %}
+{% if c.item %}
+    _item_prop_name = "{{ c.item }}"
+{% endif %}
 {% if c.batched %}
     _batched_request_cls = {{ c.batched }}
 {% elif c.map %}
@@ -77,6 +81,9 @@ class {{ c.name }}({{ c.base }}):
 
     @schema_property("{{ p.wire or p.name }}")
     def {{ p.name }}(self) -> {{ p.annotation }}:
+{% if p.constant is not none %}
+        return {{ p.constant }}
+{% else %}
         return self._property_{{ p.name }}
 
     @{{ p.name }}.setter
@@ -88,6 +95,7 @@ class {{ c.name }}({{ c.base }}):
         {{ line }}
 {% endfor %}
         self._property_{{ p.name }} = value
+{% endif %}
 {% endfor %}
 {% endif %}
 {% endfor %}
