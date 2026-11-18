@@ -7,8 +7,10 @@ generated from the server's schema, and the agent uses the SDK.
 ## Making an API change (server)
 
 The API is defined by the schema in `apiserver/schema/services/*.conf` (one `"2.41"` block per action) and implemented
-by the endpoints in `apiserver/services/`. The served version is `API_VERSION` in
-`apiserver/service_repo/api_version.py`.
+by the endpoints in `apiserver/services/`. The API level is `API_VERSION` in
+`apiserver/service_repo/api_version.py`; a test asserts it is the highest version label in the schema. Each endpoint
+is registered at the oldest version label of its action in the schema (`apiserver/service_repo/endpoint.py`), and a
+request is served by the newest block at or below the requested version.
 
 1. Change the schema and the endpoint together, on a branch, and open a PR.
 2. The **`api-change`** job compares the schema with `main`:

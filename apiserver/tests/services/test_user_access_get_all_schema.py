@@ -1,5 +1,6 @@
 """user_access.get_all declares every key it returns, and no other."""
 
+import re
 from datetime import datetime
 from types import SimpleNamespace
 from uuid import uuid4
@@ -45,7 +46,10 @@ def company():
 
 def test_response_keys_equal_the_schema(company):
     conf = SchemaReader.read_file(SchemaReader.root / "user_access.conf")
-    declared = set(conf["get_all"][API_VERSION]["response"]["properties"])
+    newest = max(
+        (k for k in conf["get_all"] if re.match(r"^\d+\.\d+$", k)), key=lambda v: tuple(map(int, v.split(".")))
+    )
+    declared = set(conf["get_all"][newest]["response"]["properties"])
     model = ServiceRepo._get_endpoint("user_access.get_all", PartialVersion(API_VERSION)).request_data_model
     request = model() if model else None
     call = SimpleNamespace(data={}, identity=SimpleNamespace(user="u1", role="user"), result=SimpleNamespace(data=None))

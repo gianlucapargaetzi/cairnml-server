@@ -14,7 +14,7 @@ __all__ = ["ServiceRepo", "APICall", "endpoint", "API_VERSION"]
 
 def endpoint(
     name: Text,
-    min_version: Text = API_VERSION,
+    min_version: Text | None = None,
     required_fields: Sequence[Text] = None,
     request_data_model: Type[models.Base] = None,
     response_data_model: Type[models.Base] = None,
