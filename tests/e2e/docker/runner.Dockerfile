@@ -1,11 +1,11 @@
 # The suite's runner, built inside dind by inside.sh from a staged build context:
-#   runner.Dockerfile, requirements.txt, src/cairnml, src/cairnml-agent
+#   runner.Dockerfile, requirements.txt (tests/e2e/requirements.txt, exact pins), src/cairnml, src/cairnml-agent
 # It holds the test venv (the suite, the SDK and the agent from their folders), Chromium for the browser tests, the
 # Docker CLI and Compose (they talk to the daemon of dind through its socket), and git for the git tests.
 FROM python:3.12-slim
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends git ca-certificates procps \
+    && apt-get install -y --no-install-recommends git ca-certificates procps libatomic1 \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=docker:27-cli /usr/local/bin/docker /usr/local/bin/docker
 COPY --from=docker:27-cli /usr/local/libexec/docker/cli-plugins/docker-compose /usr/local/libexec/docker/cli-plugins/docker-compose

@@ -23,7 +23,8 @@ chown "$HOST_UID:$HOST_GID" /e2e-state /e2e-state/tmp /e2e-state/stack /e2e-cach
 
 rm -rf "$STAGE"
 mkdir -p "$STAGE/src"
-cp /workspace/tests/e2e/docker/runner.Dockerfile /workspace/tests/e2e/docker/requirements.txt "$STAGE/"
+cp /workspace/tests/e2e/docker/runner.Dockerfile "$STAGE/"
+cp /workspace/tests/e2e/requirements.txt "$STAGE/requirements.txt"
 cp -r /workspace/cairnml "$STAGE/src/cairnml"
 cp -r /workspace/cairnml-agent "$STAGE/src/cairnml-agent"
 # build output is not source: a stale build/ folder would be packed into the wheel instead of the sources
