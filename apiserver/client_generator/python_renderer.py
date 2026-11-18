@@ -78,8 +78,8 @@ def literal(value, indent: int, prefix: str = "", suffix: str = "") -> str:
 
 @dataclass
 class Kind:
-    name: str  # str, datetime, int, float, bool, dict, any, ref, list
-    cls: str = ""  # for ref: the class name
+    name: str  # str, datetime, int, float, bool, dict, any, ref, enum, list
+    cls: str = ""  # for ref and enum: the class name
     item: "Kind" = None  # for list
 
     @property
@@ -93,13 +93,14 @@ class Kind:
             "float": "float",
             "bool": "bool",
             "dict": "dict",
+            "enum": "str",  # a member is a Enum, a value that is not a member of it stays a string
         }.get(self.name, "Any")
 
     @property
     def doc(self) -> str:
         if self.name == "list":
             return f"Sequence[{self.item.doc}]"
-        return {"datetime": "datetime.datetime", "ref": self.cls}.get(self.name, self.name)
+        return {"datetime": "datetime.datetime", "ref": self.cls, "enum": self.cls}.get(self.name, self.name)
 
 
 _SIMPLE = {"string": "str", "integer": "int", "number": "float", "boolean": "bool", "object": "dict"}
@@ -124,6 +125,8 @@ def kind_of(schema: dict, definitions: dict, where: str, depth: int = 0) -> Kind
         target = definitions[name]
         if target.get("type") == "object" and "properties" in target:
             return Kind("ref", cls=camel(name))
+        if "enum" in target:
+            return Kind("enum", cls=camel(name))
         # a definition that is a plain type (for example a string enumeration): the field has that type
         return kind_of(target, definitions, f"{where} -> {name}", depth)
     type_ = schema.get("type")
@@ -169,6 +172,20 @@ def _setter_lines(name: str, kind: Kind) -> List[str]:
                 f"self.assert_isinstance(value, {q}, six.string_types + (datetime,), is_array=True)",
                 "value = [v if isinstance(v, datetime) else parse_datetime(v) for v in value]",
             ]
+        elif item.name == "enum":
+            # a value that is not a member of the enumeration stays a string (a newer server may send one)
+            lines += [
+                "converted = []",
+                "for v in value:",
+                "    if isinstance(v, six.string_types):",
+                "        try:",
+                f"            v = {item.cls}(v)",
+                "        except ValueError:",
+                "            pass",
+                "    converted.append(v)",
+                "value = converted",
+                f"self.assert_isinstance(value, {q}, six.string_types + (enum.Enum,), is_array=True)",
+            ]
         elif item.name != "any":
             lines.append(f"self.assert_isinstance(value, {q}, {_types(item)}, is_array=True)")
         return lines
@@ -183,6 +200,17 @@ def _setter_lines(name: str, kind: Kind) -> List[str]:
             f"self.assert_isinstance(value, {q}, six.string_types + (datetime,))",
             "if not isinstance(value, datetime):",
             "    value = parse_datetime(value)",
+        ]
+    if kind.name == "enum":
+        # the string becomes the member; a member is kept; a string that is not a value of the enumeration is kept
+        return [
+            "if isinstance(value, six.string_types):",
+            "    try:",
+            f"        value = {kind.cls}(value)",
+            "    except ValueError:",
+            "        pass",
+            "else:",
+            f"    self.assert_isinstance(value, {q}, enum.Enum)",
         ]
     if kind.name == "ref":
         return [
