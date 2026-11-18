@@ -101,6 +101,12 @@ def test_without_the_proxy_the_host_of_the_request_is_used():
     assert request({}, host="127.0.0.1:18001")["api"] == "http://127.0.0.1:18001/cairnml/api"
 
 
+def test_from_an_untrusted_proxy_the_host_of_the_request_keeps_its_port():
+    urls = request({"X-Forwarded-Host": "evil.example"}, host="192.168.1.20:8088", remote_addr="192.168.1.20")
+
+    assert urls["api"] == "http://192.168.1.20:8088/cairnml/api"
+
+
 def test_https_is_kept():
     urls = request({"X-Forwarded-Host": "example.org", "X-Forwarded-Proto": "https"})
 
