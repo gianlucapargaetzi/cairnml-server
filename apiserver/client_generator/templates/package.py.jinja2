@@ -1,16 +1,66 @@
 """
 The services of the API client: one module per service of the server schema. A service module is imported when its
 name is first used, so importing this package loads none of them.
+
+The service module holds the newest definition of each action. An older definition is in legacy/<folder>/<service>.py,
+the folder of the version at which it began. `resolve` picks the definition that a given API version is served by.
 """
 {{ header }}
 import importlib
-from typing import Any
+from typing import Any, Dict, Tuple
+
+API_LEVEL = "{{ api_level }}"
+"""The highest API version of the schema: the version of the newest definition of any action."""
 
 __all__ = [
 {% for name in services %}
     "{{ name }}",
 {% endfor %}
 ]
+
+DEFINITIONS: Dict[str, Dict[str, Tuple[Tuple[str, str, str], ...]]] = {
+{% for service, actions in definitions %}
+    "{{ service }}": {
+{% for action, blocks in actions %}
+        "{{ action }}": (
+{% for version, request, response in blocks %}
+            ("{{ version }}", "{{ request }}", "{{ response }}"),
+{% endfor %}
+        ),
+{% endfor %}
+    },
+{% endfor %}
+}
+"""Per service and action, every retained definition oldest first: (version, request class, response class)."""
+
+
+class UnsupportedApiVersion(Exception):
+    """The API version is older than the oldest retained definition of the action."""
+
+
+def _key(version: str) -> Tuple[int, ...]:
+    return tuple(int(part) for part in version.split("."))
+
+
+def resolve(service: str, action: str, api_version: str) -> Tuple[type, type]:
+    """The request and the response class of the newest definition of the action whose version is at most
+    api_version. Raises UnsupportedApiVersion when the action has no definition that old, and KeyError when the
+    service or the action is not in the API."""
+    blocks = DEFINITIONS[service][action]
+    chosen = None
+    for block in blocks:
+        if _key(block[0]) <= _key(api_version):
+            chosen = block
+    if chosen is None:
+        raise UnsupportedApiVersion(
+            f"{service}.{action} is not served at API version {api_version}; the oldest version it has is {blocks[0][0]}"
+        )
+    if chosen is blocks[-1]:
+        module = importlib.import_module(f"{__name__}.{service}")
+    else:
+        folder = "v" + chosen[0].replace(".", "_")
+        module = importlib.import_module(f"{__name__}.legacy.{folder}.{service}")
+    return getattr(module, chosen[1]), getattr(module, chosen[2])
 
 
 def __getattr__(name: str) -> Any:

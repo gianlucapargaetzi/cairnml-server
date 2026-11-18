@@ -44,6 +44,7 @@ from apiserver.database.utils import (
     get_company_or_none_constraint,
 )
 from apiserver.service_repo import APICall, endpoint
+from apiserver.utilities.partial_version import PartialVersion
 from apiserver.services.utils import (
     conform_tag_fields,
     conform_output_tags,
@@ -172,11 +173,25 @@ def _get_project_stats_filter(
     return stats_filter, request.search_hidden
 
 
+# API 2.41 removed the non_public flag of projects.get_all_ex, replaced by allow_public. A definition older than 2.41
+# still takes it as the inverse of allow_public.
+NON_PUBLIC_REMOVED_IN = PartialVersion("2.41")
+
+
+def _allow_public(call: APICall, data: dict, request: ProjectsGetRequest) -> bool:
+    # The definition that serves the call decides, not the version the client asked for
+    if "allow_public" in data:
+        return data["allow_public"]
+    if "non_public" in data and call.actual_endpoint_version < NON_PUBLIC_REMOVED_IN:
+        return not data["non_public"]
+    return request.allow_public
+
+
 @endpoint("projects.get_all_ex")
 def get_all_ex(call: APICall, company_id: str, request: ProjectsGetRequest):
     data = call.data
     conform_tag_fields(call, data)
-    allow_public = request.allow_public
+    allow_public = _allow_public(call, data, request)
 
     requested_ids = data.get("id")
     if isinstance(requested_ids, str):
