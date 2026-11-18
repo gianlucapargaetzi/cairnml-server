@@ -305,5 +305,11 @@ networks:
   datastores:
     internal: true
   frontend:
+  # The proxy sits here, and the server believes the forwarded address (with its port) only from the proxies in
+  # apiserver.idp.trusted_proxies, whose default is 172.16.0.0/12. The subnet is fixed inside that range: the Docker
+  # daemon may hand out networks from other pools (default-address-pools), which would leave the proxy untrusted.
   cairnml:
     name: cairnml
+    ipam:
+      config:
+        - subnet: 172.30.216.0/24

@@ -1,3 +1,6 @@
+import ipaddress
+import json
+import re
 from pathlib import Path
 from unittest import TestCase
 
@@ -24,6 +27,19 @@ class TestDeployCompose(TestCase):
     def test_apiserver_reaches_the_datastores(self):
         self.assertIn("datastores", self.services["apiserver"]["networks"])
         self.assertIn("datastores", self.services["async-delete"]["networks"])
+
+    def test_the_proxy_network_is_one_the_server_trusts_by_default(self):
+        # The server believes X-Forwarded-Host (with the port the client typed) only from apiserver.idp.trusted_proxies.
+        # The proxy's address is on the cairnml network, so that network must lie in the default range the stack passes
+        # to the server, whatever address pool the Docker daemon uses. Otherwise the port is dropped.
+        subnet = ipaddress.ip_network(self.compose["networks"]["cairnml"]["ipam"]["config"][0]["subnet"])
+        environment = self.services["apiserver"]["environment"]["CAIRNML__apiserver__idp__trusted_proxies"]
+        default = re.search(r"\$\{CAIRNML_TRUSTED_PROXIES:-(.*)\}", environment).group(1)
+        trusted = [ipaddress.ip_network(entry) for entry in json.loads(default)]
+        self.assertTrue(
+            any(network.version == subnet.version and subnet.subnet_of(network) for network in trusted),
+            (subnet, trusted),
+        )
 
     def test_webserver_cannot_reach_the_datastores(self):
         self.assertNotIn("datastores", self.services["webserver"]["networks"])
