@@ -54,6 +54,17 @@ class {{ c.name }}({{ c.base }}):
 {% endif %}
 {% if c.batched %}
     _batched_request_cls = {{ c.batched }}
+{% elif c.map %}
+    _schema = {{ c.schema }}
+
+    def __init__(self, *args, **kwargs):
+        values = dict(*args, **kwargs)
+        converted = {k: {{ c.map.convert }} if isinstance(v, dict) else v for k, v in values.items()}
+        self.assert_isinstance(converted.values(), "{{ c.map.field }}", ({{ c.map.item }},), is_array=True)
+        super({{ c.name }}, self).__init__(converted)
+
+    def to_dict(self):
+        return self._to_base_type(self)
 {% else %}
     _schema = {{ c.schema }}
 
