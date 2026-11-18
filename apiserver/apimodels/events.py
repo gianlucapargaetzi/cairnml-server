@@ -62,6 +62,12 @@ class TaskMetric(Base):
     variants: Sequence[str] = ListField(items_types=str)
 
 
+class LegacyMetricEventsRequest(TaskRequest):
+    iters: int = IntField(default=1, validators=validators.Min(1))
+    scroll_id: str = StringField()
+    model_events: bool = BoolField(default=False)
+
+
 class MetricEventsRequest(Base):
     metrics: Sequence[TaskMetric] = ListField(items_types=TaskMetric, validators=[Length(minimum_value=1)])
     iters: int = IntField(default=1, validators=validators.Min(1))
@@ -124,6 +130,11 @@ class TaskEventsRequest(TaskEventsRequestBase):
     scroll_id: str = StringField()
     count_total: bool = BoolField(default=True)
     model_events: bool = BoolField(default=False)
+
+
+class LegacyLogEventsRequest(TaskEventsRequestBase):
+    order: Optional[str] = ActualEnumField(LogOrderEnum, default=LogOrderEnum.desc)
+    scroll_id: str = StringField()
 
 
 class LogEventsRequest(TaskEventsRequestBase):

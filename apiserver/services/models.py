@@ -62,9 +62,9 @@ project_bll = ProjectBLL()
 event_bll = EventBLL()
 
 
-def conform_model_data(model_data: Union[Sequence[dict], dict]):
-    conform_output_tags(model_data)
-    unescape_metadata(model_data)
+def conform_model_data(call: APICall, model_data: Union[Sequence[dict], dict]):
+    conform_output_tags(call, model_data)
+    unescape_metadata(call, model_data)
 
 
 _MODEL_ACCESS_FIELDS = ("id", "company", "project", "user")
@@ -154,13 +154,13 @@ def get_by_id(call: APICall, company_id, request: ModelRequest):
             id=model_id,
             company=company_id,
         )
-    conform_model_data(models[0])
+    conform_model_data(call, models[0])
     call.result.data = {"model": models[0]}
 
 
 @endpoint("models.get_all_ex", request_data_model=ModelsGetRequest)
 def get_all_ex(call: APICall, company_id, request: ModelsGetRequest):
-    conform_tag_fields(call.data)
+    conform_tag_fields(call, call.data)
     call_data = Metadata.escape_query_parameters(call.data)
     process_include_subprojects(call_data)
     ret_params = {}
@@ -171,7 +171,7 @@ def get_all_ex(call: APICall, company_id, request: ModelsGetRequest):
         allow_public=request.allow_public,
         ret_params=ret_params,
     )
-    conform_model_data(models)
+    conform_model_data(call, models)
 
     if not request.include_stats:
         call.result.data = {"models": models, **ret_params}
@@ -191,7 +191,7 @@ def get_all_ex(call: APICall, company_id, request: ModelsGetRequest):
 
 @endpoint("models.get_by_id_ex", required_fields=["id"])
 def get_by_id_ex(call: APICall, company_id, _):
-    conform_tag_fields(call.data)
+    conform_tag_fields(call, call.data)
     call_data = Metadata.escape_query_parameters(call.data)
     models = Model.get_many_with_join(
         company=company_id,
@@ -199,13 +199,13 @@ def get_by_id_ex(call: APICall, company_id, _):
         query=_visible_models_query(call.identity),
         allow_public=True,
     )
-    conform_model_data(models)
+    conform_model_data(call, models)
     call.result.data = {"models": models}
 
 
 @endpoint("models.get_all")
 def get_all(call: APICall, company_id, _):
-    conform_tag_fields(call.data)
+    conform_tag_fields(call, call.data)
     call_data = Metadata.escape_query_parameters(call.data)
     process_include_subprojects(call_data)
     ret_params = {}
@@ -217,7 +217,7 @@ def get_all(call: APICall, company_id, _):
         allow_public=True,
         ret_params=ret_params,
     )
-    conform_model_data(models)
+    conform_model_data(call, models)
     call.result.data = {"models": models, **ret_params}
 
 
@@ -280,7 +280,7 @@ def parse_model_fields(call, valid_fields):
         call.data.pop("task")
     ProjectAccessBLL.assert_project_field_writable(call.identity, call.data)
     fields = parse_from_call(call.data, valid_fields, Model.get_fields())
-    conform_tag_fields(fields, validate=True)
+    conform_tag_fields(call, fields, validate=True)
     escape_metadata(fields)
     return fields
 
@@ -325,7 +325,7 @@ def create(call: APICall, company_id, req_model: CreateModelRequest):
         validate_task(company_id, call.identity, req_data)
 
     fields = filter_fields(Model, req_data)
-    conform_tag_fields(fields, validate=True)
+    conform_tag_fields(call, fields, validate=True)
     escape_metadata(fields)
 
     # create and save model
@@ -373,7 +373,7 @@ def prepare_update_fields(call, company_id, fields: dict):
         if invalid_values:
             raise errors.bad_request.ValidationError("labels values must be integers", values=invalid_values)
 
-    conform_tag_fields(fields, validate=True)
+    conform_tag_fields(call, fields, validate=True)
     escape_metadata(fields)
     return fields
 
@@ -428,7 +428,7 @@ def edit(call: APICall, company_id, request: UpdateModelRequest):
                 _reset_cached_tags(company_id, projects=[new_project, model.project])
             else:
                 _update_cached_tags(company_id, project=model.project, fields=fields)
-        conform_model_data(fields)
+        conform_model_data(call, fields)
         call.result.data_model = UpdateResponse(updated=updated, fields=fields)
     else:
         call.result.data_model = UpdateResponse(updated=0)
@@ -468,7 +468,7 @@ def _update_model(call: APICall, company_id, model_id, object_owner=None):
             _reset_cached_tags(company_id, projects=[new_project, model.project])
         else:
             _update_cached_tags(company_id, project=model.project, fields=updated_fields)
-    conform_model_data(updated_fields)
+    conform_model_data(call, updated_fields)
     return UpdateResponse(updated=updated_count, fields=updated_fields)
 
 

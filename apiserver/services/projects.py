@@ -111,7 +111,7 @@ def get_by_id(call: APICall, company: str, request: ProjectRequest):
         # The webhook address may carry a secret token: it is never returned, only whether one is set
         project_dict = project.to_proper_dict(exclude=["notification_webhook"])
         project_dict["has_notification_webhook"] = bool(project.notification_webhook)
-        conform_output_tags(project_dict)
+        conform_output_tags(call, project_dict)
 
         call.result.data = {"project": project_dict}
 
@@ -175,7 +175,7 @@ def _get_project_stats_filter(
 @endpoint("projects.get_all_ex")
 def get_all_ex(call: APICall, company_id: str, request: ProjectsGetRequest):
     data = call.data
-    conform_tag_fields(data)
+    conform_tag_fields(call, data)
     allow_public = request.allow_public
 
     requested_ids = data.get("id")
@@ -227,7 +227,7 @@ def get_all_ex(call: APICall, company_id: str, request: ProjectsGetRequest):
             if EntityVisibility.hidden.value in system_tags:
                 p["hidden"] = True
 
-    conform_output_tags(projects)
+    conform_output_tags(call, projects)
     project_ids = list({project["id"] for project in projects})
     # notification_webhook is excluded by default, so the flag is looked up separately
     with_webhook = {
@@ -302,7 +302,7 @@ def get_all_ex(call: APICall, company_id: str, request: ProjectsGetRequest):
 @endpoint("projects.get_all")
 def get_all(call: APICall, company: str, _):
     data = call.data
-    conform_tag_fields(data)
+    conform_tag_fields(call, data)
     _adjust_search_parameters(
         data,
         shallow_search=data.get("shallow_search", False),
@@ -317,7 +317,7 @@ def get_all(call: APICall, company: str, _):
         allow_public=True,
         ret_params=ret_params,
     )
-    conform_output_tags(projects)
+    conform_output_tags(call, projects)
     call.result.data = {"projects": projects, **ret_params}
 
 
@@ -331,7 +331,7 @@ def create(call: APICall, company: str, _):
 
     with translate_errors_context():
         fields = parse_from_call(call.data, create_fields, Project.get_fields())
-        conform_tag_fields(fields, validate=True)
+        conform_tag_fields(call, fields, validate=True)
 
         return IdResponse(
             id=ProjectBLL.create(
@@ -355,14 +355,14 @@ def update(call: APICall, company: str, request: ProjectRequest):
     """
     ProjectAccessBLL.assert_can(call.identity, request.project, "admin")
     fields = parse_from_call(call.data, create_fields, Project.get_fields(), discard_none_values=False)
-    conform_tag_fields(fields, validate=True)
+    conform_tag_fields(call, fields, validate=True)
     if "notification_webhook" in fields:
         # an empty value clears the webhook
         fields["notification_webhook"] = fields["notification_webhook"] or None
         if fields["notification_webhook"]:
             webhooks.validate_url(fields["notification_webhook"])
     updated = ProjectBLL.update(company=company, project_id=request.project, **fields)
-    conform_output_tags(fields)
+    conform_output_tags(call, fields)
     call.result.data_model = UpdateResponse(updated=updated, fields=fields)
 
 

@@ -58,8 +58,8 @@ queue_bll = QueueBLL(worker_bll)
 
 
 def conform_queue_data(call: APICall, queue_data: Union[Sequence[dict], dict]):
-    conform_output_tags(queue_data)
-    unescape_metadata(queue_data)
+    conform_output_tags(call, queue_data)
+    unescape_metadata(call, queue_data)
 
 
 def _with_owner(queue_data: Union[Sequence[dict], dict]) -> Union[Sequence[dict], dict]:
@@ -110,7 +110,7 @@ def get_projects(call: APICall, company_id, request: QueueRequest):
 
 @endpoint("queues.get_all_ex")
 def get_all_ex(call: APICall, company: str, request: GetAllRequest):
-    conform_tag_fields(call.data)
+    conform_tag_fields(call, call.data)
     ret_params = {}
 
     call_data = Metadata.escape_query_parameters(call.data)
@@ -130,7 +130,7 @@ def get_all_ex(call: APICall, company: str, request: GetAllRequest):
 
 @endpoint("queues.get_all")
 def get_all(call: APICall, company: str, request: GetAllRequest):
-    conform_tag_fields(call.data)
+    conform_tag_fields(call, call.data)
     ret_params = {}
     call_data = Metadata.escape_query_parameters(call.data)
     queues = queue_bll.get_all(
@@ -159,7 +159,7 @@ def update(call: APICall, company_id, request: UpdateRequest):
         )
     if "public" in data:
         refuse_inactive(call.identity.user)
-    conform_tag_fields(data, validate=True)
+    conform_tag_fields(call, data, validate=True)
     escape_metadata(data)
     updated, fields = queue_bll.update(company_id=company_id, queue_id=request.queue, **data)
     if "public" in data:
