@@ -10,8 +10,10 @@ from typing import Iterable, List, Tuple
 MAX_DEFINITIONS_PER_ENDPOINT = 5
 """The most definitions (version blocks) an endpoint may keep. The cap is per endpoint, not for the whole API."""
 
-VERSION_KEY = re.compile(r'^\s*"?(\d+\.\d+)"?\s*\{')
-ACTION_HEADER = re.compile(r'^\s*"?([\w.-]+)"?\s*\{')
+# A definition is written as a block (`"2.9" {`) or as a reference (`"2.9": ${get_all."2.1"}`), and an action header as
+# `name {` or `name: {`; HOCON reads all of them, so the scan must see all of them.
+VERSION_KEY = re.compile(r'^\s*"?(\d+\.\d+)"?\s*[:{]')
+ACTION_HEADER = re.compile(r'^\s*"?([\w.-]+)"?\s*[:{]')
 _STRING = re.compile(r'"(?:[^"\\]|\\.)*"')
 _COMMENT = re.compile(r'("(?:[^"\\]|\\.)*")|(//|#).*$')
 
