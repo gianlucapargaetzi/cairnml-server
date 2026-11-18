@@ -40,11 +40,24 @@ file does, and it requires an admin.
 
 ### Running on the host (not the isolated environment)
 
-`.venv/bin/pytest tests/e2e` still runs the suite on the host's Docker daemon, with the stack on the host's loopback
-interface. It needs Docker with Compose v2, the SDK, the agent and the web app fetched by `scripts/fetch-sources.sh`, Python 3.12 with the suite's requirements and the
-SDK and the agent (`uv pip install -r tests/e2e/requirements.txt`, then `uv pip install -e ./cairnml -e ./cairnml-agent`),
-Chromium for Playwright, and nine free ports in 18000 to 18999. It has not been run since the isolated environment was
-built, and the isolated environment is the one to use. Its job containers run on the host's daemon (see Limits).
+Use this only where the isolated environment cannot run. The suite then starts its stack on the host's Docker daemon,
+on 127.0.0.1 and nine free ports in 18000 to 18999. Run one suite at a time, and not on a machine with a live agent of
+the deploy stack (see Limits). Needs Docker with Compose v2, uv, and Python 3.12.
+
+```bash
+# 1. Sources, in a scratch folder: the server at the commit under test, and the SDK, the agent and the web app at the
+#    commits their pin files name (scripts/fetch-sources.sh puts them in cairnml/, cairnml-agent/ and web/).
+# 2. The suite's environment: its exact pins, and the SDK and the agent from their folders.
+uv venv -p 3.12 .venv
+uv pip install -r tests/e2e/requirements.txt -e "./cairnml[dataset]" -e ./cairnml-agent
+.venv/bin/python -m playwright install chromium
+# 3. The suite, from a folder that is neither the SDK's nor the agent's.
+cd tests/e2e && CAIRNML_ES_HEAP=1g ../../.venv/bin/pytest -v
+```
+
+`CAIRNML_ES_HEAP` caps Elasticsearch's heap (the default is 2g). The stack's state folder is in `TMPDIR`. The report is
+written to `tests/e2e/reports/`. `tests/e2e/requirements.txt` holds the exact pins the runner image uses too; its header
+says how to regenerate them.
 
 ## The isolated environment
 
@@ -131,7 +144,7 @@ Two services also listen on their own loopback ports, which the suite uses and c
 | Part | What it does |
 |---|---|
 | `docker/run.sh`, `docker/inside.sh` | The host entry point (starts `dind`) and the script that runs inside it: it builds the runner image, then runs `pytest` in a runner container on `dind`'s network, with the suite's environment variables. |
-| `docker/compose.yaml`, `docker/runner.Dockerfile`, `docker/requirements.txt` | The `dind` service, the runner image (the test venv, Chromium, the Docker CLI and Compose, git), and the runner's packages. |
+| `docker/compose.yaml`, `docker/runner.Dockerfile`, `requirements.txt` | The `dind` service, the runner image (the test venv, Chromium, the Docker CLI and Compose, git), and the suite's exact pins (`requirements.in` holds the direct ones). |
 | `conftest.py` | Starts the stack for the session (autouse), checks that its services answer, resets a reused stack, gives each session its own `HOME`, and enrols the test client through the real sign-in page. Creates the session project and deletes it at the end. Writes the report. |
 | `support/stack.py` | Ports, state folder, reuse record and fingerprint, secrets, realm copy, nginx template, compose calls, the identity bootstrap, health waits, teardown. `python -m support.stack --stop` and `--status`. |
 | `stack/compose.yaml` | The stack's services and their settings, including the test-only directory sync timer (5 s) and the reset switched on. |
@@ -162,40 +175,39 @@ Rules the suite follows:
 
 ## Known defects
 
-Each defect has an issue in the repository where the fix belongs. The tests named here are the ones that fail, or passed
-after the fix, because of it.
-
-| # | Issue | What happens | Tests |
-|---|---|---|---|
-| Policy | [cairnml-server #3](https://github.com/gianlucapargaetzi/cairnml-server/issues/3) | A plain user can delete another user's run. Expected 403 until user access management exists (decided). | `test_05_artifacts.py::test_a_member_who_is_not_the_owner_cannot_delete_the_run` |
-
-Defects that were fixed are not listed. `Task.set_parameters` replaces the whole parameter set, as its docstring says; the
-example script writes the group first, and `test_set_parameters_replaces_the_whole_set_and_set_parameter_adds` documents it.
+No defect is known to fail on the `pre-2.41` trees. The owner-policy test that cairnml-server #3 covered
+(`test_05_artifacts.py::test_a_member_who_is_not_the_owner_cannot_delete_the_run`) passed on 2026-11-18, so its row was
+removed. Re-check it on the current server before recording it again.
 
 ### Not caught by a test
 
 
-## Status of the last full run
+## Status of the last run
 
-This section is a snapshot from one run. It is not kept up to date: the unit tests run on every pull request, and the full suite is run by hand before a release.
+Snapshot from 2026-11-18, host run (see "Running on the host"), against the `pre-2.41` trees: server `c1b924ec`, SDK
+`12c545cc`, agent `3d20af9a` (v0.0.6), web `128917fd`. It is not a full run of the current tree, and the run was not
+complete in one session.
 
-The dataset tests in `test_07_datasets_models.py` were replaced after this run, when datasets moved to git and DVC, and have not been run yet. The numbers below are from before the change.
+- Full suite, stopped after `test_07_datasets_models.py`'s model tests: `1 failed, 50 passed, 2 skipped, 7 errors in 697.80s`.
+  The errors are the dataset module (6) and `test_06_git.py::test_job_clones_the_recorded_commit_and_reports_it`.
+- Changed modules, before the shared sign-in fix: `6 failed, 29 passed, 12 errors in 853.56s`.
+- Web modules after the fix: `3 failed, 13 passed, 1 error in 262.75s`. Project tabs then passed on its own.
+- Queue module (`test_queue_ownership.py`): `16 passed in 128.63s`.
 
-Latest full run, in the isolated environment, from a stack that was stopped first, with no restarts: 101 tests,
-16 minutes 21 seconds, **92 passed, 6 failed, 3 skipped**.
+Not run to completion: `test_08` to `test_14`, and `test_access_control.py` (its 2.37 membership checks passed in the
+changed-module run). Still failing at the last run:
 
-The 6 that failed, by cause:
-
-- **Known defects, failing as designed:**
-  - `test_a_member_who_is_not_the_owner_cannot_delete_the_run`: the owner policy is not built (cairnml-server #3).
-- **Open, explained (see Open results):** the git job clone, and the live jobs list.
-
-The 3 skipped: `test_init_accepts_the_web_address_and_finds_the_api` (the suite runs on ports other than the defaults), and
-the two GitHub tests (no GitHub repository is configured).
-
-Fixed since the earlier runs: the job completion (the agent's `_unregister` fix), the
-tracking and artifact tests (the result parser, and the runner's data packages), and the comparison view (it passes in
-this run; it failed in an earlier one, and it passes alone too, so its failure was timing or order, not the view).
+- `test_07_datasets_models.py` (dataset module): the dataset helper still uses the removed `remote add` flow, which needs a
+  GitHub origin and the server's registration. Not rewritten.
+- `test_06_git.py::test_repository_on_github_is_refused_at_enqueue_without_the_app`: the enqueue returns `queued 0`
+  with exit code 0 instead of a refusal. Real product defect; no issue yet.
+- `test_06_git.py::test_job_clones_the_recorded_commit_and_reports_it` and
+  `test_12_web_runs.py::test_workers_page_shows_a_running_job_without_a_reload`: the job agent's worker is not listed
+  (setup). Probably gianlucapargaetzi/cairnml-agent#113; not confirmed.
+- `test_10_web_app.py::test_manage_workers_and_queues_page_opens`: a modal backdrop stays open after sign-in and
+  intercepts the dashboard button. Not yet decided whether the overlay is intended.
+- `test_12_web_runs.py::test_comparison_view_overlays_both_runs`: `text=loss` not visible in the scalars view within
+  10 s. Not analysed beyond the symptom.
 
 ## Open results
 
