@@ -62,7 +62,7 @@ server {
 
     # Sign-in and device calls that need no login (login.*, devices.*): rate limited per client address. The burst
     # allows a short run of calls, such as the web app's sign-in steps, before the limit applies.
-    location ~ ^/${CAIRNML_SERVER_SUB_PATH}/api/v[0-9.]+/(login|devices)\. {
+    location ~ ^/${CAIRNML_SERVER_SUB_PATH}/api/(v[0-9.]+/)?(login|devices)\. {
         limit_req zone=cairnml_unauthenticated burst=20 nodelay;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header Host $host;

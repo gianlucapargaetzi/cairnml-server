@@ -18,7 +18,6 @@ from typing import Callable, List, Optional
 from urllib.parse import urlencode, urlsplit
 
 from apiserver.config_repo import config
-from apiserver.service_repo import API_VERSION
 
 log = config.logger(__file__)
 
@@ -120,6 +119,17 @@ def web_url() -> str:
     return config.get("apiserver.idp.web_url") or origin() + base_path() + "/"
 
 
+def idp_callback_url() -> str:
+    """Where the identity provider sends the browser back after a sign-in. Its address has no API version: the realm
+    lists this address, and a version in it would not match after an upgrade."""
+    return api_url().rstrip("/") + "/login.idp_callback"
+
+
+def idp_start_url() -> str:
+    """Where the identity provider sends the browser after a logout: the sign-in. No API version, as the callback."""
+    return api_url().rstrip("/") + "/login.idp_start"
+
+
 def idp_issuer() -> str:
     """The identity provider's issuer as the client sees it: the realm path of the configured issuer, on the address the
     client used."""
@@ -133,7 +143,7 @@ def idp_logout_url(id_token_hint: str = "") -> str:
     to end; without it the provider asks the person to confirm the logout first."""
     params = {
         "client_id": config.get("apiserver.idp.web_client_id"),
-        "post_logout_redirect_uri": api_url().rstrip("/") + f"/v{API_VERSION}/login.idp_start",
+        "post_logout_redirect_uri": idp_start_url(),
     }
     if id_token_hint:
         params["id_token_hint"] = id_token_hint

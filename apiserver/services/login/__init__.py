@@ -4,7 +4,7 @@ from apiserver.apimodels.login import (
     BasicMode,
     BasicGuestMode,
 )
-from apiserver.service_repo import endpoint, APICall, API_VERSION
+from apiserver.service_repo import endpoint, APICall
 from apiserver.service_repo.auth import revoke_auth_token
 
 
@@ -61,7 +61,9 @@ _idp_http = _requests.Session()
 
 
 def _redirect_uri() -> str:
-    return f"{_public_origin.api_url().rstrip('/')}/v{API_VERSION}/login.idp_callback"
+    # Unversioned on purpose: the identity provider keeps the address it was given, so a version in it would stop
+    # matching after an upgrade. Without a version the server serves the newest API version.
+    return _public_origin.idp_callback_url()
 
 
 @endpoint("login.idp_start")
