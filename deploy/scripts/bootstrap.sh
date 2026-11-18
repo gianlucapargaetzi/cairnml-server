@@ -254,11 +254,6 @@ fi
 # The CairnML containers run as uid 1000 (the server image's user): they read these secrets, written above.
 docker run --rm -v "$STATE/secrets/cairnml:/secrets" alpine:3.20 chown -R 1000:1000 /secrets
 
-# The "What's new" bundle the web image serves: the release notes of the server, the web app and the SDK. The image build
-# needs it (docker/build/Dockerfile copies it), so it is written from the checkouts the build uses.
-WEB_CHANGELOG="${CAIRNML_WEB_DIR:-../web}/CHANGELOG.md"
-python3 ../apiserver/release/whats_new.py --server ../CHANGELOG.md --web "$WEB_CHANGELOG" --sdk ../cairnml/CHANGELOG.md --out ../docker/build/whats-new.json
-
 docker compose up -d --build --remove-orphans
 
 echo "waiting for the CairnML server..."
