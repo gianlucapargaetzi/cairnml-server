@@ -526,6 +526,12 @@ def _batch_class(service: Service, action: Action, meta: dict) -> dict:
     }
 
 
+def render_package(services) -> str:
+    """The package file of a target: `__all__` names every service of it, and a service module is imported on first
+    access, so importing the package loads none of the modules."""
+    return _env.get_template("package.py.jinja2").render(services=sorted(services), header=HEADER)
+
+
 def render_service(service: Service, session_package: str) -> str:
     actions = [service.actions[name] for name in sorted(service.actions)]
     fragments = [a.request for a in actions if not a.batch_request] + [a.response for a in actions]

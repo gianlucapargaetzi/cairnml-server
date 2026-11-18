@@ -5,6 +5,8 @@ from pathlib import Path
 
 import pytest
 
+from apiserver.client_generator.python_renderer import render_package
+
 FIXTURES = Path(__file__).parent / "fixtures" / "schema"
 
 
@@ -89,3 +91,41 @@ def test_check_callers_exit_codes(schema, tmp_path):
     allow.write_text("exempt queues.create\n")
     assert _check_callers(schema, bad, "--allow", str(allow)).returncode == 2
     assert _check_callers(schema, tmp_path / "missing").returncode == 2
+
+
+def test_the_whole_target_writes_the_package_file_naming_every_service(schema, tmp_path):
+    out = tmp_path / "out"
+    result = _run("generate", "--target", "sdk", "--schema", str(schema), "--out", str(out))
+    assert result.returncode == 0, result.stderr
+    assert (out / "__init__.py").read_text() == render_package(["queues"])
+
+
+def test_a_subset_of_the_services_leaves_the_package_file_alone(tmp_path):
+    folder = tmp_path / "schema"
+    folder.mkdir()
+    shutil.copy(FIXTURES / "demo.conf", folder / "queues.conf")
+    shutil.copy(FIXTURES / "enums.conf", folder / "tasks.conf")
+    out = tmp_path / "out"
+    result = _run("generate", "--target", "sdk", "--services", "tasks", "--schema", str(folder), "--out", str(out))
+    assert result.returncode == 0, result.stderr
+    assert (out / "tasks.py").is_file()
+    assert not (out / "__init__.py").exists()
+
+
+def test_check_fails_naming_a_stale_package_file(schema, tmp_path):
+    out = tmp_path / "out"
+    assert _run("generate", "--target", "sdk", "--schema", str(schema), "--out", str(out)).returncode == 0
+    (out / "__init__.py").write_text("__all__ = []\n")
+    result = _run("generate", "--target", "sdk", "--schema", str(schema), "--out", str(out), "--check")
+    assert result.returncode == 1
+    assert "__init__.py is out of date" in result.stdout + result.stderr
+
+
+def test_check_fails_naming_a_missing_package_file(schema, tmp_path):
+    out = tmp_path / "out"
+    generate = ("generate", "--target", "sdk", "--services", "queues", "--schema", str(schema), "--out", str(out))
+    assert _run(*generate).returncode == 0
+    (out / "__init__.py").unlink()
+    result = _run("generate", "--target", "sdk", "--schema", str(schema), "--out", str(out), "--check")
+    assert result.returncode == 1
+    assert "__init__.py is missing" in result.stdout + result.stderr

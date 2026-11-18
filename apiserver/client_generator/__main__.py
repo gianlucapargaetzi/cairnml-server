@@ -4,7 +4,7 @@ from pathlib import Path
 
 from .callers import Allow, check_callers, read_allow
 from .web_check import check_web
-from .python_renderer import Unsupported, render_service
+from .python_renderer import Unsupported, render_package, render_service
 from .schema_model import load_schema
 from .targets import TARGETS
 
@@ -137,9 +137,11 @@ def main(argv=None) -> int:
             rendered[name] = render_service(schema[name], target.session_package)
         except (Unsupported, ValueError) as error:
             return _usage(f"{name}: {error}")
+    files = {args.out / f"{name}.py": text for name, text in rendered.items()}
+    if set(services) == set(available):  # the whole target: the package file names every service of it
+        files[args.out / "__init__.py"] = render_package(available)
     stale = 0
-    for name, text in rendered.items():
-        path = args.out / f"{name}.py"
+    for path, text in files.items():
         if args.check:
             if not path.is_file():
                 print(f"{path.name} is missing in {args.out}")
