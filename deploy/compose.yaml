@@ -147,6 +147,9 @@ services:
     restart: unless-stopped
     environment:
       bootstrap.memory_lock: "true"
+      # The JVM heap, the same for the minimum and the maximum. Default 2g; CAIRNML_ES_HEAP in deploy/.env overrides it
+      # (see deploy/.env.example and docs/operations/operate.md). Elasticsearch otherwise takes half of the host's RAM.
+      ES_JAVA_OPTS: "-Xms${CAIRNML_ES_HEAP:-2g} -Xmx${CAIRNML_ES_HEAP:-2g}"
       cluster.name: cairnml
       cluster.routing.allocation.node_initial_primaries_recoveries: "500"
       cluster.routing.allocation.disk.watermark.low: 500mb
