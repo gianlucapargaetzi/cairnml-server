@@ -4,11 +4,12 @@ from pathlib import Path
 
 from .callers import Allow, check_callers, read_allow
 from .web_check import check_web
-from .python_renderer import Unsupported, render_package, render_service
+from .python_renderer import HEADER, Unsupported, render_package, render_service_files
 from .schema_model import load_schema
 from .targets import TARGETS
 
 DEFAULT_SCHEMA = Path(__file__).parents[1] / "schema" / "services"
+HEADER_INIT = HEADER + "\n"
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -134,24 +135,46 @@ def main(argv=None) -> int:
     rendered = {}
     for name in services:  # render everything first, so a failure writes nothing
         try:
-            rendered[name] = render_service(schema[name], target.session_package)
+            rendered[name] = render_service_files(schema[name], target.session_package)
         except (Unsupported, ValueError) as error:
             return _usage(f"{name}: {error}")
-    files = {args.out / f"{name}.py": text for name, text in rendered.items()}
-    if set(services) == set(available):  # the whole target: the package file names every service of it
-        files[args.out / "__init__.py"] = render_package(available)
+    files = {}
+    for modules in rendered.values():
+        for relative, text in modules.items():
+            files[relative] = text
+    whole = set(services) == set(available)  # the whole target: the package file names every service of it
+    if whole:
+        package = render_package(available, schema)
+        files["__init__.py"] = package
+        for folder in sorted({"/".join(path.split("/")[:-1]) for path in files if path.startswith("legacy/")}):
+            files[f"{folder}/__init__.py"] = HEADER_INIT
+        if any(path.startswith("legacy/") for path in files):
+            files["legacy/__init__.py"] = HEADER_INIT
     stale = 0
-    for path, text in files.items():
+    for relative, text in files.items():
+        path = args.out / relative
         if args.check:
             if not path.is_file():
-                print(f"{path.name} is missing in {args.out}")
+                print(f"{relative} is missing in {args.out}")
                 stale += 1
             elif path.read_text() != text:
-                print(f"{path.name} is out of date in {args.out}")
+                print(f"{relative} is out of date in {args.out}")
                 stale += 1
         else:
-            args.out.mkdir(parents=True, exist_ok=True)
+            path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(text)
+    if whole:  # a legacy module of a definition that is no longer retained is not left behind
+        legacy = args.out / "legacy"
+        for path in sorted(legacy.rglob("*.py")) if legacy.is_dir() else []:
+            if path.relative_to(args.out).as_posix() in files:
+                continue
+            if args.check:
+                print(f"{path.relative_to(args.out).as_posix()} is not generated any more in {args.out}")
+                stale += 1
+            else:
+                path.unlink()
+                if not any(path.parent.iterdir()):
+                    path.parent.rmdir()
     return 1 if stale else 0
 
 

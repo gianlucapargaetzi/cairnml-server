@@ -30,7 +30,8 @@ def ref_name(ref: str) -> str:
 
 @dataclass(frozen=True)
 class Action:
-    """One action, as its newest definition; `versions` lists every version the schema declares."""
+    """One definition (a version block) of an action: `version` is the block's version and `versions` lists every version
+    the action keeps. `Service.actions` holds the newest definition of each action, `Service.history` every one."""
 
     service: str
     name: str
@@ -51,7 +52,8 @@ class Service:
     name: str
     description: str
     definitions: dict
-    actions: Dict[str, Action]
+    actions: Dict[str, Action]  # the newest definition of each action
+    history: Dict[str, Tuple[Action, ...]] = field(default_factory=dict)  # every retained definition, oldest first
 
 
 def _load_service(path: Path) -> Service:
@@ -62,6 +64,7 @@ def _load_service(path: Path) -> Service:
     conf = ConfigFactory.parse_file(str(path)).as_plain_ordered_dict()
     name = path.stem
     actions = {}
+    history = {}
     for action_name, group in conf.items():
         if action_name.startswith("_"):
             continue
@@ -69,23 +72,27 @@ def _load_service(path: Path) -> Service:
         if not versions:
             raise ValueError(f"{name}.{action_name} declares no version")
         check_definition_cap(f"{name}.{action_name}", versions)
-        version = versions[-1]
-        newest = group[version]
-        actions[action_name] = Action(
-            service=name,
-            name=action_name,
-            version=version,
-            versions=tuple(versions),
-            description=newest.get("description", ""),
-            request=newest.get("request") or {},
-            response=newest.get("response") or {},
-            batch_request=newest.get("batch_request") or {},
+        blocks = tuple(
+            Action(
+                service=name,
+                name=action_name,
+                version=version,
+                versions=tuple(versions),
+                description=group[version].get("description", ""),
+                request=group[version].get("request") or {},
+                response=group[version].get("response") or {},
+                batch_request=group[version].get("batch_request") or {},
+            )
+            for version in versions
         )
+        history[action_name] = blocks
+        actions[action_name] = blocks[-1]
     return Service(
         name=name,
         description=conf.get("_description", ""),
         definitions=conf.get("_definitions") or {},
         actions=actions,
+        history=history,
     )
 
 

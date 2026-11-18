@@ -1,5 +1,5 @@
 """
-{{ service.name }} service
+{{ title }}
 {% if description %}
 
 {{ description }}
@@ -58,6 +58,12 @@ class {{ c.name }}({{ c.base }}):
 {% endif %}
 {% if c.batched %}
     _batched_request_cls = {{ c.batched }}
+{% elif c.lazy %}
+    @property
+    def _batched_request_cls(self):
+        from {{ c.lazy.module }} import {{ c.lazy.cls }}
+
+        return {{ c.lazy.cls }}
 {% elif c.map %}
     _schema = {{ c.schema }}
 
