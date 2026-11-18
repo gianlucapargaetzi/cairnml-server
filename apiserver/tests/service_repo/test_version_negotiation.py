@@ -7,6 +7,7 @@ import pytest
 from apiserver.service_repo import API_VERSION, endpoint
 from apiserver.service_repo.endpoint import Endpoint
 from apiserver.service_repo.service_repo import ServiceRepo
+from apiserver.services_schema import schema
 from apiserver.utilities.partial_version import PartialVersion
 
 
@@ -20,12 +21,13 @@ def _endpoint(min_version, marker):
     return Endpoint(name="debug.ping", func=lambda *_: marker, min_version=min_version)
 
 
-def test_the_decorator_default_is_the_single_api_version(registry):
+def test_the_decorator_default_is_the_oldest_schema_definition(registry):
     @endpoint("debug.ping")
     def ping(call, company, request):
         return None
 
-    assert registry._endpoints["debug.ping"][0].min_version == PartialVersion(API_VERSION)
+    oldest = schema.services["debug"].endpoint_groups["ping"].endpoints[0].version
+    assert registry._endpoints["debug.ping"][0].min_version == oldest
 
 
 def test_the_single_version_serves_its_own_version_and_nothing_older(registry):

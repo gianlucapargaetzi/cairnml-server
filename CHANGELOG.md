@@ -1,6 +1,6 @@
 ## 0.0.6
 
-The server serves one API version, 2.41, and its endpoints are generated into the SDK and the web app from its schema.
+The server's API level is 2.41. Each endpoint is served at the version its definition began, and its endpoints are generated into the SDK and the web app from its schema.
 
 - The API change check blocks a breaking change unless the API version is raised and this changelog names the endpoint.
   It also checks changes inside shared definitions, and a field that changes to or from a union of shapes.
@@ -18,10 +18,14 @@ Each API version has a section. A change that breaks a client (a removed or chan
 required, a changed type) needs a raised API version and a line for the endpoint in that version's section; the
 API change check in CI enforces this.
 
+The schema keeps, per endpoint, one block for each change of that endpoint's definition, labelled with the API version
+in which the definition began, and at most five blocks per endpoint. A request for version V is served by the newest
+block whose version is at most V. An endpoint that did not change since 2.23 is valid at 2.23 and at every later version.
+
 ## API 2.41
 
-One API version is served: every endpoint is at 2.41. Compared with the previous release (API 2.39), these
-endpoints change in a way that breaks a client that still uses an older version:
+The API level is 2.41. Every other endpoint keeps the version in which its definition began. Compared with the
+previous release (API 2.39), these endpoints change in a way that breaks a client that still uses an older version:
 
 - models.get_by_task_id: removed; it is refused at 2.41 (use models.get_by_id or models.get_all)
 - models.update_for_task: removed; it is refused at 2.41 (use tasks.add_or_update_model)

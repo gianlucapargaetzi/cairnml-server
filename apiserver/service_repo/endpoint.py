@@ -6,7 +6,6 @@ from jsonmodels.errors import FieldNotSupported
 
 from apiserver.services_schema import schema
 from apiserver.utilities.partial_version import PartialVersion
-from .api_version import API_VERSION
 from .apicall import APICall
 from .schema_validator import SchemaValidator
 
@@ -23,7 +22,7 @@ class Endpoint(object):
         self,
         name: Text,
         func: EndpointFunc,
-        min_version: Text = API_VERSION,
+        min_version: Text | None = None,
         required_fields: Sequence[Text] = None,
         request_data_model: models.Base = None,
         response_data_model: models.Base = None,
@@ -33,14 +32,14 @@ class Endpoint(object):
         Endpoint configuration
         :param name: full endpoint name
         :param func: endpoint implementation
-        :param min_version: minimum supported version
+        :param min_version: version the implementation is registered at; by default the version of the oldest retained
+            definition of the endpoint in the schema
         :param required_fields: required request fields, can not be used with validate_schema
         :param request_data_model: request jsonschema model, will be validated if validate_schema=False
         :param response_data_model: response jsonschema model, will be validated if validate_schema=False
         :param validate_schema: whether request and response schema should be validated
         """
         self.name = name
-        self.min_version = PartialVersion(min_version)
         self.func = func
         self.required_fields = required_fields
         self.request_data_model = request_data_model
@@ -50,6 +49,10 @@ class Endpoint(object):
             self.endpoint_group = schema.services[service].endpoint_groups[endpoint_name]
         except KeyError:
             raise RuntimeError(f"schema for endpoint {service}.{endpoint_name} not found") from None
+        # endpoint versions are sorted ascending, so the first one is the oldest retained definition
+        self.min_version = (
+            PartialVersion(min_version) if min_version is not None else self.endpoint_group.endpoints[0].version
+        )
         if validate_schema:
             if self.required_fields:
                 raise ValueError(f"endpoint {self.name}: can not use 'required_fields' with 'validate_schema'")

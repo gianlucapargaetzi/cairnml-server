@@ -216,7 +216,7 @@ Each component has its own version number, and the numbers are not related: serv
 
 - **Use the SDK and the agent at the commits the pins name.** A client installed from another source may work, but it is not tested with this server.
 - **Differences from upstream ClearML.** The commands, the dataset workflow, the sign-in and the storage differ from upstream. The [compatibility matrix](docs/compatibility/README.md) lists each area with its status and migration path: CLI commands ([CLI migration](docs/compatibility/cli-migration.md)), datasets ([Dataset migration](docs/compatibility/dataset-migration.md)), sign-in and storage ([Auth and storage](docs/compatibility/auth-and-storage.md)). The agent's app metering and proxy path is not supported ([Agent metering](docs/compatibility/agent-metering.md)).
-- **API version.** Clients name the API version in the address (`/cairnml/api/v2.41/...`). The server serves only that version: a request for any other version is refused. The device sign-in (enrolment, token exchange, job tokens) uses the same version.
+- **API version.** Clients name the API version in the address (`/cairnml/api/v2.41/...`). The server's API level is 2.41. Each endpoint has one definition block per change, labelled with the API version in which that definition began (at most five per endpoint). A request for version V is served by the newest block whose version is at most V, so a client built for an older version keeps working for every endpoint that did not change since. A request below the oldest block of an endpoint is refused. The device sign-in (enrolment, token exchange, job tokens) uses the API level.
 
 ## Running the server's tests
 

@@ -32,7 +32,8 @@ def test_model_lists_the_same_actions_and_versions_as_the_server_reader(tmp_path
     }
     assert actual == expected
     assert len(actual) > 200
-    assert all(v == [API_VERSION] for v in actual.values())
+    assert all(len(v) == 1 for v in actual.values())
+    assert max((v[0] for v in actual.values()), key=lambda v: tuple(map(int, v.split(".")))) == API_VERSION
 
 
 def test_only_the_newest_definition_of_an_action_is_modelled():
