@@ -64,10 +64,11 @@ class Models:
         self.files: Dict[str, str] = {}  # stem -> text
         self.done_defs: Dict[str, str] = {}  # definition -> type name
         self.root = ""  # the top-level type being rendered; nested objects are named root + Field
+        self.version = ""  # the block version the files are written for: the action being rendered, else the service's
 
     def _emit(self, type_name: str, body: str, imports: List[str], doc: List[str], namespace: str = "") -> None:
         stem = lower_first(type_name)
-        head = HEADER.format(service=self.service.name, version="2.41")
+        head = HEADER.format(service=self.service.name, version=self.version)
         imports_text = "".join(
             f"import {{ {n} }} from '././{lower_first(n)}';\n" for n in sorted(set(imports)) if n != type_name
         )
@@ -170,7 +171,7 @@ class Models:
         if "enum" in definition:
             values = [v for v in definition["enum"] if v is not None]
             stem = lower_first(type_name)
-            head = HEADER.format(service=self.service.name, version="2.41")
+            head = HEADER.format(service=self.service.name, version=self.version)
             self.files[stem] = head + "\n" + _enum_definition(type_name, values, definition.get("description"))
             return
         # the objects nested in a definition are named after the definition, not after the action that uses it
@@ -183,6 +184,7 @@ class Models:
 
     def action(self, action: Action) -> Tuple[str, str]:
         """Writes the request and the response of one action; returns their type names."""
+        self.version = action.version
         names = []
         for kind, schema in (("Request", action.request), ("Response", action.response)):
             name = f"{pascal(self.service.name)}{pascal(action.name)}{kind}"
@@ -195,7 +197,7 @@ class Models:
                 imports: List[str] = []
                 target = self._type(schema, name, kind, imports, [])
                 stem = lower_first(name)
-                head = HEADER.format(service=self.service.name, version="2.41")
+                head = HEADER.format(service=self.service.name, version=self.version)
                 self.files[stem] = (
                     f"{head}\nimport {{ {target} }} from '././{lower_first(target)}';\n\nexport type {name} = {target};\n"
                 )
@@ -222,11 +224,18 @@ def _enum_namespace(parent: str, enum_name: str, values: List[str]) -> str:
     )
 
 
+def _service_version(service: Service) -> str:
+    """The highest block version of the service's actions: the version its files are written for."""
+    versions = [action.version for action in service.actions.values()]
+    return max(versions, key=lambda v: tuple(int(part) for part in v.split("."))) if versions else ""
+
+
 def render_models(service: Service) -> Dict[str, str]:
     models = Models(service)
     for name in sorted(service.actions):
         models.action(service.actions[name])
     # every definition of the schema, reached or not: the web app imports some of them by name from the barrel
+    models.version = _service_version(service)
     for name in list(service.definitions):
         models._def(name)
     return models.files
@@ -263,7 +272,7 @@ def render_api(service: Service) -> str:
         f"import {{ {n} }} from '../model/{service.name}/{lower_first(n)}';\n" for n in sorted(imports)
     )
     return (
-        HEADER.format(service=service.name, version="2.41")
+        HEADER.format(service=service.name, version=_service_version(service))
         + "\n/* eslint-disable @typescript-eslint/no-unused-vars, @typescript-eslint/member-ordering */\n\n"
         + "import {HTTP} from '../../app.constants';\n"
         + "import {SmApiRequestsService} from './api-requests.service';\n"

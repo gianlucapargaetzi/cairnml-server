@@ -1,8 +1,9 @@
 """
-Renders the Python module of one service: today's class shape (Request, Response, NonStrictDataModel,
-schema_property) for the newest definition of every action. The templates make the final text, no formatter runs
-afterwards, so the output does not depend on a formatter version. Nothing in it depends on the date, the machine or
-the schema's location.
+Renders the Python modules of one service: today's class shape (Request, Response, NonStrictDataModel,
+schema_property). The service module holds the newest definition of every action; each older retained definition is
+rendered into legacy/v<major>_<minor>/<service>.py, one module per version at which definitions began, with the same
+class names. The templates make the final text, no formatter runs afterwards, so the output does not depend on a
+formatter version. Nothing in it depends on the date, the machine or the schema's location.
 """
 
 import json
@@ -10,7 +11,7 @@ import keyword
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 import jinja2
 
@@ -526,14 +527,69 @@ def _batch_class(service: Service, action: Action, meta: dict) -> dict:
     }
 
 
-def render_package(services) -> str:
+def legacy_folder(version: str) -> str:
+    """The folder of the legacy modules of one version: 2.50 -> legacy/v2_50."""
+    return "v" + version.replace(".", "_")
+
+
+def render_package(services, schema: Dict[str, Service]) -> str:
     """The package file of a target: `__all__` names every service of it, and a service module is imported on first
-    access, so importing the package loads none of the modules."""
-    return _env.get_template("package.py.jinja2").render(services=sorted(services), header=HEADER)
+    access, so importing the package loads none of the modules. `DEFINITIONS` lists, for each action, every retained
+    definition (its version and the names of its classes, oldest first) and `resolve` picks one by API version.
+    `API_LEVEL` is the highest version of any definition in the schema."""
+    names = sorted(services)
+    definitions = []
+    for name in names:
+        actions = []
+        for action in sorted(schema[name].history):
+            blocks = schema[name].history[action]
+            classes = camel(action)
+            actions.append((action, [(b.version, classes + "Request", classes + "Response") for b in blocks]))
+        definitions.append((name, actions))
+    api_level = max(
+        (block.version for service in schema.values() for blocks in service.history.values() for block in blocks),
+        key=lambda v: tuple(int(part) for part in v.split(".")),
+        default="",
+    )
+    return _env.get_template("package.py.jinja2").render(
+        services=names,
+        definitions=definitions,
+        api_level=api_level,
+        header=HEADER,
+    )
+
+
+def render_service_files(service: Service, session_package: str) -> Dict[str, str]:
+    """The modules of one service, by their path relative to the services folder: `<service>.py` for the newest
+    definitions and `legacy/v<major>_<minor>/<service>.py` for each older retained definition of a version."""
+    files = {f"{service.name}.py": render_service(service, session_package)}
+    legacy: Dict[str, List[Action]] = {}
+    for action in sorted(service.history):
+        for block in service.history[action][:-1]:
+            if block.batch_request:
+                raise Unsupported(
+                    f"{service.name}.{action}: a batch request keeps only its newest definition in the client "
+                    f"(the definition of {block.version} is not generated yet)"
+                )
+            legacy.setdefault(block.version, []).append(block)
+    for version in sorted(legacy, key=lambda v: tuple(int(part) for part in v.split("."))):
+        files[f"legacy/{legacy_folder(version)}/{service.name}.py"] = _render_module(
+            service,
+            session_package,
+            legacy[version],
+            title=f"{service.name} service, the legacy definitions first served at API version {version}",
+        )
+    return files
 
 
 def render_service(service: Service, session_package: str) -> str:
+    """The module of the newest definition of every action of the service."""
     actions = [service.actions[name] for name in sorted(service.actions)]
+    return _render_module(service, session_package, actions, title=f"{service.name} service")
+
+
+def _render_module(service: Service, session_package: str, actions: List[Action], title: str) -> str:
+    """The module of the given definitions (one per action, all of one version)."""
     fragments = [a.request for a in actions if not a.batch_request] + [a.response for a in actions]
     for action in actions:
         if not action.batch_request:
@@ -619,6 +675,7 @@ def render_service(service: Service, session_package: str) -> str:
     template = _env.get_template("module.py.jinja2")
     return template.render(
         service=service,
+        title=title,
         description=_clean(service.description),
         header=HEADER,
         session_package=session_package,

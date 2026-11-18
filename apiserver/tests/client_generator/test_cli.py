@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from apiserver.client_generator.python_renderer import render_package
+from apiserver.client_generator.schema_model import load_schema
 
 FIXTURES = Path(__file__).parent / "fixtures" / "schema"
 
@@ -97,7 +98,7 @@ def test_the_whole_target_writes_the_package_file_naming_every_service(schema, t
     out = tmp_path / "out"
     result = _run("generate", "--target", "sdk", "--schema", str(schema), "--out", str(out))
     assert result.returncode == 0, result.stderr
-    assert (out / "__init__.py").read_text() == render_package(["queues"])
+    assert (out / "__init__.py").read_text() == render_package(["queues"], load_schema(schema))
 
 
 def test_a_subset_of_the_services_leaves_the_package_file_alone(tmp_path):

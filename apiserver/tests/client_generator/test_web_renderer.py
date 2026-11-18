@@ -44,3 +44,13 @@ def test_the_web_services_import_by_relative_path_not_by_the_app_alias():
     api = render_api(SCHEMA["tasks"])
     assert "from '../model/tasks/" in api and "from '../../app.constants'" in api
     assert "'~/" not in api
+
+
+def test_the_web_files_carry_the_block_version_of_their_definition_not_a_fixed_one():
+    demo = load_schema(Path(__file__).parent / "fixtures" / "schema")["demo"]
+    api = render_api(demo)
+    models = render_models(demo)
+    assert "OpenAPI spec version: 2.30\n" in api  # the service's highest block version
+    assert "OpenAPI spec version: 2.4\n" in models["demoGetByIdRequest"]
+    assert "OpenAPI spec version: 2.30\n" in models["demoGetAllRequest"]
+    assert all("2.41" not in text for text in [api, *models.values()])
