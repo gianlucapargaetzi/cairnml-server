@@ -27,6 +27,8 @@ from typing import Dict, List, Optional, Tuple
 
 from pyhocon import ConfigFactory
 
+from apiserver.schema_rules import check_definition_cap, duplicate_definitions
+
 VERSION = re.compile(r"^\d+\.\d+$")
 MAX_DEPTH = 12
 REPO_ROOT = Path(__file__).parents[2]
@@ -61,11 +63,16 @@ class Endpoint:
 
 
 def load_api(schema_root: Path) -> Dict[str, Endpoint]:
-    """Every endpoint of the schema folder, by its full name ``service.action``."""
+    """Every endpoint of the schema folder, by its full name ``service.action``. Raises ValueError for a file with two
+    definitions of one version in one action, which the parsed result would hide."""
     api: Dict[str, Endpoint] = {}
     for path in sorted(Path(schema_root).glob("*.conf")):
         if path.name.startswith("_"):
             continue
+        duplicates = duplicate_definitions(path.read_text(encoding="utf-8"))
+        if duplicates:
+            listed = ", ".join(f"{action} {version}" for action, version in duplicates)
+            raise ValueError(f"{path.name}: two definitions of one version in one action: {listed}")
         conf = _plain(ConfigFactory.parse_file(str(path), resolve=True))
         definitions = conf.get("_definitions") or {}
         for action, body in conf.items():
@@ -195,6 +202,22 @@ def diff(base: Dict[str, Endpoint], head: Dict[str, Endpoint], base_api: str, he
         if base[name].action != head[name].action:
             changes.append(Change(name, "changed", True, "the settings of the endpoint (access, roles) changed"))
         changes.extend(_block_changes(name, before, after, base[name].definitions, head[name].definitions))
+        changes.extend(_older_definition_changes(name, base[name], head[name], head_api))
+    return changes
+
+
+def _older_definition_changes(name: str, base: Endpoint, head: Endpoint, head_api: str) -> List[Change]:
+    """A breaking change inside an older retained definition (one below the API version of the change), for example
+    through a shared definition it refers to: a client that uses that definition would get a different contract. Additive
+    changes to it stay additive, as they are for the current definition."""
+    changes = []
+    for version in sorted(set(base.versions) & set(head.versions), key=vkey):
+        if vkey(version) >= vkey(head_api) or base.versions[version] == head.versions[version]:
+            continue
+        older = _block_changes(name, base.versions[version], head.versions[version], base.definitions, head.definitions)
+        for change in older:
+            if change.breaking:
+                changes.append(Change(name, "changed", True, f"at API {version}: {change.detail}"))
     return changes
 
 
@@ -263,6 +286,19 @@ def assess(
     problems = []
     if vkey(top) > vkey(head_api):
         problems.append(f"the schema declares API {top} but the API version is {head_api}: raise both together")
+    for name in sorted(head):
+        try:
+            check_definition_cap(name, head[name].versions)
+        except ValueError as error:
+            problems.append(str(error))
+    if vkey(top) > vkey(base_api):
+        # an endpoint whose definition changed at a raised version gets a definition labelled with that version
+        for name in sorted(set(base) & set(head)):
+            if top in head[name].versions:
+                continue
+            before, after = effective(base[name], base_api), effective(head[name], top)
+            if before is not None and after is not None and before != after:
+                problems.append(f"{name} changed at API {top} without a definition labelled {top} of its own")
     changes = diff(base, head, base_api, top)
     problems += evaluate(changes, base_api, top, changelog)
     return changes, problems, top
@@ -283,9 +319,12 @@ def main(argv=None) -> int:
     with tempfile.TemporaryDirectory() as tmp:
         base_schema, base_api = _schema_from_ref(args.base_ref, Path(tmp))
         changelog = args.changelog.read_text() if args.changelog.exists() else ""
-        changes, problems, top = assess(
-            load_api(base_schema), load_api(args.head_schema), base_api, head_api, changelog
-        )
+        try:
+            base_endpoints, head_endpoints = load_api(base_schema), load_api(args.head_schema)
+        except ValueError as error:
+            print(f"PROBLEM {error}")
+            return 1
+        changes, problems, top = assess(base_endpoints, head_endpoints, base_api, head_api, changelog)
 
     print(f"API {base_api} -> {top} (API version {head_api}), compared with {args.base_ref}")
     for c in changes:
