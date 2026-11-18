@@ -28,7 +28,7 @@ def test_init_enrols_the_machine_and_writes_its_key(client_home):
     assert key.is_file(), "the device key was not written"
     assert stat.S_IMODE(os.stat(key).st_mode) == 0o600, "the device key must be readable by its owner only"
     assert client.device_id_of(client_home).startswith("dev_"), "the configuration does not name the device"
-    conf = (client_home / "cairnml.conf").read_text()
+    conf = client.config_file(client_home).read_text()
     assert settings.API_URL in conf, "the configuration does not name the server"
 
 
@@ -148,7 +148,7 @@ def test_init_takes_the_servers_address_and_finds_the_api(fresh_home, admin_acco
     server = settings.WEB_URL[: -len("/cairnml")]
     result = client.init(fresh_home, admin_account, server=server, name="e2e-web-address")
     assert result.returncode == 0, result.output
-    assert settings.API_URL in (fresh_home / "cairnml.conf").read_text()
+    assert settings.API_URL in client.config_file(fresh_home).read_text()
     assert client.logout(fresh_home).returncode == 0
 
 

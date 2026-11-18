@@ -4,7 +4,7 @@ API level (see scripts/enqueue.py for why enqueueing must be the first SDK call 
 import time
 from pathlib import Path
 
-from . import workspace
+from . import versions, workspace
 
 FINAL = ("completed", "failed", "stopped", "aborted", "closed")
 
@@ -37,10 +37,9 @@ def task_record(api, task_id: str) -> dict:
 
 def console(api, task_id: str, size: int = 50) -> list:
     """The job's last console lines, oldest first."""
-    # API 2.9 pages the log without an Elasticsearch scroll; 2.8 would open one per call and leave it open.
-    events = api.authed("events.get_task_log", {"task": task_id, "order": "desc", "batch_size": size}, version="2.9")[
-        "events"
-    ]
+    events = api.authed(
+        "events.get_task_log", {"task": task_id, "order": "desc", "batch_size": size}, version=versions.TASK_LOG_PAGING
+    )["events"]
     return [event["msg"] for event in reversed(events)]
 
 

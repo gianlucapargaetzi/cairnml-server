@@ -34,6 +34,9 @@ def environment(home: Path, login_user: str = "", login_password: str = "") -> d
     env["E2E_LOGIN_USER"] = login_user
     env["E2E_LOGIN_PASSWORD"] = login_password
     env["PYTHONUNBUFFERED"] = "1"
+    # The SDK signs in through the BROWSER hook only when a graphical session exists; without one it asks for a device code
+    # and waits. A headless browser needs no display, so the suite names one.
+    env.setdefault("DISPLAY", ":99")
     env["PLAYWRIGHT_BROWSERS_PATH"] = settings.BROWSERS_PATH
     return env
 

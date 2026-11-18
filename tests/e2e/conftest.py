@@ -21,6 +21,7 @@ import pytest
 import requests
 
 from support import agent, client, settings, workspace
+from support.api import answers
 from support import report as e2e_report
 from support.keycloak import Keycloak
 from support.stack import REUSE_DIR, IsolatedStack, StackError, reuse_requested
@@ -81,7 +82,7 @@ def isolated_stack(request):
 def _health_problems() -> list:
     problems = []
     checks = {
-        "CairnML API": (f"{settings.API_URL}/v2.8/login.supported_modes", "post"),
+        "CairnML API": (f"{settings.API_URL}/login.supported_modes", "post"),
         "web app": (settings.WEB_URL + "/", "get"),
         "sign-in service": (f"{settings.ISSUER}/.well-known/openid-configuration", "get"),
         "object storage": (settings.STORAGE_URL + "/health", "get"),

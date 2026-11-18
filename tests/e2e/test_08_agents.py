@@ -11,8 +11,7 @@ import time
 
 import pytest
 
-from support import workspace
-from support import agent
+from support import agent, client, workspace
 from support.agent import AgentMachine, worker_record
 from support.workspace import new_name
 
@@ -64,7 +63,7 @@ def test_member_can_enrol_an_agent(member_account, tmp_path):
     machine.home.mkdir()
     result = agent.init(machine.home, member_account)
     assert machine.key_path.exists(), result.output
-    assert "device_id" in (machine.home / "cairnml-agent.conf").read_text()
+    assert "device_id" in client.agent_config_file(machine.home).read_text()
 
 
 def test_agent_registers_as_a_worker_listening_to_its_queue(client_home, machine):

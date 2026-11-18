@@ -15,7 +15,15 @@ from cryptography.hazmat.primitives import serialization
 
 from . import settings
 
-API_VERSION = "2.8"
+
+def answers(api_url: str) -> bool:
+    """Whether the API answers: the readiness probe of the stack. The path has no version, so the server answers at its
+    own latest level (the server's default when a request names none); server.info needs a signed-in device, so it cannot
+    be the probe."""
+    try:
+        return requests.post(f"{api_url}/login.supported_modes", json={}, timeout=10).status_code == 200
+    except requests.RequestException:
+        return False
 
 
 class ApiError(Exception):
@@ -57,15 +65,16 @@ class Api:
         self.device_id = device_id
         self.key = load_device_key(key_path)
         self.http = http or requests.Session()
-        self.version = API_VERSION
+        self.version = None  # the server's own latest level
 
     @property
     def base(self) -> str:
         return self.base_for(self.version)
 
     @staticmethod
-    def base_for(version: str) -> str:
-        return f"{settings.API_URL}/v{version}/"
+    def base_for(version: str = None) -> str:
+        """The API address at a level; without one, the server's own latest level."""
+        return f"{settings.API_URL}/v{version}/" if version else f"{settings.API_URL}/"
 
     def call(self, endpoint: str, body=None, *, token=None, raw_token=None, version: str = None) -> dict:
         base = self.base_for(version) if version else self.base
