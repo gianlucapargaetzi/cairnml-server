@@ -62,7 +62,7 @@ path, origin = sys.argv[1], sys.argv[2]
 realm = json.load(open(path))
 for client in realm["clients"]:
     if client["clientId"] == "cairnml-web":
-        client["redirectUris"] = [origin + "/cairnml/api/v2.41/login.idp_callback"]
+        client["redirectUris"] = [origin + "/cairnml/api/login.idp_callback"]
         client["webOrigins"] = [origin]
 json.dump(realm, open(path, "w"), indent=2)
 PY
@@ -194,8 +194,9 @@ docker run --rm -v "$STATE/data/cairnml:/data" alpine:3.20 sh -c '
 # RustFS runs as uid 10001.
 docker run --rm -v "$STATE/data/rustfs:/data" alpine:3.20 sh -c 'chown -R 10001:10001 /data'
 
-# The realm is imported only on Keycloak's first start, so the CairnML clients are created here, and
-# updated to the realm file on every run. The directory client's secret is written once, to $CAIRNML_HOME/secrets/cairnml.
+# The realm is imported only on Keycloak's first start, and an import skips a realm that exists, so the CairnML clients
+# are created here, and brought in step with the realm file on every run (redirect URIs, post-logout URIs, web origins).
+# The directory client's secret is written once, to $CAIRNML_HOME/secrets/cairnml.
 clients_dir=$(mktemp -d)
 python3 - "$clients_dir" "$STATE/idp/realm-cairnml.json" <<'PY'
 import json, pathlib, sys
@@ -223,10 +224,18 @@ for file in /tmp/cairnml-clients/*.json; do
   id=$(basename "$file" .json)
   existing=$($K get clients -r cairnml -q clientId="$id" --fields id \
     | sed -n "s/.*\"id\" *: *\"\([^\"]*\)\".*/\1/p" | head -n1)
+  # The messages go to stderr: stdout carries the directory secret. A client already in step is left as it is.
   if [ -n "$existing" ]; then
+    before=$($K get "clients/$existing" -r cairnml)
     $K update "clients/$existing" -r cairnml -f "$file" >/dev/null
+    if [ "$before" = "$($K get "clients/$existing" -r cairnml)" ]; then
+      echo "$id: already in step with the realm file, nothing changed" >&2
+    else
+      echo "$id: updated to the realm file" >&2
+    fi
   else
     $K create clients -r cairnml -f "$file" >/dev/null
+    echo "$id: created" >&2
   fi
 done
 # The sign-in page uses the CairnML theme (idp/themes/cairnml). An import sets it only on the first start, so it is set here too.

@@ -25,14 +25,14 @@
       "serviceAccountsEnabled": false,
       "fullScopeAllowed": true,
       "redirectUris": [
-        "/cairnml/api/v2.41/login.idp_callback"
+        "/cairnml/api/login.idp_callback"
       ],
       "webOrigins": [
         "+"
       ],
       "attributes": {
         "pkce.code.challenge.method": "S256",
-        "post.logout.redirect.uris": "/cairnml/api/v2.41/login.idp_start"
+        "post.logout.redirect.uris": "/cairnml/api/login.idp_start"
       }
     },
     {

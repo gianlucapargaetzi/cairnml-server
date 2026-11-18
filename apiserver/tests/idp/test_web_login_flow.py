@@ -19,7 +19,7 @@ pytestmark = pytest.mark.integration  # needs MongoDB, Elasticsearch or a runnin
 
 ISSUER = "http://cairnml-idp:8180/cairnml/idp/realms/cairnml"
 WEB = "cairnml-web"
-REDIRECT = "http://localhost/cairnml/api/v2.41/login.idp_callback"
+REDIRECT = "http://localhost/cairnml/api/login.idp_callback"
 
 
 class Store:

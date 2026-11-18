@@ -44,6 +44,7 @@ def request(headers, host="apiserver:8008", remote_addr=PROXY, **config):
                 "issuer": public_origin.idp_issuer(),
                 "storage": public_origin.storage_endpoint(),
                 "logout": public_origin.idp_logout_url(),
+                "callback": public_origin.idp_callback_url(),
             }
 
     return contextvars.Context().run(run)
@@ -59,6 +60,13 @@ def test_the_server_names_itself_after_the_address_the_client_used(host):
     assert urls["storage"] == f"http://{host}:9000"
 
 
+def test_the_callback_address_has_no_api_version_so_an_upgrade_keeps_the_realm_entry():
+    # The realm lists this address; a version in it would stop matching after an upgrade.
+    urls = request({"X-Forwarded-Host": "192.168.1.20", "X-Forwarded-Proto": "http"})
+
+    assert urls["callback"] == "http://192.168.1.20/cairnml/api/login.idp_callback"
+
+
 def test_logout_ends_the_identity_providers_session_and_returns_to_the_sign_in():
     from urllib.parse import parse_qs, urlsplit
 
@@ -70,7 +78,7 @@ def test_logout_ends_the_identity_providers_session_and_returns_to_the_sign_in()
     )
     assert parse_qs(url.query) == {
         "client_id": ["cairnml-web"],
-        "post_logout_redirect_uri": ["http://192.168.1.20/cairnml/api/v2.41/login.idp_start"],
+        "post_logout_redirect_uri": ["http://192.168.1.20/cairnml/api/login.idp_start"],
     }
 
 
