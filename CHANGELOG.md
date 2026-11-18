@@ -33,4 +33,7 @@ previous release (API 2.39), these endpoints change in a way that breaks a clien
 - login.supported_modes: the response field server_errors is removed
 - events.add_batch: the batched request is at API 2.41 (the request contract is not classified by the check)
 - tasks.update_batch: the batched request is at API 2.41 (the request contract is not classified by the check)
+- Definitions dropped to keep at most five per endpoint (the newest are kept): models.get_all_ex 2.1; projects.get_all_ex
+  2.1, 2.13, 2.14, 2.15, 2.16, 2.17 and 2.20; queues.get_all_ex 2.4; tasks.get_all_ex 2.1 and 2.13. A request at a dropped
+  version is refused, naming the oldest version that is still served.
 - Requests for any API version other than 2.41 are not served: older clients must move to 2.41.
