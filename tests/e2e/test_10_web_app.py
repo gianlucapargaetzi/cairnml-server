@@ -27,23 +27,24 @@ def signed_in(browser):
 def test_sign_in_renders_the_dashboard(signed_in):
     """Signing in renders the dashboard.
 
-    Expect: The dashboard shows the RECENT PROJECTS, RECENT EXPERIMENTS and MANAGE WORKERS AND QUEUES sections.
+    Expect: The dashboard shows the Recent projects and Recent tasks sections, and the button to manage agents and queues.
+    The web app sets the section titles in mixed case and styles them in capitals, so the check ignores case.
     """
-    body = signed_in.inner_text("body")
-    assert "RECENT PROJECTS" in body
-    assert "RECENT EXPERIMENTS" in body
-    assert "MANAGE WORKERS AND QUEUES" in body
+    body = signed_in.inner_text("body").lower()
+    assert "recent projects" in body
+    assert "recent tasks" in body
+    assert "manage agents and queues" in body
 
 
 def test_recent_experiments_list_a_run_recorded_from_the_client(client_home, project, signed_in):
     """A run recorded from the client is listed on the dashboard.
 
-    Expect: The run's name appears under RECENT EXPERIMENTS.
+    Expect: The run's name appears under Recent tasks.
     """
     name = new_name("ui-run")
     run_json(client_home, "track_example.py", ["--project", project, "--name", name, "--steps", "3"])
     signed_in.reload()
-    signed_in.wait_for_selector("text=RECENT EXPERIMENTS", timeout=60_000)
+    signed_in.wait_for_selector("text=Recent tasks", timeout=60_000)
     signed_in.wait_for_selector(f"text={name}", timeout=60_000)
     assert name in signed_in.inner_text("body")
 
@@ -99,14 +100,15 @@ def test_dashboard_has_no_horizontal_scroll_at_phone_width(browser):
 
 
 def test_manage_workers_and_queues_page_opens(signed_in):
-    """The Manage workers and queues page opens.
+    """The Agents and Queues page opens from the dashboard's button.
 
-    Expect: The page shows the WORKERS and QUEUES tabs.
+    Expect: the page is at /workers-and-queues and shows the Agents and Queues tabs. The page is waited for by its
+    address, because the dashboard's own button already reads QUEUES.
     """
-    signed_in.click("text=MANAGE WORKERS AND QUEUES")
-    signed_in.wait_for_selector("text=QUEUES", timeout=30_000)
-    body = signed_in.inner_text("body")
-    assert "WORKERS" in body.upper() and "QUEUES" in body.upper()
+    signed_in.click("text=Manage agents and queues")
+    signed_in.wait_for_url(re.compile(r"/workers-and-queues"), timeout=30_000)
+    body = signed_in.inner_text("body").lower()
+    assert "agents" in body and "queues" in body
 
 
 EFFECTIVE_BACKGROUND = """() => {
