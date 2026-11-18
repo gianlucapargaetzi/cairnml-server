@@ -4,7 +4,7 @@ from {{ base_class_module }} import {{ base_class_name }}
 {% endif %}
 
 {% for _, name in sections %}
-from . import {{ name }}
+from . import {{ name }}  # noqa: F401 (registers the error classes of the section)
 {% endfor %}
 
 

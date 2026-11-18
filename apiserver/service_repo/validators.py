@@ -20,12 +20,13 @@ def validate_data(call: APICall, endpoint: Endpoint):
         # todo: remove validate_required_fields once all endpoints have json schema
         validate_required_fields(endpoint, call)
 
-        # set models. models will be validated automatically
-        call.schema_validator = endpoint.request_schema_validator
+        # set models. models will be validated automatically. The schemas are those of the definition that serves the call.
+        request_validator, response_validator = endpoint.schema_validators(call.actual_endpoint_version)
+        call.schema_validator = request_validator
         if endpoint.request_data_model:
             call.data_model_cls = endpoint.request_data_model
 
-        call.result.schema_validator = endpoint.response_schema_validator
+        call.result.schema_validator = response_validator
         if endpoint.response_data_model:
             call.result.data_model_cls = endpoint.response_data_model
 

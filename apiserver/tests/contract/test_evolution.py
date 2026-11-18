@@ -219,3 +219,90 @@ def test_a_union_whose_members_change_is_breaking_and_an_identical_union_is_not(
     )
     changed = load_api(_write(tmp_path / "wider", wider))
     assert [c for c in diff(base_api, changed, "2.41", "2.41") if c.breaking]
+
+
+def _exchange_with(versions):
+    """The exchange action with one definition per version (the reassign action of BASE is kept)."""
+    blocks = "".join(f'  "{v}" {{ request {{ type = object }} response {{ type = object }} }}\n' for v in versions)
+    return "exchange {\n" + blocks + "}\nreassign {" + BASE.split("reassign {")[1]
+
+
+def test_a_sixth_definition_of_an_endpoint_is_a_problem(tmp_path):
+    from apiserver.contract.evolution import assess
+
+    base = load_api(_write(tmp_path / "b", BASE))
+    head = load_api(_write(tmp_path / "h", _exchange_with(["2.36", "2.37", "2.38", "2.39", "2.40", "2.41"])))
+    _, problems, _ = assess(base, head, "2.41", "2.41", "")
+    assert any("exchange keeps 6 definitions; the cap is 5 per endpoint" in problem for problem in problems)
+
+
+def test_five_definitions_of_an_endpoint_are_allowed(tmp_path):
+    from apiserver.contract.evolution import assess
+
+    base = load_api(_write(tmp_path / "b", BASE))
+    head = load_api(_write(tmp_path / "h", _exchange_with(["2.37", "2.38", "2.39", "2.40", "2.41"])))
+    _, problems, _ = assess(base, head, "2.41", "2.41", "")
+    assert not any("the cap" in problem for problem in problems)
+
+
+CHANGED_EXCHANGE = """
+exchange {
+  "2.41" {
+    request { type = object, required = [assertion], properties { assertion { type = string }, extra { type = string } } }
+    response { type = object, properties { token { type = string } } }
+  }
+}
+"""
+
+
+def test_an_edited_definition_at_a_raised_version_needs_a_definition_of_its_own(tmp_path):
+    from apiserver.contract.evolution import assess
+
+    head_body = CHANGED_EXCHANGE + BASE.split("exchange {")[0] + "reassign {" + BASE.split("reassign {")[1]
+    base = load_api(_write(tmp_path / "b", BASE))
+    head = load_api(_write(tmp_path / "h", head_body))
+    _, problems, top = assess(base, head, "2.41", "2.42", "## API 2.42\n- devices.exchange: changed\n")
+    assert top == "2.42"
+    assert any("devices.exchange changed at API 2.42 without a definition labelled 2.42" in p for p in problems)
+
+
+def test_a_new_definition_at_the_raised_version_is_the_way_to_change_an_endpoint(tmp_path):
+    from apiserver.contract.evolution import assess
+
+    head_body = BASE.replace('exchange {\n  "2.41" {', 'exchange {\n  "2.42" {\n    request { type = object, required = [assertion], properties { assertion { type = string }, extra { type = string } } }\n    response { type = object, properties { token { type = string } } }\n  }\n  "2.41" {')
+    base = load_api(_write(tmp_path / "b", BASE))
+    head = load_api(_write(tmp_path / "h", head_body))
+    _, problems, top = assess(base, head, "2.41", "2.42", "## API 2.42\n- devices.exchange: a field added\n")
+    assert top == "2.42" and not any("without a definition" in p for p in problems)
+
+
+def test_a_breaking_change_inside_an_older_definition_needs_a_changelog_entry(tmp_path):
+    from apiserver.contract.evolution import assess
+
+    # the 2.41 definition loses its response field (what a changed shared definition does to every block that uses it);
+    # the 2.42 definition is the new one, so the change is made at a raised version
+    head_body = """
+exchange {
+  "2.42" {
+    request { type = object, required = [assertion], properties { assertion { type = string } } }
+    response { type = object, properties { token { type = string } } }
+  }
+  "2.41" {
+    request { type = object, required = [assertion], properties { assertion { type = string } } }
+    response { type = object }
+  }
+}
+""" + "reassign {" + BASE.split("reassign {")[1]
+    base = load_api(_write(tmp_path / "b", BASE))
+    head = load_api(_write(tmp_path / "h", head_body))
+    _, unnamed, _ = assess(base, head, "2.41", "2.42", "## API 2.42\n- devices.reassign: x\n")
+    assert any("devices.exchange" in p and "at API 2.41" in p and "token" in p for p in unnamed)
+    _, named, _ = assess(base, head, "2.41", "2.42", "## API 2.42\n- devices.exchange: token left the 2.41 definition\n")
+    assert not any("at API 2.41" in p for p in named)
+
+
+def test_a_duplicate_definition_in_a_schema_file_stops_the_load(tmp_path):
+    body = 'exchange {\n  "2.41" { request { type = object } response { type = object } }\n  "2.41" { request { type = object } response { type = object } }\n}\n'
+    with pytest.raises(ValueError, match="two definitions of one version in one action: exchange 2.41"):
+        load_api(_write(tmp_path / "d", body))
+

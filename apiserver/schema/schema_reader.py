@@ -15,6 +15,7 @@ from boltons.dictutils import subdict
 from pyhocon import ConfigFactory
 
 from apiserver.config_repo import config
+from apiserver.schema_rules import check_definition_cap, duplicate_definitions
 from apiserver.utilities.partial_version import PartialVersion
 
 
@@ -115,6 +116,7 @@ class EndpointVersionsGroup:
                 raise ValueError(f"Encountered unrecognized key {version!r} in {self.service_name}.{self.action_name}")
             return PartialVersion(version)
 
+        check_definition_cap(self.full_name, conf.keys())
         self.endpoints = sorted(
             (
                 EndpointSchema(
@@ -135,16 +137,21 @@ class EndpointVersionsGroup:
     def _pop_attr_with_default(self, conf, attr):
         return conf.pop(attr, self.defaults[attr])
 
-    def get_for_version(self, min_version: PartialVersion):
+    @property
+    def oldest_version(self) -> PartialVersion:
+        return self.endpoints[0].version
+
+    def get_for_version(self, version: PartialVersion):
         """
-        Return endpoint schema for version
+        Return the newest definition whose version is at most the requested version. A version above the newest
+        definition gets the newest one; a version below the oldest retained definition has none and raises.
         """
         if not self.endpoints:
             raise ValueError(f"endpoint group {self} has no versions")
-        for endpoint in self.endpoints:
-            if min_version <= endpoint.version:
+        for endpoint in reversed(self.endpoints):
+            if endpoint.version <= version:
                 return endpoint
-        raise ValueError(f"min_version {min_version} is higher than highest version in group {self}")
+        raise ValueError(f"version {version} is below the oldest retained definition of {self.full_name}")
 
 
 class Service:
@@ -185,6 +192,16 @@ class Schema:
         self.api_defaults = api_defaults
         self.services = {name: Service(name, conf, api_defaults=self.api_defaults) for name, conf in services.items()}
 
+    def newest_version(self) -> PartialVersion:
+        """The API level: the highest version label of any definition in the schema."""
+        return max(
+            (
+                group.endpoints[-1].version
+                for service in self.services.values()
+                for group in service.endpoint_groups.values()
+            ),
+        )
+
 
 @attr.s()
 class SchemaReader:
@@ -204,6 +221,11 @@ class SchemaReader:
 
     @staticmethod
     def read_file(path):
+        # checked on the text: HOCON merges two blocks of one version into one, so the parsed result cannot show it
+        duplicates = duplicate_definitions(Path(path).read_text(encoding="utf-8"))
+        if duplicates:
+            listed = ", ".join(f"{action} {version}" for action, version in duplicates)
+            raise ValueError(f"{path}: two definitions of one version in one action: {listed}")
         return ConfigFactory.parse_file(path).as_plain_ordered_dict()
 
     @contextmanager

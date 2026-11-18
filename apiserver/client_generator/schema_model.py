@@ -12,6 +12,8 @@ from typing import Dict, Iterable, Tuple
 
 from pyhocon import ConfigFactory
 
+from apiserver.schema_rules import check_definition_cap, duplicate_definitions
+
 VERSION_RE = re.compile(r"^\d+\.\d+$")
 DEFINITIONS_PREFIX = "#/definitions/"
 
@@ -53,6 +55,10 @@ class Service:
 
 
 def _load_service(path: Path) -> Service:
+    duplicates = duplicate_definitions(path.read_text(encoding="utf-8"))
+    if duplicates:
+        listed = ", ".join(f"{action} {version}" for action, version in duplicates)
+        raise ValueError(f"{path}: two definitions of one version in one action: {listed}")
     conf = ConfigFactory.parse_file(str(path)).as_plain_ordered_dict()
     name = path.stem
     actions = {}
@@ -62,6 +68,7 @@ def _load_service(path: Path) -> Service:
         versions = sorted((key for key in group if VERSION_RE.match(key)), key=version_key)
         if not versions:
             raise ValueError(f"{name}.{action_name} declares no version")
+        check_definition_cap(f"{name}.{action_name}", versions)
         version = versions[-1]
         newest = group[version]
         actions[action_name] = Action(

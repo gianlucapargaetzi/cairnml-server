@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import Callable, Sequence, Text, Any
+from typing import Callable, Dict, Sequence, Text, Tuple, Any
 from boltons.iterutils import remap
 from jsonmodels import models
 from jsonmodels.errors import FieldNotSupported
@@ -53,17 +53,24 @@ class Endpoint(object):
         self.min_version = (
             PartialVersion(min_version) if min_version is not None else self.endpoint_group.endpoints[0].version
         )
-        if validate_schema:
-            if self.required_fields:
-                raise ValueError(f"endpoint {self.name}: can not use 'required_fields' with 'validate_schema'")
-            endpoint = self.endpoint_group.get_for_version(self.min_version)
-            request_schema = endpoint.request_schema
-            response_schema = endpoint.response_schema
-        else:
-            request_schema = None
-            response_schema = None
-        self.request_schema_validator = SchemaValidator(request_schema)
-        self.response_schema_validator = SchemaValidator(response_schema)
+        if validate_schema and self.required_fields:
+            raise ValueError(f"endpoint {self.name}: can not use 'required_fields' with 'validate_schema'")
+        self._validate_schema = validate_schema
+        self._schema_validators: Dict[str, Tuple[SchemaValidator, SchemaValidator]] = {}
+        self.request_schema_validator, self.response_schema_validator = self.schema_validators(self.min_version)
+
+    def schema_validators(self, version: PartialVersion) -> Tuple[SchemaValidator, SchemaValidator]:
+        """The request and response validators of the definition that serves a request at this version. That is the
+        resolved definition, which can be newer than the version this implementation was registered at."""
+        definition = self.endpoint_group.get_for_version(version)
+        key = str(definition.version)
+        if key not in self._schema_validators:
+            if self._validate_schema:
+                request_schema, response_schema = definition.request_schema, definition.response_schema
+            else:
+                request_schema = response_schema = None
+            self._schema_validators[key] = (SchemaValidator(request_schema), SchemaValidator(response_schema))
+        return self._schema_validators[key]
 
     def __repr__(self):
         return f"{type(self).__name__}<{self.name}>"

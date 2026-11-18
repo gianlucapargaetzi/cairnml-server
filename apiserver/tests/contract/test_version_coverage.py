@@ -1,8 +1,5 @@
-"""Every version the schema declares for an endpoint has an implementation the server serves at that version.
-
-The rule, for each endpoint and each version block after the first:
-- a block that is the same as the one below it is served by that implementation (nothing changed, nothing to declare);
-- a block that differs from the one below it must have its own implementation, declared at that version.
+"""Every definition the schema retains is served by an implementation: resolving the version of a retained definition
+finds a handler, which may serve several definitions (the handler registered at the newest version not above it).
 
 A block marked removed is not served: the endpoint must answer that version with a refusal, not with an older
 implementation. That refusal does not exist yet, so a removed block is reported as a known gap until it does.
@@ -19,35 +16,22 @@ ServiceRepo.load()
 API = load_api(SCHEMA_ROOT)
 
 
-def _blocks_needing_an_implementation():
+def _served_blocks():
     for name, endpoint in sorted(API.items()):
-        versions = sorted(endpoint.versions, key=vkey)
-        for below, version in zip(versions, versions[1:]):
-            block = endpoint.versions[version]
+        for version, block in sorted(endpoint.versions.items(), key=lambda item: vkey(item[0])):
             if block.get("removed") is True:
                 continue
-            if endpoint.versions[below] != block:
-                yield name, version
+            yield name, version
 
 
-@pytest.mark.parametrize("name,version", list(_blocks_needing_an_implementation()))
-def test_a_changed_version_has_its_own_implementation(name, version):
+SERVED_BLOCKS = list(_served_blocks())
+
+
+@pytest.mark.parametrize("name,version", SERVED_BLOCKS, ids=[f"{n}@{v}" for n, v in SERVED_BLOCKS])
+def test_a_retained_definition_resolves_to_an_implementation(name, version):
     endpoint = ServiceRepo._get_endpoint(name, PartialVersion(version))
     assert endpoint is not None, f"{name} has no implementation at {version}"
-    assert str(endpoint.min_version) == version, (
-        f"{name} at {version} is served by the implementation of {endpoint.min_version}"
-    )
-
-
-def test_every_block_is_served_by_some_implementation():
-    missing = []
-    for name, endpoint in sorted(API.items()):
-        for version, block in endpoint.versions.items():
-            if block.get("removed") is True:
-                continue
-            if ServiceRepo._get_endpoint(name, PartialVersion(version)) is None:
-                missing.append(f"{name} {version}")
-    assert missing == []
+    assert endpoint.min_version <= PartialVersion(version)
 
 
 def test_no_implementation_is_declared_at_a_version_the_schema_does_not_have():
