@@ -1,16 +1,15 @@
 import re
 from importlib import import_module
-from itertools import chain
 from pathlib import Path
-from typing import cast, Iterable, List, MutableMapping, Optional, Tuple, Callable
+from typing import List, MutableMapping, Optional, Tuple, Callable
 
 import jsonmodels.models
 
 from apiserver.apierrors import APIError, errors
-from apiserver.service_repo.api_version import API_VERSION
 from apiserver.config_repo import config
 from apiserver.database.errors import translate_errors_context
 from apiserver.service_repo.job_scope import validate_job_scope
+from apiserver.services_schema import schema
 from apiserver.utilities.partial_version import PartialVersion
 from .apicall import APICall
 from .auth import Identity
@@ -41,8 +40,8 @@ class ServiceRepo(object):
     """If the check is set, parsing will fail for endpoint request with the version that is grater than the current 
     maximum """
 
-    _max_version = PartialVersion(API_VERSION)
-    """ Maximum version number (the highest min_version value across all endpoints) """
+    _max_version = schema.newest_version()
+    """ The API level: the highest version label of any definition in the schema """
 
     _endpoint_exp = (
         re.compile(r"^/?v(?P<endpoint_version>(?:\d+\.\d+|\d{2,}))/(?P<endpoint_name>[a-zA-Z_]\w+\.[a-zA-Z_]\w+)/?$")
@@ -98,11 +97,6 @@ class ServiceRepo(object):
         # leave no trace of the 'sub_module' local
         del sub_module
 
-        cls._max_version = max(
-            cls._max_version,
-            max(ep.min_version for ep in cast(Iterable[Endpoint], chain(*cls._endpoints.values()))),
-        )
-
     @classmethod
     def load(cls, root_module="services"):
         cls._load_from_path(
@@ -151,9 +145,29 @@ class ServiceRepo(object):
             return None
 
     @classmethod
+    def _oldest_definition_version(cls, name) -> Optional[PartialVersion]:
+        """The oldest retained definition of an action in the schema, None when the schema has no such action"""
+        service, _, action = name.partition(".")
+        if service not in schema.services:
+            return None
+        group = schema.services[service].endpoint_groups.get(action)
+        return None if group is None else group.oldest_version
+
+    @classmethod
     def _resolve_endpoint_from_call(cls, call: APICall) -> Optional[Endpoint]:
-        endpoint = cls._get_endpoint(call.endpoint_name, call.requested_endpoint_version)
+        requested = call.requested_endpoint_version
+        endpoint = cls._get_endpoint(call.endpoint_name, requested)
         if endpoint is None:
+            oldest = cls._oldest_definition_version(call.endpoint_name)
+            if oldest is not None and requested < oldest:
+                error = errors.not_found.UnsupportedEndpointVersion(
+                    replacement_msg=(
+                        f"Endpoint {call.endpoint_name} is not available at API version {requested}; "
+                        f"the oldest supported version is {oldest}"
+                    )
+                )
+                call.set_error_result(msg=str(error), code=error.code, subcode=error.subcode)
+                return None
             call.log_api = False
             call.set_error_result(
                 msg=(
@@ -165,7 +179,9 @@ class ServiceRepo(object):
             )
             return
 
-        call.actual_endpoint_version = endpoint.min_version
+        # the definition that serves the call is the newest one at most the requested version, which can be newer than
+        # the version the implementation was registered at
+        call.actual_endpoint_version = endpoint.endpoint_group.get_for_version(requested).version
         call.requires_authorization = endpoint.authorize
         return endpoint
 

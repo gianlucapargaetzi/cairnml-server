@@ -88,6 +88,7 @@ def _refused_by_validation(action, data):
     endpoint = ServiceRepo._get_endpoint(f"repositories.{action}", VERSION)
     api_call = APICall(f"repositories.{action}", data=data, headers={}, remote_addr="127.0.0.1")
     with pytest.raises(errors.bad_request.ValidationError) as refused:
+        api_call.actual_endpoint_version = endpoint.endpoint_group.get_for_version(VERSION).version
         validate_data(api_call, endpoint)
     return str(refused.value)
 
@@ -162,6 +163,7 @@ def test_an_unknown_field_is_a_validation_error_through_the_call():
     endpoint = ServiceRepo._get_endpoint("repositories.check", VERSION)
     api_call = APICall("repositories.check", data={"bogus": 1}, headers={}, remote_addr="127.0.0.1")
     with pytest.raises(errors.bad_request.ValidationError, match="bogus"):
+        api_call.actual_endpoint_version = endpoint.endpoint_group.get_for_version(VERSION).version
         validate_data(api_call, endpoint)
 
 
@@ -249,4 +251,5 @@ def test_a_missing_level_and_a_non_list_are_validation_errors_through_the_call()
         endpoint = ServiceRepo._get_endpoint(f"repositories.{action}", VERSION)
         api_call = APICall(f"repositories.{action}", data=body, headers={}, remote_addr="127.0.0.1")
         with pytest.raises(errors.bad_request.ValidationError):
+            api_call.actual_endpoint_version = endpoint.endpoint_group.get_for_version(VERSION).version
             validate_data(api_call, endpoint)
