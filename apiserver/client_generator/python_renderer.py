@@ -15,7 +15,7 @@ from typing import Dict, List, Optional
 
 import jinja2
 
-from .schema_model import Action, Service, ref_name, reachable_definitions
+from .schema_model import Action, Service, ref_name, version_key, reachable_definitions
 
 LINE_WIDTH = 100
 HEADER = (
@@ -335,14 +335,15 @@ def _nullable(schema: dict) -> dict:
 
 def _identifiers(fields: dict, where: str) -> dict:
     """The Python name of each JSON field: the name itself, with the characters that cannot be in an identifier
-    replaced by underscores (a schema key such as "input.view.dataset" keeps its JSON name in schema_property)."""
+    replaced by underscores, and a trailing underscore for a keyword (a schema key such as "input.view.dataset" or
+    "from" keeps its JSON name in schema_property)."""
     names = {}
     for field_name in fields:
         python = re.sub(r"\W", "_", field_name)
         if python[:1].isdigit():
             python = "_" + python
         if keyword.iskeyword(python):
-            raise Unsupported(f"{where}: the field name {field_name!r} is a Python keyword")
+            python += "_"  # the JSON name stays in schema_property (for example `from` is the attribute `from_`)
         if python in names.values():
             raise Unsupported(f"{where}: the field name {field_name!r} gives the Python name {python!r} twice")
         names[field_name] = python
@@ -429,6 +430,7 @@ def _build_class(*, name, base, description, fields, required, schema, definitio
         "extra": extra,
         "item": item[0] if item is not None else None,
         "batched": None,
+        "lazy": None,
         "map": None,
     }
 
@@ -450,6 +452,7 @@ def _map_class(def_name: str, definition: dict, definitions: dict, where: str) -
         "extra": None,
         "item": None,
         "batched": None,
+        "lazy": None,
         "map": {"field": def_name, "item": item.cls, "convert": _construct(item, "v")},
     }
 
@@ -509,22 +512,50 @@ def _enum_class(def_name: str, definition: dict, where: str) -> dict:
     return {"name": camel(def_name), "members": members}
 
 
-def _batch_class(service: Service, action: Action, meta: dict) -> dict:
+def _relative_module(here: List[str], there: List[str], name: str) -> str:
+    """The relative import of module `name` in the folder `there`, from a module in the folder `here` (lists of folder
+    names below the services package; [] is the package itself)."""
+    common = 0
+    while common < min(len(here), len(there)) and here[common] == there[common]:
+        common += 1
+    return "." * (len(here) - common + 1) + ".".join(there[common:] + [name])
+
+
+def _batch_class(service: Service, action: Action, meta: dict, here: List[str]) -> dict:
+    """The batch class of a batch action. The newest definition batches the newest definition of the batched action.
+    A legacy definition of version X batches the newest definition of the batched action at or below X, so the classes
+    of one module agree with each other. The batched class is a class attribute when it is in the same module, and a
+    property that imports it when it is in another module (the import is lazy, so the modules do not import each other
+    when they load)."""
     where = f"{service.name}.{action.name}"
     batched = action.batch_request.get("action")
-    target = service.actions.get(batched)
-    if target is None or target.batch_request:
+    blocks = service.history.get(batched) or ()
+    if not blocks or blocks[-1].batch_request:
         raise Unsupported(f"{where}: the batched action {batched!r} is not a request of this service")
-    return {
+    target = blocks[-1]
+    if here:  # a legacy module: the definition of the batched action that this version has
+        earlier = [b for b in blocks if version_key(b.version) <= version_key(action.version)]
+        if not earlier:
+            raise Unsupported(f"{where}: the batched action {batched!r} has no definition at or below {action.version}")
+        target = earlier[-1]
+    there = [] if target is blocks[-1] else ["legacy", legacy_folder(target.version)]
+    cls = camel(batched) + "Request"
+    result = {
         "name": camel(action.name) + "Request",
         "base": "BatchRequest",
         "doc": [_clean(action.description)] if action.description else [],
         "params_doc": [],
-        "batched": camel(batched) + "Request",
+        "batched": None,
+        "lazy": None,
         "extra": meta,
         "item": None,
         "map": None,
     }
+    if there == here:
+        result["batched"] = cls
+    else:
+        result["lazy"] = {"module": _relative_module(here, there, service.name), "cls": cls}
+    return result
 
 
 def legacy_folder(version: str) -> str:
@@ -566,11 +597,6 @@ def render_service_files(service: Service, session_package: str) -> Dict[str, st
     legacy: Dict[str, List[Action]] = {}
     for action in sorted(service.history):
         for block in service.history[action][:-1]:
-            if block.batch_request:
-                raise Unsupported(
-                    f"{service.name}.{action}: a batch request keeps only its newest definition in the client "
-                    f"(the definition of {block.version} is not generated yet)"
-                )
             legacy.setdefault(block.version, []).append(block)
     for version in sorted(legacy, key=lambda v: tuple(int(part) for part in v.split("."))):
         files[f"legacy/{legacy_folder(version)}/{service.name}.py"] = _render_module(
@@ -578,6 +604,7 @@ def render_service_files(service: Service, session_package: str) -> Dict[str, st
             session_package,
             legacy[version],
             title=f"{service.name} service, the legacy definitions first served at API version {version}",
+            here=["legacy", legacy_folder(version)],
         )
     return files
 
@@ -585,11 +612,14 @@ def render_service_files(service: Service, session_package: str) -> Dict[str, st
 def render_service(service: Service, session_package: str) -> str:
     """The module of the newest definition of every action of the service."""
     actions = [service.actions[name] for name in sorted(service.actions)]
-    return _render_module(service, session_package, actions, title=f"{service.name} service")
+    return _render_module(service, session_package, actions, title=f"{service.name} service", here=[])
 
 
-def _render_module(service: Service, session_package: str, actions: List[Action], title: str) -> str:
-    """The module of the given definitions (one per action, all of one version)."""
+def _render_module(
+    service: Service, session_package: str, actions: List[Action], title: str, here: List[str]
+) -> str:
+    """The module of the given definitions (one per action, all of one version). `here` is the module's folder below
+    the services package: [] for the service module, ["legacy", "v<major>_<minor>"] for a legacy one."""
     fragments = [a.request for a in actions if not a.batch_request] + [a.response for a in actions]
     for action in actions:
         if not action.batch_request:
@@ -633,7 +663,7 @@ def _render_module(service: Service, session_package: str, actions: List[Action]
         meta = {"service": service.name, "action": action.name, "version": action.version}
         if action.batch_request:
             # a batch class names a request class, so it comes after all the request classes
-            batches.append(_batch_class(service, action, meta))
+            batches.append(_batch_class(service, action, meta, here))
         else:
             fields, required = _request_fields(action)
             request_defs = reachable_definitions([action.request], service.definitions)

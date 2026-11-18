@@ -65,16 +65,24 @@ def test_a_legacy_module_parses_as_python_3_9():
         ast.parse(text, feature_version=(3, 9))
 
 
-def test_a_batch_request_keeps_only_its_newest_definition(tmp_path):
+def test_a_legacy_batch_batches_the_batched_definition_of_its_version_through_a_lazy_import(tmp_path):
     folder = tmp_path / "schema"
     folder.mkdir()
     (folder / "batches.conf").write_text(
         'run {\n    "1.0" { request { type: object, properties { id { type: string } } }, response { type: object } }\n'
-        '    "1.1" { request { type: object, properties { id { type: string } } }, response { type: object } }\n}\n'
-        'batch {\n    "1.0" { batch_request { action: run } }\n    "1.1" { batch_request { action: run } }\n}\n'
+        '    "1.5" { request { type: object, properties { id { type: string } } }, response { type: object } }\n}\n'
+        'batch {\n    "1.0" { batch_request { action: run } }\n    "1.1" { batch_request { action: run } }\n'
+        '    "1.2" { batch_request { action: run } }\n}\n'
     )
-    with pytest.raises(Unsupported, match="batch.*newest"):
-        render_service_files(load_schema(folder)["batches"], SESSION)
+    files = render_service_files(load_schema(folder)["batches"], SESSION)
+    # the 1.1 batch batches run as of 1.1, which is the 1.0 definition of run (in folder v1_0, not its own folder)
+    legacy = files["legacy/v1_1/batches.py"]
+    assert "from ..v1_0.batches import RunRequest" in legacy
+    assert "def _batched_request_cls(self):" in legacy
+    # the 1.0 batch is in the same module as the 1.0 run: a plain class attribute
+    assert "_batched_request_cls = RunRequest" in files["legacy/v1_0/batches.py"]
+    # the newest batch batches the newest run, in the service module
+    assert "_batched_request_cls = RunRequest" in files["batches.py"]
 
 
 CAP_SCHEMA = (
