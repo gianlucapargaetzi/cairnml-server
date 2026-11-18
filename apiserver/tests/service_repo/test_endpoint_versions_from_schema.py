@@ -1,7 +1,9 @@
 """The version an endpoint is registered at comes from the schema: the oldest retained definition of its action.
 
 A request is served by the newest registered implementation whose version is at most the requested version, so an
-action with one definition is served at that definition's version and refused below it.
+action with one definition is served at that definition's version and refused below it. An action with several
+handlers (pre-2.41 handlers restored by #211) has its oldest handler registered at the oldest retained definition and
+the others at a later version, never below it.
 """
 
 import pytest
@@ -37,7 +39,10 @@ ALL_ACTIONS = list(_all_actions())
 def test_endpoint_is_registered_at_the_oldest_retained_definition(full_name, service, action):
     oldest = _retained_versions(service, action)[0]
     endpoints = ServiceRepo._endpoints.get(full_name, [])
-    assert [str(ep.min_version) for ep in endpoints] == [oldest]
+    assert endpoints, f"{full_name} has no handler"
+    # the list is sorted newest first, so the last handler is the one that serves the oldest retained definition
+    assert str(endpoints[-1].min_version) == oldest
+    assert all(ep.min_version >= PartialVersion(oldest) for ep in endpoints)
 
 
 SINGLE_DEFINITION_ACTIONS = [a for a in ALL_ACTIONS if len(_retained_versions(a[1], a[2])) == 1]

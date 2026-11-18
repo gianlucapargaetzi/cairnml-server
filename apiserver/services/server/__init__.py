@@ -14,6 +14,7 @@ from apiserver.config.info import get_version, get_build_number, get_commit_numb
 from apiserver.database.errors import translate_errors_context
 from apiserver.database.model import Company
 from apiserver.database.model.company import ReportStatsOption
+from apiserver.database.model.settings import Settings, SettingKeys
 from apiserver.service_repo import ServiceRepo, APICall, endpoint
 
 
@@ -59,8 +60,19 @@ def info(call: APICall, _, __):
         "version": get_version(),
         "build": get_build_number(),
         "commit": get_commit_number(),
-        "api_version": str(ServiceRepo.max_endpoint_version()),
     }
+
+
+@endpoint("server.info", min_version="2.8")
+def info_2_8(call: APICall, _, __):
+    info(call, None, None)
+    call.result.data["uid"] = Settings.get_by_key(SettingKeys.server__uuid)
+
+
+@endpoint("server.info", min_version="2.12")
+def info_2_12(call: APICall, _, __):
+    info(call, None, None)
+    call.result.data["api_version"] = str(ServiceRepo.max_endpoint_version())
 
 
 @endpoint(

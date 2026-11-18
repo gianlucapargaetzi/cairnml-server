@@ -151,9 +151,12 @@ from apiserver.services.utils import (
     escape_dict_field,
     unescape_dict_field,
     process_include_subprojects,
+    ModelsBackwardsCompatibility,
+    DockerCmdBackwardsCompatibility,
 )
 from apiserver.idp.tokens import device_of_bearer
 from apiserver.utilities.dicts import nested_get
+from apiserver.utilities.partial_version import PartialVersion
 
 task_fields = set(Task.get_fields())
 
@@ -290,7 +293,7 @@ def get_by_id(call: APICall, company_id, request: TaskRequest):
     if not task:
         raise errors.bad_request.InvalidTaskId(id=request.task)
     task_dict = task.to_proper_dict()
-    conform_task_data(task_dict)
+    conform_task_data(call, task_dict)
     call.result.data = {"task": task_dict}
 
 
@@ -324,7 +327,7 @@ def _hidden_query(data: dict) -> Q:
 
 @endpoint("tasks.get_all_ex")
 def get_all_ex(call: APICall, company_id, request: GetAllReq):
-    conform_tag_fields(call.data)
+    conform_tag_fields(call, call.data)
     call_data = escape_execution_parameters(call.data)
     process_include_subprojects(call_data)
     ret_params = {}
@@ -335,13 +338,13 @@ def get_all_ex(call: APICall, company_id, request: GetAllReq):
         allow_public=request.allow_public,
         ret_params=ret_params,
     )
-    conform_task_data(tasks)
+    conform_task_data(call, tasks)
     call.result.data = {"tasks": tasks, **ret_params}
 
 
 @endpoint("tasks.get_by_id_ex", required_fields=["id"])
 def get_by_id_ex(call: APICall, company_id, _):
-    conform_tag_fields(call.data)
+    conform_tag_fields(call, call.data)
     call_data = escape_execution_parameters(call.data)
     tasks = Task.get_many_with_join(
         company=company_id,
@@ -350,13 +353,13 @@ def get_by_id_ex(call: APICall, company_id, _):
         allow_public=True,
     )
 
-    conform_task_data(tasks)
+    conform_task_data(call, tasks)
     call.result.data = {"tasks": tasks}
 
 
 @endpoint("tasks.get_all")
 def get_all(call: APICall, company_id, _):
-    conform_tag_fields(call.data)
+    conform_tag_fields(call, call.data)
     call_data = escape_execution_parameters(call.data)
     process_include_subprojects(call_data)
 
@@ -369,7 +372,7 @@ def get_all(call: APICall, company_id, _):
         allow_public=True,
         ret_params=ret_params,
     )
-    conform_task_data(tasks)
+    conform_task_data(call, tasks)
     call.result.data = {"tasks": tasks, **ret_params}
 
 
@@ -544,13 +547,15 @@ create_fields = {
 dict_fields_paths = [("execution", "model_labels"), "container"]
 
 
-def prepare_for_save(fields: dict, previous_task: Task = None):
+def prepare_for_save(call: APICall, fields: dict, previous_task: Task = None):
     if "display_name" in fields:
         # an empty label clears it, so that the task name is shown again
         fields["display_name"] = (fields["display_name"] or "").strip() or None
-    conform_tag_fields(fields, validate=True)
+    conform_tag_fields(call, fields, validate=True)
     params_prepare_for_save(fields)
     artifacts_prepare_for_save(fields)
+    ModelsBackwardsCompatibility.prepare_for_save(call, fields)
+    DockerCmdBackwardsCompatibility.prepare_for_save(call, fields)
     for path in dict_fields_paths:
         escape_dict_field(fields, path)
 
@@ -560,18 +565,26 @@ def prepare_for_save(fields: dict, previous_task: Task = None):
     return fields
 
 
-def conform_task_data(tasks_data: Union[Sequence[dict], dict]):
+def conform_task_data(call: APICall, tasks_data: Union[Sequence[dict], dict]):
     if isinstance(tasks_data, dict):
         tasks_data = [tasks_data]
 
-    conform_output_tags(tasks_data)
+    conform_output_tags(call, tasks_data)
 
     for data in tasks_data:
         for path in dict_fields_paths:
             unescape_dict_field(data, path)
 
+    ModelsBackwardsCompatibility.unprepare_from_saved(call, tasks_data)
+    DockerCmdBackwardsCompatibility.unprepare_from_saved(call, tasks_data)
+
+    need_legacy_params = call.actual_endpoint_version < PartialVersion("2.9")
+
     for data in tasks_data:
-        params_unprepare_from_saved(fields=data)
+        params_unprepare_from_saved(
+            fields=data,
+            copy_to_legacy=need_legacy_params,
+        )
         artifacts_unprepare_from_saved(fields=data)
 
 
@@ -609,7 +622,7 @@ def prepare_create_fields(
             for model in field_models:
                 model["updated"] = now
 
-    return prepare_for_save(fields, previous_task=previous_task)
+    return prepare_for_save(call, fields, previous_task=previous_task)
 
 
 def _validate_and_get_task_from_call(call: APICall, **kwargs) -> Tuple[Task, dict]:
@@ -695,7 +708,7 @@ def prepare_update_fields(call: APICall, call_data):
     t_fields.add("output__error")
     ProjectAccessBLL.assert_project_field_writable(call.identity, call_data)
     fields = parse_from_call(call_data, update_fields, t_fields)
-    return prepare_for_save(fields), valid_fields
+    return prepare_for_save(call, fields), valid_fields
 
 
 @endpoint("tasks.update", request_data_model=UpdateRequest, response_data_model=UpdateResponse)
@@ -734,7 +747,7 @@ def update(call: APICall, company_id, req_model: UpdateRequest):
             else:
                 _update_cached_tags(company_id, project=task.project, fields=updated_fields)
             update_project_time(updated_fields.get("project"))
-        conform_task_data(updated_fields)
+        conform_task_data(call, updated_fields)
         if updated_count:
             _record_repository(company_id, call.identity.user, task_id)
         return UpdateResponse(updated=updated_count, fields=updated_fields)
@@ -879,7 +892,7 @@ def edit(call: APICall, company_id, req_model: UpdateRequest):
                 else:
                     _update_cached_tags(company_id, project=task.project, fields=fixed_fields)
                 update_project_time(fields.get("project"))
-            conform_task_data(fields)
+            conform_task_data(call, fields)
             if updated:
                 _record_repository(company_id, call.identity.user, task_id)
             call.result.data_model = UpdateResponse(updated=updated, fields=fields)

@@ -1,7 +1,34 @@
+import itertools
 from typing import Sequence
 
 from apiserver.apierrors import errors
+from apiserver.utilities.dicts import nested_set
 from apiserver.utilities.parameter_key_escaper import ParameterKeyEscaper
+
+
+hyperparams_legacy_type = "legacy"
+tf_define_section = "TF_DEFINE"
+
+
+def _get_full_param_name(param: dict) -> str:
+    section = param.get("section")
+    if section != tf_define_section:
+        return param["name"]
+
+    return "/".join((section, param["name"]))
+
+
+def _get_legacy_params(data: dict, with_sections: bool = False) -> Sequence[dict]:
+    """
+    Return the legacy params of the data dict, a list of the params or of the sections' params
+    """
+    if not data:
+        return []
+
+    if with_sections:
+        return list(itertools.chain.from_iterable(_get_legacy_params(section_data) for section_data in data.values()))
+
+    return [param for param in data.values() if param.get("type") == hyperparams_legacy_type]
 
 
 def params_prepare_for_save(fields: dict):
@@ -32,9 +59,10 @@ def params_prepare_for_save(fields: dict):
         fields["configuration"] = escaped_params
 
 
-def params_unprepare_from_saved(fields):
+def params_unprepare_from_saved(fields, copy_to_legacy=False):
     """
     Unescape all section and param names for hyper params and configuration
+    If copy_to_legacy is set then copy hyperparams and configuration data to the legacy location for the old clients
     """
     for param_field in ("hyperparams", "configuration"):
         params = fields.get(param_field)
@@ -46,6 +74,19 @@ def params_unprepare_from_saved(fields):
                 for key, value in params.items()
             }
             fields[param_field] = unescaped_params
+
+    if copy_to_legacy:
+        for new_params_field, old_params_field, use_sections in (
+            ("hyperparams", ("execution", "parameters"), True),
+            ("configuration", ("execution", "model_desc"), False),
+        ):
+            legacy_params = _get_legacy_params(fields.get(new_params_field), with_sections=use_sections)
+            if legacy_params:
+                nested_set(
+                    fields,
+                    old_params_field,
+                    {_get_full_param_name(p): p["value"] for p in legacy_params},
+                )
 
 
 def _process_path(path: str):

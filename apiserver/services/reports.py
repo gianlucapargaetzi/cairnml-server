@@ -195,7 +195,7 @@ def get_all_ex(call: APICall, company_id, request: GetAllRequest):
         allow_public=request.allow_public,
         ret_params=ret_params,
     )
-    conform_task_data(tasks)
+    conform_task_data(call, tasks)
 
     call.result.data = {"tasks": tasks, **ret_params}
 
@@ -236,7 +236,7 @@ def get_task_data(call: APICall, company_id, request: GetTasksDataRequest):
         allow_public=request.allow_public,
         ret_params=ret_params,
     )
-    conform_data(tasks)
+    conform_data(call, tasks)
     res = {"tasks": tasks, **ret_params}
     if not (
         request.debug_images or request.plots or request.scalar_metrics_iter_histogram or request.single_value_metrics

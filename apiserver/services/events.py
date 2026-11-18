@@ -32,6 +32,8 @@ from apiserver.apimodels.events import (
     TaskMetric,
     MultiTaskPlotsRequest,
     MultiTaskMetricsRequest,
+    LegacyLogEventsRequest,
+    LegacyMetricEventsRequest,
     TaskRequest,
     GetMetricsAndVariantsRequest,
     ModelRequest,
@@ -115,7 +117,52 @@ def add_batch(call: APICall, company_id, _):
     call.result.data = dict(added=added, errors=err_count, errors_info=err_info)
 
 
-@endpoint("events.get_task_log", request_data_model=LogEventsRequest)
+@endpoint("events.get_task_log")
+def get_task_log_v1_5(call, company_id, request: LegacyLogEventsRequest):
+    task_id = request.task
+    task = task_bll.assert_exists(company_id, task_id, allow_public=True, only=("company", "company_origin"))[0]
+    order = request.order
+    scroll_id = request.scroll_id
+    batch_size = request.batch_size
+    events, scroll_id, total_events = event_bll.scroll_task_events(
+        task.get_index_company(),
+        task_id,
+        order,
+        event_type=EventType.task_log,
+        batch_size=batch_size,
+        scroll_id=scroll_id,
+    )
+    call.result.data = dict(events=events, returned=len(events), total=total_events, scroll_id=scroll_id)
+
+
+@endpoint("events.get_task_log", min_version="1.7")
+def get_task_log_v1_7(call, company_id, request: LegacyLogEventsRequest):
+    task_id = request.task
+    task = task_bll.assert_exists(company_id, task_id, allow_public=True, only=("company", "company_origin"))[0]
+
+    order = request.order
+    from_ = call.data.get("from") or "head"
+    scroll_id = request.scroll_id
+    batch_size = request.batch_size
+
+    scroll_order = "asc" if (from_ == "head") else "desc"
+
+    events, scroll_id, total_events = event_bll.scroll_task_events(
+        company_id=task.get_index_company(),
+        task_id=task_id,
+        order=scroll_order,
+        event_type=EventType.task_log,
+        batch_size=batch_size,
+        scroll_id=scroll_id,
+    )
+
+    if scroll_order != order:
+        events = events[::-1]
+
+    call.result.data = dict(events=events, returned=len(events), total=total_events, scroll_id=scroll_id)
+
+
+@endpoint("events.get_task_log", min_version="2.9", request_data_model=LogEventsRequest)
 def get_task_log(call, company_id, request: LogEventsRequest):
     task_id = request.task
     task = task_bll.assert_exists(company_id, task_id, allow_public=True, only=("company", "company_origin"))[0]
@@ -632,8 +679,42 @@ def task_plots(call, company_id, request: MetricEventsRequest):
     )
 
 
+@endpoint("events.debug_images")
+def get_debug_images_v1_8(call, company_id, request: LegacyMetricEventsRequest):
+    task_id = request.task
+    iters = request.iters
+    scroll_id = request.scroll_id
+    model_events = request.model_events
+
+    tasks_or_model = _assert_task_or_model_exists(
+        company_id,
+        task_id,
+        model_events=model_events,
+        identity=call.identity,
+    )[0]
+    result = event_bll.get_task_events(
+        tasks_or_model.get_index_company(),
+        task_id,
+        event_type=EventType.metrics_image,
+        sort=[{"iter": {"order": "desc"}}],
+        last_iter_count=iters,
+        scroll_id=scroll_id,
+    )
+
+    return_events = result.events
+
+    call.result.data = dict(
+        task=task_id,
+        images=return_events,
+        returned=len(return_events),
+        total=result.total_events,
+        scroll_id=result.next_scroll_id,
+    )
+
+
 @endpoint(
     "events.debug_images",
+    min_version="2.7",
     request_data_model=MetricEventsRequest,
     response_data_model=MetricEventsResponse,
 )
