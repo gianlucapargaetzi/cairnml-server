@@ -54,3 +54,12 @@ previous release (API 2.39), these endpoints change in a way that breaks a clien
   version is refused, naming the oldest version that is still served.
 - A request below the oldest retained definition of an endpoint is refused (404, subcode 1), naming the oldest version
   that is still served. Any other request is served by the newest definition at most its version.
+- devices.git_token: the response declares url, the clone address of the repository the token is for, which the server
+  already returns. The contract is the same at every version; the definition labelled 2.41 exists so that the change is
+  recorded at 2.41, and the one labelled 2.8 still serves 2.8 to 2.40.
+- tasks.update: the request declares status_message, which the handler already reads. The contract is the same at every
+  version; the definition labelled 2.41 exists so that the change is recorded at 2.41, and the one labelled 2.1 still
+  serves 2.1 to 2.40.
+- tasks.enqueue: the request declares force, which the handler already reads. The contract is the same at every version;
+  the definition labelled 2.41 exists so that the change is recorded at 2.41, and the one labelled 2.31 still serves
+  2.31 to 2.40.
