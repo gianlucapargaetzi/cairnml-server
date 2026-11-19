@@ -26,6 +26,14 @@ def _parser() -> argparse.ArgumentParser:
     callers = sub.choices["check-callers"]
     callers.add_argument("--root", type=Path, required=True, help="folder or file with the Python callers")
     callers.add_argument("--allow", type=Path, help="allow file with `exempt <service.action> <reason>` lines")
+    callers.add_argument(
+        "--base",
+        type=Path,
+        action="append",
+        default=[],
+        help="folder of a package whose classes the checked code inherits from (the agent's Session inherits from the "
+        "SDK's Session): read for its classes, not checked; repeat for more than one",
+    )
     web = sub.add_parser("check-web", help="check the web app's TypeScript API layer against the schema")
     web.add_argument("--schema", type=Path, default=DEFAULT_SCHEMA, help="folder with the schema's .conf files")
     web.add_argument("--root", type=Path, required=True, help="the web app's src/app/business-logic folder")
@@ -145,10 +153,18 @@ def main(argv=None) -> int:
     if args.command == "check-callers":
         if not args.root.exists():
             return _usage(f"{args.root} does not exist")
+        for base in args.base:
+            if not base.exists():
+                return _usage(f"{base} does not exist")
         try:
             allow = read_allow(args.allow) if args.allow else Allow()
             findings = check_callers(
-                args.root, schema, set(target.resolve(schema)), allow, sessions=target.checks_sessions
+                args.root,
+                schema,
+                set(target.resolve(schema)),
+                allow,
+                sessions=target.checks_sessions,
+                bases=args.base,
             )
         except (OSError, ValueError, SyntaxError) as error:
             return _usage(str(error))

@@ -169,3 +169,35 @@ def test_a_positional_call_by_name_is_reported_when_the_schema_lacks_it():
         "demo.nope is not in the schema",
         "routers.get_routes is not in the schema",
     ]
+
+
+ALIAS = CALLERS / "alias"
+
+
+def test_a_subclass_named_like_its_base_is_not_its_own_base():
+    # the base is the SDK's Session, which is outside the scanned folder: its methods cannot be checked, and it is said
+    assert _check_by_name("alias/agent_pkg") == [
+        "Session inherits from SdkSession, which is not defined under the root: its methods cannot be checked"
+    ]
+
+
+def test_a_subclass_named_like_its_base_inherits_the_methods_of_the_base():
+    findings = check_callers(
+        ALIAS / "agent_pkg", SCHEMA, generated={"demo"}, allow=Allow(), sessions=True, bases=[ALIAS / "cairnml"]
+    )
+    assert [f.message for f in findings] == []
+
+
+def test_a_version_in_a_test_is_reported_only_when_it_picks_the_version_of_a_request(tmp_path):
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_versions.py").write_text(
+        "def test_it(server_level, session):\n"
+        "    server_level('2.9')\n"
+        "    assert Session.request_version('tasks', 'get_all') == '2.9'\n"
+        "    session.send_request(service='demo', action='get_all', version='2.15')\n"
+    )
+    findings = check_callers(tmp_path, SCHEMA, generated={"demo"}, allow=Allow())
+    assert [f.message for f in findings] == [
+        "'2.15' is an API version written in hand-written code: take it from the generated classes",
+        "send_request names demo.get_all by strings: build demo.GetAllRequest and send it instead",
+    ]
