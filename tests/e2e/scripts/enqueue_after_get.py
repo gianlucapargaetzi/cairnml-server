@@ -2,6 +2,7 @@
 DEFECT D6): enqueueing as the first SDK call works, after a service call it is refused."""
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -17,7 +18,7 @@ def main() -> None:
     args = parser.parse_args()
 
     Task.get_task(task_id=args.task_id)
-    result = Task.enqueue(args.task_id, queue_name="default", force=True)
+    result = Task.enqueue(args.task_id, queue_name=os.environ.get("CAIRNML_E2E_AGENT_QUEUE", "default"), force=True)
     report({"queued": result.queued})
 
 

@@ -17,6 +17,10 @@ from support.workspace import new_name, run_json
 
 SCRIPTS = Path(__file__).parent / "scripts"
 
+# The job clone is the first job of a run in file order, so it starts cold: the agent builds the job's environment in the
+# container first, which takes minutes, not the 60 s a warm job needs.
+COLD_JOB_TIMEOUT_SEC = 300
+
 # the job tests below need an agent: they share one with the other agent modules (xdist group)
 pytestmark = pytest.mark.xdist_group("agent")
 
@@ -138,7 +142,8 @@ def test_job_clones_the_recorded_commit_and_reports_it(client_home, project, che
                 ["--project", project, "--name", new_name("clone-job"), "--git", "--scalars", "2"],
             )
             jobs.enqueue(client_home, run["task_id"])
-            record = jobs.wait_for(api, run["task_id"], jobs.FINAL)
+            # the first job of a run is cold: the agent builds its environment in the container (E2E.md, speed item 8)
+            record = jobs.wait_for(api, run["task_id"], jobs.FINAL, timeout=COLD_JOB_TIMEOUT_SEC)
         finally:
             api.authed("git_credentials.delete", {"host": host})
             git.git(work, "remote", "set-url", "origin", checkout["remote"].as_posix())
@@ -147,11 +152,12 @@ def test_job_clones_the_recorded_commit_and_reports_it(client_home, project, che
 
 
 def test_repository_on_github_is_refused_at_enqueue_without_the_app(client_home, project, checkout):
-    """docs/e2e_testing/E2E.md and README: a job whose repository is on GitHub is refused when enqueued unless the GitHub App is set up.
+    """docs/e2e_testing/E2E.md and README: a job whose repository is on GitHub is refused when enqueued unless the GitHub App is set up (or a credential is shared with the project). By design the refusal does not reject the call: the task is listed as Failed, with the reason (server commit 0d12a558, apiserver/bll/task/task_operations.py).
 
-    Expect: The enqueue is refused, and its message names GitHub.
+    Expect: The enqueue queues nothing, and the task is Failed with the status reason "access refused" and a message that names GitHub.
     """
     work = checkout["work"]
+    api = workspace.device_api(client_home)
     git.git(work, "remote", "set-url", "origin", "https://github.com/e2e-owner/e2e-repo.git")
     try:
         run = run_json(
@@ -159,9 +165,13 @@ def test_repository_on_github_is_refused_at_enqueue_without_the_app(client_home,
             str(work / "job_script.py"),
             ["--project", project, "--name", new_name("github-refused"), "--scalars", "1"],
         )
-        result = workspace.run_raw(client_home, "enqueue.py", ["--task-id", run["task_id"], "--force"])
-        assert result.returncode != 0, "the enqueue must be refused"
-        assert "GitHub" in result.output or "github" in result.output
+        # run_json fails unless the script exits 0: the refusal is an answer, not an error
+        answer = workspace.run_json(client_home, "enqueue.py", ["--task-id", run["task_id"], "--force"])
+        assert answer["queued"] == 0, answer
+        record = jobs.task_record(api, run["task_id"])
+        assert record["status"] == "failed", jobs.explain(api, run["task_id"], record)
+        assert record["status_reason"] == "access refused", record
+        assert "github" in (record.get("status_message") or "").lower(), record
     finally:
         git.git(work, "remote", "set-url", "origin", checkout["remote"].as_posix())
 

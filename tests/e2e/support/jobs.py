@@ -1,10 +1,16 @@
 """Queueing jobs and following them. Status is read over REST, so the reading does not depend on the SDK's
 API level (see scripts/enqueue.py for why enqueueing must be the first SDK call of its process)."""
 
+import os
 import time
 from pathlib import Path
 
 from . import versions, workspace
+
+# The queue of the session's job agent. An agent serves only the queue the server made at its enrolment, so the
+# job_agent fixture names it here, and the enqueue helpers (and scripts/enqueue*.py, which read the same variable)
+# put jobs in it. Without it a task goes to the public "default" queue, which no agent of the suite serves.
+QUEUE_ENV = "CAIRNML_E2E_AGENT_QUEUE"
 
 FINAL = ("completed", "failed", "stopped", "aborted", "closed")
 
@@ -24,7 +30,8 @@ class JobEnded(AssertionError):
     made no progress before the timeout. The message names the status, the agent's reason and the step it reached."""
 
 
-def enqueue(home: Path, task_id: str, *, queue="default", force=True) -> dict:
+def enqueue(home: Path, task_id: str, *, queue=None, force=True) -> dict:
+    queue = queue or os.environ.get(QUEUE_ENV, "default")
     args = ["--task-id", task_id, "--queue", queue]
     if force:
         args.append("--force")

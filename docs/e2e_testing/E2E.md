@@ -45,15 +45,30 @@ on 127.0.0.1 and nine free ports in 18000 to 18999. Run one suite at a time, and
 the deploy stack (see Limits). Needs Docker with Compose v2, uv, and Python 3.12.
 
 ```bash
-# 1. Sources, in a scratch folder: the server at the commit under test, and the SDK, the agent and the web app at the
-#    commits their pin files name (scripts/fetch-sources.sh puts them in cairnml/, cairnml-agent/ and web/).
-# 2. The suite's environment: its exact pins, and the SDK and the agent from their folders.
-uv venv -p 3.12 .venv
+# 1. Sources, in a scratch folder (WS): the server at the commit under test, and the SDK, the agent and the web app
+#    inside it, in the folders the compose file builds from (cairnml/, cairnml-agent/, web/). From git:
+WS=/path/to/scratch/ws; mkdir -p "$WS"/{cairnml,cairnml-agent,web}
+git -C cairnml-server archive origin/main | tar -x -C "$WS"
+git -C cairnml archive origin/main | tar -x -C "$WS/cairnml"
+git -C cairnml-agent archive origin/main | tar -x -C "$WS/cairnml-agent"
+git -C cairnml-web archive origin/main | tar -x -C "$WS/web"
+#    (or, from the pins, `scripts/fetch-sources.sh` in the server's folder.)
+cd "$WS"
+# 2. The suite's environment: its exact pins, and the SDK and the agent from their folders. --seed puts pip in the
+#    venv: the agent builds its own wheel with `python -m pip` when a job starts, and a venv without pip crashes there.
+uv venv --seed -p 3.12 .venv
 uv pip install -r tests/e2e/requirements.txt -e "./cairnml[dataset]" -e ./cairnml-agent
 .venv/bin/python -m playwright install chromium
-# 3. The suite, from a folder that is neither the SDK's nor the agent's.
+# 3. The suite, from a folder that is neither the SDK's nor the agent's. HOME and TMPDIR are scratch folders, so that
+#    nothing is written to your own ~/.cairnml, and the stack's state (which containers write as other users) is in one place.
+export HOME=/path/to/scratch/home TMPDIR=/path/to/scratch/tmp; mkdir -p "$HOME" "$TMPDIR"
 cd tests/e2e && CAIRNML_ES_HEAP=1g ../../.venv/bin/pytest -v
 ```
+
+The first job of a run is cold (the agent builds its environment in the container), which is why the job clone test waits
+up to 300 s. A full run takes about 18 minutes after the images are built. The agent daemons the suite starts are its
+own processes (`cairnml-agent daemon`); a run that is killed can leave one behind, so stop it by its PID, and check
+`docker ps -a` for containers of the stack (`stack/prune-networks.sh` removes unused networks).
 
 `CAIRNML_ES_HEAP` caps Elasticsearch's heap (the default is 2g). The stack's state folder is in `TMPDIR`. The report is
 written to `tests/e2e/reports/`. `tests/e2e/requirements.txt` holds the exact pins the runner image uses too; its header
@@ -175,7 +190,8 @@ Rules the suite follows:
 
 ## Known defects
 
-No defect is known to fail on the `pre-2.41` trees. The owner-policy test that cairnml-server #3 covered
+No defect is known to fail on `origin/main` as of 2026-11-19 (the dataset module in "Status of the last run" is an
+outdated test, not a defect). The owner-policy test that cairnml-server #3 covered
 (`test_05_artifacts.py::test_a_member_who_is_not_the_owner_cannot_delete_the_run`) passed on 2026-11-18, so its row was
 removed. Re-check it on the current server before recording it again.
 
@@ -184,30 +200,30 @@ removed. Re-check it on the current server before recording it again.
 
 ## Status of the last run
 
-Snapshot from 2026-11-18, host run (see "Running on the host"), against the `pre-2.41` trees: server `c1b924ec`, SDK
-`12c545cc`, agent `3d20af9a` (v0.0.6), web `128917fd`. It is not a full run of the current tree, and the run was not
-complete in one session.
+2026-11-19, host run (see "Running on the host"), against `origin/main` of all four repositories: server `801ad947` (the
+suite from this change), SDK `6d0521b5`, agent `f4daf292`, web `6e73bf82`. The stack was reused (`CAIRNML_E2E_REUSE_STACK=1`).
 
-- Full suite, stopped after `test_07_datasets_models.py`'s model tests: `1 failed, 50 passed, 2 skipped, 7 errors in 697.80s`.
-  The errors are the dataset module (6) and `test_06_git.py::test_job_clones_the_recorded_commit_and_reports_it`.
-- Changed modules, before the shared sign-in fix: `6 failed, 29 passed, 12 errors in 853.56s`.
-- Web modules after the fix: `3 failed, 13 passed, 1 error in 262.75s`. Project tabs then passed on its own.
-- Queue module (`test_queue_ownership.py`): `16 passed in 128.63s`.
+- Full suite: `1 failed, 117 passed, 2 skipped, 6 errors in 2253.71s (0:37:33)` (126 tests). The run before this change,
+  on the same trees: `3 failed, 99 passed, 2 skipped, 22 errors in 1079.83s (0:17:59)`. The longer time is the machine's load
+  that day and the long job-token test; it is not a slower suite.
+- The one failure, `test_12_web_runs.py::test_comparison_view_overlays_both_runs`, was not the "What's new" dialog (it was
+  dismissed): the test clicked the Compare view button by fixed coordinates, which no longer hit it. It now clicks the
+  button by its `data-id`. After that change `test_12_web_runs.py` alone: `9 passed in 112.47s`. The full run was not
+  repeated with this one change.
+- Skipped: the two `github` tests (`test_06_git.py`: `CAIRNML_E2E_GITHUB_REPO` is not set).
 
-Not run to completion: `test_08` to `test_14`, and `test_access_control.py` (its 2.37 membership checks passed in the
-changed-module run). Still failing at the last run:
+Known, not fixed:
 
-- `test_07_datasets_models.py` (dataset module): the dataset helper still uses the removed `remote add` flow, which needs a
-  GitHub origin and the server's registration. Not rewritten.
-- `test_06_git.py::test_repository_on_github_is_refused_at_enqueue_without_the_app`: the enqueue returns `queued 0`
-  with exit code 0 instead of a refusal. Real product defect; no issue yet.
-- `test_06_git.py::test_job_clones_the_recorded_commit_and_reports_it` and
-  `test_12_web_runs.py::test_workers_page_shows_a_running_job_without_a_reload`: the job agent's worker is not listed
-  (setup). Probably gianlucapargaetzi/cairnml-agent#113; not confirmed.
-- `test_10_web_app.py::test_manage_workers_and_queues_page_opens`: a modal backdrop stays open after sign-in and
-  intercepts the dashboard button. Not yet decided whether the overlay is intended.
-- `test_12_web_runs.py::test_comparison_view_overlays_both_runs`: `text=loss` not visible in the scalars view within
-  10 s. Not analysed beyond the symptom.
+- `test_07_datasets_models.py`, the six dataset tests (errors): the helper `scripts/dataset_make.py` still uses the
+  removed `remote add` flow (`DatasetError: no storage is chosen yet: run 'cairnml dataset remote add <url>' first`).
+  It needs a GitHub origin; rewrite pending. The two model tests of the module pass.
+
+What the rerun found and this change repaired: the agent of the suite started with `--queue default`, which the server
+refuses (an agent serves only the queue made at its enrolment), so every test that needs the job agent errored (the
+suite now starts the agent without `--queue` and enqueues to the queue in its configuration, `agent.queue`); the cold
+first job (the git job clone) needs 300 s; a GitHub repository refused at enqueue is, by design, a Failed task with the
+reason `access refused`, not a rejected call; the "What's new" dialog covers the page for about a second after sign-in
+and is now dismissed in `support/web.py`; the host venv needs pip (`uv venv --seed`).
 
 ## Open results
 
@@ -219,7 +235,8 @@ changed-module run). Still failing at the last run:
   two parts. The job script now runs from outside the checkout, so the SDK records no SSH repository. And the test opens
   the JOBS tab (`/workers-and-queues/jobs`): it had been left on the dashboard tab, which has no job list. Passes in a
   targeted run.
-- **Comparison view**: passed in this run; see Status above.
+- **Comparison view**: fixed in the suite: the test clicked the Compare view button by fixed coordinates, and now clicks it
+  by its `data-id`. Passes in a targeted run; see Status above.
 
 ## Coverage and gaps
 

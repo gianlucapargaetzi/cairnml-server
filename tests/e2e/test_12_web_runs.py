@@ -145,7 +145,7 @@ def test_comparison_view_overlays_both_runs(runs, signed_in_page):
     """
     _open(signed_in_page, f"/projects/{runs['project_id']}/experiments")
     signed_in_page.wait_for_selector("text=e2e-web-run", timeout=CHECK_TIMEOUT_MS)
-    signed_in_page.mouse.click(550, 92)  # the scalars view button of the experiments toolbar
+    signed_in_page.click('mat-button-toggle[data-id="compare"] button')  # the "Compare view" button of the toolbar
     # the chart's labels are drawn after its frame: wait for the loss itself, not for the axis
     signed_in_page.wait_for_selector("text=loss", timeout=CHECK_TIMEOUT_MS)
     body = signed_in_page.inner_text("body")

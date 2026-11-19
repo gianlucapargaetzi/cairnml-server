@@ -67,13 +67,13 @@ def test_member_can_enrol_an_agent(member_account, tmp_path):
 
 
 def test_agent_registers_as_a_worker_listening_to_its_queue(client_home, machine):
-    """The agent registers as a worker, and listens to the default queue.
+    """The agent registers as a worker, and listens to the queue the server made for it at enrolment.
 
-    Expect: the worker is in the server's worker list, and its queues include the default queue.
+    Expect: the worker is in the server's worker list, and its queues include the agent's own queue.
     """
     record = worker_record(workspace.device_api(client_home), machine.worker_name)
     assert record is not None
-    assert "default" in [q.get("name") for q in record.get("queues", [])], record
+    assert machine.queue in [q.get("name") for q in record.get("queues", [])], record
 
 
 @pytest.fixture(scope="module")
