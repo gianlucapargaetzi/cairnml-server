@@ -653,21 +653,22 @@ def test_same_user_fields_give_the_same_document_through_update_and_edit(company
     assert raw("task1")["last_changed_by"] == raw("task2")["last_changed_by"] == "u1"
 
 
-# suspect: pinned as is, see the decision issue (#282)
+# intended, see #301
 def test_same_user_fields_through_update_and_batch_differ_only_as_pinned(company, side_effects):  # X2
     make_root(company, members=[("u1", ProjectRole.read_write)])
     for id_ in ("task1", "task2", "task3", "task4"):
         make_task(company, "root1", "u1", id_=id_)
 
-    # Name with surrounding spaces: update strips it, the batch write stores it as sent
+    # Name with surrounding spaces: update and the batch both strip it (see #301)
     run_update(company, "u1", {"task": "task1", "name": "  abc  "})
     assert run_batch(company, "u1", [{"task": "task2", "name": "  abc  "}]) == {"updated": 1}
     assert raw("task1")["name"] == "abc"
-    assert raw("task2")["name"] == "  abc  "
+    assert raw("task2")["name"] == "abc"
 
-    # Display name over 200 characters: update refuses it, the batch write stores it
+    # Display name over 200 characters: update and the batch both refuse it, and the batch stores nothing
     with pytest.raises(errors.bad_request.DataValidationError):
         run_update(company, "u1", {"task": "task3", "display_name": "x" * 201})
-    assert run_batch(company, "u1", [{"task": "task4", "display_name": "x" * 201}]) == {"updated": 1}
+    with pytest.raises(errors.bad_request.DataValidationError):
+        run_batch(company, "u1", [{"task": "task4", "display_name": "x" * 201}])
     assert raw("task3").get("display_name") is None
-    assert raw("task4")["display_name"] == "x" * 201
+    assert raw("task4").get("display_name") is None

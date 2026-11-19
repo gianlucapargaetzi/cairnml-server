@@ -514,6 +514,7 @@ def test_edit_on_the_same_project_invalidates_only_its_own_project(company, book
     assert bookkeeping.repository == ["task1"]
 
 
+# intended, see #301
 def test_update_batch_name_only_touches_no_tag_cache_time_or_repository(company, bookkeeping):
     make_root(company, owner="owner1")
     make_task(company, "root1", "owner1")
@@ -523,9 +524,10 @@ def test_update_batch_name_only_touches_no_tag_cache_time_or_repository(company,
     assert bookkeeping.reset == []
     assert bookkeeping.update_tags == []
     assert bookkeeping.project_time == []
-    assert bookkeeping.repository == []
+    assert bookkeeping.repository == ["task1"]
 
 
+# intended, see #301
 def test_update_batch_tags_resets_its_project_and_bumps_its_time(company, bookkeeping):
     make_root(company, owner="owner1")
     make_task(company, "root1", "owner1")
@@ -535,9 +537,10 @@ def test_update_batch_tags_resets_its_project_and_bumps_its_time(company, bookke
     assert bookkeeping.reset == [["root1"]]
     assert bookkeeping.project_time == [["root1"]]
     assert bookkeeping.update_tags == []
-    assert bookkeeping.repository == []
+    assert bookkeeping.repository == ["task1"]
 
 
+# intended, see #301
 def test_update_batch_move_resets_and_bumps_both_projects_and_records_no_repository(company, bookkeeping):
     make_root(company, id_="src", owner="owner1")
     make_root(company, id_="dst", owner="owner1")
@@ -547,7 +550,7 @@ def test_update_batch_move_resets_and_bumps_both_projects_and_records_no_reposit
     assert call.result.data == {"updated": 1}
     assert _as_set(bookkeeping.reset[0]) == _as_set(["dst", "src"])
     assert bookkeeping.update_tags == []
-    assert bookkeeping.repository == []
+    assert bookkeeping.repository == ["task1"]
 
 
 def test_move_resets_and_bumps_both_projects_and_records_no_repository(company, bookkeeping):

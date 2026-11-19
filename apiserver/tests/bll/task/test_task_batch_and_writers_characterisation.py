@@ -220,40 +220,44 @@ def test_batch_stamps_last_change_not_last_update(company, side_effects):
     assert task.last_update is None
 
 
+# intended, see #301
 def test_batch_strips_the_name(company, side_effects):
-    # Measured on the real database: the batch strips surrounding spaces before its raw write
+    # Checked in the stored document: the model strips on load, so db_task() alone cannot show the stored value
     make_root(company, owner="owner1")
     make_task(company, "root1", "owner1")
     call = FakeCall(identity(company, "owner1"), batched=[{"task": "task1", "name": "  abc  "}])
     svc.update_batch(call, company, None)
     assert call.result.data == {"updated": 1}
-    assert db_task("task1").name == "abc"
+    assert Task.objects(id="task1").as_pymongo().first()["name"] == "abc"
 
 
-# suspect: pinned as is, see the decision issue (#282)
+# intended, see #301
 def test_batch_does_not_enforce_name_minimum(company, side_effects):
+    # The batch refuses a two-character name as update does, and stores nothing
     make_root(company, owner="owner1")
     make_task(company, "root1", "owner1")
     call = FakeCall(identity(company, "owner1"), batched=[{"task": "task1", "name": "ab"}])
-    svc.update_batch(call, company, None)
-    assert call.result.data == {"updated": 1}
-    assert db_task("task1").name == "ab"
+    with pytest.raises(errors.bad_request.DataValidationError):
+        svc.update_batch(call, company, None)
+    assert db_task("task1").name == task_name()
+    side_effects.project_time.assert_not_called()
 
 
-# suspect: pinned as is, see the decision issue (#282)
+# intended, see #301
 def test_batch_does_not_enforce_display_name_maximum(company, side_effects):
+    # The batch refuses a 201-character display name as update does, and stores nothing
     make_root(company, owner="owner1")
     make_task(company, "root1", "owner1")
     call = FakeCall(identity(company, "owner1"), batched=[{"task": "task1", "display_name": "x" * 201}])
-    svc.update_batch(call, company, None)
-    assert call.result.data == {"updated": 1}
-    assert len(db_task("task1").display_name) == 201
+    with pytest.raises(errors.bad_request.DataValidationError):
+        svc.update_batch(call, company, None)
+    assert Task.objects(id="task1").as_pymongo().first().get("display_name") is None
 
 
-# suspect: pinned as is, see the decision issue (#282)
+# intended, see #301
 def test_batch_counts_modified_not_matched(company, side_effects):
-    # The item renames the task to the name it already has. Its last_change stamp is still written, so the document
-    # is modified and the item counts: the count is "modified" in the sense of the stamp, not of the user field.
+    # The item renames the task to the name it already has. The count is the matched count, as update returns it:
+    # the item matches its task and counts once.
     make_root(company, owner="owner1")
     make_task(company, "root1", "owner1", name="same")
     call = FakeCall(identity(company, "owner1"), batched=[{"task": "task1", "name": "same"}])
@@ -286,16 +290,17 @@ def test_batch_tag_only_change_updates_project_time_and_resets_its_project(compa
     assert side_effects.project_time.call_args.kwargs["project_ids"] == ["root1"]
 
 
-# suspect: pinned as is, see the decision issue (#282)
+# intended, see #301
 def test_batch_does_not_record_the_repository_on_a_move(company, side_effects):
-    # Moving a task changes the project its repository is recorded for, the batch records nothing
+    # Moving a task changes the project its repository is recorded for: the batch records it once per written task,
+    # as update does
     make_root(company, id_="src", owner="owner1")
     make_root(company, id_="dst", owner="owner1")
     make_task(company, "src", "owner1", script=Script(repository="git-repo"))
     call = FakeCall(identity(company, "owner1"), batched=[{"task": "task1", "project": "dst"}])
     svc.update_batch(call, company, None)
     assert call.result.data == {"updated": 1}
-    side_effects.record.assert_not_called()
+    side_effects.record.assert_called_once_with(company, "owner1", "task1")
 
 
 def test_batch_without_items_raises(company, side_effects):

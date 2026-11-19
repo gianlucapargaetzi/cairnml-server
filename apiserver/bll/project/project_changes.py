@@ -28,6 +28,8 @@ class ProjectEffects:
     project_time_together: Optional[tuple] = None
     # The task's repository is recorded for its project
     record_repository: bool = False
+    # The repository of each of these tasks is recorded, one call per task in the given order (tasks.update_batch)
+    record_repository_of: tuple = ()
 
 
 def plan_task_create(project: Optional[str], fields: dict) -> ProjectEffects:
@@ -66,13 +68,20 @@ def plan_task_write(old_project: Optional[str], written: dict, updated: int) -> 
 
 def plan_task_batch(updated_projects: Iterable[Optional[str]]) -> ProjectEffects:
     """tasks.update_batch: every project a modified item moved to or from, or whose tags it changed, has its task tag
-    cache reset (both tag fields) and its project time set in one call. The batch records no repository. The caller
-    plans only when something was modified (issue 277, B7-B13 of the characterisation tests)."""
+    cache reset (both tag fields) and its project time set in one call. The batch records no repository (see
+    plan_task_batch_repositories). The caller plans only when something was modified (issue 277, B7-B13 of the
+    characterisation tests)."""
     projects = tuple(updated_projects)
     return ProjectEffects(
         reset_projects=projects,
         project_time_together=projects,
     )
+
+
+def plan_task_batch_repositories(written_task_ids: Iterable[str]) -> ProjectEffects:
+    """tasks.update_batch: the repository of every written task is recorded, as tasks.update records it (issue 301).
+    Kept apart from plan_task_batch, which keeps the tag cache and project time bookkeeping."""
+    return ProjectEffects(record_repository_of=tuple(written_task_ids))
 
 
 def reset_task_tags(company_id: str, projects: Sequence[Optional[str]]) -> None:
@@ -109,3 +118,5 @@ def apply_effects(company_id: str, user: str, effects: ProjectEffects, task=None
         update_project_time(project_ids=list(effects.project_time_together))
     if effects.record_repository:
         record_repository(company_id, user, task)
+    for task_id in effects.record_repository_of:
+        record_repository(company_id, user, task_id)
