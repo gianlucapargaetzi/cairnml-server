@@ -94,7 +94,7 @@ Section 4 of E2E.md. The repositories are local (a bare remote and a checkout); 
 | `test_script_outside_git_is_recorded_without_a_repository` | A script outside git has no repository recorded, and its code is kept with the run. |
 | `test_checkout_without_a_remote_records_commit_but_no_url` | A checkout with no remote records its commit and no URL. |
 | `test_job_clones_the_recorded_commit_and_reports_it` | A job clones the recorded commit and reports it. |
-| `test_repository_on_github_is_refused_at_enqueue_without_the_app` | Enqueueing a github.com repository is refused with a message that names GitHub. |
+| `test_repository_on_github_is_refused_at_enqueue_without_the_app` | Enqueueing a github.com repository queues nothing and leaves the task Failed, with the reason "access refused" and a message that names GitHub. |
 | `test_private_repository_is_refused_at_clone_time` | **Skip** unless `CAIRNML_E2E_GITHUB_PRIVATE_REPO` is set. A job whose repository the App cannot read fails at clone, with no token in its message. |
 | `test_a_client_device_cannot_get_a_repository_token` | **Skip** unless `CAIRNML_E2E_GITHUB_REPO` is set. A person's machine gets no repository token. |
 
@@ -115,20 +115,20 @@ Section 7 of E2E.md. Each step runs in its own process.
 
 ## test_08_agents.py: enrolling and running an agent
 
-Section 5 of E2E.md. The agent is the daemon on the default queue, in its own home, with its own device key and worker name.
+Section 5 of E2E.md. The agent is the daemon on its own queue (the one made at its enrolment), in its own home, with its own device key and worker name.
 
 | Test | Checks |
 |---|---|
 | `test_admin_enrols_the_agent_machine_with_its_own_key` | `cairnml-agent init` (as admin) writes an agent key with mode 0600 and a device id. |
 | `test_agent_device_is_kind_agent` | The device is listed as kind `agent`, not revoked. |
 | `test_member_can_enrol_an_agent` | A plain user enrols an agent; an agent key and a device id are written. |
-| `test_agent_registers_as_a_worker_listening_to_its_queue` | The worker is in the server's worker list, and its queues include the default queue. |
+| `test_agent_registers_as_a_worker_listening_to_its_queue` | The worker is in the server's worker list, and its queues include the agent's own queue. |
 | `test_agent_without_its_key_does_not_register` | An agent whose key is removed never registers, and its log names the key. |
 | `test_agent_without_its_key_says_to_enrol_it` | The log says to run `cairnml-agent init`, not a raw `Errno 2`. |
 
 ## test_09_jobs.py: queue and execution
 
-Section 6 of E2E.md. A job waits in the default queue until the agent takes it.
+Section 6 of E2E.md. A job waits in the agent's queue until the agent takes it.
 
 | Test | Checks |
 |---|---|
