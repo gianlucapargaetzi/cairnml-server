@@ -37,6 +37,18 @@ previous release (API 2.39), these endpoints change in a way that breaks a clien
   2.22 to 2.40 keep the 2.22 definition, whose batched request is at 2.22; versions 2.1 to 2.21 keep the 2.1 definition.
 - tasks.update_batch: the batched request is at API 2.41 (the request contract is not classified by the check). Versions
   2.1 to 2.40 keep the 2.1 definition, whose batched request is at 1.5.
+- tasks.get_by_id, tasks.get_all, tasks.get_by_id_ex, tasks.get_all_ex, reports.get_task_data, tasks.create, tasks.edit,
+  tasks.validate, tasks.clone: the shared definitions of a task declare its project, its parent and the model of each
+  input and output model as the ID or as the expanded object (`project` and the model: `{id, name, ...}`, `parent`:
+  `{id, name, project}`), where they declared the ID only. This corrects the declaration and changes nothing on the
+  wire, for any API version. Responses: the previous release already returned the object from tasks.get_by_id_ex,
+  tasks.get_all_ex and reports.get_task_data (joined references are expanded, even without a projection) and the ID from
+  tasks.get_by_id and tasks.get_all, and they still do. Requests: tasks.create, tasks.edit, tasks.validate and
+  tasks.clone take the model ID only, as before, and refuse an object; the declaration of their request is wider than
+  what they accept.
+- projects.get_queues: the response declares the level and share_id of a queue, which the server already returned from
+  2.38 on. The contract is the same at every version; the definition labelled 2.41 exists so that the change is recorded
+  at 2.41, and the one labelled 2.38 still serves 2.38 to 2.40.
 - Definitions dropped to keep at most five per endpoint (the newest are kept): models.get_all_ex 2.1; projects.get_all_ex
   2.1, 2.13, 2.14, 2.15, 2.16, 2.17 and 2.20; queues.get_all_ex 2.4; tasks.get_all_ex 2.1 and 2.13. A request at a dropped
   version is refused, naming the oldest version that is still served.
