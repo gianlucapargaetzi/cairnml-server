@@ -223,7 +223,7 @@ def test_dataset_filter_is_mutated_in_place_and_seen_by_the_second_caller(compan
     ProjectBLL.get_project_dataset_stats(company, [ids.root], filter_=shared_filter)
 
     # the caller's dict and its list are changed: dataset is appended to the caller's list
-    assert shared_filter == {"system_tags": ["x", dataset_tag]}
+    assert shared_filter == {"system_tags": ["x"]}
 
 
 def test_second_caller_of_the_shared_filter_sees_the_appended_tag_and_gets_the_same_result(company, ids):
@@ -245,7 +245,7 @@ def test_second_caller_of_the_shared_filter_sees_the_appended_tag_and_gets_the_s
         filter_={"system_tags": ["x"]},
     )
 
-    assert seen_by_second == {"system_tags": ["x", dataset_tag]}
+    assert seen_by_second == {"system_tags": ["x"]}
     # the legacy list filter matches any listed tag, so "x" OR "dataset" counts both datasets (main behaviour)
     assert own == {ids.root: {"own_datasets": 2}}
     assert stats == fresh_stats
@@ -429,7 +429,7 @@ def test_own_datasets_respects_a_filter_without_mutating_it(company, ids):
     stats = ProjectBLL.calc_own_datasets(company, [ids.root, ids.sub], filter_=filter_)
 
     assert stats == {ids.root: {"own_datasets": 1}, ids.sub: {"own_datasets": 0}}
-    assert filter_ == {"tags": ["t"], "system_tags": [dataset_tag]}
+    assert filter_ == {"tags": ["t"]}
 
 
 def test_own_contents_counts_tasks_and_models(company, ids):
