@@ -6,7 +6,6 @@ from functools import partial
 from typing import Sequence, Union, Tuple, Mapping
 
 from mongoengine import Q
-from pymongo import UpdateOne
 
 from types import SimpleNamespace
 
@@ -126,13 +125,15 @@ from apiserver.bll.task.task_operations import (
 )
 from apiserver.bll.task.task_writes import (
     WriteContext,
+    add_or_update_task_model,
+    delete_task_models,
     edit_task_fields,
     save_new_task,
+    update_task_batch,
     update_task_fields,
 )
 from apiserver.bll.task.utils import (
     update_task,
-    get_task_for_update,
     deleted_prefix,
     get_task_with_write_access,
 )
@@ -146,7 +147,6 @@ from apiserver.database.model.task.output import Output
 from apiserver.database.model.task.task import (
     Task,
     TaskStatus,
-    ModelItem,
     TaskModelTypes,
 )
 from apiserver.database.utils import (
@@ -665,57 +665,11 @@ def update_batch(call: APICall, company_id, _):
         raise errors.bad_request.BatchContainsNoItems()
 
     with translate_errors_context():
-        items = {i["task"]: i for i in items}
-        entity_access.assert_tasks_access(company_id, call.identity, list(items), "write")
-        tasks = {
-            t.id: t
-            for t in entity_access.assert_writable_tasks(
-                identity=call.identity,
-                company_id=company_id,
-                ids=list(items),
-                only=("id", "project", "user"),
-            )
-        }
-
-        if len(tasks) < len(items):
-            missing = tuple(set(items).difference(tasks))
-            raise errors.bad_request.InvalidTaskId(ids=missing)
-
-        now = datetime.now(timezone.utc)
-
-        bulk_ops = []
-        updated_projects = set()
-        for id, data in items.items():
-            task = tasks[id]
-            fields, valid_fields = prepare_update_fields(call, data)
-            # Checked for every item before the bulk write below, so that a failure changes nothing
-            entity_access.assert_destination_project(call.identity, task, fields)
-            partial_update_dict = Task.get_safe_update_dict(fields)
-            if not partial_update_dict:
-                continue
-            partial_update_dict.update(
-                last_change=now,
-                last_changed_by=call.identity.user,
-            )
-            update_op = UpdateOne({"_id": id, "company": company_id}, {"$set": partial_update_dict})
-            bulk_ops.append(update_op)
-
-            new_project = partial_update_dict.get("project", task.project)
-            if new_project != task.project:
-                updated_projects.update({new_project, task.project})
-            elif any(f in partial_update_dict for f in ("tags", "system_tags")):
-                updated_projects.add(task.project)
-
-        updated = 0
-        if bulk_ops:
-            res = Task._get_collection().bulk_write(bulk_ops)
-            updated = res.modified_count
-
-        if updated and updated_projects:
-            projects = list(updated_projects)
-            _reset_cached_tags(company_id, projects=projects)
-            update_project_time(project_ids=projects)
-
+        updated = update_task_batch(
+            WriteContext(company_id=company_id, identity=call.identity),
+            items,
+            prepare=lambda data: prepare_update_fields(call, data)[0],
+        )
         call.result.data = {"updated": updated}
 
 
@@ -1480,35 +1434,24 @@ def update_tags(call: APICall, company_id: str, request: UpdateTagsRequest):
 @endpoint("tasks.add_or_update_model")
 def add_or_update_model(call: APICall, company_id: str, request: AddUpdateModelRequest):
     entity_access.assert_tasks_access(company_id, call.identity, [request.task], "write")
-    get_task_for_update(company_id=company_id, task_id=request.task, force=True, identity=call.identity)
-
-    models_field = f"models__{request.type}"
-    model = ModelItem(name=request.name, model=request.model, updated=datetime.now(timezone.utc))
-    query = {"id": request.task, f"{models_field}__name": request.name}
-    updated = Task.objects(**query).update_one(**{f"set__{models_field}__S": model})
-
-    updated = TaskBLL.update_statistics(
-        task_id=request.task,
-        company_id=company_id,
-        user_id=call.identity.user,
-        last_iteration_max=request.iteration,
-        **({f"push__{models_field}": model} if not updated else {}),
+    updated = add_or_update_task_model(
+        WriteContext(company_id=company_id, identity=call.identity),
+        request.task,
+        model_type=request.type,
+        name=request.name,
+        model=request.model,
+        iteration=request.iteration,
     )
-
     return {"updated": updated}
 
 
 @endpoint("tasks.delete_models")
 def delete_models(call: APICall, company_id: str, request: DeleteModelsRequest):
     entity_access.assert_tasks_access(company_id, call.identity, [request.task], "write")
-    task = get_task_for_update(company_id=company_id, task_id=request.task, force=True, identity=call.identity)
-
     delete_names = {type_: [m.name for m in request.models if m.type == type_] for type_ in get_options(TaskModelTypes)}
-    commands = {f"pull__models__{field}__name__in": names for field, names in delete_names.items() if names}
-
-    updated = task.update(
-        last_change=datetime.now(timezone.utc),
-        last_changed_by=call.identity.user,
-        **commands,
+    updated = delete_task_models(
+        WriteContext(company_id=company_id, identity=call.identity),
+        request.task,
+        delete_names,
     )
     return {"updated": updated}

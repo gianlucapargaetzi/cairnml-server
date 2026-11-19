@@ -5,7 +5,7 @@ kept as they are, one rule per call site (issue 276, section 2.2). `apply_effect
 """
 
 from dataclasses import dataclass
-from typing import Optional, Sequence
+from typing import Iterable, Optional, Sequence
 
 from apiserver.bll import repository_runs
 from apiserver.bll.organization import OrgBLL, Tags
@@ -24,6 +24,8 @@ class ProjectEffects:
     update_tags: Optional[tuple] = None
     # One update_project_time call per entry; an entry may be None, which the call treats as a no-op
     project_time: tuple = ()
+    # One update_project_time call naming all these projects (tasks.update_batch); None means no such call
+    project_time_together: Optional[tuple] = None
     # The task's repository is recorded for its project
     record_repository: bool = False
 
@@ -62,6 +64,17 @@ def plan_task_write(old_project: Optional[str], written: dict, updated: int) -> 
     )
 
 
+def plan_task_batch(updated_projects: Iterable[Optional[str]]) -> ProjectEffects:
+    """tasks.update_batch: every project a modified item moved to or from, or whose tags it changed, has its task tag
+    cache reset (both tag fields) and its project time set in one call. The batch records no repository. The caller
+    plans only when something was modified (issue 277, B7-B13 of the characterisation tests)."""
+    projects = tuple(updated_projects)
+    return ProjectEffects(
+        reset_projects=projects,
+        project_time_together=projects,
+    )
+
+
 def reset_task_tags(company_id: str, projects: Sequence[Optional[str]]) -> None:
     org_bll.reset_tags(company_id, Tags.Task, projects=projects)
 
@@ -82,8 +95,9 @@ def record_repository(company_id: str, user: str, task) -> None:
     repository_runs.record_script(company_id, user, task)
 
 
-def apply_effects(company_id: str, user: str, effects: ProjectEffects, task) -> None:
-    """Performs a plan in the order the endpoints always used: tag cache, project time, repository."""
+def apply_effects(company_id: str, user: str, effects: ProjectEffects, task=None) -> None:
+    """Performs a plan in the order the endpoints always used: tag cache, project time, repository. `task` is only
+    needed when the plan records the repository."""
     if effects.reset_projects is not None:
         reset_task_tags(company_id, projects=list(effects.reset_projects))
     if effects.update_tags is not None:
@@ -91,5 +105,7 @@ def apply_effects(company_id: str, user: str, effects: ProjectEffects, task) -> 
         update_cached_tags(company_id, project=project, fields=fields)
     for project in effects.project_time:
         update_project_time(project)
+    if effects.project_time_together is not None:
+        update_project_time(project_ids=list(effects.project_time_together))
     if effects.record_repository:
         record_repository(company_id, user, task)

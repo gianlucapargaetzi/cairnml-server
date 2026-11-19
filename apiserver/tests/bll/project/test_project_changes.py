@@ -6,7 +6,7 @@ recordings a write needs. The characterisation tests (issues 268, 270) pin the s
 these cases pin the plan itself, without a database.
 """
 
-from apiserver.bll.project.project_changes import ProjectEffects, plan_task_create, plan_task_write
+from apiserver.bll.project.project_changes import ProjectEffects, plan_task_batch, plan_task_create, plan_task_write
 
 FIELDS = {"tags": ["fresh"], "system_tags": None}
 
@@ -75,3 +75,20 @@ def test_x3_edit_that_moves_a_task_resets_both_projects_but_bumps_only_the_new_o
 
 def test_x3_a_write_that_changed_nothing_has_no_effects():
     assert plan_task_write("src", {"project": "dst"}, updated=0) == ProjectEffects()
+
+
+def test_x3_batch_resets_every_touched_project_and_sets_their_time_in_one_call_and_records_no_repository():
+    # tasks.update_batch (issue 277, B7-B13): the same projects reset and bumped together, the repository is not recorded
+    effects = plan_task_batch(["dst", "src"])
+
+    assert effects == ProjectEffects(
+        reset_projects=("dst", "src"),
+        update_tags=None,
+        project_time=(),
+        project_time_together=("dst", "src"),
+        record_repository=False,
+    )
+
+
+def test_x3_batch_with_no_projects_has_nothing_to_reset():
+    assert plan_task_batch([]) == ProjectEffects(reset_projects=(), project_time_together=())
