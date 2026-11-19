@@ -48,9 +48,9 @@ def _generated_function(service: str, action: str) -> str:
 
 def hand_written_sources(root: Path, sources: Path) -> List[Path]:
     """The .ts files of the sources that are hand-written: no spec file, and no file of the generated folders of root."""
-    root = Path(root)
+    root = Path(root).resolve()
     found = []
-    for path in sorted(Path(sources).rglob("*.ts")):
+    for path in sorted(Path(sources).resolve().rglob("*.ts")):
         if path.name.endswith(".spec.ts"):
             continue
         if path.is_relative_to(root) and path.relative_to(root).parts[0] in GENERATED_FOLDERS:
