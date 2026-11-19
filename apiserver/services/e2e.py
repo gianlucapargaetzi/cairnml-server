@@ -12,7 +12,8 @@ from apiserver.database.model.project import Project
 from apiserver.database.model.task.task import Task
 from apiserver.database.model.url_to_delete import UrlToDelete
 from apiserver.service_repo import APICall, endpoint
-from apiserver.services.tasks import _delete_task_events, _reset_cached_tags
+from apiserver.bll.project.project_changes import reset_task_tags
+from apiserver.services.tasks import _delete_task_events
 
 
 def _is_admin(call: APICall) -> bool:
@@ -76,7 +77,7 @@ def e2e_reset(call: APICall, company_id, _):
         )
         removed_projects += 1
         affected_projects.update(touched)
-    _reset_cached_tags(company_id, projects=list(affected_projects))
+    reset_task_tags(company_id, projects=list(affected_projects))
 
     removed_tasks = 0
     for task in Task.objects(company=company_id, name__startswith=prefix).only("id"):

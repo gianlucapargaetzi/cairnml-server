@@ -74,6 +74,7 @@ from apiserver.database.model.project import Project, ProjectMember, ProjectRole
 from apiserver.database.model.task.task import Task, TaskStatus
 from apiserver.service_repo.auth import Identity
 from apiserver.utilities.partial_version import PartialVersion
+from apiserver.bll.project import project_changes
 from apiserver.services import tasks as svc
 from apiserver.tests.db import ensure_db
 
@@ -407,9 +408,13 @@ def bookkeeping(monkeypatch):
         calls.repository.append(getattr(task, "id", task))
 
     monkeypatch.setattr(svc, "_reset_cached_tags", spy_reset)
-    monkeypatch.setattr(svc, "_update_cached_tags", spy_update_tags)
+    monkeypatch.setattr(project_changes, "update_cached_tags", spy_update_tags)
     monkeypatch.setattr(svc, "update_project_time", spy_project_time)
     monkeypatch.setattr(svc, "_record_repository", spy_repository)
+    # update, edit and create record through the project-change module since issue 276
+    monkeypatch.setattr(project_changes, "reset_task_tags", spy_reset)
+    monkeypatch.setattr(project_changes, "update_project_time", spy_project_time)
+    monkeypatch.setattr(project_changes, "record_repository", spy_repository)
     return calls
 
 
