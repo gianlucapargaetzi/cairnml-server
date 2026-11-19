@@ -150,14 +150,13 @@ from apiserver.service_repo.auth import Identity
 from apiserver.services.utils import (
     conform_tag_fields,
     conform_output_tags,
-    escape_dict_field,
-    unescape_dict_field,
     process_include_subprojects,
     ModelsBackwardsCompatibility,
     DockerCmdBackwardsCompatibility,
 )
 from apiserver.idp.tokens import device_of_bearer
 from apiserver.utilities.dicts import nested_get
+from apiserver.utilities.parameter_key_escaper import escape_dict_field, unescape_dict_field
 from apiserver.utilities.partial_version import PartialVersion
 
 task_fields = set(Task.get_fields())

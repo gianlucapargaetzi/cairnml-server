@@ -14,7 +14,8 @@ from typing import (
 
 from boltons import iterutils
 
-from apiserver.apierrors import APIError
+from apiserver.apierrors import APIError, errors
+from apiserver.database.model.base import GetMixin
 from apiserver.database.model.project import Project
 from apiserver.database.model.settings import Settings
 
@@ -88,3 +89,10 @@ def update_project_time(project_ids: Union[str, Sequence[str]]):
         project_ids = [project_ids]
 
     return Project.objects(id__in=project_ids).update(last_update=datetime.utcnow())
+
+
+def validate_tags(tags: Sequence[str], system_tags: Sequence[str]):
+    for values in filter(None, (tags, system_tags)):
+        unsupported = [t for t in values if t.startswith(GetMixin.NewListFieldBucketHelper.op_prefix)]
+        if unsupported:
+            raise errors.bad_request.FieldsValueError("unsupported tag prefix", values=unsupported)

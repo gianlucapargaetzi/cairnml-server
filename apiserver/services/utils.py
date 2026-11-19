@@ -1,10 +1,9 @@
 from datetime import datetime
 from typing import Union, Sequence, Tuple
 
-from apiserver.apierrors import errors
 from apiserver.apimodels.organization import Filter
 from apiserver.bll.project import project_ids_with_children
-from apiserver.database.model.base import GetMixin
+from apiserver.bll.util import validate_tags
 from apiserver.database.model.task.task import TaskModelTypes, TaskModelNames
 from apiserver.database.utils import partition_tags
 from apiserver.service_repo import APICall
@@ -88,49 +87,6 @@ def _upgrade_tags(call: APICall, tags: Sequence, system_tags: Sequence):
         return partition_tags(entity, tags)
 
     return tags, system_tags
-
-
-def validate_tags(tags: Sequence[str], system_tags: Sequence[str]):
-    for values in filter(None, (tags, system_tags)):
-        unsupported = [t for t in values if t.startswith(GetMixin.NewListFieldBucketHelper.op_prefix)]
-        if unsupported:
-            raise errors.bad_request.FieldsValueError("unsupported tag prefix", values=unsupported)
-
-
-def escape_dict(data: dict) -> dict:
-    if not data:
-        return data
-
-    return {ParameterKeyEscaper.escape(k): v for k, v in data.items()}
-
-
-def unescape_dict(data: dict) -> dict:
-    if not data:
-        return data
-
-    return {ParameterKeyEscaper.unescape(k): v for k, v in data.items()}
-
-
-def escape_dict_field(fields: dict, path: Union[str, Sequence[str]]):
-    if isinstance(path, str):
-        path = (path,)
-
-    data = nested_get(fields, path)
-    if not data or not isinstance(data, dict):
-        return
-
-    nested_set(fields, path, escape_dict(data))
-
-
-def unescape_dict_field(fields: dict, path: Union[str, Sequence[str]]):
-    if isinstance(path, str):
-        path = (path,)
-
-    data = nested_get(fields, path)
-    if not data or not isinstance(data, dict):
-        return
-
-    nested_set(fields, path, unescape_dict(data))
 
 
 class ModelsBackwardsCompatibility:

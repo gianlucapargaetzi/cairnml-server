@@ -21,7 +21,7 @@ from apiserver.database.model.task.task import (
     TaskSystemTags,
 )
 from apiserver.service_repo.auth import Identity
-from apiserver.services.utils import escape_dict, escape_dict_field
+from apiserver.utilities.parameter_key_escaper import escape_dict, escape_dict_field
 from apiserver.utilities.dicts import nested_set
 
 from .artifacts import artifacts_prepare_for_save
