@@ -282,10 +282,11 @@ def get_types(call: APICall, company_id, request: GetTypesRequest):
 def stop(call: APICall, company_id, request: StopRequest):
     """
     stop
-    :summary: Stop a running task. Requires task status 'in_progress' and
-              execution_progress 'running', or force=True.
-              Development task is stopped immediately. For a non-development task
-              only its status message is set to 'stopping'
+    :summary: Stop a task. A queued task, a development task or a task with no active worker is
+              set to 'stopped' at once. A task run by a worker only gets the status message
+              'stopping', so the worker stops it and reports back. The status change follows the
+              status transitions: a task whose status does not allow it (for example 'created')
+              is refused, unless force=True skips that check.
 
     """
     entity_access.assert_tasks_access(company_id, call.identity, [request.task], "write")
@@ -586,8 +587,6 @@ def set_requirements(call: APICall, company_id, req_model: SetRequirementsReques
             identity=call.identity,
             only=("status", "script"),
         )
-        if not task.script:
-            raise errors.bad_request.MissingTaskFields("Task has no script field", task=task.id)
         res = update_task(
             task,
             user_id=call.identity.user,

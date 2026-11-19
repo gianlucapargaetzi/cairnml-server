@@ -1261,19 +1261,12 @@ class GetMixin(PropsMixin):
 
 class UpdateMixin(object):
     __user_set_allowed_fields = None
-    __locked_when_published_fields = None
 
     @classmethod
     def user_set_allowed(cls):
         if cls.__user_set_allowed_fields is None:
             cls.__user_set_allowed_fields = dict(get_fields_choices(cls, "user_set_allowed"))
         return cls.__user_set_allowed_fields
-
-    @classmethod
-    def locked_when_published(cls):
-        if cls.__locked_when_published_fields is None:
-            cls.__locked_when_published_fields = dict(get_fields_choices(cls, "locked_when_published"))
-        return cls.__locked_when_published_fields
 
     @classmethod
     def get_safe_update_dict(cls, fields):
