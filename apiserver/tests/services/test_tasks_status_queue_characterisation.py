@@ -272,16 +272,16 @@ def test_started_from_created_sets_in_progress_and_started(company):
     assert call.result.data_model.started == 1
 
 
-# suspect: pinned as is, see the decision issue (#282)
+# intended, see #300
 def test_started_on_a_missing_id_gives_invalid_id_subcode_10(company):
-    # started looks the task up without any scope, so a missing id fails as a malformed id, not as a missing task
-    with pytest.raises(errors.bad_request.InvalidId) as exc:
+    # started looks the task up with the company scope, so a missing id answers like a hidden one (InvalidTaskId)
+    with pytest.raises(errors.bad_request.InvalidTaskId) as exc:
         svc.started(FakeCall(identity(company, "owner1")), company, UpdateRequest(task="missing"))
-    assert_error(exc, 400, 10)
-    assert exc.value.error_data == {"task": None}
+    assert_error(exc, 400, 101)
+    assert exc.value.error_data == {"id": "missing", "company": company}
 
 
-# suspect: pinned as is, see the decision issue (#282)
+# intended, see #300
 def test_started_on_a_hidden_task_gives_invalid_task_id_subcode_101(company):
     make_root(company, owner="owner1")
     make_task(company, "root1", "owner1")
@@ -291,7 +291,7 @@ def test_started_on_a_hidden_task_gives_invalid_task_id_subcode_101(company):
     assert db_task("task1").status == TaskStatus.created
 
 
-# suspect: pinned as is, see the decision issue (#282)
+# intended, see #300
 def test_started_on_another_companys_task_gives_invalid_task_id_subcode_101(company):
     other = f"c-{uuid4().hex[:8]}"
     make_task(company, None, "owner1", task_company=other)
