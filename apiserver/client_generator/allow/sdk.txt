@@ -1,11 +1,4 @@
 # Hand-written SDK calls that send a service and an action by name, and that the schema check (check-callers, target sdk)
 # must not report yet. One line per action: exempt <service.action> <reason> (the reason is mandatory).
 # An exemption that matches no call is reported, so a line is removed when its call is converted.
-exempt datachunks.dataset_credentials called by name in cairnml/datasets/credentials.py; the generated class replaces it when the SDK's calls are converted (cairnml#140)
-exempt devices.git_token called by name in cairnml/datasets/credentials.py; the generated class replaces it when the SDK's calls are converted (cairnml#140)
-exempt repositories.get_all called by name in cairnml/datasets/credentials.py; the generated class replaces it when the SDK's calls are converted (cairnml#140)
-exempt serving.register_container called by name in cairnml/router/endpoint_telemetry.py; the generated class replaces it when the SDK's calls are converted (cairnml#140)
-exempt serving.container_status_report called by name in cairnml/router/endpoint_telemetry.py; the generated class replaces it when the SDK's calls are converted (cairnml#140)
-exempt tasks.get_all called by name in tests/test_session_headers.py, which checks the headers of a raw call; the test stays a raw call
-exempt routers.get_routes called by name in cairnml/backend_interface/routers.py; the server's routers service is not in the schema, so no generated class exists
-exempt users.get_vaults called by name in cairnml/backend_api/session/session.py; the endpoint is not in the schema, so no generated class exists
+# The SDK has no hand-written call that names a service and an action as strings: this file stays empty.
