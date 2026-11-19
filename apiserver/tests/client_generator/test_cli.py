@@ -162,3 +162,19 @@ def test_check_callers_reports_a_call_by_name_with_its_request_class(schema, tmp
         "send_request names queues.get_by_id by strings: build queues.GetByIdRequest and send it instead"
         in result.stdout
     )
+
+
+def test_check_callers_reads_a_base_folder_for_the_classes_a_session_inherits_from(schema):
+    alias = Path(__file__).parent / "fixtures" / "callers" / "alias"
+    root = str(alias / "agent_pkg")
+    without = _check_callers(schema, alias / "agent_pkg")
+    assert "Session inherits from SdkSession" in without.stdout
+    assert "session.of is not a method" not in without.stdout
+    with_base = _run(
+        "check-callers", "--target", "sdk", "--schema", str(schema), "--root", root, "--base", str(alias / "cairnml")
+    )
+    assert with_base.returncode == 0, with_base.stdout + with_base.stderr
+    missing = _run(
+        "check-callers", "--target", "sdk", "--schema", str(schema), "--root", root, "--base", str(alias / "missing")
+    )
+    assert missing.returncode == 2

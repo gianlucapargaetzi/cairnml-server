@@ -16,7 +16,15 @@ Checks the hand-written callers of the API in Python source against the schema:
   `Session` in the scanned tree, with the classes it inherits from). A session object is a name `session`, `_session`
   or `task_session`, an attribute of that name (`self._session`), a name assigned from `Session(...)` of the SDK or the
   agent or annotated `Session`, but not a name bound to `requests`. A session may be a plain `requests.Session`, so the
-  methods of `requests.Session` and of `object` are accepted as well.
+  methods of `requests.Session` and of `object` are accepted as well. A base class is resolved through the import that
+  names it, so `class Session(SdkSession)` with `from cairnml.backend_api.session.session import Session as SdkSession`
+  inherits from the SDK's Session and not from the class of its own name. A base that the scanned folder and the
+  `bases` folders do not define is reported, since its methods cannot be checked. The `bases` folders (the agent's
+  check passes the SDK's package) are read for their classes only; they are not checked;
+- in a test file (`test_*.py`, `*_test.py`, `conftest.py`, or a file under a `tests` folder that is not in `fixtures`) a
+  version string is an API version only when it picks the version of a request: the value of a `version=` keyword or
+  a `/vX.Y/` in a URL, and not inside an assertion or a comparison. Any other string in a test is test data (a version
+  of a fake server, a compared value, a requirement or interpreter version). Other files are judged as above.
 
 The allow file has one line per exception, `exempt <service.action> <reason>` (the reason is mandatory); blank lines and
 lines starting with `#` are ignored. An exception that matches no call is reported, so the file only holds current drift.
@@ -29,7 +37,7 @@ import ast
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Sequence, Set, Tuple
 
 import requests
 
@@ -148,38 +156,86 @@ def _bindings(nodes, class_names: Set[str]) -> Dict[str, str]:
     return found
 
 
-def _alias_map(tree) -> Dict[str, str]:
-    """`from x import Session as _Session` maps `_Session` to `Session`."""
-    return {
-        alias.asname or alias.name: alias.name
-        for node in ast.walk(tree)
-        if isinstance(node, ast.ImportFrom)
-        for alias in node.names
-    }
+def _module_name(path: Path, folder: Path) -> Tuple[str, bool]:
+    """The dotted module name of a file under the folder it is scanned from (`cairnml_agent.session`), and whether the
+    file is a package (`__init__.py`)."""
+    rel = path.name if Path(folder).is_file() else path.relative_to(folder).as_posix()
+    parts = rel[: -len(".py")].split("/")
+    is_package = parts[-1] == "__init__"
+    if is_package:
+        parts = parts[:-1]
+    return ".".join(parts), is_package
+
+
+def _is_test_file(path: Path, folder: Path) -> bool:
+    rel = path.name if Path(folder).is_file() else path.relative_to(folder).as_posix()
+    parts = rel.split("/")
+    name, folders = parts[-1], parts[:-1]
+    if name.startswith("test_") or name.endswith("_test.py") or name == "conftest.py":
+        return True
+    return "tests" in folders and "fixtures" not in folders
+
+
+def _imports_in(tree, module: str, is_package: bool) -> Dict[str, Tuple[str, str]]:
+    """What the names imported in a file are: `from m import A as B` maps B to (m, A), `import m as x` maps x to (m, '')."""
+    package = module if is_package else module.rpartition(".")[0]
+    names: Dict[str, Tuple[str, str]] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            anchor: List[str] = []
+            if node.level:
+                anchor = package.split(".") if package else []
+                if node.level > 1:
+                    anchor = anchor[: max(len(anchor) - (node.level - 1), 0)]
+            base = ".".join(anchor + ([node.module] if node.module else []))
+            for alias in node.names:
+                names[alias.asname or alias.name] = (base, alias.name)
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.asname:
+                    names[alias.asname] = (alias.name, "")
+    return names
+
+
+ClassRef = Optional[Tuple[str, str]]  # (module, class name); None when the base is not a name the file can resolve
+
+
+def _base_ref(node, module: str, imports: Dict[str, Tuple[str, str]]) -> Tuple[ClassRef, str]:
+    """The class a base expression names, and the expression as written (for a message)."""
+    if isinstance(node, ast.Name):
+        if node.id in imports:
+            origin, attr = imports[node.id]
+            return ((origin, attr) if attr else None), node.id
+        return (module, node.id), node.id  # defined in the same module, or not resolvable
+    if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) and node.value.id in imports:
+        origin, attr = imports[node.value.id]
+        if not attr:
+            return (origin, node.attr), ast.unparse(node)
+    return None, ast.unparse(node)
 
 
 @dataclass
 class _ClassInfo:
-    bases: List[str]  # resolved names of the base classes
+    name: str
+    root: bool  # defined under the scanned root (checked) rather than in a bases folder (only read)
+    bases: List[Tuple[ClassRef, str]]  # the class each base names, and the base as written
     members: Set[str]  # methods, class attributes and the attributes assigned on self
     dynamic: bool  # defines __getattr__: any attribute may exist
-    unknown_bases: List[str]  # bases that are not defined under the scanned root
 
 
-def _class_infos(trees) -> Dict[str, List[_ClassInfo]]:
-    infos: Dict[str, List[_ClassInfo]] = {}
-    for tree in trees:
-        aliases = _alias_map(tree)
+def _class_index(entries, root: bool, prefix: str, plain: bool) -> Dict[Tuple[str, str], List[_ClassInfo]]:
+    """The classes of the files, by (module, name). A module is named as the file is scanned (`cairnml_agent.session`)
+    and, with `prefix` (the folder's own name, `cairnml` for the SDK's package), as an import names it. `plain` is
+    false for a bases folder: its classes are only reachable by the prefixed name, so they cannot shadow the root's."""
+    infos: Dict[Tuple[str, str], List[_ClassInfo]] = {}
+    for scanned, is_package, tree in entries:
+        # the names a file's own imports and classes are looked up by: as scanned, or as the package names them
+        module = scanned if plain else (f"{prefix}.{scanned}" if scanned else prefix)
+        imports = _imports_in(tree, module, is_package)
         for node in ast.walk(tree):
             if not isinstance(node, ast.ClassDef):
                 continue
-            bases, unknown = [], []
-            for base in node.bases:
-                if isinstance(base, ast.Name):
-                    name = aliases.get(base.id, base.id)
-                    (bases if name not in TRIVIAL_BASES else []).append(name)
-                else:
-                    unknown.append(ast.unparse(base))
+            bases = [_base_ref(base, module, imports) for base in node.bases]
             members = set()
             for item in node.body:
                 if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -191,33 +247,57 @@ def _class_infos(trees) -> Dict[str, List[_ClassInfo]]:
             for sub in ast.walk(node):
                 if isinstance(sub, ast.Attribute) and isinstance(sub.ctx, ast.Store) and _root_name(sub) == "self":
                     members.add(sub.attr)
-            info = _ClassInfo(bases, members, "__getattr__" in members, unknown)
-            infos.setdefault(node.name, []).append(info)
+            info = _ClassInfo(node.name, root, bases, members, "__getattr__" in members)
+            names = [(module, node.name)]
+            if plain and prefix:
+                names.append((f"{prefix}.{module}" if module else prefix, node.name))
+            for key in names:
+                infos.setdefault(key, []).append(info)
     return infos
 
 
-def _session_members(trees) -> Optional[Tuple[Set[str], bool, List[str]]]:
-    """The members of the Session classes under the root, with those they inherit; None when there is no such class."""
-    infos = _class_infos(trees)
-    if "Session" not in infos:
+def _find(infos, ref: ClassRef) -> List[_ClassInfo]:
+    """The classes a reference names, by the module the import names (`cairnml.session.Session`)."""
+    if ref is None:
+        return []
+    return infos.get(ref, [])
+
+
+def _session_members(infos) -> Optional[Tuple[Set[str], bool, List[str]]]:
+    """The members of the Session classes under the root and of the classes that derive from them, with what those
+    inherit; None when no Session class is defined under the root."""
+    unique = list({id(info): info for group in infos.values() for info in group}.values())
+    family = [info for info in unique if info.root and info.name == "Session"]
+    if not family:
         return None
+    members_of = {id(info) for info in family}
+    grew = True
+    while grew:  # a class of the root that derives from a member is a session too (a test's fake session)
+        grew = False
+        for info in unique:
+            if not info.root or id(info) in members_of:
+                continue
+            if any(id(found) in members_of for ref, _ in info.bases for found in _find(infos, ref)):
+                family.append(info)
+                members_of.add(id(info))
+                grew = True
     members: Set[str] = set()
     dynamic = False
     unknown: List[str] = []
-    pending, seen = ["Session"], set()
+    pending, seen = list(family), set()
     while pending:
-        name = pending.pop()
-        if name in seen:
+        info = pending.pop()
+        if id(info) in seen:
             continue
-        seen.add(name)
-        for info in infos.get(name, []):
-            members |= info.members
-            dynamic = dynamic or info.dynamic
-            unknown += info.unknown_bases
-            pending += info.bases
-            for base in info.bases:
-                if base not in infos:
-                    unknown.append(base)
+        seen.add(id(info))
+        members |= info.members
+        dynamic = dynamic or info.dynamic
+        for ref, written in info.bases:
+            found = _find(infos, ref)
+            if found:
+                pending += found
+            elif written not in TRIVIAL_BASES:
+                unknown.append(written)
     return members, dynamic, sorted(set(unknown))
 
 
@@ -226,11 +306,25 @@ BATCH_KEYWORDS = ("requests", "validate_requests", "allow_raw_requests")
 
 class _Visitor(ast.NodeVisitor):
     def __init__(
-        self, path, schema, generated, allow, findings, used, version_literals, module_scope, class_names, sessions
+        self,
+        path,
+        schema,
+        generated,
+        allow,
+        findings,
+        used,
+        version_literals,
+        module_scope,
+        class_names,
+        sessions,
+        test_file=False,
     ):
         self.path, self.schema, self.allow, self.findings, self.used = path, schema, allow, findings, used
         self.version_literals = version_literals  # False for a generated module: it is the one place versions live
         self.hand_written = version_literals  # the generated modules are not judged for calls by name either
+        self.test_file = test_file  # a version string in a test is data unless it picks a request's version
+        self.picking: Set[int] = set()  # the constants that are the value of a `version=` keyword
+        self.data: Set[int] = set()  # the constants in an assertion or a comparison of a test
         self.scopes = [module_scope]  # what the names bound in each enclosing scope are (see _bindings)
         self.class_names, self.sessions = class_names, sessions  # sessions: the calls are collected, not judged
         self.session_calls: List[Tuple[ast.AST, str, str]] = []
@@ -252,11 +346,30 @@ class _Visitor(ast.NodeVisitor):
                     self.aliases[alias.asname or alias.name] = alias.name
         self.generic_visit(node)
 
+    def _mark_data(self, node):
+        if self.test_file:
+            self.data |= {id(sub) for sub in ast.walk(node) if isinstance(sub, ast.Constant)}
+
+    def visit_Assert(self, node):
+        self._mark_data(node)
+        self.generic_visit(node)
+
+    def visit_Compare(self, node):
+        self._mark_data(node)
+        self.generic_visit(node)
+
+    def _is_api_version(self, node, text) -> bool:
+        if not (VERSION_LITERAL.match(text) or VERSION_IN_URL.search(text)):
+            return False
+        if not self.test_file:
+            return True
+        return id(node) not in self.data and (id(node) in self.picking or VERSION_IN_URL.search(text) is not None)
+
     def visit_Constant(self, node):
         text = _string(node)
         if id(node) in self.not_api_versions:
             return
-        if text is not None and self.version_literals and (VERSION_LITERAL.match(text) or VERSION_IN_URL.search(text)):
+        if text is not None and self.version_literals and self._is_api_version(node, text):
             self.report(
                 node, f"{text!r} is an API version written in hand-written code: take it from the generated classes"
             )
@@ -264,6 +377,7 @@ class _Visitor(ast.NodeVisitor):
     def visit_Call(self, node):
         if _call_name(node.func) == "check_min_server_version":
             self.not_api_versions |= {id(arg) for arg in node.args}
+        self.picking |= {id(keyword.value) for keyword in node.keywords if keyword.arg == "version"}
         self.generic_visit(node)
         func = node.func
         if isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name) and func.value.id in self.aliases:
@@ -352,27 +466,50 @@ class _Visitor(ast.NodeVisitor):
             self.report(node, f"{version} is not a version of {full} (declared: {', '.join(found.versions)})")
 
 
-def _parse_folder(root: Path) -> List[Tuple[Path, str, ast.Module]]:
-    root = Path(root)
-    paths = [root] if root.is_file() else sorted(root.rglob("*.py"))
+def _folder_prefix(folder: Path) -> str:
+    """The package name of a folder (`cairnml` for the SDK's package folder), which an import names it by."""
+    return "" if Path(folder).is_file() else Path(folder).name
+
+
+def _parse_folder(folder: Path) -> List[Tuple[Path, str, ast.Module, str, bool, Path]]:
+    """Every Python file under the folder (or the file): path, text, tree, module name, is-package, and the folder."""
+    folder = Path(folder)
+    paths = [folder] if folder.is_file() else sorted(folder.rglob("*.py"))
     parsed = []
     for path in paths:
         text = path.read_text()
-        parsed.append((path, text, ast.parse(text, filename=str(path))))
+        module, is_package = _module_name(path, folder)
+        parsed.append((path, text, ast.parse(text, filename=str(path)), module, is_package, folder))
     return parsed
 
 
 def check_callers(
-    root: Path, schema: Dict[str, Service], generated: Set[str], allow: Allow, sessions: bool = False
+    root: Path,
+    schema: Dict[str, Service],
+    generated: Set[str],
+    allow: Allow,
+    sessions: bool = False,
+    bases: Sequence[Path] = (),
 ) -> List[Finding]:
     root = Path(root)
     parsed = _parse_folder(root)
-    trees = [tree for _, _, tree in parsed]
     findings: List[Finding] = []
     used: Set[str] = set()
     session_calls = []
-    members = _session_members(trees) if sessions else None
-    for path, text, tree in parsed:
+    members = None
+    if sessions:
+        infos = _class_index(
+            [(module, package, tree) for _, _, tree, module, package, _ in parsed],
+            root=True,
+            prefix=_folder_prefix(root),
+            plain=True,
+        )
+        for base in bases:
+            base_entries = [(module, package, tree) for _, _, tree, module, package, _ in _parse_folder(base)]
+            for key, group in _class_index(base_entries, root=False, prefix=_folder_prefix(base), plain=False).items():
+                infos.setdefault(key, []).extend(group)
+        members = _session_members(infos)
+    for path, text, tree, _, _, folder in parsed:
         class_names = _session_names_in(tree)
         module_level = [
             s for s in tree.body if not isinstance(s, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
@@ -388,6 +525,7 @@ def check_callers(
             module_scope=_bindings(module_level, class_names),
             class_names=class_names,
             sessions=sessions,
+            test_file=_is_test_file(path, folder),
         )
         visitor.visit(tree)
         session_calls += [(path, node, receiver, method) for node, receiver, method in visitor.session_calls]
