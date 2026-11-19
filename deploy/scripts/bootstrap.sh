@@ -48,8 +48,10 @@ export CAIRNML_HOME="${CAIRNML_HOME:-$HOME/.local/share/cairnml}"
 STATE="$CAIRNML_HOME"
 mkdir -p "$STATE/secrets/cairnml"
 
-# Nothing is stopped here: the containers are started or recreated below, and only where their image or configuration
-# changed, so a rerun does not restart the running services.
+# Data and secrets are never removed here. The stack keeps running, with two exceptions: the CairnML containers
+# (apiserver, async-delete, webserver) are recreated, because the image is rebuilt on every run and a new build can
+# be a new image even when nothing changed; and the stack is stopped once, with `docker compose down` (no -v), when its
+# network has a subnet other than the one compose.yaml pins (see stack-network.sh).
 
 # The realm names no address: its redirect URIs accept the address each client uses (through the proxy). With
 # CAIRNML_PUBLIC_ORIGIN set, the web client's redirect URIs and web origins name that address instead.
@@ -71,6 +73,12 @@ fi
 # The identity provider keeps its data in a host folder; its container runs as uid 1000.
 mkdir -p "$STATE/data/idp"
 docker run --rm -v "$STATE/data:/data" alpine:3.20 sh -c 'chown 1000:1000 /data/idp && chmod 700 /data/idp'
+
+# An install made before the pinned subnet has the network with another one: compose could not replace it while the
+# stack runs, so the stack is stopped first (only then; a second run finds the right subnet and does nothing).
+# shellcheck source=stack-network.sh
+. ./scripts/stack-network.sh
+recreate_network_if_subnet_differs cairnml
 
 docker compose up -d cairnml-idp
 

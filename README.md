@@ -50,7 +50,7 @@ cd cairnml-server
 deploy/scripts/bootstrap.sh
 ```
 
-The first run builds the images and takes a while. The script generates the passwords and keys the stack needs and keeps them outside the repository, in `~/.local/share/cairnml`. It is safe to run again, for example after an update. An install from before the Git credentials feature needs one run after the upgrade: it creates the missing `git_credentials_key` secret and removes no data (see [Operate the server](docs/operations/operate.md#upgrade)). It does not stop the stack: it rebuilds the images and recreates only the containers whose image or configuration changed, so those services are down while they restart. See [Operate the server](docs/operations/operate.md).
+The first run builds the images and takes a while. The script generates the passwords and keys the stack needs and keeps them outside the repository, in `~/.local/share/cairnml`. It is safe to run again, for example after an update. An install from before the Git credentials feature needs one run after the upgrade: it creates the missing `git_credentials_key` secret and removes no data (see [Operate the server](docs/operations/operate.md#upgrade)). It does not stop the stack (one exception: an install from before the stack's network had a fixed subnet is stopped once with `docker compose down`, no `-v`, and started again): it rebuilds the images and recreates the containers whose image or configuration changed, which can include the server containers on a run that changes nothing, so those services are down while they restart. Data and secrets are kept. See [Operate the server](docs/operations/operate.md).
 
 ## First sign-in
 
