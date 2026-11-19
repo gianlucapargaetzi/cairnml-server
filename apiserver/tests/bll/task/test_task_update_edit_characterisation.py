@@ -19,6 +19,7 @@ import pytest
 from apiserver.apierrors import errors
 from apiserver.apimodels.tasks import UpdateRequest
 from apiserver.bll.organization import Tags
+from apiserver.bll.project import project_changes
 from apiserver.database.model.auth import Role
 from apiserver.database.model.model import Model
 from apiserver.database.model.project import Project, ProjectMember, ProjectRole, ProjectVisibility
@@ -64,6 +65,10 @@ def side_effects():
         mock.patch.object(svc, "org_bll") as org,
         mock.patch.object(svc, "update_project_time") as project_time,
         mock.patch.object(svc, "_record_repository") as record,
+        # update, edit and create record through the project-change module since issue 276
+        mock.patch.object(project_changes, "org_bll", org),
+        mock.patch.object(project_changes, "update_project_time", project_time),
+        mock.patch.object(project_changes, "record_repository", record),
     ):
         yield mock.Mock(org=org, project_time=project_time, record=record)
 

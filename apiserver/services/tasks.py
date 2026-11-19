@@ -5,8 +5,7 @@ from datetime import datetime, timezone
 from functools import partial
 from typing import Sequence, Union, Tuple, Mapping
 
-from mongoengine import EmbeddedDocument, Q
-from mongoengine.queryset.transform import COMPARISON_OPERATORS
+from mongoengine import Q
 from pymongo import UpdateOne
 
 from types import SimpleNamespace
@@ -119,6 +118,12 @@ from apiserver.bll.task.task_operations import (
     delete_task,
     publish_task,
     unarchive_task,
+)
+from apiserver.bll.task.task_writes import (
+    WriteContext,
+    edit_task_fields,
+    save_new_task,
+    update_task_fields,
 )
 from apiserver.bll.task.utils import (
     update_task,
@@ -554,16 +559,6 @@ def validate(call: APICall, _, __: CreateRequest):
     _validate_and_get_task_from_call(call)
 
 
-def _update_cached_tags(company: str, project: str, fields: dict):
-    org_bll.update_tags(
-        company,
-        Tags.Task,
-        projects=[project],
-        tags=fields.get("tags"),
-        system_tags=fields.get("system_tags"),
-    )
-
-
 def _reset_cached_tags(company: str, projects: Sequence[str]):
     org_bll.reset_tags(company, Tags.Task, projects=projects)
 
@@ -579,11 +574,7 @@ def create(call: APICall, company_id, _: CreateRequest):
     task, fields = _validate_and_get_task_from_call(call)
 
     with translate_errors_context():
-        task.save()
-        _update_cached_tags(company_id, project=task.project, fields=fields)
-        update_project_time(task.project)
-
-    _record_repository(company_id, call.identity.user, task)
+        save_new_task(WriteContext(company_id=company_id, identity=call.identity), task, fields)
     call.result.data_model = IdResponse(id=task.id)
 
 
@@ -627,40 +618,15 @@ def update(call: APICall, company_id, req_model: UpdateRequest):
     entity_access.assert_tasks_access(company_id, call.identity, [task_id], "write")
 
     with translate_errors_context():
-        task = get_task_with_write_access(
-            task_id=task_id,
-            company_id=company_id,
-            identity=call.identity,
-            only=("id", "project", "user"),
+        outcome = update_task_fields(
+            WriteContext(company_id=company_id, identity=call.identity),
+            task_id,
+            prepare=lambda _task: prepare_update_fields(call, call.data)[0],
         )
-
-        partial_update_dict, valid_fields = prepare_update_fields(call, call.data)
-
-        if not partial_update_dict:
+        if outcome.fields is None:
             return UpdateResponse(updated=0)
-
-        entity_access.assert_destination_project(call.identity, task, partial_update_dict)
-
-        updated_count, updated_fields = Task.safe_update(
-            company_id=company_id,
-            id=task_id,
-            partial_update_dict=partial_update_dict,
-            injected_update=dict(
-                last_change=datetime.now(timezone.utc),
-                last_changed_by=call.identity.user,
-            ),
-        )
-        if updated_count:
-            new_project = updated_fields.get("project", task.project)
-            if new_project != task.project:
-                _reset_cached_tags(company_id, projects=[new_project, task.project])
-            else:
-                _update_cached_tags(company_id, project=task.project, fields=updated_fields)
-            update_project_time(updated_fields.get("project"))
-        conform_task_data(call, updated_fields)
-        if updated_count:
-            _record_repository(company_id, call.identity.user, task_id)
-        return UpdateResponse(updated=updated_count, fields=updated_fields)
+        conform_task_data(call, outcome.fields)
+        return UpdateResponse(updated=outcome.updated, fields=outcome.fields)
 
 
 @endpoint(
@@ -751,63 +717,30 @@ def update_batch(call: APICall, company_id, _):
         call.result.data = {"updated": updated}
 
 
+def _prepare_edit_fields(call: APICall, task: Task) -> dict:
+    edit_fields = create_fields.copy()
+    edit_fields.update(dict(status=None))
+    with translate_errors_context(field_does_not_exist_cls=errors.bad_request.ValidationError):
+        return prepare_create_fields(call, valid_fields=edit_fields, output=task.output, previous_task=task)
+
+
 @endpoint("tasks.edit", request_data_model=UpdateRequest, response_data_model=UpdateResponse)
 def edit(call: APICall, company_id, req_model: UpdateRequest):
     task_id = req_model.task
-    force = req_model.force
     entity_access.assert_tasks_access(company_id, call.identity, [task_id], "write")
 
     with translate_errors_context():
-        task = get_task_with_write_access(
-            task_id=task_id,
-            company_id=company_id,
-            identity=call.identity,
+        outcome = edit_task_fields(
+            WriteContext(company_id=company_id, identity=call.identity),
+            task_id,
+            prepare=lambda task: _prepare_edit_fields(call, task),
+            force=req_model.force,
         )
-
-        if not force and task.status != TaskStatus.created:
-            raise errors.bad_request.InvalidTaskStatus(expected=TaskStatus.created, status=task.status)
-
-        edit_fields = create_fields.copy()
-        edit_fields.update(dict(status=None))
-
-        with translate_errors_context(field_does_not_exist_cls=errors.bad_request.ValidationError):
-            fields = prepare_create_fields(call, valid_fields=edit_fields, output=task.output, previous_task=task)
-
-        entity_access.assert_destination_project(call.identity, task, fields)
-
-        for key in fields:
-            field = getattr(task, key, None)
-            value = fields[key]
-            if field and isinstance(value, dict) and isinstance(field, EmbeddedDocument):
-                d = field.to_mongo(use_db_field=False).to_dict()
-                d.update(value)
-                fields[key] = d
-
-        task_bll.validate(task_bll.create(company=call.identity.company, user=call.identity.user, fields=fields))
-
-        # make sure field names do not end in mongoengine comparison operators
-        fixed_fields = {(k if k not in COMPARISON_OPERATORS else "%s__" % k): v for k, v in fields.items()}
-        if fixed_fields:
-            now = datetime.now(timezone.utc)
-            last_change = dict(last_change=now, last_changed_by=call.identity.user)
-            if not set(fields).issubset(Task.user_set_allowed()):
-                last_change.update(last_update=now)
-            fields.update(**last_change)
-            fixed_fields.update(**last_change)
-            updated = task.update(upsert=False, **fixed_fields)
-            if updated:
-                new_project = fixed_fields.get("project", task.project)
-                if new_project != task.project:
-                    _reset_cached_tags(company_id, projects=[new_project, task.project])
-                else:
-                    _update_cached_tags(company_id, project=task.project, fields=fixed_fields)
-                update_project_time(fields.get("project"))
-            conform_task_data(call, fields)
-            if updated:
-                _record_repository(company_id, call.identity.user, task_id)
-            call.result.data_model = UpdateResponse(updated=updated, fields=fields)
-        else:
+        if outcome.fields is None:
             call.result.data_model = UpdateResponse(updated=0)
+            return
+        conform_task_data(call, outcome.fields)
+        call.result.data_model = UpdateResponse(updated=outcome.updated, fields=outcome.fields)
 
 
 @endpoint(
