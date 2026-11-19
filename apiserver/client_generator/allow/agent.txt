@@ -1,0 +1,20 @@
+# Hand-written agent calls that send a service and an action by name, and that the schema check (check-callers, target
+# agent) must not report yet. One line per action: exempt <service.action> <reason> (the reason is mandatory).
+# An exemption that matches no call is reported, so a line is removed when its call is converted.
+exempt projects.get_all called by name in the agent's code (custom_template.py, resolver.py) and in its characterisation tests; the generated class replaces it (cairnml-agent#117)
+exempt users.get_current_user called by name in the agent's code (custom_template.py) and in its characterisation tests; the generated class replaces it (cairnml-agent#117)
+exempt tasks.get_all called by name in the agent's code (worker.py, k8s.py, pending_pods_daemon.py); the generated class replaces it (cairnml-agent#117)
+exempt tasks.edit called by name in the agent's code (worker.py, k8s.py, task_runtime.py); the generated class replaces it (cairnml-agent#117)
+exempt tasks.edit_hyper_params called by name in glue/k8s.py; the generated class replaces it (cairnml-agent#117)
+exempt tasks.get_hyper_params called by name in commands/worker.py; the generated class replaces it (cairnml-agent#117)
+exempt tasks.get_by_id called by name in glue/k8s.py and helper/task_runtime.py; the generated class replaces it (cairnml-agent#117)
+exempt tasks.dequeue called by name in commands/worker.py and glue/k8s.py; the generated class replaces it (cairnml-agent#117)
+exempt tasks.enqueue called by name in glue/k8s.py and glue/pending_pods_daemon.py; the generated class replaces it (cairnml-agent#117)
+exempt tasks.failed called by name in glue/k8s.py; the generated class replaces it (cairnml-agent#117)
+exempt tasks.update called by name in glue/pending_pods_daemon.py; the generated class replaces it (cairnml-agent#117)
+exempt queues.get_next_task called by name in commands/worker.py; the generated class replaces it (cairnml-agent#117)
+exempt queues.add_task called by name in glue/k8s.py; the generated class replaces it (cairnml-agent#117)
+exempt queues.move_task_to_front called by name in glue/k8s.py; the generated class replaces it (cairnml-agent#117)
+exempt devices.git_token called by name in helper/repo.py; the generated class replaces it (cairnml-agent#117)
+exempt devices.job_token called by name in helper/job_token.py; the generated class replaces it (cairnml-agent#117)
+exempt workers.status_report called by name in helper/resource_monitor.py; the generated class replaces it (cairnml-agent#117)
