@@ -1,6 +1,6 @@
 from datetime import datetime
 from functools import partial
-from typing import Optional, Sequence, Union
+from typing import Sequence, Union
 
 from mongoengine import Q, EmbeddedDocument
 
@@ -46,6 +46,7 @@ from apiserver.database.utils import (
     parse_from_call,
     filter_fields,
 )
+from apiserver.bll.project import entity_access
 from apiserver.service_repo import APICall, endpoint
 from apiserver.service_repo.auth import Identity
 from apiserver.services.utils import (
@@ -67,77 +68,6 @@ def conform_model_data(call: APICall, model_data: Union[Sequence[dict], dict]):
     unescape_metadata(call, model_data)
 
 
-_MODEL_ACCESS_FIELDS = ("id", "company", "project", "user")
-
-
-def _visible_models_query(identity: Identity) -> Optional[Q]:
-    """
-    Restricts a model search to the projects the caller can see. Models without a project keep the
-    company-level visibility they had before. None means no restriction (admin)
-    """
-    visible = ProjectAccessBLL.visible_project_ids(identity)
-    if visible is None:
-        return None
-    return Q(project__in=list(visible)) | Q(project=None) | Q(project="")
-
-
-def _scope_query(query: Q, identity: Identity) -> Q:
-    scope = _visible_models_query(identity)
-    return query if scope is None else query & scope
-
-
-def _assert_model_access(identity: Identity, model: Model, capability: str, object_owner: Optional[str] = None) -> None:
-    """
-    Check `capability` on the project of the model, with the model owner deciding own-object rights
-    unless `object_owner` is given. A model without a project keeps its company-level behaviour
-    """
-    if not model.project:
-        return
-    if ProjectAccessBLL.get_role(identity, model.project) is None:
-        # Same answer a missing model gets, so a hidden model does not reveal its project
-        raise errors.bad_request.InvalidModelId(company=identity.company, id=model.id)
-    ProjectAccessBLL.assert_can(identity, model.project, capability, object_owner=object_owner or model.user)
-
-
-def _assert_models_access(
-    company_id: str,
-    identity: Identity,
-    ids: Sequence[str],
-    capability: str,
-    object_owner: Optional[str] = None,
-) -> None:
-    """
-    Check `capability` on every existing model of `ids` before any of them is changed, so that a batch
-    is all-or-nothing. Missing ids are not an error here: the endpoint reports them as it did before
-    """
-    models = Model.get_many(
-        company=company_id,
-        query=Q(id__in=list(ids)),
-        override_projection=_MODEL_ACCESS_FIELDS,
-        allow_public=True,
-        return_dicts=False,
-    )
-    for model in models:
-        _assert_model_access(identity, model, capability, object_owner=object_owner)
-
-
-def _assert_destination_project(identity: Identity, model: Model, fields: dict) -> None:
-    """
-    A model moved to another project by update or edit needs admin on that project, the same rule
-    the `move` endpoint applies. Clearing the project needs admin on the current one: a projectless
-    model is open to the whole company, so clearing is a move out of the project
-    """
-    if "project" not in fields:
-        return
-    new_project = fields["project"]
-    if new_project == model.project:
-        return
-    if new_project:
-        ProjectAccessBLL.assert_can(identity, new_project, "admin")
-    elif model.project:
-        ProjectAccessBLL.assert_can(identity, model.project, "admin")
-
-
 @endpoint("models.get_by_id")
 def get_by_id(call: APICall, company_id, request: ModelRequest):
     model_id = request.model
@@ -145,7 +75,7 @@ def get_by_id(call: APICall, company_id, request: ModelRequest):
     models = Model.get_many(
         company=company_id,
         query_dict=call_data,
-        query=_scope_query(Q(id=model_id), call.identity),
+        query=entity_access.scope_entities_query(Q(id=model_id), call.identity),
         allow_public=True,
     )
     if not models:
@@ -167,7 +97,7 @@ def get_all_ex(call: APICall, company_id, request: ModelsGetRequest):
     models = Model.get_many_with_join(
         company=company_id,
         query_dict=call_data,
-        query=_visible_models_query(call.identity),
+        query=entity_access.visible_entities_query(call.identity),
         allow_public=request.allow_public,
         ret_params=ret_params,
     )
@@ -196,7 +126,7 @@ def get_by_id_ex(call: APICall, company_id, _):
     models = Model.get_many_with_join(
         company=company_id,
         query_dict=call_data,
-        query=_visible_models_query(call.identity),
+        query=entity_access.visible_entities_query(call.identity),
         allow_public=True,
     )
     conform_model_data(call, models)
@@ -213,7 +143,7 @@ def get_all(call: APICall, company_id, _):
         company=company_id,
         parameters=call_data,
         query_dict=call_data,
-        query=_visible_models_query(call.identity),
+        query=entity_access.visible_entities_query(call.identity),
         allow_public=True,
         ret_params=ret_params,
     )
@@ -388,11 +318,11 @@ def edit(call: APICall, company_id, request: UpdateModelRequest):
     model_id = request.model
 
     model = ModelBLL.get_company_model_by_id(company_id=company_id, model_id=model_id)
-    _assert_model_access(call.identity, model, "write")
+    entity_access.assert_model_access(call.identity, model, "write")
 
     fields = parse_model_fields(call, create_fields)
     fields = prepare_update_fields(call, company_id, fields)
-    _assert_destination_project(call.identity, model, fields)
+    entity_access.assert_destination_project(call.identity, model, fields)
 
     for key in fields:
         field = getattr(model, key, None)
@@ -434,11 +364,11 @@ def edit(call: APICall, company_id, request: UpdateModelRequest):
         call.result.data_model = UpdateResponse(updated=0)
 
 
-def _update_model(call: APICall, company_id, model_id, object_owner=None):
+def _update_model(call: APICall, company_id, model_id):
     model = ModelBLL.get_company_model_by_id(company_id=company_id, model_id=model_id)
-    _assert_model_access(call.identity, model, "write", object_owner=object_owner)
+    entity_access.assert_model_access(call.identity, model, "write")
     data = prepare_update_fields(call, company_id, call.data)
-    _assert_destination_project(call.identity, model, data)
+    entity_access.assert_destination_project(call.identity, model, data)
     task_id = data.get("task")
     iteration = data.get("iteration")
     if task_id and iteration is not None:
@@ -483,7 +413,7 @@ def update(call, company_id, request: UpdateModelRequest):
     response_data_model=PublishModelResponse,
 )
 def set_ready(call: APICall, company_id: str, request: PublishModelRequest):
-    _assert_models_access(company_id, call.identity, [request.model], "write")
+    entity_access.assert_models_access(company_id, call.identity, [request.model], "write")
     updated, published_task = ModelBLL.publish_model(
         model_id=request.model,
         company_id=company_id,
@@ -500,7 +430,7 @@ def set_ready(call: APICall, company_id: str, request: PublishModelRequest):
     response_data_model=BatchResponse,
 )
 def publish_many(call: APICall, company_id, request: ModelsPublishManyRequest):
-    _assert_models_access(company_id, call.identity, request.ids, "write")
+    entity_access.assert_models_access(company_id, call.identity, request.ids, "write")
     results, failures = run_batch_operation(
         func=partial(
             ModelBLL.publish_model,
@@ -566,7 +496,7 @@ def _delete_model_events(
 @endpoint("models.delete", request_data_model=DeleteModelRequest)
 def delete(call: APICall, company_id, request: DeleteModelRequest):
     user_id = call.identity.user
-    _assert_models_access(company_id, call.identity, [request.model], "delete")
+    entity_access.assert_models_access(company_id, call.identity, [request.model], "delete")
     del_count, model = ModelBLL.delete_model(
         model_id=request.model,
         company_id=company_id,
@@ -593,7 +523,7 @@ def delete(call: APICall, company_id, request: DeleteModelRequest):
 )
 def delete_many(call: APICall, company_id, request: ModelsDeleteManyRequest):
     user_id = call.identity.user
-    _assert_models_access(company_id, call.identity, request.ids, "delete")
+    entity_access.assert_models_access(company_id, call.identity, request.ids, "delete")
 
     results, failures = run_batch_operation(
         func=partial(
@@ -634,7 +564,7 @@ def delete_many(call: APICall, company_id, request: ModelsDeleteManyRequest):
     response_data_model=BatchResponse,
 )
 def archive_many(call: APICall, company_id, request: BatchRequest):
-    _assert_models_access(company_id, call.identity, request.ids, "write")
+    entity_access.assert_models_access(company_id, call.identity, request.ids, "write")
     results, failures = run_batch_operation(
         func=partial(ModelBLL.archive_model, company_id=company_id, user_id=call.identity.user),
         ids=request.ids,
@@ -651,7 +581,7 @@ def archive_many(call: APICall, company_id, request: BatchRequest):
     response_data_model=BatchResponse,
 )
 def unarchive_many(call: APICall, company_id, request: BatchRequest):
-    _assert_models_access(company_id, call.identity, request.ids, "write")
+    entity_access.assert_models_access(company_id, call.identity, request.ids, "write")
     results, failures = run_batch_operation(
         func=partial(ModelBLL.unarchive_model, company_id=company_id, user_id=call.identity.user),
         ids=request.ids,
@@ -666,7 +596,7 @@ def unarchive_many(call: APICall, company_id, request: BatchRequest):
 def make_public(call: APICall, company_id, request: MakePublicRequest):
     # changing visibility (here, the older cross-company "public" mechanism) is Owner/Collaborator
     # only, same bar the role matrix gives projects.set_visibility
-    _assert_models_access(company_id, call.identity, request.ids, "admin")
+    entity_access.assert_models_access(company_id, call.identity, request.ids, "admin")
     call.result.data = Model.set_public(
         company_id=company_id,
         user_id=call.identity.user,
@@ -678,7 +608,7 @@ def make_public(call: APICall, company_id, request: MakePublicRequest):
 
 @endpoint("models.make_private", request_data_model=MakePublicRequest)
 def make_private(call: APICall, company_id, request: MakePublicRequest):
-    _assert_models_access(company_id, call.identity, request.ids, "admin")
+    entity_access.assert_models_access(company_id, call.identity, request.ids, "admin")
     call.result.data = Model.set_public(
         company_id=company_id,
         user_id=call.identity.user,
@@ -693,7 +623,7 @@ def move(call: APICall, company_id: str, request: MoveRequest):
     if not ("project" in call.data or request.project_name):
         raise errors.bad_request.MissingRequiredFields("project or project_name is required")
 
-    _assert_models_access(company_id, call.identity, request.ids, "admin")
+    entity_access.assert_models_access(company_id, call.identity, request.ids, "admin")
     if request.project:
         ProjectAccessBLL.assert_can(call.identity, request.project, "admin")
     elif request.project_name:
@@ -714,7 +644,7 @@ def move(call: APICall, company_id: str, request: MoveRequest):
 
 @endpoint("models.update_tags")
 def update_tags(call: APICall, company_id: str, request: UpdateTagsRequest):
-    _assert_models_access(company_id, call.identity, request.ids, "write")
+    entity_access.assert_models_access(company_id, call.identity, request.ids, "write")
     return {
         "updated": org_bll.edit_entity_tags(
             company_id=company_id,
@@ -731,7 +661,7 @@ def update_tags(call: APICall, company_id: str, request: UpdateTagsRequest):
 def add_or_update_metadata(call: APICall, company_id: str, request: AddOrUpdateMetadataRequest):
     model_id = request.model
     model = ModelBLL.get_company_model_by_id(company_id=company_id, model_id=model_id)
-    _assert_model_access(call.identity, model, "write")
+    entity_access.assert_model_access(call.identity, model, "write")
     now = datetime.utcnow()
     return {
         "updated": Metadata.edit_metadata(
@@ -751,7 +681,7 @@ def delete_metadata(call: APICall, company_id: str, request: DeleteMetadataReque
     model = ModelBLL.get_company_model_by_id(
         company_id=company_id, model_id=model_id, only_fields=("id", "project", "user")
     )
-    _assert_model_access(call.identity, model, "write")
+    entity_access.assert_model_access(call.identity, model, "write")
     now = datetime.utcnow()
     return {
         "updated": Metadata.delete_metadata(

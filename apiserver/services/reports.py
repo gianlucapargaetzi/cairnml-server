@@ -21,6 +21,7 @@ from apiserver.apimodels.base import UpdateResponse
 from apiserver.bll.project.project_bll import reports_project_name, reports_tag
 from apiserver.bll.task.utils import get_task_with_write_access
 from apiserver.database.model.model import Model
+from apiserver.bll.project import entity_access
 from apiserver.service_repo.auth import Identity
 from apiserver.services.models import conform_model_data
 from apiserver.services.utils import process_include_subprojects, sort_tags_response
@@ -42,12 +43,9 @@ from apiserver.services.events import (
 )
 from apiserver.services.tasks import (
     escape_execution_parameters,
-    _assert_task_access,
     _hidden_query,
-    _scope_query as _scope_tasks_query,
     conform_task_data,
 )
-from apiserver.services.models import _scope_query as _scope_models_query
 
 org_bll = OrgBLL()
 project_bll = ProjectBLL()
@@ -191,7 +189,7 @@ def get_all_ex(call: APICall, company_id, request: GetAllRequest):
     tasks = Task.get_many_with_join(
         company=company_id,
         query_dict=call_data,
-        query=_scope_tasks_query(Q(), call.identity),
+        query=entity_access.scope_entities_query(Q(), call.identity),
         allow_public=request.allow_public,
         ret_params=ret_params,
     )
@@ -224,9 +222,9 @@ def get_task_data(call: APICall, company_id, request: GetTasksDataRequest):
     process_include_subprojects(call_data)
 
     scope = (
-        _scope_models_query(Q(), call.identity)
+        entity_access.scope_entities_query(Q(), call.identity)
         if request.model_events
-        else _scope_tasks_query(_hidden_query(call_data), call.identity)
+        else entity_access.scope_entities_query(_hidden_query(call_data), call.identity)
     )
     ret_params = {}
     tasks = entity_cls.get_many_with_join(
@@ -296,7 +294,7 @@ def move(call: APICall, company_id: str, request: MoveReportRequest):
         only_fields=("project", "user"),
     )
     # Moving a report mirrors moving a task: admin on where it leaves and where it lands
-    _assert_task_access(call.identity, task, "admin")
+    entity_access.assert_task_access(call.identity, task, "admin")
     user_id = call.identity.user
     project_name = request.project_name
     if project_name:
@@ -411,7 +409,7 @@ def delete(call: APICall, company_id, request: DeleteReportRequest):
 
 @endpoint("reports.get_tags")
 def get_tags(call: APICall, company_id: str, _):
-    tags = Task.objects(_scope_tasks_query(Q(company=company_id) & Q(type=TaskType.report), call.identity)).distinct(
-        field="tags"
-    )
+    tags = Task.objects(
+        entity_access.scope_entities_query(Q(company=company_id) & Q(type=TaskType.report), call.identity)
+    ).distinct(field="tags")
     call.result.data = sort_tags_response({"tags": tags})

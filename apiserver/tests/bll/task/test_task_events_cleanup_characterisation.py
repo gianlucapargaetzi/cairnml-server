@@ -12,6 +12,7 @@ from uuid import uuid4
 import pytest
 
 from apiserver.apimodels.tasks import DeleteManyRequest, ResetManyRequest, ResetRequest
+from apiserver.bll.project import entity_access
 from apiserver.bll.task.task_cleanup import CleanupResult, TaskUrls
 from apiserver.database.model.auth import Role
 from apiserver.service_repo.auth import Identity
@@ -180,7 +181,7 @@ def test_reset_uses_sync_delete_and_reset_many_does_not(company, monkeypatch):
     captured = []
     monkeypatch.setattr(svc, "_delete_task_events", lambda **kwargs: captured.append(kwargs))
     monkeypatch.setattr(svc, "reset_task", lambda **kwargs: (None, cleanup(), {"updated": 0}))
-    monkeypatch.setattr(svc, "_assert_tasks_access", lambda *args, **kwargs: None)
+    monkeypatch.setattr(entity_access, "assert_tasks_access", lambda *args, **kwargs: None)
     monkeypatch.setattr(svc, "run_batch_operation", _run_batch_for_ids)
 
     identity = Identity(user="u", company=company, role=Role.user)
@@ -200,7 +201,7 @@ def test_delete_many_passes_only_deleted_tasks(company, monkeypatch):
     # E8: a missing task is reported as failed and does not reach the cleanup
     captured = []
     monkeypatch.setattr(svc, "_delete_task_events", lambda **kwargs: captured.append(kwargs))
-    monkeypatch.setattr(svc, "_assert_tasks_access", lambda *args, **kwargs: None)
+    monkeypatch.setattr(entity_access, "assert_tasks_access", lambda *args, **kwargs: None)
     monkeypatch.setattr(svc, "_reset_cached_tags", lambda *args, **kwargs: None)
 
     def fake_delete_task(task_id, **kwargs):
