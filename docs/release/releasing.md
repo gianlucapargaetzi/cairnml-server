@@ -104,6 +104,12 @@ generated function to call instead (`endpointUrl('access.share')` gives `ApiAcce
 login actions (`UNVERSIONED_ACTIONS`, such as `endpointUrl('login.logout')`) are not reported. Exceptions go in the same
 allow file, `exempt <service.action> <reason>`.
 
+A name that the schema lacks is reported too, with the closest action of the schema as a hint:
+`endpointUrl('acess.share')` gives `acess.share is not an action of the server's schema: the likely intended action is
+access.share`, and the literal `/cairnml/api/tasks.edti` gives the hint `tasks.edit`. Only these two forms are judged for
+an unknown name: an endpointUrl argument, and a path under the `/api/` prefix (optionally behind `/v<major>.<minor>/`). A
+file name, a relative import, a URL of another host or a number is never taken for an action.
+
 **Options of a call.** Every generated method takes the options of its call as its last argument (`ApiOptions`):
 `headers` are added to the request's headers (a tenant header, for example), and `params` are appended to its query.
 A JSON call is a POST with the request as its body, as before. Two kinds of action are not JSON, and their rules are

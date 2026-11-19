@@ -9,7 +9,9 @@ Checks the web app's hand-edited API layer (TypeScript) against the schema:
   (`ApiTasksService.tasksEdit`). A `/v<major>.<minor>/` literal in such a source is an API version written by hand,
   and the address comes from the generated functions. An action named as a string in `endpointUrl('<service>.<action>')`
   is not a path, but the same rule applies: the generated function is called instead. The unversioned actions of
-  UNVERSIONED_ACTIONS (the login addresses) are exempt from that call;
+  UNVERSIONED_ACTIONS (the login addresses) are exempt from that call. A service or action the schema lacks, in such a
+  call, in an endpointUrl argument, or in a path under `/api/`, is reported with the closest action of the schema as a
+  hint;
 - a field of a request or response model (model/<service>/<service><Action>Request|Response.ts) must be a field the
   schema defines for that action: a field the schema lacks is sent to, or read from, a server that does not know it.
   A schema field the web app does not have is not an error (the web app may not use it).
@@ -19,6 +21,7 @@ action's call and both of its models. An exception that no longer matches anythi
 holds real, current drift.
 """
 
+import difflib
 import re
 from pathlib import Path
 from typing import Dict, List, Optional, Set
@@ -33,6 +36,10 @@ CALL = re.compile(r"\$\{this\.basePath\}/(?:v(\d+(?:\.\d+)*)/)?([a-z_]+)\.([a-z_
 PATH_LITERAL = re.compile(r"/(?:v\d+\.\d+/)?([a-z_]+)\.([a-z_0-9]+)(?![\w.])")
 # an action named as a string for the generated address: endpointUrl('access.share')
 ENDPOINT_CALL = re.compile(r"endpointUrl\(\s*['\"`]([a-z_]+)\.([a-z_0-9]+)['\"`]\s*\)")
+# a request path written by hand under the API's `/api/` prefix, for an action the schema lacks: only these are judged
+# as unknown names, so a file name (`'assets/ace.js'`), an import (`'../api/x.y'`, a relative path), a URL of another
+# host (`https://host/api/x.y`) or a number is not taken for an action
+API_PATH_LITERAL = re.compile(r"(?<![\w:/.@~-])/(?:[\w.-]+/)*?api/(?:v\d+\.\d+/)?([a-z_]+)\.([a-z_0-9]+)(?![\w.])")
 VERSION_LITERAL = re.compile(r"/v\d+\.\d+/")
 GENERATED_FOLDERS = ("api-services", "model")
 
@@ -44,6 +51,13 @@ def _pascal(name: str) -> str:
 def _generated_function(service: str, action: str) -> str:
     """The generated function of an action: ApiTasksService.tasksEdit (web_renderer.render_api)."""
     return f"Api{_pascal(service)}Service.{service}{_pascal(action)}"
+
+
+def _unknown_action(full: str, names: List[str]) -> str:
+    """The message for an action the schema lacks, with the closest action of the schema as a hint."""
+    close = difflib.get_close_matches(full, names, n=1)
+    hint = f": the likely intended action is {close[0]}" if close else ""
+    return f"{full} is not an action of the server's schema{hint}"
 
 
 def hand_written_sources(root: Path, sources: Path) -> List[Path]:
@@ -97,6 +111,7 @@ def check_web(root: Path, schema: Dict[str, Service], allow: Allow, sources: Opt
     root = Path(root)
     findings: List[Finding] = []
     used: Set[str] = set()
+    names = [f"{service.name}.{action}" for service in schema.values() for action in service.actions]
 
     for path in sorted((root / "api-services").glob("*.service.ts")):
         for number, line in enumerate(path.read_text().splitlines(), 1):
@@ -129,7 +144,7 @@ def check_web(root: Path, schema: Dict[str, Service], allow: Allow, sources: Opt
                 if full in allow.exempt:
                     used.add(full)
                 else:
-                    findings.append(Finding(path, number, f"{full} is not an action of the server's schema"))
+                    findings.append(Finding(path, number, _unknown_action(full, names)))
 
     for path in hand_written_sources(root, sources) if sources is not None else []:
         for number, line in enumerate(path.read_text().splitlines(), 1):
@@ -148,9 +163,23 @@ def check_web(root: Path, schema: Dict[str, Service], allow: Allow, sources: Opt
                         f"{_generated_function(service, action)} (the generated function) instead",
                     )
                 )
+            for service, action in API_PATH_LITERAL.findall(line):
+                full = f"{service}.{action}"
+                if service in schema and action in schema[service].actions:
+                    continue  # judged by PATH_LITERAL above
+                if full in allow.exempt:
+                    used.add(full)
+                else:
+                    findings.append(Finding(path, number, _unknown_action(full, names)))
             for service, action in ENDPOINT_CALL.findall(line):
                 full = f"{service}.{action}"
-                if full in UNVERSIONED_ACTIONS or service not in schema or action not in schema[service].actions:
+                if full in UNVERSIONED_ACTIONS:
+                    continue
+                if service not in schema or action not in schema[service].actions:
+                    if full in allow.exempt:
+                        used.add(full)
+                    else:
+                        findings.append(Finding(path, number, _unknown_action(full, names)))
                     continue
                 if full in allow.exempt:
                     used.add(full)
