@@ -151,3 +151,14 @@ def test_check_callers_judges_session_calls_of_a_target_that_checks_them(schema,
     assert result.returncode == 1
     assert "session.finalize_config is not a method of the Session class" in result.stdout
     assert "send_request" not in result.stdout
+
+
+def test_check_callers_reports_a_call_by_name_with_its_request_class(schema, tmp_path):
+    bad = tmp_path / "bad.py"
+    bad.write_text('def run(session):\n    session.send_request(service="queues", action="get_by_id", queue="q")\n')
+    result = _check_callers(schema, bad)
+    assert result.returncode == 1
+    assert (
+        "send_request names queues.get_by_id by strings: build queues.GetByIdRequest and send it instead"
+        in result.stdout
+    )
