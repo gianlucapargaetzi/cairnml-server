@@ -17,7 +17,11 @@ request is served by the newest block at or below the requested version.
    - an addition (new endpoint, new optional field, new allowed value) passes;
    - a removal or a breaking change (a removed field, a field that became required, a changed type, a value that is no
      longer allowed) fails the PR, unless the API version is raised in the same PR and `CHANGELOG.md` has a section
-     `## API <version>` that names the endpoint.
+     `## API <version>` that names the endpoint (the endpoint's name must appear as a whole, not as part of a longer
+     name);
+   - an endpoint whose request or response differs from its newest definition (in the base branch) fails the PR, even
+     when the change is additive, unless the PR adds a definition labelled with a newer version. A comment or a
+     description is not part of the contract and never fails.
 3. Merge. Locally, the same check runs with `python -m apiserver.contract.evolution --base-ref origin/main`.
 
 ### What happens in the other repositories
