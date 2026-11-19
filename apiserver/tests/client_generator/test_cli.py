@@ -130,3 +130,24 @@ def test_check_fails_naming_a_missing_package_file(schema, tmp_path):
     result = _run("generate", "--target", "sdk", "--schema", str(schema), "--out", str(out), "--check")
     assert result.returncode == 1
     assert "__init__.py is missing" in result.stdout + result.stderr
+
+
+def test_the_agent_target_is_checked_but_never_generated(schema, tmp_path):
+    clean = tmp_path / "clean.py"
+    clean.write_text("from backend_api.services import queues\nqueues.GetByIdRequest(queue='q')\n")
+    assert _run("check-callers", "--target", "agent", "--schema", str(schema), "--root", str(clean)).returncode == 0
+    generated = _run("generate", "--target", "agent", "--schema", str(schema), "--out", str(tmp_path / "out"))
+    assert generated.returncode == 2
+    assert "only checked" in generated.stderr
+
+
+def test_check_callers_judges_session_calls_of_a_target_that_checks_them(schema, tmp_path):
+    caller = tmp_path / "caller.py"
+    caller.write_text(
+        "class Session:\n    def send_request(self):\n        pass\n\n"
+        "def run(session):\n    session.send_request()\n    session.finalize_config()\n"
+    )
+    result = _run("check-callers", "--target", "sdk", "--schema", str(schema), "--root", str(caller))
+    assert result.returncode == 1
+    assert "session.finalize_config is not a method of the Session class" in result.stdout
+    assert "send_request" not in result.stdout
