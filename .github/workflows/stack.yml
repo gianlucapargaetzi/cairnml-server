@@ -2,15 +2,19 @@ name: stack
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     branches: [main]
-  push:
-    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
   lint:
+    if: github.event.pull_request.draft == false
     name: lint
     runs-on: ubuntu-latest
     steps:
@@ -23,6 +27,7 @@ jobs:
         run: python3 -m compileall -q tests deploy
 
   pins:
+    if: github.event.pull_request.draft == false
     name: pins
     runs-on: ubuntu-latest
     steps:

@@ -2,17 +2,21 @@ name: security
 
 on:
   pull_request:
-    branches: [main]
-  push:
+    types: [opened, synchronize, reopened, ready_for_review]
     branches: [main]
   schedule:
     - cron: "45 3 * * 0"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
   gitleaks:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: gitleaks
     runs-on: ubuntu-latest
     steps:
@@ -29,6 +33,7 @@ jobs:
           docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.30.1 detect --source /repo --log-opts "$RANGE" --redact --no-banner
 
   dependency-review:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: dependency-review
     runs-on: ubuntu-latest
     steps:
@@ -40,6 +45,7 @@ jobs:
           fail-on-severity: high
 
   codeql:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     name: codeql
     runs-on: ubuntu-latest
     permissions:
