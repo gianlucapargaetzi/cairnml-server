@@ -178,3 +178,34 @@ def test_an_action_name_that_is_not_a_request_path_is_not_judged(tmp_path):
         "this.run(id, 'user_access.check', {});\nwindow.location.href = endpointUrl('login.idp_start');\n",
     )
     assert check_web(root, SCHEMA, Allow(), sources=sources) == []
+
+
+def test_an_endpoint_url_naming_an_action_in_hand_written_code_is_reported_with_the_generated_function(tmp_path):
+    root = web(tmp_path)
+    sources = hand_written(tmp_path, "this.http.post(endpointUrl('access.share'), body);\n")
+    findings = check_web(root, SCHEMA, Allow(), sources=sources)
+    assert [f.message for f in findings] == [
+        "access.share is named by endpointUrl in hand-written code: call ApiAccessService.accessShare (the generated "
+        "function) instead"
+    ]
+
+
+def test_the_unversioned_login_actions_named_by_endpoint_url_are_not_reported(tmp_path):
+    root = web(tmp_path)
+    sources = hand_written(
+        tmp_path,
+        "window.location.href = endpointUrl('login.idp_start');\n"
+        'this.httpClient.post(endpointUrl("login.logout"), null);\n',
+    )
+    assert check_web(root, SCHEMA, Allow(), sources=sources) == []
+
+
+def test_an_exempt_endpoint_url_action_is_not_reported_and_a_stale_exemption_is_reported(tmp_path):
+    root = web(tmp_path)
+    sources = hand_written(tmp_path, "this.http.post(endpointUrl('access.share'), body);\n")
+    assert check_web(root, SCHEMA, Allow({"access.share": "tracked"}), sources=sources) == []
+    clean = tmp_path / "clean"
+    clean.mkdir()
+    (clean / "app.ts").write_text("const x = 1;\n")
+    stale = check_web(root, SCHEMA, Allow({"access.share": "tracked"}), sources=clean)
+    assert [f.message for f in stale] == ["exempt access.share no longer matches anything: remove it"]
