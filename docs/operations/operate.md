@@ -63,12 +63,24 @@ reachable on the same port, so limit that port to the machines that need it. See
    deploy/scripts/bootstrap.sh
    ```
 
-**Downtime.** The setup does not stop the stack. It rebuilds the images (`docker compose up -d --build`) and recreates
-only the containers whose image or configuration changed. After an upgrade of the server, `apiserver`, `async-delete` and
-`webserver` are recreated (they share one image), so the web app and the API are unavailable while they restart. The
-build time is not downtime, the restart is. The sign-in service and the databases keep running unless their own image or
-settings changed. The script waits up to three minutes for the server to answer; if it does not, it still ends without an
-error, so check `docker compose ps` and the logs.
+**Downtime.** The setup does not stop the stack, with one exception (below). It rebuilds the images
+(`docker compose up -d --build`) and recreates the containers whose image or configuration changed. Data and secrets are
+kept. After an upgrade of the server, `apiserver`, `async-delete` and `webserver` are recreated (they share one image),
+so the web app and the API are unavailable while they restart. Those three can also be recreated by a run that changes
+nothing: with some Docker setups (the containerd image store, for one) a rebuild gives a new image id even when the
+content is the same, and compose recreates the containers that use it. The sign-in service and the databases keep running
+unless their own image or settings changed. The build time is not downtime, the restart is. The script waits up to three
+minutes for the server to answer; if it does not, it still ends without an error, so check `docker compose ps` and the
+logs.
+
+**One-time network change.** An installation created before the stack's network got a fixed subnet (`172.30.216.0/24`
+in `deploy/compose.yaml`) has the network `cairnml` with the subnet Docker chose at the time. Docker cannot change a
+network's subnet while containers use it, so on the first run after the upgrade the setup compares the two. When they
+differ it prints what it does and why, stops the whole stack once with `docker compose down` (no `-v`: the data, the
+secrets and the images are kept), and starts it again with the network created anew. The web app, the API and the
+sign-in are unavailable for the length of that restart, which is longer than a rebuild-only upgrade. An installation
+whose network already has the subnet, and a new installation, are not affected, and a second run changes nothing.
+Check the stack with `docker compose ps` after the first run, as after any upgrade.
 
 **Data.** The server applies its database migrations when it starts. The folders in `CAIRNML_HOME` are kept.
 
