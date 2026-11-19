@@ -15,7 +15,6 @@ from datetime import datetime, timezone
 from typing import Callable, Optional, Sequence
 
 from mongoengine import EmbeddedDocument
-from mongoengine.queryset.transform import COMPARISON_OPERATORS
 from pymongo import UpdateOne
 
 from apiserver.apierrors import errors
@@ -168,9 +167,7 @@ def edit_task_fields(
 
     TaskBLL.validate(TaskBLL.create(company=ctx.identity.company, user=ctx.identity.user, fields=fields))
 
-    # make sure field names do not end in mongoengine comparison operators
-    fixed_fields = {(k if k not in COMPARISON_OPERATORS else "%s__" % k): v for k, v in fields.items()}
-    if not fixed_fields:
+    if not fields:
         return WriteOutcome(updated=0, fields=None)
 
     now = datetime.now(timezone.utc)
@@ -178,13 +175,12 @@ def edit_task_fields(
     if rule.stamp_last_update and not set(fields).issubset(Task.user_set_allowed()):
         last_change.update(last_update=now)
     fields.update(**last_change)
-    fixed_fields.update(**last_change)
 
-    updated = task.update(upsert=False, **fixed_fields)
+    updated = task.update(upsert=False, **fields)
     apply_effects(
         ctx.company_id,
         ctx.identity.user,
-        plan_task_write(task.project, fixed_fields, updated),
+        plan_task_write(task.project, fields, updated),
         task_id,
     )
     return WriteOutcome(updated=updated, fields=fields)

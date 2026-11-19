@@ -170,6 +170,16 @@ def test_stop_refuses_a_created_task_with_invalid_status(company):
     assert db_task("task1").status == TaskStatus.created
 
 
+def test_stop_with_force_skips_the_status_check_for_a_created_task(company):
+    # the stop docstring: a status the transitions refuse is refused unless force=True skips that check
+    make_root(company)
+    make_task(company, "root1", "owner1")
+    call = FakeCall(identity(company, "owner1"))
+    svc.stop(call, company, StopRequest(task="task1", force=True))
+    assert call.result.data_model.updated == 1
+    assert db_task("task1").status == TaskStatus.stopped
+
+
 def test_stop_of_an_in_progress_task_without_worker_stops_it(company):
     make_root(company)
     make_task(company, "root1", "owner1", status=TaskStatus.in_progress)
