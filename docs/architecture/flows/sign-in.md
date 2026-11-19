@@ -78,4 +78,4 @@ Without the id-token hint Keycloak asks the person to confirm the logout, so the
 | Cookie | Attributes | Purpose |
 |---|---|---|
 | `cairnml_token_basic` | HttpOnly, SameSite=Strict, path `/cairnml` | The web session token |
-| `cairnml_idp_session` | HttpOnly, SameSite=Strict, path `/cairnml/api/v999.0/login.logout` | The ID token, sent only to logout |
+| `cairnml_idp_session` | HttpOnly, SameSite=Strict, path `/cairnml/api/login.logout` | The ID token, sent only to logout (the web app calls `login.logout` without an API version, see [Releasing](../../release/releasing.md)) |
