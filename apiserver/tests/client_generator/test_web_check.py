@@ -171,6 +171,17 @@ def test_check_web_checks_the_src_folder_above_the_root_by_default(tmp_path, cap
     )
 
 
+def test_a_relative_root_does_not_make_the_generated_folders_look_hand_written(tmp_path, monkeypatch, capsys):
+    from apiserver.client_generator.__main__ import main
+
+    root = tmp_path / "src" / "app" / "business-logic"
+    root.mkdir(parents=True)
+    web(root, call="queues.get_by_id")
+    monkeypatch.chdir(tmp_path)
+    assert main(["check-web", "--root", "src/app/business-logic"]) == 0
+    assert capsys.readouterr().out == ""
+
+
 def test_an_action_name_that_is_not_a_request_path_is_not_judged(tmp_path):
     root = web(tmp_path)
     sources = hand_written(
