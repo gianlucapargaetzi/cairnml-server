@@ -2,15 +2,19 @@ name: ci
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     branches: [main]
-  push:
-    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
   test:
+    if: github.event.pull_request.draft == false
     name: test
     runs-on: ubuntu-latest
     services:
@@ -54,7 +58,7 @@ jobs:
   # "## API <version>". The check only runs on pull requests, because it compares with the base branch.
   api-change:
     name: api-change
-    if: github.event_name == 'pull_request'
+    if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -75,7 +79,7 @@ jobs:
   # the rules stay on the command line so they are visible here.
   ruff:
     name: ruff
-    if: github.event_name == 'pull_request'
+    if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4

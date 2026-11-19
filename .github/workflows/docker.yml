@@ -7,6 +7,7 @@ name: docker
 # The web app comes from the branch named in docker/build/web-ref ("main": the newest commit of cairnml-web's main).
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     branches: [main]
   workflow_dispatch:
     inputs:
@@ -24,6 +25,10 @@ on:
         required: false
         default: ""
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -33,7 +38,7 @@ env:
 jobs:
   docker-build:
     name: docker-build
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' && github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
