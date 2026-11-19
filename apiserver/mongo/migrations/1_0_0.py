@@ -7,7 +7,7 @@ from pymongo.database import Database
 from pymongo.errors import DuplicateKeyError
 
 from apiserver.database.model.task.task import TaskModelTypes, TaskModelNames
-from apiserver.services.utils import escape_dict
+from apiserver.utilities.parameter_key_escaper import escape_dict
 from apiserver.utilities.dicts import nested_get
 from .utils import _drop_all_indices_from_collections
 

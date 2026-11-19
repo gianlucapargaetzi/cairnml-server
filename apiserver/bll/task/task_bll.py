@@ -11,7 +11,7 @@ from apiserver.apierrors import errors, APIError
 from apiserver.bll.queue import QueueBLL
 from apiserver.bll.organization import OrgBLL, Tags
 from apiserver.bll.project import ProjectBLL
-from apiserver.bll.util import update_project_time
+from apiserver.bll.util import update_project_time, validate_tags
 from apiserver.config_repo import config
 from apiserver.database.errors import translate_errors_context
 from apiserver.database.model.model import Model
@@ -30,7 +30,6 @@ from apiserver.database.utils import (
 )
 from apiserver.es_factory import es_factory
 from apiserver.redis_manager import redman
-from apiserver.services.utils import validate_tags
 from apiserver.service_repo.auth import Identity
 from apiserver.utilities.parameter_key_escaper import mongoengine_safe
 from .clone import (
