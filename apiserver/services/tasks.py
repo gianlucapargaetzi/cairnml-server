@@ -104,7 +104,12 @@ from apiserver.bll.task.hyperparams import HyperParams
 from apiserver.bll.task.visibility import hidden_query
 from apiserver.bll.task.progress import TaskProgress
 from apiserver.redis_manager import redman
-from apiserver.bll.task.compat import legacy_params_copied_back_on_read, legacy_params_on_write
+from apiserver.bll.task.compat import (
+    DockerCmdBackwardsCompatibility,
+    ModelsBackwardsCompatibility,
+    legacy_params_copied_back_on_read,
+    legacy_params_on_write,
+)
 from apiserver.bll.task.param_utils import (
     params_prepare_for_save,
     params_unprepare_from_saved,
@@ -150,8 +155,6 @@ from apiserver.services.utils import (
     conform_tag_fields,
     conform_output_tags,
     process_include_subprojects,
-    ModelsBackwardsCompatibility,
-    DockerCmdBackwardsCompatibility,
 )
 from apiserver.idp.tokens import device_of_bearer
 from apiserver.utilities.dicts import nested_get
