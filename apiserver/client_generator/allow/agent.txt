@@ -1,6 +1,4 @@
 # Hand-written agent calls that send a service and an action by name, and that the schema check (check-callers, target
 # agent) must not report yet. One line per action: exempt <service.action> <reason> (the reason is mandatory).
 # An exemption that matches no call is reported, so a line is removed when its call is converted.
-exempt tasks.enqueue called by name in cairnml_agent/glue/pending_pods_daemon.py; the schema's tasks.enqueue 2.31 does not declare the field force that the server reads (cairnml-server#255)
-exempt tasks.update called by name in cairnml_agent/glue/pending_pods_daemon.py; the schema's tasks.update 2.1 does not declare the field status_message that the server reads (cairnml-server#255)
-exempt devices.git_token called by name in cairnml_agent/helper/repo.py; the schema's devices.git_token response does not declare the url the server returns (cairnml-server#255)
+# The agent has no hand-written call that names a service and an action as strings: this file stays empty.
