@@ -96,3 +96,85 @@ def test_an_unversioned_action_called_with_a_version_is_reported(tmp_path):
     assert [f.message for f in findings] == [
         "login.logout is sent at version 2.13: it is called without a version (the path of its ID-token cookie has no version)"
     ]
+
+
+def hand_written(tmp_path, text, name="http.ts"):
+    """A hand-written source under the web app's src folder; returns that folder."""
+    folder = tmp_path / "src" / "app" / "services"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / name).write_text(text)
+    return tmp_path / "src"
+
+
+def test_a_literal_service_and_action_in_hand_written_code_is_reported_with_the_generated_function(tmp_path):
+    root = web(tmp_path)
+    sources = hand_written(tmp_path, "this.http.post('/cairnml/api/tasks.edit', body);\n")
+    findings = check_web(root, SCHEMA, Allow(), sources=sources)
+    assert [f.message for f in findings] == [
+        "tasks.edit is written as a string in hand-written code: call ApiTasksService.tasksEdit (the generated function)"
+        " instead"
+    ]
+
+
+def test_a_call_through_the_generated_service_is_clean(tmp_path):
+    root = web(tmp_path)
+    sources = hand_written(tmp_path, "this.tasks.tasksEdit(request).subscribe();\n")
+    assert check_web(root, SCHEMA, Allow(), sources=sources) == []
+
+
+def test_a_spec_file_is_not_judged(tmp_path):
+    root = web(tmp_path)
+    sources = hand_written(tmp_path, "http.post('/cairnml/api/tasks.edit', body);\n", name="http.spec.ts")
+    assert check_web(root, SCHEMA, Allow(), sources=sources) == []
+
+
+def test_a_generated_file_under_the_root_is_not_judged_as_hand_written(tmp_path):
+    # the sources contain the generated api-services/ with its literal `/v<version>/queues.get_by_id`: not judged
+    root = web(tmp_path, call="queues.get_by_id")
+    assert "queues.get_by_id" in (root / "api-services" / "queues.service.ts").read_text()
+    assert check_web(root, SCHEMA, Allow(), sources=tmp_path) == []
+
+
+def test_an_api_version_literal_in_hand_written_code_is_reported(tmp_path):
+    root = web(tmp_path)
+    sources = hand_written(tmp_path, "const base = '/cairnml/api/v2.8/devices';\n")
+    findings = check_web(root, SCHEMA, Allow(), sources=sources)
+    assert [f.message for f in findings] == [
+        "'/v2.8/' is an API version written in hand-written code: take the address from the generated functions "
+        "(endpointUrl) instead"
+    ]
+
+
+def test_an_exempt_action_is_not_reported_and_a_stale_exemption_is_reported(tmp_path):
+    root = web(tmp_path)
+    sources = hand_written(tmp_path, "this.http.post('/cairnml/api/tasks.edit', body);\n")
+    assert check_web(root, SCHEMA, Allow({"tasks.edit": "tracked"}), sources=sources) == []
+    clean = tmp_path / "clean"
+    clean.mkdir()
+    (clean / "app.ts").write_text("const x = 1;\n")
+    stale = check_web(root, SCHEMA, Allow({"tasks.edit": "tracked"}), sources=clean)
+    assert [f.message for f in stale] == ["exempt tasks.edit no longer matches anything: remove it"]
+
+
+def test_check_web_checks_the_src_folder_above_the_root_by_default(tmp_path, capsys):
+    from apiserver.client_generator.__main__ import main
+
+    root = tmp_path / "src" / "app" / "business-logic"
+    root.mkdir(parents=True)
+    web(root)
+    hand = tmp_path / "src" / "app" / "services"
+    hand.mkdir(parents=True)
+    (hand / "http.ts").write_text("this.http.post('/cairnml/api/tasks.edit', body);\n")
+    assert main(["check-web", "--root", str(root)]) == 1
+    assert "tasks.edit is written as a string in hand-written code: call ApiTasksService.tasksEdit" in (
+        capsys.readouterr().out
+    )
+
+
+def test_an_action_name_that_is_not_a_request_path_is_not_judged(tmp_path):
+    root = web(tmp_path)
+    sources = hand_written(
+        tmp_path,
+        "this.run(id, 'user_access.check', {});\nwindow.location.href = endpointUrl('login.idp_start');\n",
+    )
+    assert check_web(root, SCHEMA, Allow(), sources=sources) == []

@@ -83,6 +83,14 @@ address uses it instead of writing a version. `generate --check` reports a file 
 `api-services/*.service.ts` against the schema: a call to an action the schema lacks, a call without a version, a call
 at a version other than the one of its definition, and a field of a request or response model the schema does not have.
 
+`check-web` also reads the web app's hand-written sources, the `.ts` files under `--src` (default: the folder named `src`
+above `--root`, or `--root` itself when there is none), skipping `*.spec.ts` and the generated `api-services/` and
+`model/` folders of `--root`. It reports a request path written by hand, `/<service>.<action>` (optionally behind
+`/v<major>.<minor>/`), for an action of the schema, with the generated function to call instead
+(`ApiTasksService.tasksEdit`); and a `/v<major>.<minor>/` literal, whose address comes from the generated functions
+(`endpointUrl(action)`). An action name in quotes, such as `endpointUrl('login.idp_start')`, is not a request path and is
+not reported. Exceptions go in the same allow file, `exempt <service.action> <reason>`.
+
 **Calls without a version.** A path without a version is served with the newest definition of the action (the server
 takes the newest API version when the path has none). Three actions are called without one, on purpose, listed in
 `UNVERSIONED_ACTIONS` in `apiserver/client_generator/web_renderer.py` with the reason:
