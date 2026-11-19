@@ -16,11 +16,7 @@ import pytest
 from apiserver.service_repo import ServiceRepo
 from apiserver.services import tasks as tasks_service
 from apiserver.bll.task.compat import DockerCmdBackwardsCompatibility, ModelsBackwardsCompatibility
-from apiserver.services.utils import (
-    conform_output_tags,
-    conform_tags,
-    unescape_metadata,
-)
+from apiserver.bll.compat import conform_output_tags, conform_tags, unescape_metadata
 from apiserver.utilities.partial_version import PartialVersion
 
 ServiceRepo.load()

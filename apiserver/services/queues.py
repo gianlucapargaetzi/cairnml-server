@@ -45,11 +45,9 @@ from apiserver.database.model.project import Project
 from apiserver.database.model.task.task import Task, TaskStatus
 from apiserver.bll.project import entity_access
 from apiserver.service_repo import APICall, endpoint
+from apiserver.bll.compat import conform_output_tags, conform_tag_fields, unescape_metadata
 from apiserver.services.utils import (
-    conform_tag_fields,
-    conform_output_tags,
     escape_metadata,
-    unescape_metadata,
 )
 from apiserver.utilities import extract_properties_to_lists
 

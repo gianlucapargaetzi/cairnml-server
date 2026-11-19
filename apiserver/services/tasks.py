@@ -151,9 +151,8 @@ from apiserver.database.utils import (
 from apiserver.bll.project import entity_access
 from apiserver.service_repo import APICall, endpoint
 from apiserver.service_repo.auth import Identity
+from apiserver.bll.compat import conform_output_tags, conform_tag_fields
 from apiserver.services.utils import (
-    conform_tag_fields,
-    conform_output_tags,
     process_include_subprojects,
 )
 from apiserver.idp.tokens import device_of_bearer

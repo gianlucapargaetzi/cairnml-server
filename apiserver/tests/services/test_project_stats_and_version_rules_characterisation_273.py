@@ -30,10 +30,7 @@ from apiserver.database.model.task.task import Task, TaskModelTypes, TaskStatus
 from apiserver.database.model.user import UserProfile
 from apiserver.database.utils import get_options
 from apiserver.services import tasks as tasks_service
-from apiserver.services.utils import (
-    conform_tags,
-    unescape_metadata,
-)
+from apiserver.bll.compat import conform_tags, unescape_metadata
 from apiserver.tests.db import ensure_db
 from apiserver.utilities.parameter_key_escaper import ParameterKeyEscaper
 from apiserver.utilities.partial_version import PartialVersion
