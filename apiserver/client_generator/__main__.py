@@ -30,6 +30,12 @@ def _parser() -> argparse.ArgumentParser:
     web.add_argument("--schema", type=Path, default=DEFAULT_SCHEMA, help="folder with the schema's .conf files")
     web.add_argument("--root", type=Path, required=True, help="the web app's src/app/business-logic folder")
     web.add_argument("--allow", type=Path, help="allow file with `exempt <service.action> <reason>` lines")
+    web.add_argument(
+        "--src",
+        type=Path,
+        help="the web app's src folder, whose hand-written .ts files are checked (default: the nearest folder named src "
+        "above --root, or --root itself)",
+    )
     return parser
 
 
@@ -102,6 +108,14 @@ def _generate_web(args, schema) -> int:
     return 1 if stale else 0
 
 
+def _nearest_src(root: Path) -> Path | None:
+    """The folder named src that holds root, the web app's src folder for a business-logic folder under it."""
+    for folder in [Path(root).resolve(), *Path(root).resolve().parents]:
+        if folder.name == "src":
+            return folder
+    return None
+
+
 def main(argv=None) -> int:
     args = _parser().parse_args(argv)
     if args.command == "generate" and args.target == "web":
@@ -112,7 +126,9 @@ def main(argv=None) -> int:
         return _generate_web(args, schema)
     if args.command == "check-web":
         try:
-            findings = check_web(args.root, load_schema(args.schema), read_allow(args.allow) if args.allow else Allow())
+            sources = args.src or _nearest_src(args.root) or args.root
+            allow = read_allow(args.allow) if args.allow else Allow()
+            findings = check_web(args.root, load_schema(args.schema), allow, sources=sources)
         except (OSError, ValueError) as error:
             return _usage(str(error))
         for finding in findings:
