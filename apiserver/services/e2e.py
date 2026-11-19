@@ -13,7 +13,7 @@ from apiserver.database.model.task.task import Task
 from apiserver.database.model.url_to_delete import UrlToDelete
 from apiserver.service_repo import APICall, endpoint
 from apiserver.bll.project.project_changes import reset_task_tags
-from apiserver.services.tasks import _delete_task_events
+from apiserver.bll.task.task_cleanup import delete_task_events_for_cleanup
 
 
 def _is_admin(call: APICall) -> bool:
@@ -94,7 +94,7 @@ def e2e_reset(call: APICall, company_id, _):
         )
         if deleted:
             removed_tasks += 1
-            _delete_task_events(
+            delete_task_events_for_cleanup(
                 company_id=company_id,
                 user_id=call.identity.user,
                 tasks={task.id: cleanup},

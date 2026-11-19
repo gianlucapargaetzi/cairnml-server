@@ -839,7 +839,7 @@ def test_reset_refuses_a_published_task_without_force(company):
 
 def test_reset_of_a_stopped_task_returns_it_to_created(company, monkeypatch):
     # the event deletion goes to Elasticsearch, which this check does not need
-    monkeypatch.setattr(svc, "_delete_task_events", lambda **kwargs: None)
+    monkeypatch.setattr(svc, "delete_task_events_for_cleanup", lambda **kwargs: None)
     make_root(company)
     make_task(
         company,
@@ -864,7 +864,7 @@ def test_reset_many_uses_async_event_delete(company, monkeypatch):
     def capture(**kwargs):
         captured.append(kwargs["sync_delete"])
 
-    monkeypatch.setattr(svc, "_delete_task_events", capture)
+    monkeypatch.setattr(svc, "delete_task_events_for_cleanup", capture)
     make_root(company)
     make_task(company, "root1", "owner1", id_="first", status=TaskStatus.stopped)
     make_task(company, "root1", "owner1", id_="second", status=TaskStatus.stopped)
@@ -888,7 +888,7 @@ def test_delete_of_an_in_progress_task_is_refused_without_force(company):
 
 @pytest.mark.needs_redis
 def test_delete_of_an_archived_in_progress_task_is_allowed(company, monkeypatch):
-    monkeypatch.setattr(svc, "_delete_task_events", lambda **kwargs: None)
+    monkeypatch.setattr(svc, "delete_task_events_for_cleanup", lambda **kwargs: None)
     make_root(company)
     make_task(company, "root1", "owner1", status=TaskStatus.in_progress, system_tags=["archived"])
     svc.delete(FakeCall(identity(company, "owner1")), company, DeleteRequest(task="task1"))
@@ -897,7 +897,7 @@ def test_delete_of_an_archived_in_progress_task_is_allowed(company, monkeypatch)
 
 @pytest.mark.needs_redis
 def test_delete_with_move_to_trash_keeps_a_copy_in_trash_collection(company, monkeypatch):
-    monkeypatch.setattr(svc, "_delete_task_events", lambda **kwargs: None)
+    monkeypatch.setattr(svc, "delete_task_events_for_cleanup", lambda **kwargs: None)
     make_root(company)
     make_task(company, "root1", "owner1")
     svc.delete(FakeCall(identity(company, "owner1")), company, DeleteRequest(task="task1", move_to_trash=True))
@@ -908,7 +908,7 @@ def test_delete_with_move_to_trash_keeps_a_copy_in_trash_collection(company, mon
 
 @pytest.mark.needs_redis
 def test_delete_many_missing_id_is_a_failure(company, monkeypatch):
-    monkeypatch.setattr(svc, "_delete_task_events", lambda **kwargs: None)
+    monkeypatch.setattr(svc, "delete_task_events_for_cleanup", lambda **kwargs: None)
     make_root(company)
     make_task(company, "root1", "owner1", id_="own")
     call = FakeCall(identity(company, "owner1"))

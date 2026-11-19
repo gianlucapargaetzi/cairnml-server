@@ -353,7 +353,7 @@ def test_row20_projectless_task_is_writable_by_any_company_member(company):
 
 @pytest.mark.needs_redis
 def test_row20_projectless_task_is_deletable_by_any_company_member(company, monkeypatch):
-    monkeypatch.setattr(svc, "_delete_task_events", lambda **kwargs: None)
+    monkeypatch.setattr(svc, "delete_task_events_for_cleanup", lambda **kwargs: None)
     make_task(company, None, "owner1", id_="loose-task")
     svc.delete(
         FakeCall(identity(company, "stranger")),
@@ -568,7 +568,7 @@ def test_move_resets_and_bumps_both_projects_and_records_no_repository(company, 
 
 @pytest.mark.needs_redis
 def test_delete_resets_the_tag_cache_of_its_project_and_nothing_else(company, bookkeeping, monkeypatch):
-    monkeypatch.setattr(svc, "_delete_task_events", lambda **kwargs: None)
+    monkeypatch.setattr(svc, "delete_task_events_for_cleanup", lambda **kwargs: None)
     make_root(company, owner="owner1")
     make_task(company, "root1", "owner1")
     svc.delete(
@@ -583,7 +583,7 @@ def test_delete_resets_the_tag_cache_of_its_project_and_nothing_else(company, bo
 
 @pytest.mark.needs_redis
 def test_delete_of_a_projectless_task_resets_with_an_empty_list(company, bookkeeping, monkeypatch):
-    monkeypatch.setattr(svc, "_delete_task_events", lambda **kwargs: None)
+    monkeypatch.setattr(svc, "delete_task_events_for_cleanup", lambda **kwargs: None)
     make_task(company, None, "owner1", id_="loose-task")
     svc.delete(
         FakeCall(identity(company, "owner1")),
@@ -597,7 +597,7 @@ def test_delete_of_a_projectless_task_resets_with_an_empty_list(company, bookkee
 def test_delete_many_resets_the_projects_of_its_tasks_and_passes_none_for_a_projectless_one(
     company, bookkeeping, monkeypatch
 ):
-    monkeypatch.setattr(svc, "_delete_task_events", lambda **kwargs: None)
+    monkeypatch.setattr(svc, "delete_task_events_for_cleanup", lambda **kwargs: None)
     make_root(company, owner="owner1")
     make_task(company, "root1", "owner1", id_="task1")
     make_task(company, None, "owner1", id_="loose-task")

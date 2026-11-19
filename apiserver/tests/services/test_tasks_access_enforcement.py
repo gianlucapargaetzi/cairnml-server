@@ -92,7 +92,7 @@ def test_read_write_owner_cannot_delete_someone_elses_task(company):
 
 @pytest.mark.needs_redis
 def test_read_write_owner_can_delete_their_own_task(company, monkeypatch):
-    monkeypatch.setattr(svc, "_delete_task_events", lambda **kwargs: None)
+    monkeypatch.setattr(svc, "delete_task_events_for_cleanup", lambda **kwargs: None)
     make_root(company, members=[("u2", ProjectRole.read_write)])
     make_task(company, "root1", "u2")
     svc.delete(
@@ -169,7 +169,7 @@ def test_stop_many_is_all_or_nothing(company):
 @pytest.mark.needs_redis
 def test_admin_can_delete_anyones_task(company, monkeypatch):
     # The event cleanup needs Elasticsearch, which is not part of this test. The access check is what is under test
-    monkeypatch.setattr(svc, "_delete_task_events", lambda **kwargs: None)
+    monkeypatch.setattr(svc, "delete_task_events_for_cleanup", lambda **kwargs: None)
     make_root(company)
     make_task(company, "root1", "owner1")
     svc.delete(

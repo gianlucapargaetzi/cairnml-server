@@ -1,5 +1,5 @@
 # apiserver/tests/bll/task/test_task_events_cleanup_characterisation.py
-"""Characterisation tests for the event cleanup helper services.tasks._delete_task_events.
+"""Characterisation tests for the event cleanup helper bll.task.task_cleanup.delete_task_events_for_cleanup.
 
 They record what the helper does today, including the odd behaviour, so that a later move of the helper cannot change
 it silently. Every collaborator is replaced by a recorder, so these tests need no Elasticsearch and no storage.
@@ -13,6 +13,7 @@ import pytest
 
 from apiserver.apimodels.tasks import DeleteManyRequest, ResetManyRequest, ResetRequest
 from apiserver.bll.project import entity_access
+from apiserver.bll.task import task_cleanup
 from apiserver.bll.task.task_cleanup import CleanupResult, TaskUrls
 from apiserver.database.model.auth import Role
 from apiserver.service_repo.auth import Identity
@@ -79,19 +80,19 @@ def recorders(monkeypatch):
         collect=Recorder(urls={"ev://x"}),
         event_delete=Recorder(),
     )
-    monkeypatch.setattr(svc, "schedule_for_delete", rec.schedule)
-    monkeypatch.setattr(svc, "delete_task_events_and_collect_urls", rec.collect)
-    monkeypatch.setattr(svc.event_bll, "delete_task_events", rec.event_delete)
-    monkeypatch.setattr(svc, "config", FakeConfig({"services.async_urls_delete.enabled": True}))
+    monkeypatch.setattr(task_cleanup, "schedule_for_delete", rec.schedule)
+    monkeypatch.setattr(task_cleanup, "delete_task_events_and_collect_urls", rec.collect)
+    monkeypatch.setattr(task_cleanup.event_bll, "delete_task_events", rec.event_delete)
+    monkeypatch.setattr(task_cleanup, "config", FakeConfig({"services.async_urls_delete.enabled": True}))
     return rec
 
 
 def disable_async_urls_delete(monkeypatch):
-    monkeypatch.setattr(svc, "config", FakeConfig({"services.async_urls_delete.enabled": False}))
+    monkeypatch.setattr(task_cleanup, "config", FakeConfig({"services.async_urls_delete.enabled": False}))
 
 
 def call_helper(tasks, delete_external_artifacts=True, sync_delete=True):
-    svc._delete_task_events(
+    task_cleanup.delete_task_events_for_cleanup(
         company_id="c",
         user_id="u",
         tasks=tasks,
@@ -179,7 +180,7 @@ def test_sync_flag_is_passed_through_to_event_bll(recorders, monkeypatch):
 def test_reset_uses_sync_delete_and_reset_many_does_not(company, monkeypatch):
     # E7: the single reset waits for the delete, the batch reset does not
     captured = []
-    monkeypatch.setattr(svc, "_delete_task_events", lambda **kwargs: captured.append(kwargs))
+    monkeypatch.setattr(svc, "delete_task_events_for_cleanup", lambda **kwargs: captured.append(kwargs))
     monkeypatch.setattr(svc, "reset_task", lambda **kwargs: (None, cleanup(), {"updated": 0}))
     monkeypatch.setattr(entity_access, "assert_tasks_access", lambda *args, **kwargs: None)
     monkeypatch.setattr(svc, "run_batch_operation", _run_batch_for_ids)
@@ -200,7 +201,7 @@ def _run_batch_for_ids(func, ids, **_):
 def test_delete_many_passes_only_deleted_tasks(company, monkeypatch):
     # E8: a missing task is reported as failed and does not reach the cleanup
     captured = []
-    monkeypatch.setattr(svc, "_delete_task_events", lambda **kwargs: captured.append(kwargs))
+    monkeypatch.setattr(svc, "delete_task_events_for_cleanup", lambda **kwargs: captured.append(kwargs))
     monkeypatch.setattr(entity_access, "assert_tasks_access", lambda *args, **kwargs: None)
     monkeypatch.setattr(svc, "_reset_cached_tags", lambda *args, **kwargs: None)
 
@@ -224,6 +225,7 @@ def test_delete_many_passes_only_deleted_tasks(company, monkeypatch):
 
 
 def test_e2e_and_pipelines_keep_their_own_reference():
-    # E9: the names the e2e and pipelines services import are the very helper of the tasks service
-    assert e2e_service._delete_task_events is svc._delete_task_events
-    assert pipelines_service._delete_task_events is svc._delete_task_events
+    # E9: the names the e2e, pipelines and tasks services use are the very helper of the cleanup module
+    assert e2e_service.delete_task_events_for_cleanup is task_cleanup.delete_task_events_for_cleanup
+    assert pipelines_service.delete_task_events_for_cleanup is task_cleanup.delete_task_events_for_cleanup
+    assert svc.delete_task_events_for_cleanup is task_cleanup.delete_task_events_for_cleanup
