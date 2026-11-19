@@ -123,3 +123,68 @@ def test_generating_the_web_target_writes_endpoints_and_check_notices_drift(tmp_
     assert main(["generate", "--target", "web", "--out", str(out), "--services", "login", "--check"]) == 1
     # what it generated is what check-web accepts
     assert main(["check-web", "--root", str(out)]) == 0
+
+
+def _method(api: str, name: str) -> str:
+    """The text of one generated method of a service class, from its signature to its closing brace."""
+    start = api.index(f"    public {name}(")
+    return api[start : api.index("\n    }\n", start) + len("\n    }\n")]
+
+
+def test_a_json_call_takes_the_options_of_the_call_and_passes_them_to_the_transport():
+    """reports.get_task_data is a JSON POST: its options (a tenant header, the query) go to the transport, which sends
+    them, and it has no address builder because it is not a GET."""
+    api = render_api(SCHEMA["reports"])
+    method = _method(api, "reportsGetTaskData")
+    assert "public reportsGetTaskData(request: ReportsGetTaskDataRequest, options?: ApiOptions): Observable<any> {" in method
+    assert "this.apiRequest.post<ReportsGetTaskDataResponse>(`${this.basePath}/v2.41/reports.get_task_data`," in method
+    assert method.endswith("            options\n        );\n    }\n")
+    assert "reportsGetTaskDataUrl" not in api
+
+
+def test_a_file_action_returns_a_blob_and_sends_the_options_of_the_call():
+    """events.download_task_log returns the log attachment: a Blob, posted with the request body and the call's options
+    (the tenant header), with the response read as a file."""
+    api = render_api(SCHEMA["events"])
+    version = SCHEMA["events"].actions["download_task_log"].version
+    method = _method(api, "eventsDownloadTaskLog")
+    assert "public eventsDownloadTaskLog(request: EventsDownloadTaskLogRequest, options?: ApiOptions): Observable<Blob> {" in method
+    assert f"this.apiRequest.postBlob(`${{this.basePath}}/v{version}/events.download_task_log`," in method
+    assert method.endswith("            options\n        );\n    }\n")
+    assert "Observable<any>" not in method
+
+
+def test_a_get_action_has_a_get_method_and_a_builder_of_its_address():
+    """organization.download_for_get_all is downloaded by a link (a GET): the call is a GET of the file, with the request
+    as its query, and the builder gives the address of that link."""
+    api = render_api(SCHEMA["organization"])
+    version = SCHEMA["organization"].actions["download_for_get_all"].version
+    method = _method(api, "organizationDownloadForGetAll")
+    assert "public organizationDownloadForGetAll(request: OrganizationDownloadForGetAllRequest, options?: ApiOptions): Observable<Blob> {" in method
+    assert f"this.apiRequest.getBlob(`${{this.basePath}}/v{version}/organization.download_for_get_all`," in method
+    assert "this.apiRequest.post" not in method
+    builder = _method(api, "organizationDownloadForGetAllUrl")
+    assert "public organizationDownloadForGetAllUrl(request: OrganizationDownloadForGetAllRequest): string {" in builder
+    assert f"return this.apiRequest.url(`${{this.basePath}}/v{version}/organization.download_for_get_all`, request);" in builder
+
+
+def test_the_file_and_get_rules_name_actions_of_the_schema(monkeypatch):
+    from apiserver.client_generator.web_renderer import FILE_ACTIONS, GET_ACTIONS
+
+    monkeypatch.setitem(FILE_ACTIONS, "events.gone", "no such action")
+    with pytest.raises(Unsupported, match="events.gone"):
+        render_endpoints(SCHEMA)
+    monkeypatch.undo()
+    monkeypatch.setitem(GET_ACTIONS, "events.gone", "no such action")
+    with pytest.raises(Unsupported, match="events.gone"):
+        render_endpoints(SCHEMA)
+
+
+def test_the_services_with_file_and_get_calls_are_what_check_web_accepts(tmp_path):
+    from apiserver.client_generator.__main__ import main
+
+    out = tmp_path / "business-logic"
+    services = "events,organization,reports"
+    assert main(["generate", "--target", "web", "--out", str(out), "--services", services]) == 0
+    assert main(["generate", "--target", "web", "--out", str(out), "--services", services, "--check"]) == 0
+    assert main(["check-web", "--root", str(out)]) == 0

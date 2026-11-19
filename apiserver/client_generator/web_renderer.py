@@ -49,6 +49,25 @@ UNVERSIONED_ACTIONS = {
 }
 
 
+# Actions whose response is a file, not JSON: the generated method returns a Blob (and sends the call's options as for
+# any other method). The schema describes the response as a string, which says nothing about the file, so the rule is
+# here, with the reason, as UNVERSIONED_ACTIONS is:
+# - events.download_task_log: the log attachment of a task, posted with a body and a tenant header;
+# - organization.download_for_get_all: the file of a prepared download; it is a link the browser follows (GET), too.
+FILE_ACTIONS = {
+    "events.download_task_log": "the response is the attachment, not a JSON envelope",
+    "organization.download_for_get_all": "the response is the prepared file, not a JSON envelope",
+}
+
+# Actions the web app calls with GET: the request's fields go in the query string, and the generated class also has a
+# `<service><Action>Url(request)` method that builds the address, for a link the browser follows.
+# - organization.download_for_get_all: its file is downloaded by a link (a navigation to the address), which cannot send
+#   a POST body, so the request is the query string of the address (prepare_id).
+GET_ACTIONS = {
+    "organization.download_for_get_all": "the download is a link: the request is the query of the address",
+}
+
+
 def action_path(service: str, action: Action) -> str:
     """The path of an action below the API's base path: at the version of its definition, or without a version for the
     actions of UNVERSIONED_ACTIONS."""
@@ -287,9 +306,14 @@ def render_endpoints(schema: Dict[str, Service]) -> str:
         for service in sorted(schema)
         for name in sorted(schema[service].actions)
     ]
-    stale = sorted(set(UNVERSIONED_ACTIONS) - {name for name, _ in actions})
-    if stale:
-        raise Unsupported(f"UNVERSIONED_ACTIONS names {stale}, which the schema does not have")
+    for rule, rules in (
+        ("UNVERSIONED_ACTIONS", UNVERSIONED_ACTIONS),
+        ("FILE_ACTIONS", FILE_ACTIONS),
+        ("GET_ACTIONS", GET_ACTIONS),
+    ):
+        stale = sorted(set(rules) - {name for name, _ in actions})
+        if stale:
+            raise Unsupported(f"{rule} names {stale}, which the schema does not have")
     entries = "".join(
         f"    ['{name}', {'null' if name in UNVERSIONED_ACTIONS else repr(action.version)}],\n"
         for name, action in actions
@@ -312,6 +336,53 @@ def render_models(service: Service) -> Dict[str, str]:
     return models.files
 
 
+def _method(service: Service, action: Action) -> List[str]:
+    """The generated methods of one action: its call (a POST, a GET, or a Blob for a file) and, for a GET action, the
+    builder of its address. Every call takes the options of the call (headers, query) as its last argument."""
+    full = f"{service.name}.{action.name}"
+    method = f"{service.name}{pascal(action.name)}"
+    req = f"{pascal(service.name)}{pascal(action.name)}Request"
+    res = f"{pascal(service.name)}{pascal(action.name)}Response"
+    address = f"`${{this.basePath}}{action_path(service.name, action)}`"
+    is_file = full in FILE_ACTIONS
+    is_get = full in GET_ACTIONS
+    if is_file:
+        # the file is not JSON, so the call does not ask for JSON
+        returns = "Blob"
+        verb = "getBlob" if is_get else "postBlob"
+        transport = "{\n                withCredentials: this.configuration.withCredentials\n            }"
+    else:
+        returns = "any"
+        verb = "get" if is_get else "post"
+        transport = (
+            "{\n                headers: this.defaultHeaders,\n"
+            "                withCredentials: this.configuration.withCredentials\n            }"
+        )
+    generic = "" if is_file else f"<{res}>"
+    text = (
+        "\n".join(_doc(action.description, "    "))
+        + ("\n" if action.description else "")
+        + f"    public {method}(request: {req}, options?: ApiOptions): Observable<{returns}> {{\n"
+        + f"        return this.apiRequest.{verb}{generic}({address},\n"
+        + "            request,\n"
+        + f"            {transport},\n"
+        + "            options\n"
+        + "        );\n"
+        + "    }\n"
+    )
+    if not is_get:
+        return [text]
+    builder = (
+        "    /**\n"
+        "     * The address of this call, with the request's fields as its query (a link to the file).\n"
+        "     */\n"
+        f"    public {method}Url(request: {req}): string {{\n"
+        f"        return this.apiRequest.url({address}, request);\n"
+        "    }\n"
+    )
+    return [text, builder]
+
+
 def render_api(service: Service) -> str:
     """The service class: one method per action, posting to the server's action name."""
     cls = f"Api{pascal(service.name)}Service"
@@ -321,24 +392,9 @@ def render_api(service: Service) -> str:
         action = service.actions[name]
         if action.batch_request:
             continue  # batched requests are sent by the batching service, not by a method of their own
-        method = f"{service.name}{pascal(action.name)}"
-        req = f"{pascal(service.name)}{pascal(action.name)}Request"
-        res = f"{pascal(service.name)}{pascal(action.name)}Response"
-        imports.update([req, res])
-        methods.append(
-            "\n".join(_doc(action.description, "    "))
-            + ("\n" if action.description else "")
-            + f"    public {method}(request: {req}, options?: ApiOptions): Observable<any> {{\n"
-            + f"        return this.apiRequest.post<{res}>(`${{this.basePath}}{action_path(service.name, action)}`,\n"
-            + "            request,\n"
-            + "            {\n"
-            + "                headers: this.defaultHeaders,\n"
-            + "                withCredentials: this.configuration.withCredentials\n"
-            + "            },\n"
-            + "            options\n"
-            + "        );\n"
-            + "    }\n"
-        )
+        imports.update([f"{pascal(service.name)}{pascal(action.name)}Request",
+                        f"{pascal(service.name)}{pascal(action.name)}Response"])
+        methods.extend(_method(service, action))  # a GET action has its address builder after its call
     import_lines = "".join(
         f"import {{ {n} }} from '../model/{service.name}/{lower_first(n)}';\n" for n in sorted(imports)
     )
