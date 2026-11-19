@@ -2,11 +2,13 @@
 
 Two kinds of check. The handler dispatch: each action with several handlers serves a version with the handler that
 served it at pre-2.41, the handler of a version being the newest one registered at most that version. The branches:
-each version-dependent branch of the compatibility helpers and of the tasks service decides by the definition the
-request resolved to (call.actual_endpoint_version), so a branch is checked at a version on each side of its threshold.
+each version-dependent branch of the compatibility helpers and of the tasks service decides by the version the client
+requested (call.requested_endpoint_version), as pre-2.41 did, not by the definition the request resolved to. The
+expected values of the branch tables are what the pre-2.41 helpers (tag c1b924ec) return for the requested version.
 The helpers are called with a stub call, so no database is needed.
 """
 
+import copy
 from types import SimpleNamespace
 
 import pytest
@@ -89,87 +91,170 @@ def test_system_tags_stay_apart_for_a_definition_from_2_3_on():
     assert doc == {"tags": ["a"], "system_tags": ["b"]}
 
 
-def test_a_request_is_judged_by_the_definition_it_resolved_to_not_by_its_own_version():
-    call = SimpleNamespace(
-        endpoint_name="tasks.get_all",
-        requested_endpoint_version=PartialVersion("2.5"),
-        actual_endpoint_version=PartialVersion("2.1"),
+def _resolved_call(requested: str, actual: str, endpoint_name: str = "tasks.get_all"):
+    """The call as the service repo leaves it: requested is the version of the request, actual the definition it
+    resolved to, which is never above the requested version (a request above the server level resolves to the newest)"""
+    return SimpleNamespace(
+        endpoint_name=endpoint_name,
+        requested_endpoint_version=PartialVersion(requested),
+        actual_endpoint_version=PartialVersion(actual),
     )
+
+
+# Each table row is (requested, resolved definition, the pre-2.41 outcome for the requested version alone).
+
+
+@pytest.mark.parametrize(
+    "requested,actual,merged",
+    [
+        ("2.2", "2.1", True),
+        ("2.2", "2.2", True),
+        ("2.3", "2.1", False),
+        ("2.3", "2.3", False),
+        ("2.41", "2.1", False),
+        ("2.41", "2.41", False),
+    ],
+)
+def test_tags_are_merged_by_the_requested_version(requested, actual, merged):
     doc = {"tags": ["a"], "system_tags": ["b"]}
-    conform_output_tags(call, doc)
-    assert doc["tags"] == ["a", "b"]
+    conform_output_tags(_resolved_call(requested, actual), doc)
+    assert doc == {"tags": ["a", "b"] if merged else ["a"], "system_tags": ["b"]}
 
 
-def test_old_tags_are_split_into_user_and_system_tags_before_2_3():
-    tags, system_tags = conform_tags(_call("2.2"), ["development", "mine"], None)
-    assert "development" in system_tags
-    assert list(tags) == ["mine"]
+@pytest.mark.parametrize(
+    "requested,actual,split",
+    [
+        ("2.2", "2.1", True),
+        ("2.2", "2.2", True),
+        ("2.3", "2.1", False),
+        ("2.3", "2.3", False),
+        ("2.41", "2.1", False),
+    ],
+)
+def test_old_tags_are_split_by_the_requested_version(requested, actual, split):
+    tags, system_tags = conform_tags(_resolved_call(requested, actual), ["development", "mine"], None)
+    if split:
+        assert list(tags) == ["mine"]
+        assert list(system_tags) == ["development"]
+    else:
+        assert list(tags) == ["development", "mine"]
+        assert not system_tags
 
 
-def test_old_tags_are_not_split_from_2_3_on():
-    tags, system_tags = conform_tags(_call("2.3"), ["development", "mine"], None)
-    assert list(tags) == ["development", "mine"]
-    assert not system_tags
-
-
-def test_the_model_fields_are_moved_into_models_before_2_13():
+@pytest.mark.parametrize(
+    "requested,actual,moved",
+    [
+        ("2.12", "2.1", True),
+        ("2.12", "2.12", True),
+        ("2.13", "2.1", False),
+        ("2.13", "2.13", False),
+        ("2.41", "2.1", False),
+    ],
+)
+def test_model_fields_are_moved_into_models_by_the_requested_version(requested, actual, moved):
     fields = {"execution": {"model": "m1"}, "output": {"model": "m2"}}
-    ModelsBackwardsCompatibility.prepare_for_save(_call("2.12"), fields)
-    assert "model" not in fields.get("execution", {})
-    assert [m["model"] for m in fields["models"]["input"]] == ["m1"]
-    assert [m["model"] for m in fields["models"]["output"]] == ["m2"]
+    ModelsBackwardsCompatibility.prepare_for_save(_resolved_call(requested, actual), fields)
+    if moved:
+        assert fields["execution"] == {}
+        assert fields["output"] == {}
+        assert [(m["name"], m["model"]) for m in fields["models"]["input"]] == [("Input Model", "m1")]
+        assert [(m["name"], m["model"]) for m in fields["models"]["output"]] == [("Output Model", "m2")]
+    else:
+        assert fields == {"execution": {"model": "m1"}, "output": {"model": "m2"}}
 
 
-def test_the_model_fields_are_kept_from_2_13_on():
-    fields = {"execution": {"model": "m1"}}
-    ModelsBackwardsCompatibility.prepare_for_save(_call("2.13"), fields)
-    assert fields == {"execution": {"model": "m1"}}
+@pytest.mark.parametrize(
+    "requested,actual,read_back",
+    [
+        ("2.12", "2.1", True),
+        ("2.12", "2.12", True),
+        ("2.13", "2.1", False),
+        ("2.13", "2.13", False),
+        ("2.41", "2.1", False),
+    ],
+)
+def test_model_fields_are_read_back_by_the_requested_version(requested, actual, read_back):
+    task = {"models": {"input": [{"name": "Input", "model": "m1"}], "output": [{"name": "Output", "model": "m2"}]}}
+    expected = copy.deepcopy(task)
+    ModelsBackwardsCompatibility.unprepare_from_saved(_resolved_call(requested, actual), task)
+    if read_back:
+        assert task["execution"]["model"] == "m1"
+        assert task["output"]["model"] == "m2"
+    else:
+        assert task == expected
 
 
-def test_the_model_fields_are_read_back_for_a_definition_before_2_13():
-    task = {"models": {"input": [{"name": "Input", "model": "m1"}], "output": []}}
-    ModelsBackwardsCompatibility.unprepare_from_saved(_call("2.12"), task)
-    assert task["execution"]["model"] == "m1"
-
-
-def test_the_docker_command_is_split_into_image_and_arguments_before_2_13():
+@pytest.mark.parametrize(
+    "requested,actual,split",
+    [
+        ("2.12", "2.1", True),
+        ("2.12", "2.12", True),
+        ("2.13", "2.1", False),
+        ("2.13", "2.13", False),
+        ("2.41", "2.1", False),
+    ],
+)
+def test_docker_command_is_split_by_the_requested_version(requested, actual, split):
     fields = {"execution": {"docker_cmd": "image:1 --gpus all"}}
-    DockerCmdBackwardsCompatibility.prepare_for_save(_call("2.12"), fields)
-    assert fields["container"] == {"image": "image:1", "arguments": "--gpus all"}
-    assert "docker_cmd" not in fields["execution"]
+    DockerCmdBackwardsCompatibility.prepare_for_save(_resolved_call(requested, actual), fields)
+    if split:
+        assert fields == {"execution": {}, "container": {"image": "image:1", "arguments": "--gpus all"}}
+    else:
+        assert fields == {"execution": {"docker_cmd": "image:1 --gpus all"}}
 
 
-def test_the_docker_command_is_kept_from_2_13_on():
-    fields = {"execution": {"docker_cmd": "image:1 --gpus all"}}
-    DockerCmdBackwardsCompatibility.prepare_for_save(_call("2.13"), fields)
-    assert fields == {"execution": {"docker_cmd": "image:1 --gpus all"}}
-
-
-def test_the_docker_command_is_built_back_before_2_13():
+@pytest.mark.parametrize(
+    "requested,actual,built",
+    [
+        ("2.12", "2.1", True),
+        ("2.12", "2.12", True),
+        ("2.13", "2.1", False),
+        ("2.13", "2.13", False),
+        ("2.41", "2.1", False),
+    ],
+)
+def test_docker_command_is_built_back_by_the_requested_version(requested, actual, built):
     task = {"container": {"image": "image:1", "arguments": "--gpus all"}}
-    DockerCmdBackwardsCompatibility.unprepare_from_saved(_call("2.12"), task)
-    assert task["execution"]["docker_cmd"] == "image:1 --gpus all"
+    DockerCmdBackwardsCompatibility.unprepare_from_saved(_resolved_call(requested, actual), task)
+    if built:
+        assert task["execution"]["docker_cmd"] == "image:1 --gpus all"
+    else:
+        assert "execution" not in task
 
 
-def test_metadata_is_not_returned_to_a_definition_up_to_2_16():
-    docs = [{"metadata": {"k.1": {"key": "k.1"}}}]
-    unescape_metadata(_call("2.16", "models.get_all"), docs)
-    assert docs == [{"metadata": []}]
-
-
-def test_metadata_keys_are_unescaped_from_a_definition_after_2_16():
+@pytest.mark.parametrize(
+    "requested,actual,unescaped",
+    [
+        ("2.16", "2.1", False),
+        ("2.16", "2.16", False),
+        ("2.17", "2.1", True),
+        ("2.17", "2.17", True),
+        ("2.41", "2.1", True),
+        ("2.41", "2.41", True),
+    ],
+)
+def test_metadata_is_unescaped_by_the_requested_version(requested, actual, unescaped):
     docs = [{"metadata": {"k%2E1": {"key": "k%2E1"}}}]
-    unescape_metadata(_call("2.17", "models.get_all"), docs)
-    assert docs[0]["metadata"] == {"k.1": {"key": "k%2E1"}}
+    unescape_metadata(_resolved_call(requested, actual, "models.get_by_id"), docs)
+    if unescaped:
+        assert docs == [{"metadata": {"k.1": {"key": "k%2E1"}}}]
+    else:
+        assert docs == [{"metadata": []}]
 
 
-def test_the_legacy_parameters_are_copied_back_for_a_definition_before_2_9():
+@pytest.mark.parametrize(
+    "requested,actual,copied",
+    [
+        ("2.8", "2.1", True),
+        ("2.8", "2.8", True),
+        ("2.9", "2.1", False),
+        ("2.41", "2.1", False),
+    ],
+)
+def test_legacy_parameters_are_copied_back_by_the_requested_version(requested, actual, copied):
     data = {"hyperparams": {"Args": {"epochs": {"name": "epochs", "type": "legacy", "value": "3"}}}}
-    tasks_service.conform_task_data(_call("2.8"), data)
-    assert data["execution"]["parameters"] == {"epochs": "3"}
-
-
-def test_the_legacy_parameters_are_not_copied_back_from_2_9_on():
-    data = {"hyperparams": {"Args": {"epochs": {"name": "epochs", "type": "legacy", "value": "3"}}}}
-    tasks_service.conform_task_data(_call("2.9"), data)
-    assert "execution" not in data
+    tasks_service.conform_task_data(_resolved_call(requested, actual), data)
+    if copied:
+        assert data["execution"]["parameters"] == {"epochs": "3"}
+    else:
+        assert "execution" not in data

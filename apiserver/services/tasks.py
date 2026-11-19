@@ -578,7 +578,7 @@ def conform_task_data(call: APICall, tasks_data: Union[Sequence[dict], dict]):
     ModelsBackwardsCompatibility.unprepare_from_saved(call, tasks_data)
     DockerCmdBackwardsCompatibility.unprepare_from_saved(call, tasks_data)
 
-    need_legacy_params = call.actual_endpoint_version < PartialVersion("2.9")
+    need_legacy_params = call.requested_endpoint_version < PartialVersion("2.9")
 
     for data in tasks_data:
         params_unprepare_from_saved(

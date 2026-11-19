@@ -27,6 +27,8 @@ class FakeCall:
         self.identity = identity
         self.auth = auth
         self.data = data or {}
+        # the request is made at the version it resolves to, so both versions are the same here
+        self.requested_endpoint_version = PartialVersion(actual) if actual else None
         self.actual_endpoint_version = PartialVersion(actual) if actual else None
         self.result = SimpleNamespace(data=None, data_model=None)
 

@@ -43,7 +43,7 @@ def conform_output_tags(call: APICall, documents: Union[dict, Sequence[dict]]):
     if isinstance(documents, dict):
         documents = [documents]
 
-    merge_tags = call.actual_endpoint_version < PartialVersion("2.3")
+    merge_tags = call.requested_endpoint_version < PartialVersion("2.3")
     for doc in documents:
         if merge_tags:
             system_tags = doc.get("system_tags")
@@ -76,7 +76,7 @@ def conform_tags(call: APICall, tags: Sequence, system_tags: Sequence, validate=
     """
     if validate:
         validate_tags(tags, system_tags)
-    if call.actual_endpoint_version < PartialVersion("2.3"):
+    if call.requested_endpoint_version < PartialVersion("2.3"):
         tags, system_tags = _upgrade_tags(call, tags, system_tags)
     return tags, system_tags
 
@@ -143,7 +143,7 @@ class ModelsBackwardsCompatibility:
 
     @classmethod
     def prepare_for_save(cls, call: APICall, fields: dict):
-        if call.actual_endpoint_version >= cls.max_version:
+        if call.requested_endpoint_version >= cls.max_version:
             return
 
         for mode, field in cls.mode_to_fields.items():
@@ -167,7 +167,7 @@ class ModelsBackwardsCompatibility:
 
     @classmethod
     def unprepare_from_saved(cls, call: APICall, tasks_data: Union[Sequence[dict], dict]):
-        if call.actual_endpoint_version >= cls.max_version:
+        if call.requested_endpoint_version >= cls.max_version:
             return
 
         if isinstance(tasks_data, dict):
@@ -190,7 +190,7 @@ class DockerCmdBackwardsCompatibility:
 
     @classmethod
     def prepare_for_save(cls, call: APICall, fields: dict):
-        if call.actual_endpoint_version >= cls.max_version:
+        if call.requested_endpoint_version >= cls.max_version:
             return
 
         docker_cmd = nested_get(fields, cls.field)
@@ -203,7 +203,7 @@ class DockerCmdBackwardsCompatibility:
 
     @classmethod
     def unprepare_from_saved(cls, call: APICall, tasks_data: Union[Sequence[dict], dict]):
-        if call.actual_endpoint_version >= cls.max_version:
+        if call.requested_endpoint_version >= cls.max_version:
             return
 
         if isinstance(tasks_data, dict):
@@ -237,7 +237,7 @@ def unescape_metadata(call: APICall, documents: Union[dict, Sequence[dict]]):
     if isinstance(documents, dict):
         documents = [documents]
 
-    old_client = call.actual_endpoint_version <= PartialVersion("2.16")
+    old_client = call.requested_endpoint_version <= PartialVersion("2.16")
     for doc in documents:
         if old_client and "metadata" in doc:
             doc["metadata"] = []
