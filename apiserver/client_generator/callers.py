@@ -37,9 +37,8 @@ import ast
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
+from functools import lru_cache
 from typing import Dict, List, Optional, Sequence, Set, Tuple
-
-import requests
 
 from .python_renderer import camel
 from .schema_model import Service
@@ -51,8 +50,18 @@ SESSION_NAMES = frozenset({"session", "_session", "task_session"})
 # the calls on a session object that take a service and an action as their first two arguments
 SESSION_SENDERS = frozenset({"send_request", "get", "post", "send"})
 TRIVIAL_BASES = frozenset({"object", "ABC", "Exception"})
-# a session object may be the plain HTTP session the SDK wraps (requests.Session): its methods are accepted too
-HTTP_SESSION_METHODS = frozenset(dir(requests.Session))
+
+
+@lru_cache(maxsize=None)
+def http_session_methods() -> frozenset:
+    """A session object may be the plain HTTP session the SDK wraps (requests.Session): its methods are accepted too.
+    Read on first use, so that `generate` and `check-web` (which never look at hand-written callers) do not need
+    `requests`; `check-callers` does."""
+    import requests
+
+    return frozenset(dir(requests.Session))
+
+
 SESSION_ROOTS = frozenset(
     {"Session", "cairnml", "cairnml_agent"}
 )  # `Session(...)` of the SDK or the agent, not boto3's
@@ -564,6 +573,6 @@ def _session_findings(root: Path, members, session_calls) -> List[Finding]:
         return []
     findings = []
     for path, node, receiver, method in session_calls:
-        if method not in known and method not in HTTP_SESSION_METHODS and not hasattr(object, method):
+        if method not in known and method not in http_session_methods() and not hasattr(object, method):
             findings.append(Finding(path, node.lineno, f"{receiver}.{method} is not a method of the Session class"))
     return findings
