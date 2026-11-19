@@ -18,7 +18,7 @@ import pytest
 from apiserver.apierrors import errors
 from apiserver.apimodels.projects import ProjectChildrenType
 from apiserver.bll.project.project_bll import ProjectBLL, dataset_tag, reports_tag
-from apiserver.bll.task.param_utils import legacy_params_prepare_for_save
+from apiserver.bll.task.compat import legacy_params_prepare_for_save
 from apiserver.database.model import EntityVisibility
 from apiserver.database.model.model import Model
 from apiserver.database.model.project import Project, ProjectVisibility
