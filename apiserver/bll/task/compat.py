@@ -4,6 +4,9 @@ Every rule here takes the requested endpoint version (call.requested_endpoint_ve
 compare the actual version and are not part of this module. Each threshold is defined once, here.
 """
 
+from datetime import datetime
+from typing import Sequence, Union
+
 from apiserver.apierrors import errors
 from apiserver.bll.task.param_utils import (
     hyperparams_default_section,
@@ -11,11 +14,17 @@ from apiserver.bll.task.param_utils import (
     params_unprepare_from_saved,
     tf_define_section,
 )
+from apiserver.database.model.task.task import TaskModelNames, TaskModelTypes
+from apiserver.service_repo import APICall
 from apiserver.utilities.dicts import nested_delete, nested_get, nested_set
 from apiserver.utilities.partial_version import PartialVersion
 
 # requests below this version may still send the legacy execution.parameters input, and get it copied back on read
 LEGACY_PARAMS_BELOW = PartialVersion("2.9")
+
+# requests below this version get the models and the docker command in the legacy task fields (split on write,
+# built back on read)
+MODELS_AND_DOCKER_CMD_BELOW = PartialVersion("2.13")
 
 
 def _remove_legacy_params(data: dict) -> int:
@@ -94,3 +103,87 @@ def legacy_params_copied_back_on_read(requested_version: PartialVersion) -> bool
     request below LEGACY_PARAMS_BELOW
     """
     return requested_version < LEGACY_PARAMS_BELOW
+
+
+class ModelsBackwardsCompatibility:
+    mode_to_fields = {
+        TaskModelTypes.input: ("execution", "model"),
+        TaskModelTypes.output: ("output", "model"),
+    }
+    models_field = "models"
+
+    @classmethod
+    def prepare_for_save(cls, call: APICall, fields: dict):
+        if call.requested_endpoint_version >= MODELS_AND_DOCKER_CMD_BELOW:
+            return
+
+        for mode, field in cls.mode_to_fields.items():
+            value = nested_get(fields, field)
+            if value is None:
+                continue
+            val = (
+                [
+                    dict(
+                        name=TaskModelNames[mode],
+                        model=value,
+                        updated=datetime.utcnow(),
+                    )
+                ]
+                if value
+                else []
+            )
+            nested_set(fields, (cls.models_field, mode), value=val)
+
+            nested_delete(fields, field)
+
+    @classmethod
+    def unprepare_from_saved(cls, call: APICall, tasks_data: Union[Sequence[dict], dict]):
+        if call.requested_endpoint_version >= MODELS_AND_DOCKER_CMD_BELOW:
+            return
+
+        if isinstance(tasks_data, dict):
+            tasks_data = [tasks_data]
+
+        for task in tasks_data:
+            for mode, field in cls.mode_to_fields.items():
+                models = nested_get(task, (cls.models_field, mode))
+                if not models:
+                    continue
+
+                model = models[0] if mode == TaskModelTypes.input else models[-1]
+                if model:
+                    nested_set(task, field, model.get("model"))
+
+
+class DockerCmdBackwardsCompatibility:
+    field = ("execution", "docker_cmd")
+
+    @classmethod
+    def prepare_for_save(cls, call: APICall, fields: dict):
+        if call.requested_endpoint_version >= MODELS_AND_DOCKER_CMD_BELOW:
+            return
+
+        docker_cmd = nested_get(fields, cls.field)
+        if docker_cmd is not None:
+            image, _, arguments = docker_cmd.partition(" ")
+            nested_set(fields, ("container", "image"), value=image)
+            nested_set(fields, ("container", "arguments"), value=arguments)
+
+        nested_delete(fields, cls.field)
+
+    @classmethod
+    def unprepare_from_saved(cls, call: APICall, tasks_data: Union[Sequence[dict], dict]):
+        if call.requested_endpoint_version >= MODELS_AND_DOCKER_CMD_BELOW:
+            return
+
+        if isinstance(tasks_data, dict):
+            tasks_data = [tasks_data]
+
+        for task in tasks_data:
+            container = task.get("container")
+            if not container or not container.get("image"):
+                continue
+
+            docker_cmd = " ".join(filter(None, map(container.get, ("image", "arguments"))))
+            if docker_cmd:
+                nested_set(task, cls.field, docker_cmd)

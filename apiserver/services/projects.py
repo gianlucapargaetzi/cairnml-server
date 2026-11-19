@@ -45,9 +45,8 @@ from apiserver.database.utils import (
 )
 from apiserver.service_repo import APICall, endpoint
 from apiserver.utilities.partial_version import PartialVersion
+from apiserver.bll.compat import conform_output_tags, conform_tag_fields
 from apiserver.services.utils import (
-    conform_tag_fields,
-    conform_output_tags,
     get_tags_filter_dictionary,
     sort_tags_response,
 )
