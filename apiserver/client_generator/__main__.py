@@ -118,13 +118,17 @@ def main(argv=None) -> int:
             return _usage(f"{args.root} does not exist")
         try:
             allow = read_allow(args.allow) if args.allow else Allow()
-            findings = check_callers(args.root, schema, set(target.resolve(schema)), allow)
+            findings = check_callers(
+                args.root, schema, set(target.resolve(schema)), allow, sessions=target.checks_sessions
+            )
         except (OSError, ValueError, SyntaxError) as error:
             return _usage(str(error))
         for finding in findings:
             print(finding)
         return 1 if findings else 0
 
+    if not target.generates:
+        return _usage(f"the target {args.target!r} is only checked (check-callers), not generated")
     available = target.resolve(schema)
     services = args.services.split(",") if args.services else list(available)
     for name in services:
