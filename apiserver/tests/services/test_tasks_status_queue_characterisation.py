@@ -713,15 +713,14 @@ def test_dequeue_with_unknown_status_is_refused_before_lookup(company):
     assert "Invalid task status: nope" in exc.value.msg
 
 
-# suspect: pinned as is, see the decision issue (#282)
+# intended, see #299
 def test_dequeue_of_a_missing_id_reports_success(company):
-    call = FakeCall(identity(company, "owner1"))
-    svc.dequeue(call, company, DequeueRequest(task="missing"))
-    assert call.result.data_model.dequeued == 1
-    assert call.result.data_model.updated == 0
+    with pytest.raises(errors.bad_request.InvalidTaskId) as exc:
+        svc.dequeue(FakeCall(identity(company, "owner1")), company, DequeueRequest(task="missing"))
+    assert_error(exc, 400, 101)
 
 
-# suspect: pinned as is, see the decision issue (#282)
+# intended, see #299
 def test_dequeue_of_a_hidden_task_gives_invalid_task_id(company):
     make_root(company, owner="owner1")
     make_task(company, "root1", "owner1")
@@ -780,13 +779,13 @@ def test_archive_adds_the_archived_tag_and_returns_count(company):
     assert "archived" in db_task("task1").system_tags
 
 
-# suspect: pinned as is, see the decision issue (#282)
+# intended, see #299
 def test_archive_of_a_hidden_task_gives_no_write_permission(company):
     make_root(company, owner="owner1")
     make_task(company, "root1", "owner1")
-    with pytest.raises(errors.forbidden.NoWritePermission) as exc:
+    with pytest.raises(errors.bad_request.InvalidTaskId) as exc:
         svc.archive(FakeCall(identity(company, "stranger")), company, ArchiveRequest(tasks=["task1"]))
-    assert_error(exc, 403, 21)
+    assert_error(exc, 400, 101)
     assert "archived" not in (db_task("task1").system_tags or [])
 
 
@@ -797,20 +796,20 @@ def test_archive_of_a_missing_id_gives_invalid_task_id_with_ids(company):
     assert exc.value.error_data["ids"] == ["missing"]
 
 
-# suspect: pinned as is, see the decision issue (#282)
+# intended, see #299
 def test_archive_many_hidden_refuses_whole_request(company):
     make_root(company, id_="own-root", members=[("u2", ProjectRole.read_write)])
     make_root(company, id_="hidden-root", owner="owner1")
     make_task(company, "own-root", "u2", id_="own")
     make_task(company, "hidden-root", "owner1", id_="hidden")
-    with pytest.raises(errors.bad_request.InvalidTaskId) as exc:
-        svc.archive_many(
-            FakeCall(identity(company, "u2")),
-            company,
-            ArchiveManyRequest(ids=["own", "hidden"]),
-        )
-    assert_error(exc, 400, 101)
-    assert "archived" not in (db_task("own").system_tags or [])
+    call = FakeCall(identity(company, "u2"))
+    svc.archive_many(call, company, ArchiveManyRequest(ids=["own", "hidden"]))
+    assert [item["id"] for item in call.result.data_model.succeeded] == ["own"]
+    assert len(call.result.data_model.failed) == 1
+    assert call.result.data_model.failed[0]["id"] == "hidden"
+    assert failure_codes(call.result.data_model.failed[0]) == [400, 101]
+    assert "archived" in (db_task("own").system_tags or [])
+    assert "archived" not in (db_task("hidden").system_tags or [])
 
 
 @pytest.mark.needs_redis
@@ -954,18 +953,18 @@ def test_move_of_a_missing_id_gives_invalid_task_id_with_ids(company):
     assert exc.value.error_data["ids"] == ["missing"]
 
 
-# suspect: pinned as is, see the decision issue (#282)
+# intended, see #299
 def test_move_of_a_hidden_task_gives_no_write_permission(company):
     make_root(company, id_="src", owner="owner1")
     make_root(company, id_="dst", owner="owner1")
     make_task(company, "src", "owner1")
-    with pytest.raises(errors.forbidden.NoWritePermission) as exc:
+    with pytest.raises(errors.bad_request.InvalidTaskId) as exc:
         svc.move(
             FakeCall(identity(company, "stranger"), data={"project": "dst"}),
             company,
             MoveRequest(ids=["task1"], project="dst"),
         )
-    assert_error(exc, 403, 21)
+    assert_error(exc, 400, 101)
     assert db_task("task1").project == "src"
 
 

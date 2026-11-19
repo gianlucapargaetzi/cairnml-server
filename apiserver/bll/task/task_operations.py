@@ -17,7 +17,7 @@ from apiserver.bll.task import (
     ChangeStatusRequest,
 )
 from apiserver.bll.task.task_cleanup import cleanup_task, CleanupResult
-from apiserver.bll.task.utils import get_task_with_write_access
+from apiserver.bll.task.utils import get_task_with_write_access, is_hidden_task
 from apiserver.bll.util import run_batch_operation, update_project_time
 from apiserver.config_repo import config
 from apiserver.database.model import EntityVisibility
@@ -175,7 +175,12 @@ def dequeue_task(
     status_reason: str,
     remove_from_all_queues: bool = False,
     new_status=None,
+    refuse_missing: bool = False,
 ) -> Tuple[int, dict]:
+    """
+    refuse_missing: a task that does not exist (or that the caller cannot see) is InvalidTaskId, instead of a
+    successful dequeue of nothing
+    """
     if new_status and new_status not in get_options(TaskStatus):
         raise errors.bad_request.ValidationError(f"Invalid task status: {new_status}")
 
@@ -183,10 +188,16 @@ def dequeue_task(
     task = Task.get(
         id=task_id,
         company=company_id,
-        _only=("id",),
+        _only=("id", "project"),
         include_public=True,
     )
-    if not task:
+    hidden = task is not None and is_hidden_task(identity, task)
+    if task is None or hidden:
+        if refuse_missing:
+            raise errors.bad_request.InvalidTaskId(id=task_id, company=company_id)
+        if hidden:
+            # A hidden task is answered like a missing one, and nothing is read or changed for it
+            return 1, {"updated": 0}
         _assert_can_use_task_queues(identity, company_id, task_id)
         TaskBLL.remove_task_from_all_queues(company_id, task_id=task_id)
         return 1, {"updated": 0}

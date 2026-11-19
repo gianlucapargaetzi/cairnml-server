@@ -772,6 +772,7 @@ def dequeue(call: APICall, company_id, request: DequeueRequest):
         status_reason=request.status_reason,
         remove_from_all_queues=request.remove_from_all_queues,
         new_status=request.new_status,
+        refuse_missing=True,
     )
     call.result.data_model = DequeueResponse(dequeued=dequeued, **res)
 
@@ -781,7 +782,7 @@ def dequeue(call: APICall, company_id, request: DequeueRequest):
     response_data_model=DequeueManyResponse,
 )
 def dequeue_many(call: APICall, company_id, request: DequeueManyRequest):
-    entity_access.assert_tasks_access(company_id, call.identity, request.ids, "write")
+    entity_access.assert_tasks_access_skipping_hidden(company_id, call.identity, request.ids, "write")
     results, failures = run_batch_operation(
         func=partial(
             dequeue_task,
@@ -887,7 +888,7 @@ def archive(call: APICall, company_id, request: ArchiveRequest):
     response_data_model=BatchResponse,
 )
 def archive_many(call: APICall, company_id, request: ArchiveManyRequest):
-    entity_access.assert_tasks_access(company_id, call.identity, request.ids, "write")
+    entity_access.assert_tasks_access_skipping_hidden(company_id, call.identity, request.ids, "write")
     results, failures = run_batch_operation(
         func=partial(
             archive_task,
