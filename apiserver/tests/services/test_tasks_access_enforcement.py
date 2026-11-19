@@ -320,14 +320,14 @@ def test_update_move_needs_admin_on_the_destination_not_just_write(company):
 def test_clearing_the_project_helper_needs_admin_on_the_current_project_for_tasks(company):
     # Clearing the project makes the task visible to the whole company, so it needs admin on the
     # current project. A read_write owner has write on their own task but not admin
-    from apiserver.services.tasks import _assert_destination_project
+    from apiserver.bll.project.entity_access import assert_destination_project
 
     make_root(company, members=[("u2", ProjectRole.read_write)])
     task = make_task(company, "root1", "u2")
     with pytest.raises(errors.forbidden.NoWritePermission):
-        _assert_destination_project(identity(company, "u2"), task, {"project": ""})
-    _assert_destination_project(identity(company, "u2"), task, {})
-    _assert_destination_project(identity(company, "u2"), task, {"project": "root1"})
+        assert_destination_project(identity(company, "u2"), task, {"project": ""})
+    assert_destination_project(identity(company, "u2"), task, {})
+    assert_destination_project(identity(company, "u2"), task, {"project": "root1"})
 
 
 def test_clearing_the_project_through_update_or_edit_is_refused_before_any_change(company):

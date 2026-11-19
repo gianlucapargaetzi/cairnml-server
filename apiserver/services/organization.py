@@ -27,13 +27,13 @@ from apiserver.database.model.model import Model
 from apiserver.database.model.project import Project
 from apiserver.database.model.task.task import Task, TaskType
 from apiserver.redis_manager import redman
+from apiserver.bll.project import entity_access
 from apiserver.service_repo import endpoint, APICall
 from apiserver.bll.project.access import ProjectAccessBLL
-from apiserver.services.models import conform_model_data, _scope_query as _scope_models_query
+from apiserver.services.models import conform_model_data
 from apiserver.services.tasks import (
     escape_execution_parameters,
     _hidden_query,
-    _scope_query as _scope_tasks_query,
     conform_task_data,
 )
 from apiserver.services.utils import get_tags_filter_dictionary, sort_tags_response
@@ -220,7 +220,7 @@ def _get_download_getter_fn(
         tasks = Task.get_many_with_join(
             company=company,
             query_dict=call_data,
-            query=_scope_tasks_query(_hidden_query(call_data), call.identity),
+            query=entity_access.scope_entities_query(_hidden_query(call_data), call.identity),
             allow_public=allow_public,
         )
         conform_task_data(call, tasks)
@@ -230,7 +230,7 @@ def _get_download_getter_fn(
         models = Model.get_many_with_join(
             company=company,
             query_dict=call_data,
-            query=_scope_models_query(Q(), call.identity),
+            query=entity_access.scope_entities_query(Q(), call.identity),
             allow_public=allow_public,
         )
         conform_model_data(call, models)

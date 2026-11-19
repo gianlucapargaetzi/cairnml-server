@@ -15,9 +15,10 @@ from apiserver.bll.task.clone import CloneSpec
 from apiserver.bll.util import run_batch_operation
 from apiserver.database.model.project import Project
 from apiserver.database.model.task.task import Task, TaskType
+from apiserver.bll.project import entity_access
 from apiserver.service_repo import APICall, endpoint
 from apiserver.utilities.dicts import nested_get
-from .tasks import _delete_task_events, _assert_tasks_access
+from .tasks import _delete_task_events
 
 org_bll = OrgBLL()
 project_bll = ProjectBLL()
@@ -109,7 +110,7 @@ def start_pipeline(call: APICall, company_id: str, request: StartPipelineRequest
     # clone_task's own fetch of the source task is company-scoped only, with no project check;
     # tasks.clone's own endpoint already requires write on the source before cloning it, so this
     # entry point needs the same bar, not a weaker one, for the same operation
-    _assert_tasks_access(company_id, call.identity, [request.task], "write")
+    entity_access.assert_tasks_access(company_id, call.identity, [request.task], "write")
 
     task, _ = task_bll.clone_task(
         company_id=company_id,

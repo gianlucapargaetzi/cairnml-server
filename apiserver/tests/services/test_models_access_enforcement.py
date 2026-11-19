@@ -299,15 +299,15 @@ def test_clearing_the_project_through_edit_is_refused_before_any_change(company)
 
 def test_clearing_the_project_helper_needs_admin_on_the_current_project(company):
     # Direct check of the destination helper: a read_write owner has write but not admin
-    from apiserver.services.models import _assert_destination_project
+    from apiserver.bll.project.entity_access import assert_destination_project
 
     make_root(company, id_="root1", members=[("u2", ProjectRole.read_write)])
     model = make_model(company, "root1", "u2")
     with pytest.raises(errors.forbidden.NoWritePermission):
-        _assert_destination_project(identity(company, "u2"), model, {"project": ""})
+        assert_destination_project(identity(company, "u2"), model, {"project": ""})
     # no project key, or the same project: nothing to check
-    _assert_destination_project(identity(company, "u2"), model, {})
-    _assert_destination_project(identity(company, "u2"), model, {"project": "root1"})
+    assert_destination_project(identity(company, "u2"), model, {})
+    assert_destination_project(identity(company, "u2"), model, {"project": "root1"})
 
 
 def test_read_write_owner_cannot_clear_the_project_through_update(company):

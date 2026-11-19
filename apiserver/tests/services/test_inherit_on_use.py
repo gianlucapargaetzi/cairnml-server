@@ -2,6 +2,7 @@
 
 from types import SimpleNamespace
 
+from apiserver.bll.project import entity_access
 from apiserver.bll.task import utils as task_utils
 from apiserver.services import tasks as svc
 
@@ -12,7 +13,7 @@ def item(section, name):
 
 def run_edit(monkeypatch, hyperparams):
     shared = []
-    monkeypatch.setattr(svc, "_assert_tasks_access", lambda *args, **kwargs: None)
+    monkeypatch.setattr(entity_access, "assert_tasks_access", lambda *args, **kwargs: None)
     monkeypatch.setattr(svc.HyperParams, "edit_params", staticmethod(lambda *args, **kwargs: 1))
     monkeypatch.setattr(task_utils, "_publish_datasets", lambda task: shared.append((task.company, task.id)))
     request = SimpleNamespace(task="run1", hyperparams=hyperparams, replace_hyperparams="none", force=False)

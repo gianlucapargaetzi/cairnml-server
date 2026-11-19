@@ -43,8 +43,8 @@ from apiserver.database.model.queue import Queue
 from apiserver.database.model.share import Share
 from apiserver.database.model.project import Project
 from apiserver.database.model.task.task import Task, TaskStatus
+from apiserver.bll.project import entity_access
 from apiserver.service_repo import APICall, endpoint
-from apiserver.services.tasks import _assert_tasks_access, _scope_query as _scope_tasks_query
 from apiserver.services.utils import (
     conform_tag_fields,
     conform_output_tags,
@@ -195,7 +195,7 @@ def move_task_to_queue(call: APICall, company_id, request: MoveTaskToQueueReques
     QueueAccessBLL.assert_can_use(call.identity, company_id, request.queue)
     # queues aren't project-scoped, so this and the other by-task-id endpoints below need their
     # own check, the same "write" bar tasks.enqueue/dequeue already use for the same operations
-    _assert_tasks_access(company_id, call.identity, [request.task], "write")
+    entity_access.assert_tasks_access(company_id, call.identity, [request.task], "write")
     QueueAccessBLL.assert_can_change_tasks(call.identity, company_id, request.queue, [request.task])
     removed = queue_bll.remove_task(
         company_id=company_id,
@@ -233,7 +233,7 @@ def move_task_to_queue(call: APICall, company_id, request: MoveTaskToQueueReques
 @endpoint("queues.add_task")
 def add_task(call: APICall, company_id, request: AddTaskRequest):
     QueueAccessBLL.assert_can_use(call.identity, company_id, request.queue)
-    _assert_tasks_access(company_id, call.identity, [request.task], "write")
+    entity_access.assert_tasks_access(company_id, call.identity, [request.task], "write")
     queue_bll.add_task(company_id=company_id, queue_id=request.queue, task_id=request.task)
     update_added_task_properties(
         queue=request.queue,
@@ -266,7 +266,7 @@ def get_next_task(call: APICall, company_id, request: GetNextTaskRequest):
 @endpoint("queues.remove_task")
 def remove_task(call: APICall, company_id, request: RemoveTaskRequest):
     QueueAccessBLL.assert_can_use(call.identity, company_id, request.queue)
-    _assert_tasks_access(company_id, call.identity, [request.task], "write")
+    entity_access.assert_tasks_access(company_id, call.identity, [request.task], "write")
     QueueAccessBLL.assert_can_change_tasks(call.identity, company_id, request.queue, [request.task])
     call.result.data = {
         "removed": queue_bll.remove_task(
@@ -301,7 +301,7 @@ def clear_queue(call: APICall, company_id, request: QueueRequest):
 )
 def move_task_forward(call: APICall, company_id, request: MoveTaskRequest):
     QueueAccessBLL.assert_can_use(call.identity, company_id, request.queue)
-    _assert_tasks_access(company_id, call.identity, [request.task], "write")
+    entity_access.assert_tasks_access(company_id, call.identity, [request.task], "write")
     QueueAccessBLL.assert_can_change_tasks(call.identity, company_id, request.queue, [request.task])
     call.result.data_model = MoveTaskResponse(
         position=queue_bll.reposition_task(
@@ -319,7 +319,7 @@ def move_task_forward(call: APICall, company_id, request: MoveTaskRequest):
 )
 def move_task_backward(call: APICall, company_id, request: MoveTaskRequest):
     QueueAccessBLL.assert_can_use(call.identity, company_id, request.queue)
-    _assert_tasks_access(company_id, call.identity, [request.task], "write")
+    entity_access.assert_tasks_access(company_id, call.identity, [request.task], "write")
     QueueAccessBLL.assert_can_change_tasks(call.identity, company_id, request.queue, [request.task])
     call.result.data_model = MoveTaskResponse(
         position=queue_bll.reposition_task(
@@ -337,7 +337,7 @@ def move_task_backward(call: APICall, company_id, request: MoveTaskRequest):
 )
 def move_task_to_front(call: APICall, company_id, request: TaskRequest):
     QueueAccessBLL.assert_can_use(call.identity, company_id, request.queue)
-    _assert_tasks_access(company_id, call.identity, [request.task], "write")
+    entity_access.assert_tasks_access(company_id, call.identity, [request.task], "write")
     QueueAccessBLL.assert_can_change_tasks(call.identity, company_id, request.queue, [request.task])
     call.result.data_model = MoveTaskResponse(
         position=queue_bll.reposition_task(
@@ -355,7 +355,7 @@ def move_task_to_front(call: APICall, company_id, request: TaskRequest):
 )
 def move_task_to_back(call: APICall, company_id, request: TaskRequest):
     QueueAccessBLL.assert_can_use(call.identity, company_id, request.queue)
-    _assert_tasks_access(company_id, call.identity, [request.task], "write")
+    entity_access.assert_tasks_access(company_id, call.identity, [request.task], "write")
     QueueAccessBLL.assert_can_change_tasks(call.identity, company_id, request.queue, [request.task])
     call.result.data_model = MoveTaskResponse(
         position=queue_bll.reposition_task(
@@ -443,7 +443,7 @@ def peek_task(call: APICall, company_id: str, request: QueueRequest):
     # A head task the caller cannot see is reported exactly as a missing one, so it does not reveal itself
     if (
         task_id
-        and not Task.objects(_scope_tasks_query(Q(id=task_id) & Q(company=company_id), call.identity))
+        and not Task.objects(entity_access.scope_entities_query(Q(id=task_id) & Q(company=company_id), call.identity))
         .only("id")
         .first()
     ):
