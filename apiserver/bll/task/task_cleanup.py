@@ -1,7 +1,7 @@
 from datetime import datetime
 from itertools import chain
 from operator import attrgetter
-from typing import Sequence, Set, Tuple, Union
+from typing import Mapping, Sequence, Set, Tuple, Union
 
 import attr
 from boltons.iterutils import partition, bucketize, first, chunked_iter
@@ -190,6 +190,63 @@ def delete_task_events_and_collect_urls(
     event_bll.delete_task_events(company, task_ids, model=model, wait_for_delete=wait_for_delete)
 
     return event_urls
+
+
+def delete_task_events_for_cleanup(
+    company_id: str,
+    user_id: str,
+    tasks: Mapping[str, CleanupResult],
+    delete_external_artifacts: bool,
+    sync_delete: bool,
+):
+    if not tasks:
+        return
+    task_ids = list(tasks)
+    deleted_model_ids = set(chain.from_iterable(cr.deleted_model_ids for cr in tasks.values() if cr.deleted_model_ids))
+
+    delete_external_artifacts = delete_external_artifacts and config.get("services.async_urls_delete.enabled", True)
+    if delete_external_artifacts:
+        for t_id, cleanup_res in tasks.items():
+            urls = set(cleanup_res.urls.model_urls) | set(cleanup_res.urls.artifact_urls)
+            if urls:
+                schedule_for_delete(
+                    task_id=t_id,
+                    company=company_id,
+                    user=user_id,
+                    urls=urls,
+                )
+
+        event_urls = delete_task_events_and_collect_urls(
+            company=company_id,
+            task_ids=task_ids,
+            wait_for_delete=sync_delete,
+        )
+        if deleted_model_ids:
+            event_urls.update(
+                delete_task_events_and_collect_urls(
+                    company=company_id,
+                    task_ids=list(deleted_model_ids),
+                    model=True,
+                    wait_for_delete=sync_delete,
+                )
+            )
+
+        if event_urls:
+            schedule_for_delete(
+                task_id=task_ids[0],
+                company=company_id,
+                user=user_id,
+                urls=event_urls,
+            )
+    else:
+        event_bll.delete_task_events(company_id, task_ids, wait_for_delete=sync_delete)
+        if deleted_model_ids:
+            event_bll.delete_task_events(
+                company_id,
+                list(deleted_model_ids),
+                model=True,
+                wait_for_delete=sync_delete,
+            )
 
 
 def cleanup_task(

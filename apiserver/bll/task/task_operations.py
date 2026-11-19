@@ -1,9 +1,13 @@
-from datetime import datetime
+from datetime import datetime, timezone
+from functools import partial
 from typing import Callable, Any, Tuple, Union, Sequence, Optional
 
 from mongoengine import Q
 
 from apiserver.apierrors import errors, APIError
+from apiserver.bll.model import ModelBLL
+from apiserver.bll.project import entity_access
+from apiserver.bll.queue.pipeline_deadlock import assert_not_deadlocked
 from apiserver.bll.queue.project_pool import pick_pool_queue
 from apiserver.bll.queue import QueueBLL
 from apiserver.bll.queue.queue_access import QueueAccessBLL
@@ -14,7 +18,7 @@ from apiserver.bll.task import (
 )
 from apiserver.bll.task.task_cleanup import cleanup_task, CleanupResult
 from apiserver.bll.task.utils import get_task_with_write_access
-from apiserver.bll.util import update_project_time
+from apiserver.bll.util import run_batch_operation, update_project_time
 from apiserver.config_repo import config
 from apiserver.database.model import EntityVisibility
 from apiserver.database.model.model import Model
@@ -32,7 +36,7 @@ from apiserver.database.model.task.task import (
 )
 from apiserver.database.utils import get_options
 from apiserver.service_repo.auth import Identity
-from apiserver.utilities.dicts import nested_set
+from apiserver.utilities.dicts import nested_get, nested_set
 
 log = config.logger(__file__)
 queue_bll = QueueBLL()
@@ -624,3 +628,179 @@ def stop_task(
             stop_task_core(step, True)
 
     return stop_task_core(task, force)
+
+
+# The request use cases of the status, queue and archive endpoints. An endpoint of services/tasks.py decodes the request,
+# calls one of these and shapes the response; the rules (order of the checks included) live here.
+
+
+def set_task_status_from_call(
+    request,
+    company_id: str,
+    identity: Identity,
+    new_status=None,
+    **set_fields,
+) -> dict:
+    entity_access.assert_tasks_access(company_id, identity, [request.task], "write")
+    task = get_task_with_write_access(
+        request.task,
+        company_id=company_id,
+        identity=identity,
+        only=("id", "status", "project"),
+    )
+
+    return ChangeStatusRequest(
+        task=task,
+        new_status=new_status or task.status,
+        status_reason=request.status_reason,
+        status_message=request.status_message,
+        force=request.force,
+        user_id=identity.user,
+    ).execute(**set_fields)
+
+
+def start_task_request(call, company_id: str, request) -> dict:
+    """The status change to in_progress, the device of an agent's token; the 'started' value is the updated count."""
+    from apiserver.idp.tokens import device_of_bearer
+
+    task = Task.objects(id=request.task).only("id", "status", "started").first()
+    if not task:
+        raise errors.bad_request.InvalidId(task=task)
+
+    started_update = {}
+    if task.status == TaskStatus.in_progress and task.started:
+        # don't override a previous, smaller "started" field value
+        started_update["min__started"] = datetime.now(timezone.utc)
+    else:
+        started_update = {
+            "started": datetime.now(timezone.utc),
+            "unset__completed": 1,
+            "unset__active_duration": 1,
+        }
+
+    res = set_task_status_from_call(
+        request,
+        company_id=company_id,
+        identity=call.identity,
+        new_status=TaskStatus.in_progress,
+        **started_update,
+    )
+    device = device_of_bearer(call.authorization)
+    if device:
+        Task.objects(id=request.task).update_one(set__last_device=device)
+    res["started"] = res.get("updated")
+    return res
+
+
+def complete_task_request(call, company_id: str, request) -> dict:
+    """The status change to completed, then the publish when asked and the status changed."""
+    res = set_task_status_from_call(
+        request,
+        company_id=company_id,
+        identity=call.identity,
+        new_status=TaskStatus.completed,
+        completed=datetime.now(timezone.utc),
+    )
+
+    if res.get("updated") and request.publish:
+        publish_res = publish_task(
+            task_id=request.task,
+            company_id=company_id,
+            identity=call.identity,
+            force=request.force,
+            publish_model_func=ModelBLL.publish_model,
+            status_reason=request.status_reason,
+            status_message=request.status_message,
+        )
+        res["published"] = publish_res.get("updated")
+        new_status = nested_get(publish_res, ("fields", "status"))
+        if new_status:
+            res["fields"]["status"] = new_status
+    return res
+
+
+def enqueue_task_request(call, company_id: str, request, queue_bll: QueueBLL) -> dict:
+    """Enqueue one task; returns the 'queued' count with the enqueue result, plus 'queue_watched' when asked."""
+    if request.verify_watched_queue and not request.update_execution_queue:
+        raise errors.bad_request.ValidationError(
+            "verify_watched_queue cannot be used with update_execution_queue=False"
+        )
+
+    entity_access.assert_tasks_access(company_id, call.identity, [request.task], "write")
+    assert_not_deadlocked(call, queue_bll, company_id, request.task, request.queue, request.queue_name)
+    queued, res = enqueue_task(
+        task_id=request.task,
+        company_id=company_id,
+        identity=call.identity,
+        queue_id=request.queue,
+        status_message=request.status_message,
+        status_reason=request.status_reason,
+        queue_name=request.queue_name,
+        force=request.force,
+        update_execution_queue=request.update_execution_queue,
+    )
+    if request.verify_watched_queue:
+        res_queue = nested_get(res, ("fields", "execution.queue"))
+        if res_queue:
+            res["queue_watched"] = queue_bll.check_for_workers(company_id, res_queue)
+    return dict(queued=queued, **res)
+
+
+def enqueue_many_task_request(call, company_id: str, request, queue_bll: QueueBLL) -> Tuple[list, dict, dict]:
+    """Enqueue a batch. Returns the per-id results, the per-id failures and the extra response fields."""
+    entity_access.assert_tasks_access(company_id, call.identity, request.ids, "write")
+    for task_id in request.ids:
+        assert_not_deadlocked(call, queue_bll, company_id, task_id, request.queue, request.queue_name)
+    results, failures = run_batch_operation(
+        func=partial(
+            enqueue_task,
+            company_id=company_id,
+            identity=call.identity,
+            queue_id=request.queue,
+            status_message=request.status_message,
+            status_reason=request.status_reason,
+            queue_name=request.queue_name,
+            validate=request.validate_tasks,
+        ),
+        ids=request.ids,
+    )
+    extra = {}
+    if request.verify_watched_queue and results:
+        _id, (queued, res) = results[0]
+        res_queue = nested_get(res, ("fields", "execution.queue"))
+        if res_queue:
+            extra["queue_watched"] = queue_bll.check_for_workers(company_id, res_queue)
+    return results, failures, extra
+
+
+def archive_tasks_request(call, company_id: str, request) -> int:
+    """Archive the requested tasks; the whole request is refused when one of them is missing, hidden or not writable."""
+    archived = 0
+    tasks = entity_access.assert_writable_tasks(
+        company_id,
+        call.identity,
+        ids=request.tasks,
+        only=(
+            "id",
+            "company",
+            "execution",
+            "status",
+            "project",
+            "user",
+            "system_tags",
+            "enqueue_status",
+            "type",
+        ),
+    )
+    for task in tasks:
+        entity_access.assert_task_access(call.identity, task, "write")
+    for task in tasks:
+        archived += archive_task(
+            company_id=company_id,
+            identity=call.identity,
+            task=task,
+            status_message=request.status_message,
+            status_reason=request.status_reason,
+            include_pipeline_steps=request.include_pipeline_steps,
+        )
+    return archived

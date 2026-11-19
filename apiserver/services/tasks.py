@@ -1,9 +1,8 @@
 import logging
-import itertools
 from copy import deepcopy
 from datetime import datetime, timezone
 from functools import partial
-from typing import Sequence, Union, Tuple, Mapping
+from typing import Sequence, Union, Tuple
 
 from mongoengine import Q
 
@@ -82,16 +81,12 @@ from apiserver.bll.organization import OrgBLL, Tags
 from apiserver.bll.project import ProjectBLL
 from apiserver.bll.project.access import ProjectAccessBLL
 from apiserver.bll.queue import QueueBLL
-from apiserver.bll.queue.pipeline_deadlock import assert_not_deadlocked
 from apiserver.bll.task.clone import CloneSpec
 from apiserver.bll.task import (
     TaskBLL,
-    ChangeStatusRequest,
 )
 from apiserver.bll.task.task_cleanup import (
-    delete_task_events_and_collect_urls,
-    schedule_for_delete,
-    CleanupResult,
+    delete_task_events_for_cleanup,
 )
 from apiserver.bll.task.artifacts import (
     artifacts_prepare_for_save,
@@ -115,13 +110,18 @@ from apiserver.bll.task.param_utils import (
 )
 from apiserver.bll.task.task_operations import (
     stop_task,
-    enqueue_task,
     dequeue_task,
     reset_task,
     archive_task,
     delete_task,
     publish_task,
     unarchive_task,
+    set_task_status_from_call,
+    start_task_request,
+    complete_task_request,
+    enqueue_task_request,
+    enqueue_many_task_request,
+    archive_tasks_request,
 )
 from apiserver.bll.task.task_writes import (
     WriteContext,
@@ -138,7 +138,6 @@ from apiserver.bll.task.utils import (
     get_task_with_write_access,
 )
 from apiserver.bll.util import run_batch_operation, update_project_time
-from apiserver.config_repo import config
 
 log = logging.getLogger(__name__)
 from apiserver.database.errors import translate_errors_context
@@ -155,13 +154,10 @@ from apiserver.database.utils import (
 )
 from apiserver.bll.project import entity_access
 from apiserver.service_repo import APICall, endpoint
-from apiserver.service_repo.auth import Identity
 from apiserver.bll.compat import conform_output_tags, conform_tag_fields
 from apiserver.services.utils import (
     process_include_subprojects,
 )
-from apiserver.idp.tokens import device_of_bearer
-from apiserver.utilities.dicts import nested_get
 from apiserver.utilities.parameter_key_escaper import escape_dict_field, unescape_dict_field
 
 task_fields = set(Task.get_fields())
@@ -172,34 +168,6 @@ event_bll = EventBLL()
 queue_bll = QueueBLL()
 org_bll = OrgBLL()
 project_bll = ProjectBLL()
-
-
-def set_task_status_from_call(
-    request: UpdateRequest,
-    company_id: str,
-    identity: Identity,
-    new_status=None,
-    **set_fields,
-) -> dict:
-    entity_access.assert_tasks_access(company_id, identity, [request.task], "write")
-    task = get_task_with_write_access(
-        request.task,
-        company_id=company_id,
-        identity=identity,
-        only=("id", "status", "project"),
-    )
-
-    status_reason = request.status_reason
-    status_message = request.status_message
-    force = request.force
-    return ChangeStatusRequest(
-        task=task,
-        new_status=new_status or task.status,
-        status_reason=status_reason,
-        status_message=status_message,
-        force=force,
-        user_id=identity.user,
-    ).execute(**set_fields)
 
 
 DATASETS_SECTION = "Datasets"
@@ -382,35 +350,7 @@ def stopped(call: APICall, company_id, req_model: UpdateRequest):
     response_data_model=StartedResponse,
 )
 def started(call: APICall, company_id, request: UpdateRequest):
-    task = Task.objects(id=request.task).only("id", "status", "started").first()
-    if not task:
-        raise errors.bad_request.InvalidId(task=task)
-
-    started_update = {}
-    if task.status == TaskStatus.in_progress and task.started:
-        # don't override a previous, smaller "started" field value
-        started_update["min__started"] = datetime.now(timezone.utc)
-    else:
-        started_update = {
-            "started": datetime.now(timezone.utc),
-            "unset__completed": 1,
-            "unset__active_duration": 1,
-        }
-
-    res = StartedResponse(
-        **set_task_status_from_call(
-            request,
-            company_id=company_id,
-            identity=call.identity,
-            new_status=TaskStatus.in_progress,
-            **started_update,
-        )
-    )
-    device = device_of_bearer(call.authorization)
-    if device:
-        Task.objects(id=request.task).update_one(set__last_device=device)
-    res.started = res.updated
-    call.result.data_model = res
+    call.result.data_model = StartedResponse(**start_task_request(call, company_id, request))
 
 
 @endpoint("tasks.failed", request_data_model=UpdateRequest, response_data_model=UpdateResponse)
@@ -802,30 +742,7 @@ def delete_configuration(call: APICall, company_id, request: DeleteConfiguration
     response_data_model=EnqueueResponse,
 )
 def enqueue(call: APICall, company_id, request: EnqueueRequest):
-    if request.verify_watched_queue and not request.update_execution_queue:
-        raise errors.bad_request.ValidationError(
-            "verify_watched_queue cannot be used with update_execution_queue=False"
-        )
-
-    entity_access.assert_tasks_access(company_id, call.identity, [request.task], "write")
-    assert_not_deadlocked(call, queue_bll, company_id, request.task, request.queue, request.queue_name)
-    queued, res = enqueue_task(
-        task_id=request.task,
-        company_id=company_id,
-        identity=call.identity,
-        queue_id=request.queue,
-        status_message=request.status_message,
-        status_reason=request.status_reason,
-        queue_name=request.queue_name,
-        force=request.force,
-        update_execution_queue=request.update_execution_queue,
-    )
-    if request.verify_watched_queue:
-        res_queue = nested_get(res, ("fields", "execution.queue"))
-        if res_queue:
-            res["queue_watched"] = queue_bll.check_for_workers(company_id, res_queue)
-
-    call.result.data_model = EnqueueResponse(queued=queued, **res)
+    call.result.data_model = EnqueueResponse(**enqueue_task_request(call, company_id, request, queue_bll))
 
 
 @endpoint(
@@ -834,29 +751,7 @@ def enqueue(call: APICall, company_id, request: EnqueueRequest):
     response_data_model=EnqueueManyResponse,
 )
 def enqueue_many(call: APICall, company_id, request: EnqueueManyRequest):
-    entity_access.assert_tasks_access(company_id, call.identity, request.ids, "write")
-    for task_id in request.ids:
-        assert_not_deadlocked(call, queue_bll, company_id, task_id, request.queue, request.queue_name)
-    results, failures = run_batch_operation(
-        func=partial(
-            enqueue_task,
-            company_id=company_id,
-            identity=call.identity,
-            queue_id=request.queue,
-            status_message=request.status_message,
-            status_reason=request.status_reason,
-            queue_name=request.queue_name,
-            validate=request.validate_tasks,
-        ),
-        ids=request.ids,
-    )
-    extra = {}
-    if request.verify_watched_queue and results:
-        _id, (queued, res) = results[0]
-        res_queue = nested_get(res, ("fields", "execution.queue"))
-        if res_queue:
-            extra["queue_watched"] = queue_bll.check_for_workers(company_id, res_queue)
-
+    results, failures, extra = enqueue_many_task_request(call, company_id, request, queue_bll)
     call.result.data_model = EnqueueManyResponse(
         succeeded=[EnqueueBatchItem(id=_id, queued=bool(queued), **res) for _id, (queued, res) in results],
         failed=failures,
@@ -906,65 +801,6 @@ def dequeue_many(call: APICall, company_id, request: DequeueManyRequest):
     )
 
 
-def _delete_task_events(
-    company_id: str,
-    user_id: str,
-    tasks: Mapping[str, CleanupResult],
-    delete_external_artifacts: bool,
-    sync_delete: bool,
-):
-    if not tasks:
-        return
-    task_ids = list(tasks)
-    deleted_model_ids = set(
-        itertools.chain.from_iterable(cr.deleted_model_ids for cr in tasks.values() if cr.deleted_model_ids)
-    )
-
-    delete_external_artifacts = delete_external_artifacts and config.get("services.async_urls_delete.enabled", True)
-    if delete_external_artifacts:
-        for t_id, cleanup_res in tasks.items():
-            urls = set(cleanup_res.urls.model_urls) | set(cleanup_res.urls.artifact_urls)
-            if urls:
-                schedule_for_delete(
-                    task_id=t_id,
-                    company=company_id,
-                    user=user_id,
-                    urls=urls,
-                )
-
-        event_urls = delete_task_events_and_collect_urls(
-            company=company_id,
-            task_ids=task_ids,
-            wait_for_delete=sync_delete,
-        )
-        if deleted_model_ids:
-            event_urls.update(
-                delete_task_events_and_collect_urls(
-                    company=company_id,
-                    task_ids=list(deleted_model_ids),
-                    model=True,
-                    wait_for_delete=sync_delete,
-                )
-            )
-
-        if event_urls:
-            schedule_for_delete(
-                task_id=task_ids[0],
-                company=company_id,
-                user=user_id,
-                urls=event_urls,
-            )
-    else:
-        event_bll.delete_task_events(company_id, task_ids, wait_for_delete=sync_delete)
-        if deleted_model_ids:
-            event_bll.delete_task_events(
-                company_id,
-                list(deleted_model_ids),
-                model=True,
-                wait_for_delete=sync_delete,
-            )
-
-
 @endpoint("tasks.reset", request_data_model=ResetRequest, response_data_model=ResetResponse)
 def reset(call: APICall, company_id, request: ResetRequest):
     task_id = request.task
@@ -977,7 +813,7 @@ def reset(call: APICall, company_id, request: ResetRequest):
         delete_output_models=request.delete_output_models,
         clear_all=request.clear_all,
     )
-    _delete_task_events(
+    delete_task_events_for_cleanup(
         company_id=company_id,
         user_id=call.identity.user,
         tasks={task_id: cleanup_res},
@@ -1024,7 +860,7 @@ def reset_many(call: APICall, company_id, request: ResetManyRequest):
             )
         )
 
-    _delete_task_events(
+    delete_task_events_for_cleanup(
         company_id=company_id,
         user_id=call.identity.user,
         tasks=tasks,
@@ -1044,36 +880,7 @@ def reset_many(call: APICall, company_id, request: ResetManyRequest):
     response_data_model=ArchiveResponse,
 )
 def archive(call: APICall, company_id, request: ArchiveRequest):
-    archived = 0
-    tasks = entity_access.assert_writable_tasks(
-        company_id,
-        call.identity,
-        ids=request.tasks,
-        only=(
-            "id",
-            "company",
-            "execution",
-            "status",
-            "project",
-            "user",
-            "system_tags",
-            "enqueue_status",
-            "type",
-        ),
-    )
-    for task in tasks:
-        entity_access.assert_task_access(call.identity, task, "write")
-    for task in tasks:
-        archived += archive_task(
-            company_id=company_id,
-            identity=call.identity,
-            task=task,
-            status_message=request.status_message,
-            status_reason=request.status_reason,
-            include_pipeline_steps=request.include_pipeline_steps,
-        )
-
-    call.result.data_model = ArchiveResponse(archived=archived)
+    call.result.data_model = ArchiveResponse(archived=archive_tasks_request(call, company_id, request))
 
 
 @endpoint(
@@ -1137,7 +944,7 @@ def delete(call: APICall, company_id, request: DeleteRequest):
         include_pipeline_steps=request.include_pipeline_steps,
     )
     if deleted:
-        _delete_task_events(
+        delete_task_events_for_cleanup(
             company_id=company_id,
             user_id=call.identity.user,
             tasks={request.task: cleanup_res},
@@ -1183,7 +990,7 @@ def delete_many(call: APICall, company_id, request: DeleteManyRequest):
             )
 
         if tasks:
-            _delete_task_events(
+            delete_task_events_for_cleanup(
                 company_id=company_id,
                 user_id=call.identity.user,
                 tasks=tasks,
@@ -1249,32 +1056,7 @@ def publish_many(call: APICall, company_id, request: PublishManyRequest):
     response_data_model=CompletedResponse,
 )
 def completed(call: APICall, company_id, request: CompletedRequest):
-    res = CompletedResponse(
-        **set_task_status_from_call(
-            request,
-            company_id=company_id,
-            identity=call.identity,
-            new_status=TaskStatus.completed,
-            completed=datetime.now(timezone.utc),
-        )
-    )
-
-    if res.updated and request.publish:
-        publish_res = publish_task(
-            task_id=request.task,
-            company_id=company_id,
-            identity=call.identity,
-            force=request.force,
-            publish_model_func=ModelBLL.publish_model,
-            status_reason=request.status_reason,
-            status_message=request.status_message,
-        )
-        res.published = publish_res.get("updated")
-        new_status = nested_get(publish_res, ("fields", "status"))
-        if new_status:
-            res.fields["status"] = new_status
-
-    call.result.data_model = res
+    call.result.data_model = CompletedResponse(**complete_task_request(call, company_id, request))
 
 
 @endpoint("tasks.ping", request_data_model=PingRequest)

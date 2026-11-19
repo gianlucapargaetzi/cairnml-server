@@ -18,7 +18,7 @@ from apiserver.database.model.task.task import Task, TaskType
 from apiserver.bll.project import entity_access
 from apiserver.service_repo import APICall, endpoint
 from apiserver.utilities.dicts import nested_get
-from .tasks import _delete_task_events
+from apiserver.bll.task.task_cleanup import delete_task_events_for_cleanup
 
 org_bll = OrgBLL()
 project_bll = ProjectBLL()
@@ -81,7 +81,7 @@ def delete_runs(call: APICall, company_id: str, request: DeleteRunsRequest):
             succeeded.append(dict(id=_id, deleted=bool(deleted), **cleanup_res.to_res_dict(False)))
 
         if tasks:
-            _delete_task_events(
+            delete_task_events_for_cleanup(
                 company_id=company_id,
                 user_id=call.identity.user,
                 tasks=tasks,
