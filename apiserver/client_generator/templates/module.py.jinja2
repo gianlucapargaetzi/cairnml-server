@@ -6,21 +6,7 @@
 {% endif %}
 """
 {{ header }}
-from typing import List, Optional, Any
-{% if enums %}import enum
-{% endif %}import six
-from datetime import datetime
-from dateutil.parser import parse as parse_datetime
-from {{ session_package }} import (
-    Request,
-    Response,
-    NonStrictDataModel,
-{% if batched %}    BatchRequest,
-{% endif %}{% if compound %}    CompoundRequest,
-{% endif %}{% if enums %}    StringEnum,
-{% endif %}    schema_property,
-)
-{% for e in enums %}
+{{ imports }}{% for e in enums %}
 
 
 class {{ e.name }}(StringEnum):
