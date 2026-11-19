@@ -41,9 +41,9 @@ from apiserver.services.events import (
     _get_multitask_plots,
     _get_single_value_metrics_response,
 )
+from apiserver.bll.task.visibility import hidden_query
 from apiserver.services.tasks import (
     escape_execution_parameters,
-    _hidden_query,
     conform_task_data,
 )
 
@@ -224,7 +224,7 @@ def get_task_data(call: APICall, company_id, request: GetTasksDataRequest):
     scope = (
         entity_access.scope_entities_query(Q(), call.identity)
         if request.model_events
-        else entity_access.scope_entities_query(_hidden_query(call_data), call.identity)
+        else entity_access.scope_entities_query(hidden_query(call_data), call.identity)
     )
     ret_params = {}
     tasks = entity_cls.get_many_with_join(

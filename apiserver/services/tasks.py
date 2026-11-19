@@ -101,6 +101,7 @@ from apiserver.bll.task.artifacts import (
     Artifacts,
 )
 from apiserver.bll.task.hyperparams import HyperParams
+from apiserver.bll.task.visibility import hidden_query
 from apiserver.bll.task.progress import TaskProgress
 from apiserver.redis_manager import redman
 from apiserver.bll.task.compat import legacy_params_copied_back_on_read, legacy_params_on_write
@@ -130,7 +131,6 @@ from apiserver.config_repo import config
 
 log = logging.getLogger(__name__)
 from apiserver.database.errors import translate_errors_context
-from apiserver.database.model import EntityVisibility
 from apiserver.database.model.project import Project
 from apiserver.database.model.task.output import Output
 from apiserver.database.model.task.task import (
@@ -234,16 +234,6 @@ def escape_execution_parameters(call_data: dict) -> dict:
     return call_data
 
 
-def _hidden_query(data: dict) -> Q:
-    """
-    1. Add only non-hidden tasks search condition (unless specifically specified differently)
-    """
-    if data.get("search_hidden") or data.get("id"):
-        return Q()
-
-    return Q(system_tags__ne=EntityVisibility.hidden.value)
-
-
 @endpoint("tasks.get_all_ex")
 def get_all_ex(call: APICall, company_id, request: GetAllReq):
     conform_tag_fields(call, call.data)
@@ -253,7 +243,7 @@ def get_all_ex(call: APICall, company_id, request: GetAllReq):
     tasks = Task.get_many_with_join(
         company=company_id,
         query_dict=call_data,
-        query=entity_access.scope_entities_query(_hidden_query(call_data), call.identity),
+        query=entity_access.scope_entities_query(hidden_query(call_data), call.identity),
         allow_public=request.allow_public,
         ret_params=ret_params,
     )
@@ -287,7 +277,7 @@ def get_all(call: APICall, company_id, _):
         company=company_id,
         parameters=call_data,
         query_dict=call_data,
-        query=entity_access.scope_entities_query(_hidden_query(call_data), call.identity),
+        query=entity_access.scope_entities_query(hidden_query(call_data), call.identity),
         allow_public=True,
         ret_params=ret_params,
     )
