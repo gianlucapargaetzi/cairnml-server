@@ -220,3 +220,50 @@ def test_an_exempt_endpoint_url_action_is_not_reported_and_a_stale_exemption_is_
     (clean / "app.ts").write_text("const x = 1;\n")
     stale = check_web(root, SCHEMA, Allow({"access.share": "tracked"}), sources=clean)
     assert [f.message for f in stale] == ["exempt access.share no longer matches anything: remove it"]
+
+
+def test_an_endpoint_url_naming_an_unknown_action_gets_the_closest_action_as_a_hint(tmp_path):
+    root = web(tmp_path)
+    sources = hand_written(tmp_path, "this.http.post(endpointUrl('acess.share'), body);\n")
+    findings = check_web(root, SCHEMA, Allow(), sources=sources)
+    assert [f.message for f in findings] == [
+        "acess.share is not an action of the server's schema: the likely intended action is access.share"
+    ]
+
+
+def test_a_literal_path_naming_an_unknown_action_gets_the_closest_action_as_a_hint(tmp_path):
+    root = web(tmp_path)
+    sources = hand_written(tmp_path, "this.http.post('/cairnml/api/tasks.edti', body);\n")
+    findings = check_web(root, SCHEMA, Allow(), sources=sources)
+    assert [f.message for f in findings] == [
+        "tasks.edti is not an action of the server's schema: the likely intended action is tasks.edit"
+    ]
+
+
+def test_an_unknown_action_with_no_close_match_is_reported_without_a_hint(tmp_path):
+    root = web(tmp_path)
+    sources = hand_written(tmp_path, "this.http.post(endpointUrl('zzzz.qqqq'), body);\n")
+    findings = check_web(root, SCHEMA, Allow(), sources=sources)
+    assert [f.message for f in findings] == ["zzzz.qqqq is not an action of the server's schema"]
+
+
+def test_an_exempt_unknown_action_is_not_reported(tmp_path):
+    root = web(tmp_path)
+    sources = hand_written(tmp_path, "this.http.post(endpointUrl('acess.share'), body);\n")
+    assert check_web(root, SCHEMA, Allow({"acess.share": "tracked"}), sources=sources) == []
+
+
+def test_names_that_are_not_api_paths_are_not_judged_as_unknown_actions(tmp_path):
+    root = web(tmp_path)
+    sources = hand_written(
+        tmp_path,
+        "import {x} from '@common/shared/ui-components/tooltip.directive';\n"
+        "import {y} from '../api/tasks.service';\n"
+        "const file = 'assets/ace-builds/ace.js';\n"
+        "const link = 'https://example.com/api/tasks.edti';\n"
+        "const version = '/cairnml/api/2.5';\n"
+        "this.run(id, 'user_access.check', {});\n"
+        "const field = 'datasets.selected';\n"
+        "const host = 'github.com';\n",
+    )
+    assert check_web(root, SCHEMA, Allow(), sources=sources) == []
