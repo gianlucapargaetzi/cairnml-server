@@ -6,6 +6,7 @@ class names. The templates make the final text, no formatter runs afterwards, so
 formatter version. Nothing in it depends on the date, the machine or the schema's location.
 """
 
+import ast
 import json
 import keyword
 import re
@@ -31,6 +32,50 @@ _env = jinja2.Environment(
     keep_trailing_newline=True,
     undefined=jinja2.StrictUndefined,
 )
+
+
+# The names a generated module may import, in the order its import block writes them. A module imports only the names
+# its code uses: an import it does not use is a finding of the linter (F401) on generated code, which people then edit
+# by hand, and the regeneration overwrites those edits.
+_TYPING_NAMES = ("List", "Optional", "Any")
+_STDLIB_IMPORTS = (
+    ("enum", "import enum"),
+    ("six", "import six"),
+    ("datetime", "from datetime import datetime"),
+    ("parse_datetime", "from dateutil.parser import parse as parse_datetime"),
+)
+_SESSION_NAMES = (
+    "Request",
+    "Response",
+    "NonStrictDataModel",
+    "BatchRequest",
+    "CompoundRequest",
+    "StringEnum",
+    "schema_property",
+)
+
+
+_ALL_NAMES = frozenset(_TYPING_NAMES + tuple(name for name, _ in _STDLIB_IMPORTS) + _SESSION_NAMES)
+
+
+def _import_block(session_package: str, used: set) -> str:
+    """The import lines of a module, keeping the names in `used`."""
+    lines = []
+    typing = [name for name in _TYPING_NAMES if name in used]
+    if typing:
+        lines.append(f"from typing import {', '.join(typing)}")
+    lines.extend(line for name, line in _STDLIB_IMPORTS if name in used)
+    session = [name for name in _SESSION_NAMES if name in used]
+    if session:
+        lines.append(f"from {session_package} import (")
+        lines.extend(f"    {name}," for name in session)
+        lines.append(")")
+    return "".join(line + "\n" for line in lines)
+
+
+def _used_names(text: str) -> set:
+    """The names that the code of a rendered module refers to (docstrings and strings do not count)."""
+    return {node.id for node in ast.walk(ast.parse(text)) if isinstance(node, ast.Name)}
 
 
 class Unsupported(Exception):
@@ -703,15 +748,15 @@ def _render_module(
         )
 
     template = _env.get_template("module.py.jinja2")
-    return template.render(
-        service=service,
-        title=title,
-        description=_clean(service.description),
-        header=HEADER,
-        session_package=session_package,
-        classes=models + classes + batches,
-        enums=enums,
-        batched=bool(batches),
-        compound=any(c["base"] == "CompoundRequest" for c in classes),
-        mapping=[(camel(a.name) + "Request", camel(a.name) + "Response") for a in actions],
-    )
+    layout = {
+        "service": service,
+        "title": title,
+        "description": _clean(service.description),
+        "header": HEADER,
+        "classes": models + classes + batches,
+        "enums": enums,
+        "mapping": [(camel(a.name) + "Request", camel(a.name) + "Response") for a in actions],
+    }
+    # the code is rendered first with every candidate import, then again with only the imports that the code uses
+    body = template.render(imports=_import_block(session_package, _ALL_NAMES), **layout)
+    return template.render(imports=_import_block(session_package, _used_names(body)), **layout)

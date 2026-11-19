@@ -170,3 +170,18 @@ def test_an_action_with_more_than_five_definitions_is_refused_naming_it(tmp_path
     assert result.returncode == 2
     assert "items.items keeps 6 definitions" in result.stderr
     assert not (tmp_path / "out").exists()
+
+
+def test_every_module_imports_only_the_names_its_code_uses():
+    import ast
+
+    for text in _files().values():
+        tree = ast.parse(text)
+        used = {node.id for node in ast.walk(tree) if isinstance(node, ast.Name)}
+        bound = set()
+        for node in tree.body:
+            if isinstance(node, ast.Import):
+                bound |= {(alias.asname or alias.name).split(".")[0] for alias in node.names}
+            elif isinstance(node, ast.ImportFrom):
+                bound |= {alias.asname or alias.name for alias in node.names}
+        assert sorted(bound - used) == []
