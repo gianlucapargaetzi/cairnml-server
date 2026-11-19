@@ -674,9 +674,13 @@ def start_task_request(call, company_id: str, request) -> dict:
     """The status change to in_progress, the device of an agent's token; the 'started' value is the updated count."""
     from apiserver.idp.tokens import device_of_bearer
 
-    task = Task.objects(id=request.task).only("id", "status", "started").first()
-    if not task:
-        raise errors.bad_request.InvalidId(task=task)
+    # the company, visibility and write scope of the other endpoints: a missing, hidden or foreign task is InvalidTaskId
+    task = get_task_with_write_access(
+        request.task,
+        company_id=company_id,
+        identity=call.identity,
+        only=("id", "status", "started"),
+    )
 
     started_update = {}
     if task.status == TaskStatus.in_progress and task.started:
