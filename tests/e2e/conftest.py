@@ -22,7 +22,6 @@ import requests
 
 from support import agent, client, jobs, settings, workspace
 from support import github as github_support
-from support.api import answers
 from support import report as e2e_report
 from support.keycloak import Keycloak
 from support.stack import REUSE_DIR, IsolatedStack, StackError, reuse_requested
