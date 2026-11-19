@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from typing import Callable, Optional, Sequence
 
 from mongoengine import EmbeddedDocument
+from mongoengine.queryset import transform
 from pymongo import UpdateOne
 
 from apiserver.apierrors import errors
@@ -22,6 +23,7 @@ from apiserver.bll.project import entity_access
 from apiserver.bll.project.project_changes import (
     apply_effects,
     plan_task_batch,
+    plan_task_batch_repositories,
     plan_task_create,
     plan_task_write,
 )
@@ -34,8 +36,9 @@ from apiserver.service_repo.auth import Identity
 SAFE_UPDATE = "safe_update"
 # task.update(upsert=False): filters by the primary key; the task was read in company scope before.
 TASK_UPDATE = "task_update"
-# Collection.bulk_write of one $set per item: no mongoengine transform, so no stripping and no length or choice checks.
-BULK_RAW = "bulk_raw"
+# Collection.bulk_write of one update per item, each built by the mongoengine update transform (see set_spec): the same
+# stripping and validation as Task.safe_update, checked for every item before the first write.
+VALIDATED_BULK = "validated_bulk"
 
 
 @dataclass(frozen=True)
@@ -69,17 +72,16 @@ EDIT_RULE = WriteRule(
     mechanism=TASK_UPDATE,
 )
 
-# tasks.update_batch, one item per task: reads id, project and user like update. Differences from UPDATE_RULE, all kept
-# as they are and pinned by the B series of the characterisation tests (issue 277): the raw bulk write (BULK_RAW), so
-# the name is not stripped and the name and display name length checks do not run; the modified count is returned, not
-# the matched one; no repository is recorded; and the tag cache and project time follow plan_task_batch.
-# Suspect behaviours, decided in the decision issue (#282), not changed here.
+# tasks.update_batch, one item per task: reads id, project and user like update, and writes the same values the same
+# way (VALIDATED_BULK). Differences from UPDATE_RULE, kept on purpose: the duplicate rule (the last item of a task
+# wins), the batch-level effects of plan_task_batch (tag cache, project time), and the all-or-nothing checks before the
+# first write. The count is the matched count, as update returns it. Decided in #282, decision 3, issue #301.
 BATCH_ITEM_RULE = WriteRule(
     endpoint="tasks.update_batch",
     fetch_only=("id", "project", "user"),
     status_gate=False,
     stamp_last_update=False,
-    mechanism=BULK_RAW,
+    mechanism=VALIDATED_BULK,
 )
 
 
@@ -197,14 +199,21 @@ def save_new_task(ctx: WriteContext, task: Task, fields: dict) -> None:
     )
 
 
+def set_spec(partial_update_dict: dict) -> dict:
+    """The MongoDB update of a partial update dict, built as Task.safe_update builds it: mongoengine strips the strings
+    and validates every value, raising ValidationError, without touching the database. Building the specs of all items
+    before the bulk write keeps a batch all-or-nothing."""
+    return transform.update(Task, **partial_update_dict)
+
+
 def update_task_batch(
     ctx: WriteContext,
     items: Sequence[dict],
     prepare: Callable[[dict], dict],
 ) -> int:
     """tasks.update_batch (BATCH_ITEM_RULE). `prepare` turns one item into the partial update dict (the service layer's
-    rules). All access and destination checks run before the bulk write, so a failure changes nothing. Returns the number
-    of modified documents."""
+    rules). The access, destination and validation checks of every item run before the bulk write, so a failure changes
+    nothing. A task listed twice keeps the last item. Returns the matched count, as tasks.update does."""
     rule = BATCH_ITEM_RULE
     by_id = {i["task"]: i for i in items}
     entity_access.assert_tasks_access(ctx.company_id, ctx.identity, list(by_id), "write")
@@ -224,6 +233,7 @@ def update_task_batch(
 
     now = datetime.now(timezone.utc)
     bulk_ops = []
+    written_ids = []
     updated_projects = set()
     for id, data in by_id.items():
         task = tasks[id]
@@ -237,7 +247,8 @@ def update_task_batch(
             last_change=now,
             last_changed_by=ctx.identity.user,
         )
-        bulk_ops.append(UpdateOne({"_id": id, "company": ctx.company_id}, {"$set": partial_update_dict}))
+        bulk_ops.append(UpdateOne({"_id": id, "company": ctx.company_id}, set_spec(partial_update_dict)))
+        written_ids.append(id)
 
         new_project = partial_update_dict.get("project", task.project)
         if new_project != task.project:
@@ -247,10 +258,13 @@ def update_task_batch(
 
     updated = 0
     if bulk_ops:
-        updated = Task._get_collection().bulk_write(bulk_ops).modified_count
+        updated = Task._get_collection().bulk_write(bulk_ops).matched_count
 
     if updated and updated_projects:
         apply_effects(ctx.company_id, ctx.identity.user, plan_task_batch(updated_projects), task=None)
+    if updated:
+        # Every item matched its task above (the tasks were read in company scope), so each is a written task
+        apply_effects(ctx.company_id, ctx.identity.user, plan_task_batch_repositories(written_ids), task=None)
     return updated
 
 
