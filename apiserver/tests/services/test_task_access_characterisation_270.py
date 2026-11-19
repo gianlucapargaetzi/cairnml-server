@@ -23,7 +23,7 @@ here and are not repeated:
 | 9   | read member writes                                   | test_row09_read_member_cannot_update_a_task                           |
 | 10  | stranger, private project, get_by_id                 | existing: test_tasks_access_enforcement.py::test_get_by_id_refuses_a_task_in_a_private_project_to_a_stranger |
 | 11  | stranger, private project, delete                    | test_row11_stranger_gets_invalid_task_id_on_delete                    |
-| 12  | stranger, private project, archive/move/update_tags  | test_row12_* (suspect: 403 for hidden, 400 for missing)               |
+| 12  | stranger, private project, archive/move/update_tags  | test_row12_* (hidden and missing: 400, see #299)                      |
 | 13  | hidden vs missing, get_task_with_write_access        | existing: bll/task/test_get_task_with_write_access.py::test_a_hidden_task_gets_the_same_answer_as_a_missing_one |
 | 14  | get_many_tasks_for_writing, throw_on_forbidden=False | existing: bll/task/test_get_task_with_write_access.py                 |
 | 15  | get_many_tasks_for_writing, throw_on_forbidden=True  | existing: bll/task/test_get_task_with_write_access.py                 |
@@ -186,26 +186,24 @@ def test_row11_stranger_gets_invalid_task_id_on_delete(company):
     assert Task.objects(id="task1").first() is not None
 
 
-# suspect: pinned as is, see the decision issue (#282)
+# intended, see #299
 def test_row12_archive_answers_a_hidden_task_403_and_a_missing_one_400(company):
-    # The writable-list guard runs before the per-task guard, so a hidden task is reported as forbidden
-    # (403), while a missing one is reported as an invalid id (400). The rule at services/tasks.py:198 says both
-    # must look the same. Pinned as it is today, see the decision issue (#282).
+    # A hidden task is refused like a missing one (400), see #299.
     make_root(company)
     make_task(company, "root1", "owner1")
-    with pytest.raises(errors.forbidden.NoWritePermission):
+    with pytest.raises(errors.bad_request.InvalidTaskId):
         svc.archive(FakeCall(identity(company, "stranger")), company, ArchiveRequest(tasks=["task1"]))
     with pytest.raises(errors.bad_request.InvalidTaskId):
         svc.archive(FakeCall(identity(company, "stranger")), company, ArchiveRequest(tasks=["no-such-task"]))
     assert Task.objects(id="task1").first().status == TaskStatus.created
 
 
-# suspect: pinned as is, see the decision issue (#282)
+# intended, see #299
 def test_row12_move_answers_a_hidden_task_403_and_a_missing_one_400(company):
     make_root(company, id_="src")
     make_root(company, id_="dst")
     make_task(company, "src", "owner1")
-    with pytest.raises(errors.forbidden.NoWritePermission):
+    with pytest.raises(errors.bad_request.InvalidTaskId):
         svc.move(
             FakeCall(identity(company, "stranger"), data={"project": "dst"}),
             company,
@@ -220,11 +218,11 @@ def test_row12_move_answers_a_hidden_task_403_and_a_missing_one_400(company):
     assert Task.objects(id="task1").first().project == "src"
 
 
-# suspect: pinned as is, see the decision issue (#282)
+# intended, see #299
 def test_row12_update_tags_answers_a_hidden_task_403_and_a_missing_one_400(company):
     make_root(company)
     make_task(company, "root1", "owner1")
-    with pytest.raises(errors.forbidden.NoWritePermission):
+    with pytest.raises(errors.bad_request.InvalidTaskId):
         svc.update_tags(
             FakeCall(identity(company, "stranger")),
             company,

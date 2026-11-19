@@ -10,7 +10,7 @@ from mongoengine import Q
 
 from apiserver.apierrors import errors
 from apiserver.bll.project.access import ProjectAccessBLL
-from apiserver.bll.task.utils import get_many_tasks_for_writing
+from apiserver.bll.task.utils import get_many_tasks_for_writing, is_hidden_task
 from apiserver.database.model.model import Model
 from apiserver.database.model.task.task import Task
 from apiserver.service_repo.auth import Identity
@@ -101,11 +101,39 @@ def assert_models_access(company_id: str, identity: Identity, ids: Sequence[str]
     assert_entities_access(Model, company_id, identity, ids, capability, _model_not_found)
 
 
+def hidden_task_ids(company_id: str, identity: Identity, ids: Sequence[str]) -> set:
+    """The ids of the existing tasks whose project the caller cannot see (missing ids are not in the result)"""
+    tasks = Task.get_many(
+        company=company_id,
+        query=Q(id__in=list(ids)),
+        override_projection=ACCESS_FIELDS,
+        allow_public=True,
+        return_dicts=False,
+    )
+    return {task.id for task in tasks if is_hidden_task(identity, task)}
+
+
+def assert_tasks_access_skipping_hidden(
+    company_id: str, identity: Identity, ids: Sequence[str], capability: str
+) -> None:
+    """
+    assert_tasks_access for a batch whose hidden tasks are reported per item, as a missing task is. The request is
+    still refused for a task the caller can see but may not change
+    """
+    hidden = hidden_task_ids(company_id, identity, ids)
+    assert_tasks_access(company_id, identity, [i for i in ids if i not in hidden], capability)
+
+
 def assert_writable_tasks(company_id: str, identity: Identity, ids: Sequence[str], only=("id",)) -> Sequence[Task]:
+    """
+    The tasks of `ids` the caller may change. A hidden task is refused like a missing one (InvalidTaskId with the
+    requested ids); a task the caller can see but not change is refused with NoWritePermission
+    """
+    hidden = hidden_task_ids(company_id, identity, ids)
     tasks = get_many_tasks_for_writing(
         company_id=company_id,
         identity=identity,
-        query=Q(id__in=ids),
+        query=Q(id__in=[i for i in ids if i not in hidden]),
         only=only,
     )
     missing_ids = set(ids) - {t.id for t in tasks}

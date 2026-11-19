@@ -238,6 +238,14 @@ def get_many_tasks_for_writing(
     return result
 
 
+def is_hidden_task(identity: Identity, task: Task) -> bool:
+    """
+    A task in a project the caller cannot see at all. It gets the answer a missing task gets, so that a hidden
+    task does not reveal that it exists
+    """
+    return bool(task.project) and ProjectAccessBLL.get_role(identity, task.project) is None
+
+
 def get_task_with_write_access(
     task_id: str,
     company_id: str,
