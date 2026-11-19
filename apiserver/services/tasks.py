@@ -104,6 +104,8 @@ from apiserver.bll.task.hyperparams import HyperParams
 from apiserver.bll.task.progress import TaskProgress
 from apiserver.redis_manager import redman
 from apiserver.bll.task.param_utils import (
+    legacy_params_max_version,
+    legacy_params_prepare_for_save,
     params_prepare_for_save,
     params_unprepare_from_saved,
     escape_paths,
@@ -552,6 +554,8 @@ def prepare_for_save(call: APICall, fields: dict, previous_task: Task = None):
         # an empty label clears it, so that the task name is shown again
         fields["display_name"] = (fields["display_name"] or "").strip() or None
     conform_tag_fields(call, fields, validate=True)
+    if call.requested_endpoint_version < legacy_params_max_version:
+        legacy_params_prepare_for_save(fields, previous_task=previous_task)
     params_prepare_for_save(fields)
     artifacts_prepare_for_save(fields)
     ModelsBackwardsCompatibility.prepare_for_save(call, fields)
