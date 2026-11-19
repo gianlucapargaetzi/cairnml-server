@@ -99,8 +99,10 @@ above `--root`, or `--root` itself when there is none), skipping `*.spec.ts` and
 `model/` folders of `--root`. It reports a request path written by hand, `/<service>.<action>` (optionally behind
 `/v<major>.<minor>/`), for an action of the schema, with the generated function to call instead
 (`ApiTasksService.tasksEdit`); and a `/v<major>.<minor>/` literal, whose address comes from the generated functions
-(`endpointUrl(action)`). An action name in quotes, such as `endpointUrl('login.idp_start')`, is not a request path and is
-not reported. Exceptions go in the same allow file, `exempt <service.action> <reason>`.
+(`endpointUrl(action)`). An action named as a string in `endpointUrl('<service>.<action>')` is reported too, with the
+generated function to call instead (`endpointUrl('access.share')` gives `ApiAccessService.accessShare`). The unversioned
+login actions (`UNVERSIONED_ACTIONS`, such as `endpointUrl('login.logout')`) are not reported. Exceptions go in the same
+allow file, `exempt <service.action> <reason>`.
 
 **Options of a call.** Every generated method takes the options of its call as its last argument (`ApiOptions`):
 `headers` are added to the request's headers (a tenant header, for example), and `params` are appended to its query.

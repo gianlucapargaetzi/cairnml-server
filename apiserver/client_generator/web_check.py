@@ -6,8 +6,10 @@ Checks the web app's hand-edited API layer (TypeScript) against the schema:
 - a hand-written source (`*.ts` under `sources`, not a `*.spec.ts`, not a file of the generated `api-services/` and
   `model/` folders of `root`) writes a request path by hand, `/<service>.<action>` (optionally behind
   `/v<major>.<minor>/`), for an action of the schema: the generated function of that action is called instead
-  (`ApiTasksService.tasksEdit`). An action name in quotes is not a path and is not judged; A `/v<major>.<minor>/` literal in such a source is an API version written
-  by hand, and the address comes from the generated functions;
+  (`ApiTasksService.tasksEdit`). A `/v<major>.<minor>/` literal in such a source is an API version written by hand,
+  and the address comes from the generated functions. An action named as a string in `endpointUrl('<service>.<action>')`
+  is not a path, but the same rule applies: the generated function is called instead. The unversioned actions of
+  UNVERSIONED_ACTIONS (the login addresses) are exempt from that call;
 - a field of a request or response model (model/<service>/<service><Action>Request|Response.ts) must be a field the
   schema defines for that action: a field the schema lacks is sent to, or read from, a server that does not know it.
   A schema field the web app does not have is not an error (the web app may not use it).
@@ -29,6 +31,8 @@ CALL = re.compile(r"\$\{this\.basePath\}/(?:v(\d+(?:\.\d+)*)/)?([a-z_]+)\.([a-z_
 # a request path written by hand: `/<service>.<action>`, optionally behind `/v<major>.<minor>/`, not part of a longer name.
 # A bare action name ('user_access.check', or the endpointUrl('login.idp_start') of the generated address) is not a path.
 PATH_LITERAL = re.compile(r"/(?:v\d+\.\d+/)?([a-z_]+)\.([a-z_0-9]+)(?![\w.])")
+# an action named as a string for the generated address: endpointUrl('access.share')
+ENDPOINT_CALL = re.compile(r"endpointUrl\(\s*['\"`]([a-z_]+)\.([a-z_0-9]+)['\"`]\s*\)")
 VERSION_LITERAL = re.compile(r"/v\d+\.\d+/")
 GENERATED_FOLDERS = ("api-services", "model")
 
@@ -141,6 +145,21 @@ def check_web(root: Path, schema: Dict[str, Service], allow: Allow, sources: Opt
                         path,
                         number,
                         f"{full} is written as a string in hand-written code: call "
+                        f"{_generated_function(service, action)} (the generated function) instead",
+                    )
+                )
+            for service, action in ENDPOINT_CALL.findall(line):
+                full = f"{service}.{action}"
+                if full in UNVERSIONED_ACTIONS or service not in schema or action not in schema[service].actions:
+                    continue
+                if full in allow.exempt:
+                    used.add(full)
+                    continue
+                findings.append(
+                    Finding(
+                        path,
+                        number,
+                        f"{full} is named by endpointUrl in hand-written code: call "
                         f"{_generated_function(service, action)} (the generated function) instead",
                     )
                 )
