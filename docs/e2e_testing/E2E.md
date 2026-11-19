@@ -45,15 +45,30 @@ on 127.0.0.1 and nine free ports in 18000 to 18999. Run one suite at a time, and
 the deploy stack (see Limits). Needs Docker with Compose v2, uv, and Python 3.12.
 
 ```bash
-# 1. Sources, in a scratch folder: the server at the commit under test, and the SDK, the agent and the web app at the
-#    commits their pin files name (scripts/fetch-sources.sh puts them in cairnml/, cairnml-agent/ and web/).
-# 2. The suite's environment: its exact pins, and the SDK and the agent from their folders.
-uv venv -p 3.12 .venv
+# 1. Sources, in a scratch folder (WS): the server at the commit under test, and the SDK, the agent and the web app
+#    inside it, in the folders the compose file builds from (cairnml/, cairnml-agent/, web/). From git:
+WS=/path/to/scratch/ws; mkdir -p "$WS"/{cairnml,cairnml-agent,web}
+git -C cairnml-server archive origin/main | tar -x -C "$WS"
+git -C cairnml archive origin/main | tar -x -C "$WS/cairnml"
+git -C cairnml-agent archive origin/main | tar -x -C "$WS/cairnml-agent"
+git -C cairnml-web archive origin/main | tar -x -C "$WS/web"
+#    (or, from the pins, `scripts/fetch-sources.sh` in the server's folder.)
+cd "$WS"
+# 2. The suite's environment: its exact pins, and the SDK and the agent from their folders. --seed puts pip in the
+#    venv: the agent builds its own wheel with `python -m pip` when a job starts, and a venv without pip crashes there.
+uv venv --seed -p 3.12 .venv
 uv pip install -r tests/e2e/requirements.txt -e "./cairnml[dataset]" -e ./cairnml-agent
 .venv/bin/python -m playwright install chromium
-# 3. The suite, from a folder that is neither the SDK's nor the agent's.
+# 3. The suite, from a folder that is neither the SDK's nor the agent's. HOME and TMPDIR are scratch folders, so that
+#    nothing is written to your own ~/.cairnml, and the stack's state (which containers write as other users) is in one place.
+export HOME=/path/to/scratch/home TMPDIR=/path/to/scratch/tmp; mkdir -p "$HOME" "$TMPDIR"
 cd tests/e2e && CAIRNML_ES_HEAP=1g ../../.venv/bin/pytest -v
 ```
+
+The first job of a run is cold (the agent builds its environment in the container), which is why the job clone test waits
+up to 300 s. A full run takes about 18 minutes after the images are built. The agent daemons the suite starts are its
+own processes (`cairnml-agent daemon`); a run that is killed can leave one behind, so stop it by its PID, and check
+`docker ps -a` for containers of the stack (`stack/prune-networks.sh` removes unused networks).
 
 `CAIRNML_ES_HEAP` caps Elasticsearch's heap (the default is 2g). The stack's state folder is in `TMPDIR`. The report is
 written to `tests/e2e/reports/`. `tests/e2e/requirements.txt` holds the exact pins the runner image uses too; its header

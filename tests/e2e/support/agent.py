@@ -1,5 +1,5 @@
-"""A machine that runs jobs: its own HOME and device key, and the agent daemon running as a process, listening to the
-default queue."""
+"""A machine that runs jobs: its own HOME and device key, and the agent daemon running as a process, listening to its own
+queue (the one the server made when the machine was enrolled; an agent serves no other queue)."""
 
 import os
 import re
@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 
 from . import cli, settings
-from .client import agent_device_id_of, agent_key_path
+from .client import agent_config_file, agent_device_id_of, agent_key_path
 
 # How often the agent polls its queue on the test stack, in seconds: a job is picked up within seconds, not minutes.
 POLLING_INTERVAL_SEC = 2
@@ -56,6 +56,14 @@ class AgentMachine:
     def key_path(self) -> Path:
         return agent_key_path(self.home)
 
+    @property
+    def queue(self) -> str:
+        """The queue the server made for this machine at enrolment. The agent writes it to its configuration as
+        agent.queue and serves it when the daemon is started without --queue."""
+        match = re.search(r'agent\.queue\s*=\s*"([^"]+)"', agent_config_file(self.home).read_text())
+        assert match, "the agent's configuration names no queue (agent.queue); was it enrolled?"
+        return match.group(1)
+
     def start(self) -> None:
         env = cli.environment(self.home)
         env["CAIRNML_WORKER_NAME"] = self.worker_name
@@ -67,8 +75,6 @@ class AgentMachine:
             [
                 str(cli.VENV_BIN / "cairnml-agent"),
                 "daemon",
-                "--queue",
-                "default",
                 "--docker",
                 "python:3.12-slim",
                 "--polling-interval",

@@ -20,7 +20,7 @@ from pathlib import Path
 import pytest
 import requests
 
-from support import agent, client, settings, workspace
+from support import agent, client, jobs, settings, workspace
 from support.api import answers
 from support import report as e2e_report
 from support.keycloak import Keycloak
@@ -192,6 +192,8 @@ def job_agent(tmp_path_factory, admin_account, client_home):
 
     machine = AgentMachine(tmp_path_factory.mktemp("job-agent"), worker_name=workspace.new_name("jobs-agent"))
     assert agent.init(machine.home, admin_account).returncode == 0
+    # jobs go to the agent's own queue: it serves no other (see support/jobs.py QUEUE_ENV)
+    os.environ[jobs.QUEUE_ENV] = machine.queue
     machine.start()
     api = workspace.device_api(client_home)
     assert machine.wait_until(lambda: worker_record(api, machine.worker_name), timeout=REGISTRATION_TIMEOUT), (

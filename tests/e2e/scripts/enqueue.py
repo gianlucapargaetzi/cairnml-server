@@ -2,6 +2,7 @@
 from its first session, and enqueue depends on it."""
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -14,7 +15,8 @@ from cairnml import Task  # noqa: E402
 def main() -> None:
     parser = argparse.ArgumentParser(description="enqueue a task")
     parser.add_argument("--task-id", required=True)
-    parser.add_argument("--queue", default="default")
+    # the queue of the suite's job agent (support/jobs.py QUEUE_ENV), the public default queue without one
+    parser.add_argument("--queue", default=os.environ.get("CAIRNML_E2E_AGENT_QUEUE", "default"))
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
 
