@@ -1,7 +1,8 @@
 """
 Renders the web app's API layer (TypeScript) from the schema, in the form the web app already imports:
 - `api-services/<service>.service.ts`: one method per action, `<service><Action>(request, options)`, which posts to
-  `${basePath}/<service>.<action>` through `SmApiRequestsService`;
+  `${basePath}/v<version>/<service>.<action>` (the version of the action's definition) through `SmApiRequestsService`.
+  The few actions of UNVERSIONED_ACTIONS are posted to `${basePath}/<service>.<action>`, without a version;
 - `model/<service>/<name>.ts`: an interface per request and response, one per nested object (named after its parent),
   one per definition of the schema, a `<name>Enum` for an enumeration definition, and a namespace for an inline
   enumeration; `models.ts` re-exports them.
@@ -29,6 +30,30 @@ HEADER = """/**
  * Do not edit the class manually.
  */
 """
+
+
+# Actions the web app calls WITHOUT a version, with the reason. The server serves a path without a version with the
+# newest definition (service_repo: no version means the newest API version), so such a call never goes stale. Only the
+# addresses that a browser or the identity provider keeps independent of the API version are in it:
+# - login.logout: the ID-token cookie that lets the identity provider end the session without asking to confirm is
+#   scoped by path to `/cairnml/api/login.logout` (apiserver.auth.custom_cookies.idp_session in apiserver.conf). A
+#   cookie is sent only on a request whose path starts with its Path, so a call at `/v<version>/login.logout` would
+#   not carry it;
+# - login.idp_start, login.idp_callback: the identity provider keeps these addresses (the realm lists the callback),
+#   and the server hands them out without a version (idp/public_origin.py), so a version would stop matching after an
+#   upgrade.
+UNVERSIONED_ACTIONS = {
+    "login.logout": "the path of its ID-token cookie has no version",
+    "login.idp_start": "the identity provider keeps this address",
+    "login.idp_callback": "the identity provider keeps this address",
+}
+
+
+def action_path(service: str, action: Action) -> str:
+    """The path of an action below the API's base path: at the version of its definition, or without a version for the
+    actions of UNVERSIONED_ACTIONS."""
+    full = f"{service}.{action.name}"
+    return f"/{full}" if full in UNVERSIONED_ACTIONS else f"/v{action.version}/{full}"
 
 
 def pascal(name: str) -> str:
@@ -230,6 +255,52 @@ def _service_version(service: Service) -> str:
     return max(versions, key=lambda v: tuple(int(part) for part in v.split("."))) if versions else ""
 
 
+ENDPOINTS = """{head}
+import {HTTP} from '../../app.constants';
+
+/**
+ * The version of each action of the server's schema: the version of its definition. null: the action is called without
+ * a version (the server then serves its newest definition). Generated from the schema.
+ */
+const ACTION_VERSIONS = new Map<string, string | null>([
+@@ENTRIES@@]);
+
+/**
+ * The URL of an action at the version of its definition. An action the schema does not have is an error: a call is
+ * never sent at a version written by hand or at the latest one by default.
+ */
+export const endpointUrl = (action: string): string => {
+    if (!ACTION_VERSIONS.has(action)) {
+        throw new Error(`${action} is not an action of the server's schema`);
+    }
+    const version = ACTION_VERSIONS.get(action);
+    return version === null ? `${HTTP.API_BASE_URL}/${action}` : `${HTTP.API_BASE_URL}/v${version}/${action}`;
+};
+"""
+
+
+def render_endpoints(schema: Dict[str, Service]) -> str:
+    """api-services/endpoints.ts: the version of every action and endpointUrl, which addresses an action at that version.
+    The hand-written calls use it, so no call carries a version written by hand."""
+    actions = [
+        (f"{service}.{name}", schema[service].actions[name])
+        for service in sorted(schema)
+        for name in sorted(schema[service].actions)
+    ]
+    stale = sorted(set(UNVERSIONED_ACTIONS) - {name for name, _ in actions})
+    if stale:
+        raise Unsupported(f"UNVERSIONED_ACTIONS names {stale}, which the schema does not have")
+    entries = "".join(
+        f"    ['{name}', {'null' if name in UNVERSIONED_ACTIONS else repr(action.version)}],\n"
+        for name, action in actions
+    )
+    newest = max(
+        (action.version for _, action in actions), key=lambda v: tuple(int(part) for part in v.split(".")), default=""
+    )
+    head = HEADER.format(service="endpoints", version=newest)
+    return ENDPOINTS.replace("{head}", head).replace("@@ENTRIES@@", entries)
+
+
 def render_models(service: Service) -> Dict[str, str]:
     models = Models(service)
     for name in sorted(service.actions):
@@ -258,7 +329,7 @@ def render_api(service: Service) -> str:
             "\n".join(_doc(action.description, "    "))
             + ("\n" if action.description else "")
             + f"    public {method}(request: {req}, options?: ApiOptions): Observable<any> {{\n"
-            + f"        return this.apiRequest.post<{res}>(`${{this.basePath}}/{service.name}.{action.name}`,\n"
+            + f"        return this.apiRequest.post<{res}>(`${{this.basePath}}{action_path(service.name, action)}`,\n"
             + "            request,\n"
             + "            {\n"
             + "                headers: this.defaultHeaders,\n"

@@ -40,7 +40,7 @@ def _usage(message: str) -> int:
 
 def _generate_web(args, schema) -> int:
     """Writes the web app's API layer into --out (the business-logic folder): api-services/ and model/<service>/."""
-    from .web_renderer import render_api, render_models
+    from .web_renderer import render_api, render_endpoints, render_models
 
     names = args.services.split(",") if args.services else sorted(schema)
     rendered = {}
@@ -86,6 +86,19 @@ def _generate_web(args, schema) -> int:
         else:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(text)
+    # the version of every action of the schema, and endpointUrl: the whole schema, whatever --services says
+    endpoints = args.out / "api-services" / "endpoints.ts"
+    try:
+        text = render_endpoints(schema)
+    except Unsupported as error:
+        return _usage(str(error))
+    if args.check:
+        if not endpoints.is_file() or endpoints.read_text() != text:
+            print(f"{endpoints} is out of date")
+            stale += 1
+    else:
+        endpoints.parent.mkdir(parents=True, exist_ok=True)
+        endpoints.write_text(text)
     return 1 if stale else 0
 
 

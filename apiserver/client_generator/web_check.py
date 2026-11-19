@@ -1,6 +1,8 @@
 """
 Checks the web app's hand-edited API layer (TypeScript) against the schema:
-- a call `${this.basePath}/<service>.<action>` in api-services/*.service.ts must name an action the schema has;
+- a call `${this.basePath}/v<version>/<service>.<action>` in api-services/*.service.ts must name an action the schema
+  has, at the version of that action's definition. The actions of web_renderer.UNVERSIONED_ACTIONS (login.logout, whose
+  cookie path has no version, and the identity provider's addresses) are the opposite: called without a version;
 - a field of a request or response model (model/<service>/<service><Action>Request|Response.ts) must be a field the
   schema defines for that action: a field the schema lacks is sent to, or read from, a server that does not know it.
   A schema field the web app does not have is not an error (the web app may not use it).
@@ -16,8 +18,9 @@ from typing import Dict, List, Optional, Set
 
 from .callers import Allow, Finding
 from .schema_model import Service
+from .web_renderer import UNVERSIONED_ACTIONS
 
-CALL = re.compile(r"\$\{this\.basePath\}/([a-z_]+)\.([a-z_0-9]+)")
+CALL = re.compile(r"\$\{this\.basePath\}/(?:v(\d+(?:\.\d+)*)/)?([a-z_]+)\.([a-z_0-9]+)")
 
 
 def _pascal(name: str) -> str:
@@ -64,9 +67,31 @@ def check_web(root: Path, schema: Dict[str, Service], allow: Allow) -> List[Find
 
     for path in sorted((root / "api-services").glob("*.service.ts")):
         for number, line in enumerate(path.read_text().splitlines(), 1):
-            for service, action in CALL.findall(line):
+            for version, service, action in CALL.findall(line):
                 full = f"{service}.{action}"
                 if service in schema and action in schema[service].actions:
+                    defined = schema[service].actions[action].version
+                    if full in UNVERSIONED_ACTIONS:
+                        if version:
+                            findings.append(
+                                Finding(
+                                    path,
+                                    number,
+                                    f"{full} is sent at version {version}: it is called without a version ({UNVERSIONED_ACTIONS[full]})",
+                                )
+                            )
+                    elif not version:
+                        findings.append(
+                            Finding(
+                                path,
+                                number,
+                                f"{full} is sent without a version, its definition is {defined}: /v<version>/<service>.<action>",
+                            )
+                        )
+                    elif version != defined:
+                        findings.append(
+                            Finding(path, number, f"{full} is sent at version {version}, its definition is {defined}")
+                        )
                     continue
                 if full in allow.exempt:
                     used.add(full)
