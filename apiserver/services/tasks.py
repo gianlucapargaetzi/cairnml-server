@@ -103,9 +103,8 @@ from apiserver.bll.task.artifacts import (
 from apiserver.bll.task.hyperparams import HyperParams
 from apiserver.bll.task.progress import TaskProgress
 from apiserver.redis_manager import redman
+from apiserver.bll.task.compat import legacy_params_copied_back_on_read, legacy_params_on_write
 from apiserver.bll.task.param_utils import (
-    legacy_params_max_version,
-    legacy_params_prepare_for_save,
     params_prepare_for_save,
     params_unprepare_from_saved,
     escape_paths,
@@ -157,7 +156,6 @@ from apiserver.services.utils import (
 from apiserver.idp.tokens import device_of_bearer
 from apiserver.utilities.dicts import nested_get
 from apiserver.utilities.parameter_key_escaper import escape_dict_field, unescape_dict_field
-from apiserver.utilities.partial_version import PartialVersion
 
 task_fields = set(Task.get_fields())
 
@@ -473,8 +471,7 @@ def prepare_for_save(call: APICall, fields: dict, previous_task: Task = None):
         # an empty label clears it, so that the task name is shown again
         fields["display_name"] = (fields["display_name"] or "").strip() or None
     conform_tag_fields(call, fields, validate=True)
-    if call.requested_endpoint_version < legacy_params_max_version:
-        legacy_params_prepare_for_save(fields, previous_task=previous_task)
+    legacy_params_on_write(call.requested_endpoint_version, fields, previous_task=previous_task)
     params_prepare_for_save(fields)
     artifacts_prepare_for_save(fields)
     ModelsBackwardsCompatibility.prepare_for_save(call, fields)
@@ -501,12 +498,12 @@ def conform_task_data(call: APICall, tasks_data: Union[Sequence[dict], dict]):
     ModelsBackwardsCompatibility.unprepare_from_saved(call, tasks_data)
     DockerCmdBackwardsCompatibility.unprepare_from_saved(call, tasks_data)
 
-    need_legacy_params = call.requested_endpoint_version < PartialVersion("2.9")
+    copy_to_legacy = legacy_params_copied_back_on_read(call.requested_endpoint_version)
 
     for data in tasks_data:
         params_unprepare_from_saved(
             fields=data,
-            copy_to_legacy=need_legacy_params,
+            copy_to_legacy=copy_to_legacy,
         )
         artifacts_unprepare_from_saved(fields=data)
 

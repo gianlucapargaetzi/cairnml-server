@@ -2,16 +2,13 @@ import itertools
 from typing import Sequence
 
 from apiserver.apierrors import errors
-from apiserver.utilities.dicts import nested_delete, nested_get, nested_set
+from apiserver.utilities.dicts import nested_set
 from apiserver.utilities.parameter_key_escaper import ParameterKeyEscaper
-from apiserver.utilities.partial_version import PartialVersion
 
 
 hyperparams_legacy_type = "legacy"
 hyperparams_default_section = "Args"
 tf_define_section = "TF_DEFINE"
-# requests below this API version may still send the legacy execution.parameters input
-legacy_params_max_version = PartialVersion("2.9")
 
 
 def _get_full_param_name(param: dict) -> str:
@@ -33,68 +30,6 @@ def _get_legacy_params(data: dict, with_sections: bool = False) -> Sequence[dict
         return list(itertools.chain.from_iterable(_get_legacy_params(section_data) for section_data in data.values()))
 
     return [param for param in data.values() if param.get("type") == hyperparams_legacy_type]
-
-
-def _remove_legacy_params(data: dict) -> int:
-    """
-    Remove the legacy params from the sections of the hyperparams data (in place), dropping the sections that become
-    empty, and return the number of removed params
-    """
-    removed = 0
-    if not data:
-        return removed
-
-    for section, section_data in list(data.items()):
-        for key, param in list(section_data.items()):
-            if param.get("type") == hyperparams_legacy_type:
-                removed += 1
-                del section_data[key]
-        if not section_data:
-            del data[section]
-
-    return removed
-
-
-def _split_legacy_param_name(full_name: str) -> tuple[str, str]:
-    """
-    Return the section and the name of a legacy param: TF_DEFINE/<name> is in the TF_DEFINE section, any other name
-    in the default one
-    """
-    section, _, name = full_name.partition("/")
-    if section != tf_define_section:
-        return hyperparams_default_section, full_name
-
-    if not name:
-        raise errors.bad_request.ValidationError("Parameter name cannot be empty")
-    return section, name
-
-
-def legacy_params_prepare_for_save(fields: dict, previous_task=None):
-    """
-    Convert the legacy execution.parameters input into hyperparams (default section, or TF_DEFINE by name) in place.
-    Without hyperparams in the request the hyperparams of the previous task are the base, minus its legacy params.
-    Must run before params_prepare_for_save, which escapes the names.
-    """
-    legacy_params = nested_get(fields, ("execution", "parameters"))
-    if legacy_params is None:
-        return
-
-    if not fields.get("hyperparams") and previous_task and previous_task.hyperparams:
-        previous_data = previous_task.to_proper_dict().get("hyperparams")
-        removed = _remove_legacy_params(previous_data)
-        if not legacy_params and not removed:
-            # only the legacy field is to be deleted and there is nothing to delete
-            return
-
-        fields_update = {"hyperparams": previous_data}
-        params_unprepare_from_saved(fields_update)
-        fields.update(fields_update)
-
-    for full_name, value in legacy_params.items():
-        section, name = _split_legacy_param_name(full_name)
-        new_param = {"name": name, "type": hyperparams_legacy_type, "value": str(value), "section": section}
-        nested_set(fields, ("hyperparams", section, name), new_param)
-    nested_delete(fields, ("execution", "parameters"))
 
 
 def params_prepare_for_save(fields: dict):
