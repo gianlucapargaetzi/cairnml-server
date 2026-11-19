@@ -102,6 +102,20 @@ above `--root`, or `--root` itself when there is none), skipping `*.spec.ts` and
 (`endpointUrl(action)`). An action name in quotes, such as `endpointUrl('login.idp_start')`, is not a request path and is
 not reported. Exceptions go in the same allow file, `exempt <service.action> <reason>`.
 
+**Options of a call.** Every generated method takes the options of its call as its last argument (`ApiOptions`):
+`headers` are added to the request's headers (a tenant header, for example), and `params` are appended to its query.
+A JSON call is a POST with the request as its body, as before. Two kinds of action are not JSON, and their rules are
+listed in `apiserver/client_generator/web_renderer.py` with the reason, as `UNVERSIONED_ACTIONS` is:
+
+- `FILE_ACTIONS`: the response is a file. The method returns `Observable<Blob>` and reads the response as a file (no
+  JSON envelope, no JSON `Accept` header). `events.download_task_log` and `organization.download_for_get_all` are such.
+- `GET_ACTIONS`: the call is a GET, and the request's fields are the query of its address. The class also gets
+  `<service><Action>Url(request)`, the address of that call, which a download link follows (the browser cannot send a
+  POST body for a link). `organization.download_for_get_all` is such.
+
+The rules are checked against the schema: a rule that names an action the schema lacks makes `generate` fail. The rules
+do not change the schema, so they are not an API change: the server serves these actions as they are.
+
 **Calls without a version.** A path without a version is served with the newest definition of the action (the server
 takes the newest API version when the path has none). Three actions are called without one, on purpose, listed in
 `UNVERSIONED_ACTIONS` in `apiserver/client_generator/web_renderer.py` with the reason:
