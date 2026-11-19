@@ -1,8 +1,9 @@
 """Section 4 of docs/e2e_testing/E2E.md: git-managed and unmanaged code, as the run records it, and as a job checks it out.
 
 Repositories here are local: a bare remote on this machine, and a checkout of it. The GitHub-only rules (tokens
-for a repository on github.com, a private repository refused) need a GitHub App and a reachable repository; they are
-the github-marked tests, which need CAIRNML_E2E_GITHUB_REPO (and CAIRNML_E2E_GITHUB_PRIVATE_REPO for one of them).
+for a repository on github.com, a repository the App cannot read refused) need the GitHub App and a repository it is
+installed on; they are the github-marked tests, which need CAIRNML_E2E_GITHUB_REPO and the App's files (E2E.md). They only
+read: nothing is created in the GitHub repository.
 """
 
 import os
@@ -12,6 +13,7 @@ from pathlib import Path
 import pytest
 
 from support import git, jobs, workspace
+from support import github as github_support
 from support.api import ApiError
 from support.workspace import new_name, run_json
 
@@ -190,14 +192,18 @@ def _github_checkout(root: Path, repo: str) -> Path:
 
 
 @pytest.mark.github
-def test_private_repository_is_refused_at_clone_time(client_home, project, tmp_path):
-    """A repository the GitHub App cannot read: the job fails at its clone, with a message, and no token is logged.
+def test_a_repository_the_app_cannot_read_is_refused(client_home, project, github_app, tmp_path):
+    """A repository the GitHub App cannot read: the job fails with a message, and no token is logged.
 
-    Expect: The job fails at its clone with a message, and no token appears in the message.
+    The repository is CAIRNML_E2E_GITHUB_PRIVATE_REPO when set (a private repository the App is not installed on). Without
+    it, it is a repository that does not exist under the test repository's owner: GitHub answers the App with the same 404
+    for it as for a private repository the App is not installed on.
+
+    Expect: The job is Failed with a message, and no token appears in the message.
     """
-    repo = os.environ.get("CAIRNML_E2E_GITHUB_PRIVATE_REPO")
-    if not repo:
-        pytest.skip("set CAIRNML_E2E_GITHUB_PRIVATE_REPO to a repository this App cannot read")
+    repo = os.environ.get(github_support.PRIVATE_REPO_ENV) or (
+        f"{github_app.repo.split('/')[0]}/e2e-not-installed-{os.urandom(4).hex()}"
+    )
     checkout = _github_checkout(tmp_path, repo)
     run = run_json(
         client_home,
@@ -207,20 +213,18 @@ def test_private_repository_is_refused_at_clone_time(client_home, project, tmp_p
     jobs.enqueue(client_home, run["task_id"])
     api = workspace.device_api(client_home)
     record = jobs.wait_for(api, run["task_id"], jobs.FINAL)
-    assert record["status"] == "failed"
+    assert record["status"] == "failed", jobs.explain(api, run["task_id"], record)
+    assert record.get("status_message"), record
     assert "x-access-token" not in str(record.get("status_message", ""))
 
 
 @pytest.mark.github
-def test_a_client_device_cannot_get_a_repository_token(client_home, project, tmp_path):
+def test_a_client_device_cannot_get_a_repository_token(client_home, project, github_app, tmp_path):
     """Repository tokens go to a job or to its agent, never to a person's machine.
 
     Expect: The request for a repository token is refused with 401 or 403.
     """
-    repo = os.environ.get("CAIRNML_E2E_GITHUB_REPO")
-    if not repo:
-        pytest.skip("set CAIRNML_E2E_GITHUB_REPO to a repository the App can read")
-    checkout = _github_checkout(tmp_path, repo)
+    checkout = _github_checkout(tmp_path, github_app.repo)
     run = run_json(
         client_home,
         str(checkout / "job_script.py"),

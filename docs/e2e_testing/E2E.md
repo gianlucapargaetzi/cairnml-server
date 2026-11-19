@@ -30,9 +30,26 @@ tests/e2e/docker/run.sh --down                 # remove the environment: contain
   paragraph of its docstring; a test without one is listed as not written. The runner runs as the user who starts
   `run.sh`, so the folder is theirs on the host.
 - **Markers** (`tests/e2e/pytest.ini`): `agent`, `docker`, `ui`, `github`, `slow`, `restart`, `xdist_group`.
-- **GitHub tests.** `CAIRNML_E2E_GITHUB_REPO=owner/name` names a repository on github.com that the GitHub App can read;
-  `CAIRNML_E2E_GITHUB_PRIVATE_REPO=owner/name` names one it cannot. Without them, the `github` tests are skipped with that
-  reason.
+- **GitHub tests.** Eight tests need GitHub (marker `github`): two in `test_06_git.py` and the six dataset tests of
+  `test_07_datasets_models.py`. Without `CAIRNML_E2E_GITHUB_REPO` they are skipped, with the reason `needs a reachable GitHub
+  repository: set CAIRNML_E2E_GITHUB_REPO`. To run them, set:
+  - `CAIRNML_E2E_GITHUB_REPO=owner/name`, a repository on github.com that the GitHub App is installed on, with Contents and
+    Workflows set to read and write (the dataset tests publish to it). It is the owner's real repository: use one made for
+    this.
+  - `CAIRNML_E2E_GITHUB_APP_ID_FILE` and `CAIRNML_E2E_GITHUB_APP_KEY_FILE`, the paths of two files outside every repository:
+    the App's id and its private key (`.pem`). The suite adds the App to its stack as the company's App (`user_access.add_app`,
+    as the admin does in the web app) when the first github test of a module needs it, and removes it when the module ends.
+    The key is read only to be sent to the server; it is never printed or logged. Keep
+    the files private (mode 600).
+  - `CAIRNML_E2E_GITHUB_PRIVATE_REPO=owner/name` (optional), a private repository the App is not installed on. Without it the
+    test uses a name that does not exist under the same owner; GitHub answers the App with the same 404 for both.
+
+  What a run creates in the test repository: one branch, `e2e/e2e-<8 hex>/dataset`, with the two dataset commits (the
+  default branch is never touched, nothing is force-pushed). The dataset's files are not in GitHub: they go to the stack's
+  dataset bucket, which is removed with the stack. The branch is deleted when the module ends (`scripts/dataset_branch_delete.py`,
+  with the write token the server gives the dataset's owner), and the fixture fails the module if a branch under the prefix is
+  left. The server's record of the repository and the App are removed too. The `test_06_git.py` github tests only read.
+  A run that is killed can leave its branch: delete the branches under `e2e/` that are older than your run.
 
 `system.e2e_reset` removes the projects, tasks and workers whose name starts with the suite's prefix (`e2e`),
 with their contents. It is off unless the server's `apiserver.e2e.reset_enabled` is set, which only the suite's compose
@@ -152,7 +169,7 @@ Two services also listen on their own loopback ports, which the suite uses and c
   machine without a live agent of the deploy stack.
 - **Agents** are processes with their own `HOME`, device key and worker name; their jobs run in containers.
 - **GPU.** The isolated environment has no GPU runtime, so GPU checks are not covered.
-- **GitHub tests** need GitHub; they are skipped unless the repository variables are set.
+- **GitHub tests** need GitHub and the GitHub App; they are skipped unless `CAIRNML_E2E_GITHUB_REPO` is set (see "GitHub tests").
 
 ## How it is built
 
@@ -172,6 +189,7 @@ Two services also listen on their own loopback ports, which the suite uses and c
 | `support/client.py` | A person's machine: `client.init()` runs `cairnml init`, and `whoami`, `logout` and the key helpers. |
 | `support/agent.py` | A machine that runs jobs: `agent.init()` runs `cairnml-agent init`, and `AgentMachine` runs the managed daemon as a process, with the timers and the shared cache folders of the isolated environment. |
 | `support/git.py` | Local git repositories: a bare remote and a checkout of it. |
+| `support/github.py` | The test repository on github.com and the GitHub App's files, named by the environment; adds the App to the stack as the company's App. |
 | `support/workspace.py`, `support/jobs.py` | Running the example scripts and reading their JSON result (the last JSON line); enqueueing and following jobs. |
 | `support/report.py` | The report: one row per test, with its description, expectation, outcome and duration. |
 | `scripts/` | The example scripts the tests run. Each prints a JSON line at the end. They are written as user code, so they also serve as examples. |
@@ -190,8 +208,7 @@ Rules the suite follows:
 
 ## Known defects
 
-No defect is known to fail on `origin/main` as of 2026-11-19 (the dataset module in "Status of the last run" is an
-outdated test, not a defect). The owner-policy test that cairnml-server #3 covered
+No defect is known to fail on `origin/main` as of 2026-11-19. The owner-policy test that cairnml-server #3 covered
 (`test_05_artifacts.py::test_a_member_who_is_not_the_owner_cannot_delete_the_run`) passed on 2026-11-18, so its row was
 removed. Re-check it on the current server before recording it again.
 
@@ -200,23 +217,20 @@ removed. Re-check it on the current server before recording it again.
 
 ## Status of the last run
 
-2026-11-19, host run (see "Running on the host"), against `origin/main` of all four repositories: server `801ad947` (the
-suite from this change), SDK `6d0521b5`, agent `f4daf292`, web `6e73bf82`. The stack was reused (`CAIRNML_E2E_REUSE_STACK=1`).
+2026-11-19 and 2026-11-20, host run (see "Running on the host"), against `origin/main` of all four repositories: server
+`9e0a9ead` with the GitHub tests of this change, SDK `21688a48`, agent `6d3bd3ea`, web `7b011397`. The stack was reused
+(`CAIRNML_E2E_REUSE_STACK=1`).
 
-- Full suite: `1 failed, 117 passed, 2 skipped, 6 errors in 2253.71s (0:37:33)` (126 tests). The run before this change,
-  on the same trees: `3 failed, 99 passed, 2 skipped, 22 errors in 1079.83s (0:17:59)`. The longer time is the machine's load
-  that day and the long job-token test; it is not a slower suite.
-- The one failure, `test_12_web_runs.py::test_comparison_view_overlays_both_runs`, was not the "What's new" dialog (it was
-  dismissed): the test clicked the Compare view button by fixed coordinates, which no longer hit it. It now clicks the
-  button by its `data-id`. After that change `test_12_web_runs.py` alone: `9 passed in 112.47s`. The full run was not
-  repeated with this one change.
-- Skipped: the two `github` tests (`test_06_git.py`: `CAIRNML_E2E_GITHUB_REPO` is not set).
-
-Known, not fixed:
-
-- `test_07_datasets_models.py`, the six dataset tests (errors): the helper `scripts/dataset_make.py` still uses the
-  removed `remote add` flow (`DatasetError: no storage is chosen yet: run 'cairnml dataset remote add <url>' first`).
-  It needs a GitHub origin; rewrite pending. The two model tests of the module pass.
+- Full suite with `CAIRNML_E2E_GITHUB_REPO` set (and the App's files): `1 failed, 125 passed in 2627.88s (0:43:47)`
+  (126 tests). The six dataset tests and the two GitHub tests passed; no error. The one failure,
+  `test_14_job_token_renewal.py::test_a_job_longer_than_its_token_lifetime_completes_and_its_token_is_renewed`, waited 540 s
+  for a job that stayed `in_progress` after it had printed its result; it passed in the earlier full runs of the same trees
+  and uses no GitHub. It was not repeated on its own (the repeat's stack build failed in an `apt` step of the image), so it
+  is not explained.
+- `test_06_git.py` and `test_07_datasets_models.py` without the variable: `8 passed, 8 skipped in 332.60s`. The eight
+  skips are the six dataset tests and the two GitHub tests, each with the reason `needs a reachable GitHub repository: set
+  CAIRNML_E2E_GITHUB_REPO`; no error. The run before this change, on the same trees: `118 passed, 2 skipped, 6 errors`.
+- After the runs, the test repository held only `main`, no tag, no `e2e/` branch.
 
 What the rerun found and this change repaired: the agent of the suite started with `--queue default`, which the server
 refuses (an agent serves only the queue made at its enrolment), so every test that needs the job agent errored (the

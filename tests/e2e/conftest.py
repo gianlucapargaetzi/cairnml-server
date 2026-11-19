@@ -21,6 +21,7 @@ import pytest
 import requests
 
 from support import agent, client, jobs, settings, workspace
+from support import github as github_support
 from support.api import answers
 from support import report as e2e_report
 from support.keycloak import Keycloak
@@ -201,6 +202,16 @@ def job_agent(tmp_path_factory, admin_account, client_home):
     )
     yield machine
     machine.stop()
+
+
+@pytest.fixture(scope="module")
+def github_app(client_home):
+    """The owner's GitHub App, added to the stack as the company's App for the module's github tests and removed after.
+    Needs CAIRNML_E2E_GITHUB_REPO and the files named by CAIRNML_E2E_GITHUB_APP_ID_FILE and ..._APP_KEY_FILE (E2E.md)."""
+    api = workspace.device_api(client_home)
+    app = github_support.add_company_app(api, workspace.new_name("github-app"))
+    yield app
+    api.authed("user_access.delete", {"id": app.credential})
 
 
 @pytest.fixture(scope="session")
