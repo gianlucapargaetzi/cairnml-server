@@ -11,7 +11,9 @@ version. Comparing the contract at the base API version with the contract at the
   a new optional field, a new allowed value or a field that is no longer required is additive.
 
 A breaking change is allowed only when the API version is raised and the changelog has a section ``## API <head>``
-that names the endpoint. Run it from the repository root, against the commit to compare with::
+that names the endpoint. An endpoint whose request or response differs from its newest definition in the base needs a
+definition of its own labelled newer than that one, even for an additive change; comments and descriptions do not count.
+Run it from the repository root, against the commit to compare with::
 
     python -m apiserver.contract.evolution --base-ref origin/main
 """
@@ -234,9 +236,15 @@ def evaluate(changes: List[Change], base_api: str, head_api: str, changelog: str
     if section is None:
         return [f"the changelog has no section '## API {head_api}' for the breaking changes"]
     for c in breaking:
-        if c.endpoint not in section:
+        if not _names_endpoint(section, c.endpoint):
             problems.append(f"{c.endpoint}: {c.detail} is not named in the changelog section 'API {head_api}'")
     return problems
+
+
+def _names_endpoint(section: str, endpoint: str) -> bool:
+    """True when the changelog section names the endpoint as a whole, not as part of a longer name (``devices.exchange``
+    is not named by ``devices.exchange_all``)."""
+    return re.search(rf"(?<![\w.]){re.escape(endpoint)}(?!\w|\.\w)", section) is not None
 
 
 def _changelog_section(text: str, version: str) -> Optional[str]:
@@ -273,6 +281,23 @@ def _schema_from_ref(ref: str, destination: Path) -> Tuple[Path, str]:
     raise ValueError(f"no API version found in {ref}")
 
 
+def _change_without_definition(name: str, base: Endpoint, head: Endpoint, top: str) -> Optional[str]:
+    """The problem when the request or response of an endpoint differs from its newest definition in the base and no
+    definition of the head is labelled newer than that one. A definition that is the same as the one in effect is no
+    change; a comment or a description is not part of the contract, so it is no change either."""
+    if not base.versions:
+        return None
+    newest = max(base.versions, key=vkey)
+    if base.versions[newest].get("removed") is True:
+        return None
+    if any(vkey(version) > vkey(newest) for version in head.versions):
+        return None
+    after = effective(head, top)
+    if after is not None and not _block_changes(name, base.versions[newest], after, base.definitions, head.definitions):
+        return None
+    return f"{name} changed at API {top} without a definition labelled newer than {newest}"
+
+
 def assess(
     base: Dict[str, Endpoint], head: Dict[str, Endpoint], base_api: str, head_api: str, changelog: str
 ) -> Tuple[List[Change], List[str], str]:
@@ -291,14 +316,10 @@ def assess(
             check_definition_cap(name, head[name].versions)
         except ValueError as error:
             problems.append(str(error))
-    if vkey(top) > vkey(base_api):
-        # an endpoint whose definition changed at a raised version gets a definition labelled with that version
-        for name in sorted(set(base) & set(head)):
-            if top in head[name].versions:
-                continue
-            before, after = effective(base[name], base_api), effective(head[name], top)
-            if before is not None and after is not None and before != after:
-                problems.append(f"{name} changed at API {top} without a definition labelled {top} of its own")
+    for name in sorted(set(base) & set(head)):
+        problem = _change_without_definition(name, base[name], head[name], top)
+        if problem:
+            problems.append(problem)
     changes = diff(base, head, base_api, top)
     problems += evaluate(changes, base_api, top, changelog)
     return changes, problems, top

@@ -263,7 +263,7 @@ def test_an_edited_definition_at_a_raised_version_needs_a_definition_of_its_own(
     head = load_api(_write(tmp_path / "h", head_body))
     _, problems, top = assess(base, head, "2.41", "2.42", "## API 2.42\n- devices.exchange: changed\n")
     assert top == "2.42"
-    assert any("devices.exchange changed at API 2.42 without a definition labelled 2.42" in p for p in problems)
+    assert any("devices.exchange changed at API 2.42 without a definition labelled newer than 2.41" in p for p in problems)
 
 
 def test_a_new_definition_at_the_raised_version_is_the_way_to_change_an_endpoint(tmp_path):
@@ -306,3 +306,58 @@ def test_a_duplicate_definition_in_a_schema_file_stops_the_load(tmp_path):
     with pytest.raises(ValueError, match="two definitions of one version in one action: exchange 2.41"):
         load_api(_write(tmp_path / "d", body))
 
+
+
+IN_PLACE_EXTRA = BASE.replace(
+    "properties { token { type = string } }",
+    "properties { token { type = string }, note { type = string } }",
+)
+
+
+def test_an_additive_change_in_place_without_a_new_definition_fails_and_names_the_endpoint(tmp_path):
+    from apiserver.contract.evolution import assess
+
+    base = load_api(_write(tmp_path / "b", BASE))
+    head = load_api(_write(tmp_path / "h", IN_PLACE_EXTRA))
+    _, problems, top = assess(base, head, "2.41", "2.41", "")
+    assert top == "2.41"
+    assert any(
+        "devices.exchange changed at API 2.41 without a definition labelled newer than 2.41" in p for p in problems
+    ), problems
+
+
+def test_the_same_additive_change_with_a_newer_definition_passes(tmp_path):
+    from apiserver.contract.evolution import assess
+
+    head_body = IN_PLACE_EXTRA.replace(
+        'exchange {\n  "2.41" {',
+        'exchange {\n  "2.42" {\n    request { type = object, required = [assertion], properties { assertion { type = string } } }\n'
+        '    response { type = object, properties { token { type = string }, note { type = string } } }\n  }\n  "2.41" {',
+    )
+    base = load_api(_write(tmp_path / "b", BASE))
+    head = load_api(_write(tmp_path / "h", head_body))
+    _, problems, top = assess(base, head, "2.41", "2.42", "## API 2.42\n")
+    assert top == "2.42" and problems == [], problems
+
+
+def test_a_description_or_comment_only_change_in_place_passes(tmp_path):
+    from apiserver.contract.evolution import assess
+
+    head_body = BASE.replace(
+        "assertion { type = string }",
+        'assertion { type = string, description = "the assertion of the device" }',
+    ).replace("exchange {", "# a comment that is not part of the contract\nexchange {")
+    base = load_api(_write(tmp_path / "b", BASE))
+    head = load_api(_write(tmp_path / "h", head_body))
+    changes, problems, _ = assess(base, head, "2.41", "2.41", "")
+    assert changes == [] and problems == [], (changes, problems)
+
+
+def test_a_changelog_entry_must_name_the_endpoint_exactly(tmp_path):
+    head = BASE.replace("assertion { type = string }", "signed_assertion { type = string }").replace(
+        "required = [assertion]", "required = [signed_assertion]"
+    )
+    _, problems = _check(tmp_path, head, head_api="2.42", changelog="## API 2.42\n\n- devices.exchange_all: renamed\n")
+    assert problems and "devices.exchange: request.assertion: field removed is not named" in problems[0], problems
+    _, problems = _check(tmp_path, head, head_api="2.42", changelog="## API 2.42\n\n- devices.exchange: renamed\n")
+    assert problems == []

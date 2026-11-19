@@ -60,3 +60,14 @@ Whatever you choose, lines are subject to wrapping.
             -- sub bullet: this line's leading spaces are preserved
         """
     ```
+
+# Changing an endpoint
+
+Each endpoint keeps one definition (a version block) per version it changed at, at most 5 per endpoint. The definition in
+effect at a version is the newest block at or below it. To change the request or the response of an endpoint, add a
+definition labelled with a newer version than the newest one there is now, and give it the complete contract at that
+version. Editing the newest definition in place is refused by the API change check, even when the change only adds a
+field: clients of that version would receive a different contract under the same label. A change to a shared definition
+(a `_definitions` entry that the endpoint refers to) counts the same way, for every endpoint that refers to it.
+
+A description or a comment is not part of the contract and can be changed in place.
