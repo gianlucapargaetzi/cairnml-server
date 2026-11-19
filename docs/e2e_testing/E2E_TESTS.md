@@ -85,7 +85,7 @@ Section 2 of E2E.md. One task uploads every kind of artifact; each check reads i
 
 ## test_06_git.py: git-managed and unmanaged code
 
-Section 4 of E2E.md. The repositories are local (a bare remote and a checkout); the GitHub tests need GitHub.
+Section 4 of E2E.md. The repositories are local (a bare remote and a checkout); the two GitHub tests need GitHub and the GitHub App (E2E.md, "GitHub tests"), and only read.
 
 | Test | Checks |
 |---|---|
@@ -95,16 +95,16 @@ Section 4 of E2E.md. The repositories are local (a bare remote and a checkout); 
 | `test_checkout_without_a_remote_records_commit_but_no_url` | A checkout with no remote records its commit and no URL. |
 | `test_job_clones_the_recorded_commit_and_reports_it` | A job clones the recorded commit and reports it. |
 | `test_repository_on_github_is_refused_at_enqueue_without_the_app` | Enqueueing a github.com repository queues nothing and leaves the task Failed, with the reason "access refused" and a message that names GitHub. |
-| `test_private_repository_is_refused_at_clone_time` | **Skip** unless `CAIRNML_E2E_GITHUB_PRIVATE_REPO` is set. A job whose repository the App cannot read fails at clone, with no token in its message. |
-| `test_a_client_device_cannot_get_a_repository_token` | **Skip** unless `CAIRNML_E2E_GITHUB_REPO` is set. A person's machine gets no repository token. |
+| `test_a_repository_the_app_cannot_read_is_refused` | **Skip** unless `CAIRNML_E2E_GITHUB_REPO` is set. A job whose repository the App cannot read (`CAIRNML_E2E_GITHUB_PRIVATE_REPO`, or a name that does not exist under the test repository's owner) is Failed with a message, and no token is in the message. |
+| `test_a_client_device_cannot_get_a_repository_token` | **Skip** unless `CAIRNML_E2E_GITHUB_REPO` is set. A person's machine gets no repository token for a repository the App can read. |
 
 ## test_07_datasets_models.py: datasets and models
 
-Section 7 of E2E.md. Each step runs in its own process.
+Section 7 of E2E.md. Each step runs in its own process. The six dataset tests publish to the test repository on GitHub (a branch under `e2e/`, removed afterwards) and are skipped unless `CAIRNML_E2E_GITHUB_REPO` is set; the model tests need no GitHub.
 
 | Test | Checks |
 |---|---|
-| `test_dataset_is_published_in_two_versions` | A native dataset repository is published twice (the second through a branch); the second commit lacks the image that was removed. |
+| `test_dataset_is_published_in_two_versions` | A native dataset is published twice to a branch of the test repository; the second commit lacks the image that was removed. |
 | `test_second_machine_gets_the_same_files_and_hashes` | `Dataset.get` in another process gives the same files with the same hashes, for both commits. |
 | `test_an_older_version_keeps_its_deleted_file` | The first commit still has the file the second one removed. |
 | `test_a_run_records_the_dataset_it_used` | The run has the repository, commit and content hash under `Datasets/<alias>`. |
