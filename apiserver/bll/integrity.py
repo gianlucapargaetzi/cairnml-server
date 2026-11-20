@@ -10,12 +10,14 @@ from apiserver.database.model.auth import AuthUser
 from apiserver.database.model.datachunk import Datachunk
 from apiserver.database.model.device import Device
 from apiserver.database.model.project import Project
-from apiserver.database.model.repository import Assignment, Repository
+from apiserver.database.model.repository import Assignment, Repository, RepositoryCheck
 from apiserver.database.model.share import Share
 from apiserver.database.model.task.task import Task
 from apiserver.database.model.user_access import UserAccess
 
-# (kind, referencing model, field, referenced model). An empty value means "no reference" and is not checked.
+# (kind, referencing model, field, referenced model[, filter]). An empty value means "no reference" and is not checked.
+# The optional filter is a query on the referencing records: only those that match are checked. A revoked device is kept
+# as audit history when its owner is deleted, so it may name a user who is gone; a live device may not.
 REFERENCES = (
     ("assignment.repository", Assignment, "repository", Repository),
     ("assignment.credential", Assignment, "credential", UserAccess),
@@ -23,7 +25,8 @@ REFERENCES = (
     ("share.project", Share, "project", Project),
     ("share.user", Share, "user", AuthUser),
     ("user_access.user", UserAccess, "user", AuthUser),
-    ("device.user", Device, "user", AuthUser),
+    ("repository_check.user", RepositoryCheck, "user", AuthUser),
+    ("device.user", Device, "user", AuthUser, {"revoked": False}),
     ("datachunk.task", Datachunk, "task", Task),  # a staged datachunk has no task and is not an orphan
     ("datachunk.project", Datachunk, "project", Project),
 )
@@ -33,8 +36,9 @@ def find_orphans(company: str) -> Dict[str, List[str]]:
     """The ids of the referencing records of the company whose referenced record is missing, per kind.
     Kinds with no orphan are left out, so an empty dict means no orphan at all."""
     found = {}
-    for kind, model, field, target in REFERENCES:
-        records = model.objects(company=company, **{f"{field}__nin": ["", None]}).only("id", field)
+    for kind, model, field, target, *only_where in REFERENCES:
+        query = only_where[0] if only_where else {}
+        records = model.objects(company=company, **{f"{field}__nin": ["", None]}, **query).only("id", field)
         values = {getattr(record, field) for record in records}
         if not values:
             continue
