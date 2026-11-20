@@ -14,6 +14,7 @@ from apiserver.database.model.auth import AuthUser
 from apiserver.database.model.project import Project, ProjectMember, ProjectRole
 from apiserver.database.model.repository import Assignment, RegistryEntry, Repository, RepositoryCheck
 from apiserver.database.model.share import Share
+from apiserver.database.model.user import UserProfile
 from apiserver.database.model.user_access import UserAccess
 from apiserver.idp import git_credentials as store
 from apiserver.tests.db import ensure_db
@@ -83,7 +84,17 @@ def world(monkeypatch):
     _patch(monkeypatch, "_company_reach", lambda repo: state.reach)
     monkeypatch.setattr(user_access, "company_apps", lambda company=None: state.apps)
     yield state
-    for model in (Repository, RegistryEntry, Assignment, RepositoryCheck, Share, UserAccess, Project, AuthUser):
+    for model in (
+        Repository,
+        RegistryEntry,
+        Assignment,
+        RepositoryCheck,
+        Share,
+        UserAccess,
+        Project,
+        UserProfile,
+        AuthUser,
+    ):
         model.objects(company=company).delete()
 
 
@@ -981,22 +992,146 @@ def test_deleting_a_project_leaves_no_orphan(world):
     assert find_orphans(world.company) == {}
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="real orphan (issue #314): AuthBLL.delete_user removes the AuthUser but not the user's assignments "
-    "(assignment.user) or credentials (user_access.user); production fix not in this change",
-)
+def delete_user(world, user, actor="root"):
+    """The reachable user delete: users.delete (system and root only) calls UserBLL.delete."""
+    from apiserver.bll.user import UserBLL
+    from apiserver.database.model.user import UserProfile
+
+    if not UserProfile.objects(id=user).first():
+        UserProfile(id=user, company=world.company, name=user.title(), created=datetime.utcnow()).save()
+    UserBLL.delete(user, actor=actor)
+
+
 def test_deleting_a_user_leaves_no_orphan(world):
-    from apiserver.bll.auth import AuthBLL
     from apiserver.bll.integrity import find_orphans
-    from apiserver.service_repo.auth.identity import Identity
+    from apiserver.database.model.user import UserProfile
 
     credential(world, "mine", "member")
     repo = use(world)
     bll.assign(world.company, "member", repo.id, "mine")
-    AuthBLL.delete_user(Identity("admin", world.company, "admin"), "member", world.company)
-    assert not AuthUser.objects(id="member").first()
+    delete_user(world, "member")
+    assert not UserProfile.objects(id="member").first()
+    assert not UserAccess.objects(company=world.company, user="member")
+    assert not Assignment.objects(company=world.company, user="member")
+    # users.delete does not remove the login record; once that is gone too nothing may point at the user
+    AuthUser.objects(id="member").delete()
     assert find_orphans(world.company) == {}
+
+
+def test_deleting_a_user_removes_their_credentials_assignments_and_none_needed(world, monkeypatch):
+    from apiserver.bll.integrity import find_orphans
+
+    _patch(monkeypatch, "anonymous", lambda *args, **kwargs: True)
+    credential(world, "mine", "member")
+    credential(world, "second", "member", kind="token")
+    credential(world, "theirs", "other")
+    first = use(world)
+    second = use(world, url=URL + "-2")
+    third = use(world, user="other", url=URL + "-3", project=world.other_root)
+    bll.assign(world.company, "member", first.id, "mine")
+    bll.assign(world.company, "member", second.id, none_needed=True)
+    bll.assign(world.company, "other", third.id, "theirs")
+    delete_user(world, "member")
+    assert not UserAccess.objects(company=world.company, user="member")
+    assert not Assignment.objects(company=world.company, user="member")
+    assert UserAccess.objects(id="theirs").first() is not None
+    assert Assignment.objects(company=world.company, user="other", credential="theirs").count() == 1
+    assert find_orphans(world.company) == {}
+
+
+def test_deleting_a_user_keeps_a_company_credential_that_others_use(world):
+    from apiserver.bll.integrity import find_orphans
+
+    credential(world, "company", "admin", scope="company")
+    repo = use(world)
+    bll.assign(world.company, "member", repo.id, "company")
+    bll.assign(world.company, "owner", repo.id, "company")
+    delete_user(world, "member")
+    # the deleted user's own assignment is gone; the credential and the other user's assignment are untouched and usable
+    assert not Assignment.objects(company=world.company, user="member")
+    assert UserAccess.objects(id="company").first() is not None
+    assert Assignment.objects(company=world.company, user="owner", credential="company").count() == 1
+    resolution = bll.resolve(bll.get(world.company, repo.id), None, "owner")
+    assert resolution.state == bll.ASSIGNED and resolution.entry.id == "company"
+    assert find_orphans(world.company) == {}
+
+
+def test_a_company_credential_of_a_deleted_admin_passes_to_another_admin_of_the_company(world):
+    from apiserver.bll.integrity import find_orphans
+
+    AuthUser(id="admin2", name="Admin2", company=world.company, role="admin", created=datetime.utcnow()).save()
+    credential(world, "company", "admin2", scope="company")
+    repo = use(world)
+    bll.assign(world.company, "member", repo.id, "company")
+    delete_user(world, "admin2")
+    entry = UserAccess.objects(id="company").first()
+    assert entry is not None and entry.user == "admin"
+    assert Assignment.objects(company=world.company, user="member", credential="company").count() == 1
+    assert find_orphans(world.company) == {}
+
+
+def test_a_company_credential_stays_when_no_other_admin_is_left_to_take_it(world, caplog):
+    credential(world, "company", "admin", scope="company")
+    repo = use(world)
+    bll.assign(world.company, "member", repo.id, "company")
+    with caplog.at_level("WARNING"):
+        delete_user(world, "admin")
+    # the credential and the assignment of another user stay usable; the reference to the missing admin is logged
+    assert UserAccess.objects(id="company").first() is not None
+    assert Assignment.objects(company=world.company, user="member", credential="company").count() == 1
+    assert "no admin is left" in caplog.text
+
+
+def test_the_stored_secrets_of_a_deleted_user_are_no_longer_in_the_database(world):
+    credential(world, "mine", "member")
+    credential(world, "theirs", "other")
+    mine = UserAccess.objects(id="mine").first().secret
+    theirs = UserAccess.objects(id="theirs").first().secret
+    collection = UserAccess._get_collection()
+    assert collection.count_documents({"secret": mine}) == 1
+    delete_user(world, "member")
+    assert collection.count_documents({"secret": mine}) == 0
+    assert collection.count_documents({"user": "member"}) == 0
+    assert collection.count_documents({"secret": theirs}) == 1  # another user's secret stays
+
+
+def test_a_deactivated_user_is_deleted_with_their_records(world):
+    credential(world, "mine", "member")
+    repo = use(world)
+    bll.assign(world.company, "member", repo.id, "mine")
+    AuthUser.objects(id="member").update(idp_disabled=True)
+    delete_user(world, "member")
+    assert not UserProfile.objects(id="member").first()
+    assert not UserAccess.objects(id="mine").first()
+    assert not Assignment.objects(company=world.company, user="member")
+
+
+def test_a_failed_cleanup_keeps_the_user_so_that_the_delete_can_be_repeated(world, monkeypatch):
+    credential(world, "mine", "member")
+    repo = use(world)
+    bll.assign(world.company, "member", repo.id, "mine")
+
+    def failing_delete(self, *args, **kwargs):
+        raise RuntimeError("the database refused the delete")
+
+    with monkeypatch.context() as patched:
+        patched.setattr(UserAccess, "delete", failing_delete)
+        with pytest.raises(Exception, match="refused"):
+            delete_user(world, "member")
+    assert UserProfile.objects(id="member").first() is not None
+    delete_user(world, "member")
+    assert not UserProfile.objects(id="member").first()
+    assert not UserAccess.objects(id="mine").first()
+    assert not Assignment.objects(company=world.company, user="member")
+
+
+def test_deleting_an_unknown_user_changes_nothing(world):
+    from apiserver.bll.user import UserBLL
+
+    credential(world, "mine", "member")
+    with pytest.raises(errors.bad_request.InvalidUserId):
+        UserBLL.delete("nobody")
+    assert UserAccess.objects(id="mine").first() is not None
 
 
 def test_a_failing_credential_delete_leaves_no_orphan_and_keeps_the_credential(world, monkeypatch):

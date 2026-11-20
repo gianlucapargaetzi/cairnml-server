@@ -103,34 +103,3 @@ class AuthBLL:
                 raise errors.server_error.GeneralError("failed adding new user", ex=str(ex)) from ex
 
             return user.id
-
-    @staticmethod
-    def delete_user(identity: Identity, user_id: str, company_id: str = None, call: APICall = None):
-        """
-        Delete an existing user from both the auth database and the backend database
-        :param identity: Calling user identity
-        :param user_id: ID of user to delete
-        :param company_id: Company of user to delete
-        :param call: API call that triggered this call. If not None, backend user deletion
-        will be performed using a new call in the same transaction.
-        """
-        if user_id == identity.user:
-            raise errors.bad_request.FieldsValueError("cannot delete yourself", user=user_id)
-
-        if not company_id:
-            company_id = identity.company
-
-        if identity.role not in Role.get_system_roles() and company_id != identity.company:
-            raise errors.bad_request.FieldsNotAllowedForRole(
-                "must be empty or your own company", role=identity.role, field="company"
-            )
-
-        with translate_errors_context():
-            query = dict(id=user_id, company=company_id)
-            res = AuthUser.objects(**query).delete()
-            if not res:
-                raise errors.bad_request.InvalidUserId(**query)
-        try:
-            UserBLL.delete(user_id)
-        except Exception as ex:
-            log.error(f"Exception calling users.delete: {str(ex)}")

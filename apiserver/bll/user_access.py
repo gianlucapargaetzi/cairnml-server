@@ -191,10 +191,37 @@ def server_app():
 def delete(company: str, user: str, access_id: str, is_admin: bool = False) -> None:
     access.refuse_inactive(user)
     entry = _owned_or_company(company, user, access_id, is_admin)
-    # assignments first: a failure in between leaves an unused credential, never an assignment to a missing one
-    Assignment.objects(company=company, credential=entry.id).delete()
-    entry.delete()
+    _remove(entry)
     audit(user, "user_access.deleted", company=company, kind=entry.kind)
+
+
+def _remove(entry: UserAccess) -> None:
+    # assignments first: a failure in between leaves an unused credential, never an assignment to a missing one
+    Assignment.objects(company=entry.company, credential=entry.id).delete()
+    entry.delete()
+
+
+def drop_user_records(company: str, user: str, actor: str, successor: Optional[str]) -> None:
+    """What the access records of a user become when the user is deleted: the user's own credentials are deleted (with the
+    assignments of each, as ``delete`` does, so the stored secrets go too) and so is every other assignment the user holds
+    (to a company credential, or "None needed"). The company's GitHub Apps that the user added are not the user's: other
+    users read repositories with them, so they stay and pass to ``successor``, who is their owner from now on. Nobody
+    else's assignment is touched. Nothing here checks whether the user is active: a deactivated user is deleted too.
+    Each step can be repeated, so a failure leaves a user that can be deleted again."""
+    for entry in list(UserAccess.objects(company=company, user=user, scope="user")):
+        _remove(entry)
+        audit(actor, "user_access.deleted", company=company, kind=entry.kind, owner=user)
+    Assignment.objects(company=company, user=user).delete()
+    company_entries = UserAccess.objects(company=company, user=user, scope="company")
+    if successor is None:
+        for entry in company_entries:
+            log.warning(
+                "the company access %s names the deleted user %s: no admin is left to take it over", entry.id, user
+            )
+        return
+    for entry in list(company_entries):
+        entry.update(set__user=successor, set__updated=datetime.utcnow())
+        audit(actor, "user_access.handed_over", company=company, kind=entry.kind, owner=user, successor=successor)
 
 
 def check(company: str, user: str, access_id: str, is_admin: bool = False) -> dict:
