@@ -133,8 +133,8 @@ def create(call: APICall, _, request: CreateRequest):
 
 
 @endpoint("users.delete")
-def delete(_: APICall, __, request: UserRequest):
-    UserBLL.delete(request.user)
+def delete(call: APICall, _, request: UserRequest):
+    UserBLL.delete(request.user, actor=call.identity.user)
 
 
 def update_user(user_id, company_id, data: dict) -> Tuple[int, dict]:
