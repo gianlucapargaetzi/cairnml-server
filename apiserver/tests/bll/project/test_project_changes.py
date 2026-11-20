@@ -34,13 +34,14 @@ def test_x3_update_of_a_name_only_touches_the_tag_cache_and_calls_project_time_w
     )
 
 
-def test_x3_update_that_moves_a_task_resets_both_projects_and_bumps_only_the_new_one():
+# intended, see #312
+def test_x3_update_that_moves_a_task_resets_both_projects_and_bumps_both_projects():
     effects = plan_task_write("src", {"project": "dst"}, updated=1)
 
     assert effects == ProjectEffects(
         reset_projects=("dst", "src"),
         update_tags=None,
-        project_time=("dst",),
+        project_time=("dst", "src"),
         record_repository=True,
     )
 
@@ -64,12 +65,13 @@ def test_x3_edit_on_the_same_project_invalidates_only_its_own_project():
     )
 
 
-def test_x3_edit_that_moves_a_task_resets_both_projects_but_bumps_only_the_new_one():
+# intended, see #312
+def test_x3_edit_that_moves_a_task_resets_both_projects_and_bumps_both_projects():
     effects = plan_task_write("src", {"project": "dst", "last_change": "now"}, updated=1)
 
     assert effects.reset_projects == ("dst", "src")
     assert effects.update_tags is None
-    assert effects.project_time == ("dst",)
+    assert effects.project_time == ("dst", "src")
     assert effects.record_repository is True
 
 

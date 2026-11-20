@@ -506,6 +506,13 @@ def _reset_cached_tags(company: str, projects: Sequence[str]):
     org_bll.reset_tags(company, Tags.Task, projects=projects)
 
 
+def _reset_cached_tags_of_tasks(company_id: str, ids: Sequence[str]) -> None:
+    """Resets the tag cache of the projects of these tasks. A visibility change moves their tags in or out of the
+    company's view, so the cache of their projects is invalidated (#312)."""
+    projects = {t.project for t in Task.objects(id__in=ids).only("project") if t.project}
+    _reset_cached_tags(company_id, projects=list(projects))
+
+
 def _record_repository(company_id: str, user: str, task) -> None:
     """The repository a saved task names is recorded for the task's project (bll/repository_runs.record_script); a failure never
     refuses the save. ``task`` is the task, or its id."""
@@ -1152,6 +1159,7 @@ def make_public(call: APICall, company_id, request: MakePublicRequest):
         invalid_cls=InvalidTaskId,
         enabled=True,
     )
+    _reset_cached_tags_of_tasks(company_id, request.ids)
 
 
 @endpoint("tasks.make_private", request_data_model=MakePublicRequest)
@@ -1164,6 +1172,7 @@ def make_private(call: APICall, company_id, request: MakePublicRequest):
         invalid_cls=InvalidTaskId,
         enabled=False,
     )
+    _reset_cached_tags_of_tasks(company_id, request.ids)
 
 
 @endpoint("tasks.move", request_data_model=MoveRequest)

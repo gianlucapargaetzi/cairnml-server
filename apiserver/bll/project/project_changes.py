@@ -45,9 +45,10 @@ def plan_task_write(old_project: Optional[str], written: dict, updated: int) -> 
     """tasks.update and tasks.edit share this plan: `written` is the dict of the fields the write set, `updated` the
     count the write reported. Nothing changed means nothing to do.
 
-    - a move (the written project differs from the old one) resets the tag cache of both projects, new first
+    - a move (the written project differs from the old one) resets the tag cache of both projects, new first, and
+      bumps the project time of both, new first (#312)
     - otherwise only the written tag fields of the old project are invalidated
-    - the project time is set for the new project only, and only when the write named a project (else None)
+    - without a move the project time is set for the project the write named, if any (else None)
     """
     if not updated:
         return ProjectEffects()
@@ -56,7 +57,7 @@ def plan_task_write(old_project: Optional[str], written: dict, updated: int) -> 
     if new_project != old_project:
         return ProjectEffects(
             reset_projects=(new_project, old_project),
-            project_time=(written.get("project"),),
+            project_time=(new_project, old_project),
             record_repository=True,
         )
     return ProjectEffects(

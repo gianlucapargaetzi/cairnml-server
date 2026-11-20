@@ -459,9 +459,9 @@ def test_update_tags_on_the_same_project_invalidates_only_its_own_project(compan
     assert bookkeeping.update_tags == [{"project": "root1", "tags": ["fresh"], "system_tags": None}]
 
 
-# suspect: pinned as is, see the decision issue (#282)
-def test_update_that_moves_a_task_resets_both_projects_but_bumps_only_the_new_one(company, bookkeeping):
-    # The old project's time is not bumped by update, while update_batch and move bump both. Pinned as it is
+# intended, see #312
+def test_update_that_moves_a_task_resets_both_projects_and_bumps_both(company, bookkeeping):
+    # update bumps the time of the old and the new project, as update_batch and move do (see #312)
     make_root(company, id_="src", owner="owner1")
     make_root(company, id_="dst", owner="owner1")
     make_task(company, "src", "owner1")
@@ -472,13 +472,13 @@ def test_update_that_moves_a_task_resets_both_projects_but_bumps_only_the_new_on
     )
     assert _as_set(bookkeeping.reset[0]) == _as_set(["dst", "src"])
     assert bookkeeping.update_tags == []
-    assert bookkeeping.project_time == ["dst"]
+    assert bookkeeping.project_time == ["dst", "src"]
     assert bookkeeping.repository == ["task1"]
 
 
-# suspect: pinned as is, see the decision issue (#282)
-def test_edit_that_moves_a_task_resets_both_projects_but_bumps_only_the_new_one(company, bookkeeping):
-    # Same as update: the old project's time is not bumped. Pinned as it is
+# intended, see #312
+def test_edit_that_moves_a_task_resets_both_projects_and_bumps_both(company, bookkeeping):
+    # Same as update: the old and the new project's time are bumped (see #312)
     make_root(company, id_="src", owner="owner1")
     make_root(company, id_="dst", owner="owner1")
     make_task(company, "src", "owner1")
@@ -491,7 +491,7 @@ def test_edit_that_moves_a_task_resets_both_projects_but_bumps_only_the_new_one(
         UpdateRequest(task="task1"),
     )
     assert _as_set(bookkeeping.reset[0]) == _as_set(["dst", "src"])
-    assert bookkeeping.project_time == ["dst"]
+    assert bookkeeping.project_time == ["dst", "src"]
     assert bookkeeping.repository == ["task1"]
 
 

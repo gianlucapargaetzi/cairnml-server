@@ -610,7 +610,7 @@ def test_legacy_write_at_2_8_converts_the_parameters(company):
 
 def test_execution_model_desc_has_no_write_path_below_2_9_but_is_copied_back_on_read():
     # U2: a pre-2.9 client's model_desc is not converted on write, while the configuration is copied back on read.
-    # suspect: pinned as is, see the decision issue (#282)
+    # intended, see #313
     fields = {"execution": {"model_desc": {"x": "1"}}}
 
     tasks_service.prepare_for_save(_call("2.1"), fields)
