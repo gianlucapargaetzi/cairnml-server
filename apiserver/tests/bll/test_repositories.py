@@ -10,7 +10,9 @@ import pytest
 from apiserver.apierrors import errors
 from apiserver.bll import user_access
 from apiserver.bll import access, repositories as bll
+from apiserver.database.model.audit import AuditEvent
 from apiserver.database.model.auth import AuthUser
+from apiserver.database.model.device import Device
 from apiserver.database.model.project import Project, ProjectMember, ProjectRole
 from apiserver.database.model.repository import Assignment, RegistryEntry, Repository, RepositoryCheck
 from apiserver.database.model.share import Share
@@ -90,10 +92,12 @@ def world(monkeypatch):
         Assignment,
         RepositoryCheck,
         Share,
+        Device,
         UserAccess,
         Project,
         UserProfile,
         AuthUser,
+        AuditEvent,
     ):
         model.objects(company=company).delete()
 
@@ -1009,6 +1013,21 @@ def test_deleting_a_user_leaves_no_orphan(world):
     credential(world, "mine", "member")
     repo = use(world)
     bll.assign(world.company, "member", repo.id, "mine")
+    # the user also has a share granted to them, a device and a repository check
+    now = datetime.utcnow()
+    Share(
+        id=uuid4().hex,
+        company=world.company,
+        resource_type="queue",
+        resource_id="queue-1",
+        scope="user",
+        user="member",
+        level="read",
+        granted_by="admin",
+        created=now,
+    ).save()
+    Device(id=uuid4().hex, user="member", company=world.company, public_key="pem", created=now).save()
+    RepositoryCheck(id=uuid4().hex, company=world.company, repository=repo.id, user="member", checked=now).save()
     delete_user(world, "member")
     assert not UserProfile.objects(id="member").first()
     assert not UserAccess.objects(company=world.company, user="member")
@@ -1016,6 +1035,22 @@ def test_deleting_a_user_leaves_no_orphan(world):
     # users.delete does not remove the login record; once that is gone too nothing may point at the user
     AuthUser.objects(id="member").delete()
     assert find_orphans(world.company) == {}
+
+
+def test_a_live_device_of_a_missing_user_is_an_orphan_and_a_revoked_one_is_not(world):
+    """A revoked device stays as audit history, so it may name a user who is gone; a live one may not."""
+    from apiserver.bll.integrity import find_orphans
+
+    live = Device(id=uuid4().hex, user="ghost", company=world.company, public_key="pem").save()
+    Device(id=uuid4().hex, user="ghost", company=world.company, public_key="pem", revoked=True).save()
+    assert find_orphans(world.company) == {"device.user": [live.id]}
+
+
+def test_a_repository_check_of_a_missing_user_is_an_orphan(world):
+    from apiserver.bll.integrity import find_orphans
+
+    check = RepositoryCheck(id=uuid4().hex, company=world.company, repository="r-any", user="ghost").save()
+    assert find_orphans(world.company) == {"repository_check.user": [check.id]}
 
 
 def test_deleting_a_user_removes_their_credentials_assignments_and_none_needed(world, monkeypatch):
