@@ -136,6 +136,14 @@ def update_task_fields(
     return WriteOutcome(updated=updated_count, fields=updated_fields)
 
 
+def validate_choices(fields: dict) -> None:
+    """The choices of the fields that tasks.edit writes. save() (tasks.create) checks them through the document; the
+    edit writes with an update, which does not, so they are checked here with the same validation error (#311)."""
+    for key in ("status", "type"):
+        if key in fields:
+            Task._fields[key]._validate(fields[key])
+
+
 def edit_task_fields(
     ctx: WriteContext,
     task_id: str,
@@ -156,6 +164,7 @@ def edit_task_fields(
         raise errors.bad_request.InvalidTaskStatus(expected=TaskStatus.created, status=task.status)
 
     fields = prepare(task)
+    validate_choices(fields)
 
     entity_access.assert_destination_project(ctx.identity, task, fields)
 

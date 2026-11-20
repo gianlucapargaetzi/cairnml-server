@@ -100,7 +100,12 @@ def legacy_params_on_write(requested_version: PartialVersion, fields: dict, prev
 def legacy_params_copied_back_on_read(requested_version: PartialVersion) -> bool:
     """
     Whether the hyperparams and configuration are copied back to the legacy execution fields on read, only for a
-    request below LEGACY_PARAMS_BELOW
+    request below LEGACY_PARAMS_BELOW.
+
+    The copy-back of the configuration is execution.model_desc, and it is one way only: below 2.9 a client can read
+    model_desc but not write it. Unlike execution.parameters (converted on write by legacy_params_on_write), model_desc
+    has no write conversion. Decided on 2026-11-20 (cairnml-server#282, decision 7; issue #313): no known client writes
+    it, and the pre-2.41 SDK passes its checks without a write path. Documented in documentation/api_versions.md.
     """
     return requested_version < LEGACY_PARAMS_BELOW
 

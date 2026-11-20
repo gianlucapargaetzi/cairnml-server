@@ -79,6 +79,7 @@ def params_unprepare_from_saved(fields, copy_to_legacy=False):
     if copy_to_legacy:
         for new_params_field, old_params_field, use_sections in (
             ("hyperparams", ("execution", "parameters"), True),
+            # read only below 2.9: model_desc has no write conversion, decided in #313 (see bll/task/compat.py)
             ("configuration", ("execution", "model_desc"), False),
         ):
             legacy_params = _get_legacy_params(fields.get(new_params_field), with_sections=use_sections)

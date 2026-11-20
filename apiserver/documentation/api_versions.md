@@ -26,3 +26,13 @@
 | v1.1    | 2.15       |
 | v1.0    | 2.14       |
 | v0.17   | 2.13       |
+
+### Below API version 2.9: `execution.model_desc`
+
+A client below 2.9 can read `execution.model_desc`: the configuration is copied back to it on read. It cannot write it.
+Unlike `execution.parameters`, which is converted into hyperparams on write, `model_desc` has no write conversion, so
+a value a client sends in it is stored where the client put it and creates no configuration.
+
+This is a decision, not an oversight (cairnml-server#282, decision 7, issue #313, decided on 2026-11-20). No known client
+writes `model_desc`, and the pre-2.41 SDK passes its checks without a write path. Clients that set the configuration
+use the `configuration` field of API version 2.9 or later. The rule is in `bll/task/compat.py`.

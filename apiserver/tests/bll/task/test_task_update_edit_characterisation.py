@@ -307,8 +307,8 @@ def test_update_validates_tag_prefix_only_when_tags_are_sent(company, side_effec
         run_update(company, "u1", {"task": "task1", "tags": ["__$x"]})
 
 
-# suspect: pinned as is, see the decision issue (#282)
-def test_update_move_resets_tags_for_both_projects_and_stamps_new_project_time_only(company, side_effects):  # U11
+# intended, see #312
+def test_update_move_resets_tags_for_both_projects_and_bumps_both_project_times(company, side_effects):  # U11
     make_root(company, id_="root1", owner="owner1", members=[("u2", ProjectRole.collaborator)])
     make_root(company, id_="root2", owner="owner1", members=[("u2", ProjectRole.collaborator)])
     make_task(company, "root1", "owner1")
@@ -316,8 +316,8 @@ def test_update_move_resets_tags_for_both_projects_and_stamps_new_project_time_o
     assert Task.objects.get(id="task1").project == "root2"
     side_effects.org.reset_tags.assert_called_once()
     assert side_effects.org.reset_tags.call_args.kwargs["projects"] == ["root2", "root1"]
-    # The old project's time is not stamped.
-    side_effects.project_time.assert_called_once_with("root2")
+    # The old project's time is bumped too, as the batch and move plans bump both (see #312)
+    assert side_effects.project_time.call_args_list == [mock.call("root2"), mock.call("root1")]
 
 
 # suspect: pinned as is, see the decision issue (#282)
@@ -446,18 +446,22 @@ def test_edit_can_set_status_on_a_created_task(company, side_effects):  # E4
     assert not queue_bll.mock_calls
 
 
-# suspect: pinned as is, see the decision issue (#282)
-def test_edit_stores_a_status_outside_the_choices(company, side_effects):  # E5
+# intended, see #311
+def test_edit_refuses_a_status_outside_the_choices(company, side_effects):  # E5
     setup_owned(company)
-    run_edit(company, "u1", {"task": "task1", "status": "bogus"}, force=True)
-    assert raw()["status"] == "bogus"
+    with pytest.raises(errors.bad_request.DataValidationError) as exc:
+        run_edit(company, "u1", {"task": "task1", "status": "bogus"}, force=True)
+    assert set(exc.value.error_data) == {"status"}
+    assert raw()["status"] == TaskStatus.created
 
 
-# suspect: pinned as is, see the decision issue (#282)
-def test_edit_stores_a_type_outside_the_choices(company, side_effects):  # E6
+# intended, see #311
+def test_edit_refuses_a_type_outside_the_choices(company, side_effects):  # E6
     setup_owned(company)
-    run_edit(company, "u1", {"task": "task1", "type": "bogus"})
-    assert raw()["type"] == "bogus"
+    with pytest.raises(errors.bad_request.DataValidationError) as exc:
+        run_edit(company, "u1", {"task": "task1", "type": "bogus"})
+    assert set(exc.value.error_data) == {"type"}
+    assert raw()["type"] == "training"
 
 
 # suspect: pinned as is, see the decision issue (#282)
@@ -543,14 +547,15 @@ def test_edit_sets_last_update_only_for_non_user_fields(company, side_effects): 
     assert raw().get("last_update") is not None
 
 
-def test_edit_move_resets_both_tag_caches_and_stamps_new_project_time(company, side_effects):  # E14
+# intended, see #312
+def test_edit_move_resets_both_tag_caches_and_bumps_both_project_times(company, side_effects):  # E14
     make_root(company, id_="src", members=[("u2", ProjectRole.collaborator)])
     make_root(company, id_="dst", members=[("u2", ProjectRole.collaborator)])
     make_task(company, "src", "u2")
     run_edit(company, "u2", {"task": "task1", "project": "dst"})
     assert Task.objects.get(id="task1").project == "dst"
     assert side_effects.org.reset_tags.call_args.kwargs["projects"] == ["dst", "src"]
-    side_effects.project_time.assert_called_once_with("dst")
+    assert side_effects.project_time.call_args_list == [mock.call("dst"), mock.call("src")]
 
 
 def test_edit_move_without_admin_is_refused(company, side_effects):  # E15

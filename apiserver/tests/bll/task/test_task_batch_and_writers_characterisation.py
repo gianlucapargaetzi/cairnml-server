@@ -542,7 +542,7 @@ def test_update_tags_invalidates_tag_cache_for_the_projects(company):
 # ---------------------------------------------------------------------------------------------------------------------
 
 
-# suspect: pinned as is, see the decision issue (#282)
+# intended, see #312
 def test_make_public_flips_company_and_stamps_last_change_not_last_update(company, side_effects):
     make_root(company, owner="owner1")
     make_task(company, "root1", "owner1")
@@ -554,8 +554,21 @@ def test_make_public_flips_company_and_stamps_last_change_not_last_update(compan
     assert task.company_origin == company
     assert task.last_change is not None
     assert task.last_update is None
-    side_effects.org.reset_tags.assert_not_called()
+    # The tag cache of the task's project is invalidated (see #312); the tag fields are not written
+    side_effects.org.reset_tags.assert_called_once()
+    assert side_effects.org.reset_tags.call_args.kwargs["projects"] == ["root1"]
     side_effects.org.update_tags.assert_not_called()
+
+
+# intended, see #312
+def test_make_private_resets_the_tag_cache_of_the_task_project(company, side_effects):
+    make_root(company, owner="owner1")
+    make_task(company, "root1", "owner1")
+    svc.make_public(FakeCall(identity(company, "owner1")), company, MakePublicRequest(ids=["task1"]))
+    side_effects.org.reset_tags.reset_mock()
+    svc.make_private(FakeCall(identity(company, "owner1")), company, MakePublicRequest(ids=["task1"]))
+    side_effects.org.reset_tags.assert_called_once()
+    assert side_effects.org.reset_tags.call_args.kwargs["projects"] == ["root1"]
 
 
 def test_make_private_round_trip(company, side_effects):
