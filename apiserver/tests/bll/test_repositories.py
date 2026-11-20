@@ -1032,8 +1032,8 @@ def test_deleting_a_user_leaves_no_orphan(world):
     assert not UserProfile.objects(id="member").first()
     assert not UserAccess.objects(company=world.company, user="member")
     assert not Assignment.objects(company=world.company, user="member")
-    # users.delete does not remove the login record; once that is gone too nothing may point at the user
-    AuthUser.objects(id="member").delete()
+    # the login record goes with the user (users.delete removes it), so nothing may point at the user
+    assert AuthUser.objects(id="member").first() is None
     assert find_orphans(world.company) == {}
 
 

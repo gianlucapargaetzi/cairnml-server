@@ -214,6 +214,15 @@ not use is reported as missing (400 `Invalid queue id`); a refusal to manage it 
 | `test_a_worker_for_a_queue_the_user_neither_owns_nor_holds_is_refused` | Registering a worker for a private queue of someone else is refused (400). |
 | `test_a_worker_for_a_public_queue_is_accepted` | Registering a worker for a public queue is accepted. |
 
+## test_users_delete.py: deleting a user
+
+`users.delete` is internal (the roles system and root only). The suite signs a system-identity token itself, from the admin
+device's valid token and the stack's token secret.
+
+| Test | Checks |
+|---|---|
+| `test_the_device_of_a_deleted_user_is_refused` | After `users.delete`, the token the user's device held is refused (401 or 403), and so is a new exchange of the device's key. Guards #320 and #321 together: the end of a deleted user's device access through the real call path; the deletion of the sign-in record is proven by the unit tests. |
+
 ## Status of the last full run
 
 The status of the last full run, the open results and the known defects are in [E2E.md](E2E.md). The status is kept there
