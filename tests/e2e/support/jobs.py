@@ -14,6 +14,17 @@ QUEUE_ENV = "CAIRNML_E2E_AGENT_QUEUE"
 
 FINAL = ("completed", "failed", "stopped", "aborted", "closed")
 
+# How long a job may take to start its body. The job's container prepares its environment first: apt-get update and
+# install, then the agent and the SDK from source, over the network (an apt mirror, PyPI), on a machine that is also
+# running the stack. That took 85 s on one loaded run, so a 60 s wait ended a healthy job as "still in_progress"
+# four seconds before its body failed on purpose (cairnml-server#310, docs/e2e_testing/E2E.md, "Failure artifacts").
+# A job that cannot start does not wait this long: a job that ends, or whose container cannot reach the server, ends
+# the wait at once (see _follow).
+START_TIMEOUT_SEC = 300
+# How long a job that has started may take to end, when its body is short: the body, the upload of its results, and
+# the agent's report of the end.
+BODY_TIMEOUT_SEC = 60
+
 # What a job's console says when its container cannot reach the server. The SDK retries these for hours (the agent
 # sets api.http.retries.total to 240), so a job that never starts would otherwise wait out the whole timeout.
 UNREACHABLE = (
@@ -100,7 +111,14 @@ def wait_for(api, task_id: str, states, timeout: float = 60) -> dict:
     return _follow(api, task_id, lambda r: r.get("status") in states, f"waiting for {' or '.join(states)}", timeout)
 
 
-def wait_for_start(api, task_id: str, timeout: float = 60) -> dict:
+def wait_for_start(api, task_id: str, timeout: float = START_TIMEOUT_SEC) -> dict:
     """Waits until the job body has started (its first scalar is logged). A job that never starts fails here with the
     step it reached, instead of timing out in the test that needed it (docs/e2e_testing/E2E.md, speed section, item 8)."""
     return _follow(api, task_id, lambda r: r.get("last_metrics"), "waiting for the job to start", timeout)
+
+
+def wait_for_end(api, task_id: str, states=FINAL, timeout: float = BODY_TIMEOUT_SEC) -> dict:
+    """Waits until a job with a short body has ended in one of states, and returns the record: first for the body to
+    start (START_TIMEOUT_SEC), then for it to end (timeout). The body must log a scalar, which marks its start."""
+    wait_for_start(api, task_id)
+    return wait_for(api, task_id, states, timeout)

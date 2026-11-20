@@ -20,7 +20,7 @@ from pathlib import Path
 import pytest
 import requests
 
-from support import agent, client, jobs, settings, workspace
+from support import agent, client, failures, jobs, settings, workspace
 from support import github as github_support
 from support import report as e2e_report
 from support.keycloak import Keycloak
@@ -48,8 +48,18 @@ def pytest_collection_modifyitems(config, items):
 
 
 def pytest_runtest_logreport(report):
-    """Every phase of every test goes into the report (support/report.py)."""
+    """Every phase of every test goes into the report (support/report.py). A failed phase also keeps its evidence: the
+    API server's log and the agents' logs, copied while they still exist (support/failures.py)."""
     e2e_report.record(report)
+    if report.failed and failures.active():
+        failures.keep(report)
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_configure(config):
+    """The run's junit file goes to the report folder, unless the caller names another (--junitxml)."""
+    if getattr(config.option, "xmlpath", False) is None and not hasattr(config, "workerinput"):
+        config.option.xmlpath = str(e2e_report.REPORT_DIR / "e2e-junit.xml")
 
 
 def pytest_sessionfinish(session, exitstatus):
@@ -73,6 +83,7 @@ def isolated_stack(request):
     except BaseException:
         stack.stop()  # any other failure still removes what was started
         raise
+    failures.watch_stack(stack)
     try:
         yield stack
     finally:

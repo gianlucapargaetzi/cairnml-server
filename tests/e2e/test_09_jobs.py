@@ -134,13 +134,13 @@ def test_failing_job_is_failed_with_its_traceback_and_the_agent_is_free(client_h
     task_id = recorded["fails"]
     jobs.enqueue(client_home, task_id)
     api = workspace.device_api(client_home)
-    record = jobs.wait_for(api, task_id, jobs.FINAL)
-    assert record["status"] == "failed"
+    record = jobs.wait_for_end(api, task_id)
+    assert record["status"] == "failed", jobs.explain(api, task_id, record)
     # the traceback is printed just before the agent's own "Process failed" line: look through the last events
-    recent = workspace.device_api(client_home).authed(
-        "events.get_task_log", {"task": task_id, "order": "desc", "size": 50}
-    )["events"]
-    assert any("deliberate failure" in event["msg"] for event in recent), "the traceback must be in the job's log"
+    recent = jobs.console(api, task_id)
+    assert any("deliberate failure" in msg for msg in recent), "the traceback must be in the job's log:\n" + "\n".join(
+        recent
+    )
 
 
 def test_aborted_job_stops_within_thirty_seconds(client_home, project, machine, recorded):
@@ -168,7 +168,7 @@ def test_agent_reports_no_running_job_once_a_job_completes(client_home, project,
     task_id = recorded["release"]
     jobs.enqueue(client_home, task_id)
     api = workspace.device_api(client_home)
-    record = jobs.wait_for(api, task_id, jobs.FINAL)
+    record = jobs.wait_for_end(api, task_id)
     assert record["status"] == "completed", jobs.explain(api, task_id, record)
     assert machine.wait_until(lambda: not worker_record(api, machine.worker_name).get("task"), timeout=30), (
         "the agent must report no running job once the job has completed"

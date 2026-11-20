@@ -8,7 +8,7 @@ import subprocess
 import time
 from pathlib import Path
 
-from . import cli, settings
+from . import cli, failures, settings
 from .client import agent_config_file, agent_device_id_of, agent_key_path
 
 # How often the agent polls its queue on the test stack, in seconds: a job is picked up within seconds, not minutes.
@@ -47,6 +47,7 @@ class AgentMachine:
         self.worker_name = worker_name
         self.log_path = home / "daemon.log"
         self._proc = None
+        failures.watch_machine(self)
 
     @property
     def device_id(self) -> str:

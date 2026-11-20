@@ -29,6 +29,15 @@ tests/e2e/docker/run.sh --down                 # remove the environment: contain
   what it checks, what it expects, its outcome, pass or fail, and how long it took. A test's expectation is the `Expect:`
   paragraph of its docstring; a test without one is listed as not written. The runner runs as the user who starts
   `run.sh`, so the folder is theirs on the host.
+- **Failure artifacts.** The stack, the agents' working folders and their background logs are removed when the session ends,
+  so the moment a test phase fails the suite copies the evidence out (`support/failures.py`) into
+  `tests/e2e/reports/failures/<time>-<test>-<phase>/`: `apiserver.log` (the API server's log since the session started,
+  with timestamps), `agent-<worker>-daemon.log` and `agent-<worker>-worker.log` of every agent machine the session started
+  (the worker log holds the job-token renewals), and `failure.txt` (the test, the phase, the time, the machine's load
+  average and the failure text). The junit file of the run is `tests/e2e/reports/e2e-junit.xml`, unless `--junitxml` names
+  another. `CAIRNML_E2E_REPORT_DIR` moves the whole report folder (the report, the junit file and `failures/`), for a run
+  whose evidence must outlive its workspace. Keep these files with the report of a failed run: a failure that
+  cannot be explained from them has not been recorded.
 - **Markers** (`tests/e2e/pytest.ini`): `agent`, `docker`, `ui`, `github`, `slow`, `restart`, `xdist_group`.
 - **GitHub tests.** Eight tests need GitHub (marker `github`): two in `test_06_git.py` and the six dataset tests of
   `test_07_datasets_models.py`. Without `CAIRNML_E2E_GITHUB_REPO` they are skipped, with the reason `needs a reachable GitHub
@@ -192,6 +201,7 @@ Two services also listen on their own loopback ports, which the suite uses and c
 | `support/github.py` | The test repository on github.com and the GitHub App's files, named by the environment; adds the App to the stack as the company's App. |
 | `support/workspace.py`, `support/jobs.py` | Running the example scripts and reading their JSON result (the last JSON line); enqueueing and following jobs. |
 | `support/report.py` | The report: one row per test, with its description, expectation, outcome and duration. |
+| `support/failures.py` | The evidence of a failing test: the API server's log and the agents' logs, copied out of the stack at the moment of the failure (see Failure artifacts). |
 | `scripts/` | The example scripts the tests run. Each prints a JSON line at the end. They are written as user code, so they also serve as examples. |
 
 Rules the suite follows:
@@ -277,7 +287,7 @@ ceilings and intervals, not measured; the report now records each test's duratio
 | 5 | The two keyless checks share one daemon. Stopping waits 15 s (was 60 s), registration 60 s (was 240 s). | about 110 s per stopped agent |
 | 6 | Fixed sleeps that waited for nothing are gone: the keyless window is 10 s, the queued check polls, the holder's body is 15 s. | about 65 s per run |
 | 7 | Polls are 1 s. The deletion test waits on the delete service's own records (`system.e2e_deletions`), then checks the link. | 2 to 9 s per wait |
-| 8 | Job waits are 60 s, and a job that ends at once ends the wait. The first (cold) job of a run waits 300 s, the one exception. | about 240 s per job test that never started |
+| 8 | A job that ends at once, or whose container cannot reach the server, ends the wait at once. A job's body may take 300 s to start (its container installs packages first: that took 85 s on a loaded machine, and a 60 s ceiling failed a healthy job, cairnml-server#310), and a short body 60 s to end (`jobs.wait_for_end`). | about 240 s per job test that never started |
 | 9 | UI tests wait for the content they check, with 10 s ceilings, not for `networkidle`. | 30 to 60 s in the web-run module |
 | 10 | The API restart test is in its own module (`test_13_api_restart.py`), which runs last. | the modules after it no longer wait |
 | 11 | `pytest -n 4 -m "not restart"` runs modules in parallel, with the agent tests in one group. Needs reuse. | the sum of the parallel modules (not measured) |
