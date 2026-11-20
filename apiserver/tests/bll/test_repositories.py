@@ -967,6 +967,58 @@ def test_deleting_a_repository_leaves_no_orphan(world):
     assert find_orphans(world.company) == {}
 
 
+def test_deleting_a_project_leaves_no_orphan(world):
+    from apiserver.bll.integrity import find_orphans
+    from apiserver.bll.project.project_cleanup import delete_project
+
+    credential(world, "mine", "owner")
+    repo = use(world)  # the run lists the repository in the project: a share of the project
+    bll.assign(world.company, "owner", repo.id, "mine")
+    delete_project(
+        world.company, "owner", world.root, force=True, delete_contents=False, delete_external_artifacts=False
+    )
+    assert not Project.objects(id=world.root).first()
+    assert find_orphans(world.company) == {}
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="real orphan (issue #314): AuthBLL.delete_user removes the AuthUser but not the user's assignments "
+    "(assignment.user) or credentials (user_access.user); production fix not in this change",
+)
+def test_deleting_a_user_leaves_no_orphan(world):
+    from apiserver.bll.auth import AuthBLL
+    from apiserver.bll.integrity import find_orphans
+    from apiserver.service_repo.auth.identity import Identity
+
+    credential(world, "mine", "member")
+    repo = use(world)
+    bll.assign(world.company, "member", repo.id, "mine")
+    AuthBLL.delete_user(Identity("admin", world.company, "admin"), "member", world.company)
+    assert not AuthUser.objects(id="member").first()
+    assert find_orphans(world.company) == {}
+
+
+def test_a_failing_credential_delete_leaves_no_orphan_and_keeps_the_credential(world, monkeypatch):
+    from apiserver.bll import user_access
+    from apiserver.bll.integrity import find_orphans
+
+    credential(world, "mine", "member")
+    repo = use(world)
+    bll.assign(world.company, "member", repo.id, "mine")
+
+    def failing_delete(self, *args, **kwargs):
+        raise RuntimeError("the database refused the delete")
+
+    monkeypatch.setattr(UserAccess, "delete", failing_delete)
+    with pytest.raises(RuntimeError, match="refused"):
+        user_access.delete(world.company, "member", "mine")
+    # assignments go first, so the failure leaves an unused credential and never an assignment to a missing one
+    assert UserAccess.objects(id="mine").first() is not None
+    assert not Assignment.objects(company=world.company, credential="mine")
+    assert find_orphans(world.company) == {}
+
+
 def test_a_dangling_assignment_is_found(world):
     from apiserver.bll.integrity import find_orphans
 
