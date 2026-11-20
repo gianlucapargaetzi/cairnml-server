@@ -7,10 +7,12 @@ A test's description is the first paragraph of its docstring. Its expected behav
 
 import html
 import inspect
+import os
 from datetime import datetime
 from pathlib import Path
 
-REPORT_DIR = Path(__file__).resolve().parents[1] / "reports"
+# The folder is tests/e2e/reports; CAIRNML_E2E_REPORT_DIR names another (a run that must keep its evidence elsewhere).
+REPORT_DIR = Path(os.environ.get("CAIRNML_E2E_REPORT_DIR") or Path(__file__).resolve().parents[1] / "reports")
 MISSING_EXPECTATION = "(not written: add an Expect: paragraph to the test's docstring)"
 
 _items = {}  # node id -> item
