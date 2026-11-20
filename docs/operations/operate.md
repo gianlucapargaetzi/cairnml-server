@@ -145,6 +145,65 @@ deploy/scripts/bootstrap.sh
 The setup then starts the stack on the restored state and keeps the restored secrets. If a stack from before the restore
 is running, stop it first with `docker compose down` in `deploy/`.
 
+## Deleting a user
+
+`users.delete` deletes one user of the server by id. It is an internal call: only the roles `system` and `root` may make
+it. The `admin` and `user` roles are refused, and the web app has no page for it. The IdP's account of the person is
+not touched.
+
+**What is removed.**
+
+- The user's profile and the sign-in record the server keeps for them. With the sign-in record gone, the server finds
+  no owner on a request and refuses sessions, device tokens and job tokens. A device token also stays refused because
+  the devices are revoked, and a job token because its task is stopped. A web token that has not expired yet works
+  again for a person the IdP still lists, once their account is created again (at sign-in or by the sync).
+- The user's own Git credentials, with their stored secrets, and every assignment of a repository the user holds. The
+  company's GitHub Apps the user added are not the user's: they stay and pass to the company's first other admin. If the
+  company has no other admin, they stay with the deleted user's id and the server logs a warning.
+- The shares granted to the user (a queue shared with them), and their repository checks.
+- The user's membership of every project they are a member of, as removing a member does: the shares they granted to
+  the project as a member go with them.
+- The user's devices are revoked, one audit event for each device that was not revoked already, and kept as history.
+
+**What stays.** Everything the user owns or made keeps naming them, as history: projects they own, queues and
+repositories they created, and the tasks, models and datasets they made. The shares they
+granted as the owner of a project, and the shares they granted to others as a user, stay too. The audit trail stays, and
+the deletion writes one `user.deleted` event as its last step, with who deleted, the user, and how many tasks and
+memberships it removed.
+
+**Jobs.** The user's queued tasks are taken out of their queues and set to `stopped`, and so are their running tasks, with
+the message `Stopped: its owner was deleted`. Running tasks of other users that run on one of the deleted user's
+devices (an agent of theirs) are stopped the same way, because the agent that would report their end is gone. Queued
+tasks of other users in the queue of the deleted user's agent stay queued. A running task is set to `stopped` at once,
+not to `stopping`: an agent of another user that still polls should end the job (this depends on the agent and is not
+tested here), but the process on the deleted user's own agent machine is not killed. Stop it on that machine.
+
+**The person can come back.** The server keys a user by the identity the IdP reports, so the same person always gets
+the same user id. If the IdP still lists them as enabled, the server creates a new, empty account for them at their next
+sign-in, or by the directory sync (every 60 seconds, `sync_interval_sec`) before that: no membership, no device, no
+credential and no assignment of the old one. Because the id is the same, the new account owns again the projects, queues
+and repositories the old one owned, if it is created in the same company (the default company). To keep someone out, disable or delete them in the IdP; deleting the user in
+CairnML does not.
+
+**A failure halfway.** Every step can be repeated, and the profile is the last record to go. If the call fails, call it
+again with the same user: it finishes the rest. The `user.deleted` event is written once, when the call completes. The
+call answers `InvalidUserId` when there is no profile left.
+
+**Known limits.**
+
+- The worker records in Redis that name the user stay until the worker timeout runs out.
+- Where a screen or an API answer names a user by id (the owner of a queue, the creator of a task, the repository
+  views), a deleted user is shown as the raw id.
+- Shares granted by the owner of a project stay active after the owner is deleted.
+- A user deleted before this behaviour existed may still have a sign-in record and memberships, and no profile. Because
+  the call needs the profile, it cannot clean them up.
+- Deleting the company's only admin is allowed. The company has no admin until an admin of the IdP signs in or the
+  directory sync creates the account.
+- If the directory sync creates the account while a delete is running (after the sign-in record went, before the
+  profile goes), the new account can end up without a profile until its next sign-in, which makes one.
+- If writing the `user.deleted` event fails after the profile is gone, the call cannot be repeated (it answers
+  `InvalidUserId`) and the event is lost. On a repeated call the event's counts are those of the repeat only.
+
 ## Uninstall
 
 `deploy/scripts/teardown.sh` removes the stack. It asks for the phrase `delete cairnml` unless `--yes` is given.
