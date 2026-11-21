@@ -16,18 +16,26 @@ definition of its own labelled newer than that one, even for an additive change;
 Run it from the repository root, against the commit to compare with::
 
     python -m apiserver.contract.evolution --base-ref origin/main
+
+``--markdown-report FILE`` writes the change list as a markdown section (the "What changed in the API" part of the
+regeneration pull requests of the sync workflow) and ``--json-report FILE`` writes it as JSON; both are written after the
+check, also when it finds problems, and the text output and the exit code stay as they are. A base that cannot be read
+writes no report.
 """
 
 import argparse
+import json
 import re
 import subprocess
 import sys
 import tempfile
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from pyhocon import ConfigFactory
+from pyhocon.exceptions import ConfigException
+from pyparsing import ParseBaseException
 
 from apiserver.schema_rules import check_definition_cap, duplicate_definitions
 
@@ -104,6 +112,16 @@ class Change:
     kind: str  # added | removed | changed
     breaking: bool
     detail: str
+    # the version keys of the definitions the change goes from and to: the newest block at or below the base API version
+    # in the base and the newest block at or below the compared version in the head (None when the endpoint did not
+    # exist); for a change inside an older definition both are that definition's version
+    old_def: Optional[str] = None
+    new_def: Optional[str] = None
+
+
+def _definition_key(endpoint: Endpoint, version: str) -> Optional[str]:
+    below = [v for v in endpoint.versions if vkey(v) <= vkey(version)]
+    return max(below, key=vkey) if below else None
 
 
 def _resolve(schema, definitions, depth):
@@ -195,15 +213,19 @@ def diff(base: Dict[str, Endpoint], head: Dict[str, Endpoint], base_api: str, he
         after = effective(head[name], head_api) if name in head else None
         if before is None and after is None:
             continue
+        old_def = _definition_key(base[name], base_api) if name in base else None
+        new_def = _definition_key(head[name], head_api) if name in head else None
         if before is None:
-            changes.append(Change(name, "added", False, f"new endpoint, from API {head_api}"))
+            changes.append(Change(name, "added", False, f"new endpoint, from API {head_api}", None, new_def))
             continue
         if after is None:
-            changes.append(Change(name, "removed", True, f"endpoint removed at API {head_api}"))
+            changes.append(Change(name, "removed", True, f"endpoint removed at API {head_api}", old_def, new_def))
             continue
+        found: List[Change] = []
         if base[name].action != head[name].action:
-            changes.append(Change(name, "changed", True, "the settings of the endpoint (access, roles) changed"))
-        changes.extend(_block_changes(name, before, after, base[name].definitions, head[name].definitions))
+            found.append(Change(name, "changed", True, "the settings of the endpoint (access, roles) changed"))
+        found.extend(_block_changes(name, before, after, base[name].definitions, head[name].definitions))
+        changes.extend(replace(change, old_def=old_def, new_def=new_def) for change in found)
         changes.extend(_older_definition_changes(name, base[name], head[name], head_api))
     return changes
 
@@ -219,7 +241,7 @@ def _older_definition_changes(name: str, base: Endpoint, head: Endpoint, head_ap
         older = _block_changes(name, base.versions[version], head.versions[version], base.definitions, head.definitions)
         for change in older:
             if change.breaking:
-                changes.append(Change(name, "changed", True, f"at API {version}: {change.detail}"))
+                changes.append(Change(name, "changed", True, f"at API {version}: {change.detail}", version, version))
     return changes
 
 
@@ -267,12 +289,10 @@ def _git_show(ref: str, path: str) -> Optional[str]:
 
 def _schema_from_ref(ref: str, destination: Path) -> Tuple[Path, str]:
     """The schema folder and the API version of a git ref, exported into destination."""
-    archive = subprocess.run(
-        ["git", "archive", ref, "apiserver/schema/services"],
-        cwd=REPO_ROOT,
-        check=True,
-        capture_output=True,
-    )
+    archive = subprocess.run(["git", "archive", ref, "apiserver/schema/services"], cwd=REPO_ROOT, capture_output=True)
+    if archive.returncode != 0:
+        reason = archive.stderr.decode(errors="replace").strip() or f"git archive exited with {archive.returncode}"
+        raise ValueError(f"cannot read the schema of {ref}: {reason}")
     subprocess.run(["tar", "-x", "-C", str(destination)], input=archive.stdout, check=True)
     for path, pattern in VERSION_SOURCES:
         text = _git_show(ref, path)
@@ -325,12 +345,104 @@ def assess(
     return changes, problems, top
 
 
+MAX_ROWS = 40
+MAX_PROBLEMS = 20
+MAX_CELL = 300
+REPOSITORY_URL = "https://github.com/gianlucapargaetzi/cairnml-server"
+
+
+def changelog_link(sha: Optional[str], version: str, changelog: str) -> str:
+    """The link to the changelog section of an API version at a commit, or the text "no changelog section" when the
+    changelog has no section ``## API <version>`` (or the commit is not known)."""
+    if not sha or _changelog_section(changelog, version) is None:
+        return "no changelog section"
+    return f"{REPOSITORY_URL}/blob/{sha}/CHANGELOG.md#api-{version.replace('.', '')}"
+
+
+def _code(text: str) -> str:
+    """Text as one code span that is safe inside a markdown table cell: no backticks (the span would end), no pipes
+    (the cell would end), no line breaks, a bounded length. Inside a code span nothing turns into a mention or link."""
+    text = " ".join(str(text).split()).replace("`", "'").replace("|", "\\|")
+    if len(text) > MAX_CELL:
+        text = text[: MAX_CELL - 3].rstrip("\\") + "..."
+    return f"`{text}`"
+
+
+def _short(ref: str) -> str:
+    return ref[:8] if re.fullmatch(r"[0-9a-f]{40}", ref) else ref
+
+
+def render_markdown(
+    changes: List[Change],
+    problems: List[str],
+    base_api: str,
+    top: str,
+    base_ref: str,
+    head_api: Optional[str] = None,
+    changelog_link: Optional[str] = None,
+) -> str:
+    """The change list as a markdown section for a pull request or an issue: the API versions, the number of breaking
+    changes, a table with one row per change (at most MAX_ROWS) and the problems of the check."""
+    lines = ["## What changed in the API", ""]
+    versions = f"API {_code(base_api)} to {_code(top)}, compared with {_code(_short(base_ref))}."
+    if head_api and head_api != top:
+        versions += f" The API version of the code is {_code(head_api)}."
+    if changelog_link:
+        versions += f" Changelog: {'[CHANGELOG](' + changelog_link + ')' if changelog_link.startswith('http') else changelog_link}."
+    lines += [versions, ""]
+    if not changes:
+        lines += ["The API contract did not change (only the schema text or the generator changed).", ""]
+    else:
+        breaking = sum(1 for c in changes if c.breaking)
+        lines += [f"Breaking changes: {breaking if breaking else 'none'}", ""]
+        lines += ["| Endpoint | Change | Breaking | Detail | Definition |", "| --- | --- | --- | --- | --- |"]
+        for c in changes[:MAX_ROWS]:
+            definition = f"{_code(c.old_def or 'none')} to {_code(c.new_def or 'none')}"
+            lines.append(
+                f"| {_code(c.endpoint)} | {c.kind} | {'**breaking**' if c.breaking else 'additive'} | "
+                f"{_code(c.detail)} | {definition} |"
+            )
+        if len(changes) > MAX_ROWS:
+            lines.append("")
+            lines.append(f"_and {len(changes) - MAX_ROWS} more change(s): see the generated diff_")
+        lines.append("")
+    if problems:
+        lines += ["### Problems found by the contract check", ""]
+        lines += [f"- {_code(problem)}" for problem in problems[:MAX_PROBLEMS]]
+        if len(problems) > MAX_PROBLEMS:
+            lines.append(f"- _and {len(problems) - MAX_PROBLEMS} more_")
+        lines.append("")
+    return "\n".join(lines)
+
+
+def render_json(
+    changes: List[Change], problems: List[str], base_api: str, head_api: str, top: str, base_ref: str
+) -> str:
+    report = {
+        "base_ref": base_ref,
+        "base_api": base_api,
+        "head_api": head_api,
+        "top": top,
+        "changes": [asdict(change) for change in changes],
+        "problems": problems,
+    }
+    return json.dumps(report, indent=2) + "\n"
+
+
+def _head_sha() -> Optional[str]:
+    result = subprocess.run(["git", "rev-parse", "HEAD"], cwd=REPO_ROOT, capture_output=True, text=True)
+    return result.stdout.strip() if result.returncode == 0 else None
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="python -m apiserver.contract.evolution", description=__doc__)
     parser.add_argument("--base-ref", required=True, help="the commit to compare with, for example origin/main")
     parser.add_argument("--head-schema", type=Path, default=Path(__file__).parents[1] / "schema" / "services")
     parser.add_argument("--head-api", help="the API version of the head (default: the one in the code)")
     parser.add_argument("--changelog", type=Path, default=CHANGELOG)
+    parser.add_argument("--markdown-report", type=Path, help="write the change list as a markdown section to this file")
+    parser.add_argument("--json-report", type=Path, help="write the change list as JSON to this file")
+    parser.add_argument("--head-sha", help="the commit of the head, for the changelog link (default: HEAD)")
     args = parser.parse_args(argv)
 
     head_api = args.head_api or re.search(
@@ -338,11 +450,15 @@ def main(argv=None) -> int:
         (Path(__file__).parents[1] / "service_repo" / "api_version.py").read_text(),
     ).group(1)
     with tempfile.TemporaryDirectory() as tmp:
-        base_schema, base_api = _schema_from_ref(args.base_ref, Path(tmp))
+        try:
+            base_schema, base_api = _schema_from_ref(args.base_ref, Path(tmp))
+        except ValueError as error:
+            print(f"error: {error}", file=sys.stderr)
+            return 1
         changelog = args.changelog.read_text() if args.changelog.exists() else ""
         try:
             base_endpoints, head_endpoints = load_api(base_schema), load_api(args.head_schema)
-        except ValueError as error:
+        except (ValueError, ConfigException, ParseBaseException) as error:
             print(f"PROBLEM {error}")
             return 1
         changes, problems, top = assess(base_endpoints, head_endpoints, base_api, head_api, changelog)
@@ -353,6 +469,15 @@ def main(argv=None) -> int:
     for problem in problems:
         print(f"PROBLEM {problem}")
     print(f"{len(changes)} change(s), {len(problems)} problem(s)")
+    if args.markdown_report:
+        link = changelog_link(args.head_sha or _head_sha(), top, changelog)
+        args.markdown_report.write_text(
+            render_markdown(changes, problems, base_api, top, args.base_ref, head_api, link), encoding="utf-8"
+        )
+    if args.json_report:
+        args.json_report.write_text(
+            render_json(changes, problems, base_api, head_api, top, args.base_ref), encoding="utf-8"
+        )
     return 1 if problems else 0
 
 
