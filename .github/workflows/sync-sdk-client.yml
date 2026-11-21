@@ -14,6 +14,12 @@ name: sync-sdk-client
 # schema text in shell) and capped below GitHub's size limit. Runs are serialized by the concurrency group below, which
 # keeps at most one pending run: a push run that was replaced by a newer one is not run, which the recorded base makes up
 # for in an existing pull request. The agent issue has the section only when its callers disagree.
+# A breaking change (the JSON report of the same tool) also opens ONE issue with the label api-breaking in each of the
+# SDK, the web app and the agent, titled "API breaking change <version>: <endpoints>", with the change list and a
+# checklist: adopt the new definition, check that the old one is still supported, decide what is dropped. The title, the
+# body and the decision (an open issue of that version gets a comment, a closed one means the maintainer has worked
+# through it and nothing is done, none is created) come from apiserver/contract/breaking_issue.py; the issues are closed
+# by hand. An additive change or none opens nothing.
 # The branch is named chore/ because the consumers' branch-name ruleset refuses other prefixes (sync/ is declined with
 # GH013). The inputs sdk_ref, web_ref and agent_ref (default main) exist for demonstrating the paths on throwaway
 # branches; they reach the run only as the ref of a checkout, never as shell text.
@@ -131,14 +137,16 @@ jobs:
         shell: bash
         run: |
           cat > "$RUNNER_TEMP/sync-consumer.sh" <<'HELPER'
-          # write_section <base sha> <file> <server folder>: the "What changed in the API" section from the contract tool.
+          # write_section <base sha> <file> <server folder> [json file]: the "What changed in the API" section from the
+          # contract tool (and, when a fourth argument names a file, its JSON report).
           # Exit 1 of the tool with a report is the contract check finding problems, which the section lists; anything
           # else (a base that cannot be read, a broken schema) fails the step before anything is published.
           note() { echo "- $1" >> "$RUNNER_TEMP/sync-summary.md"; }
           write_section() {
-            local base=$1 out=$2 root=$3 rc=0
+            local base=$1 out=$2 root=$3 rc=0 json=()
+            if [ -n "${4:-}" ]; then json=(--json-report "$4"); fi
             rm -f "$out"
-            PYTHONPATH="$root" python -m apiserver.contract.evolution --base-ref "$base" --markdown-report "$out" \
+            PYTHONPATH="$root" python -m apiserver.contract.evolution --base-ref "$base" --markdown-report "$out" "${json[@]}" \
               > "$RUNNER_TEMP/evolution.log" || rc=$?
             cat "$RUNNER_TEMP/evolution.log"
             if [ "$rc" -gt 1 ] || [ ! -s "$out" ]; then
@@ -268,6 +276,71 @@ jobs:
             note "$repo: the checker failed (exit $rc)"
             exit 1
           fi
+      - name: Breaking-change issues
+        # a separate step: a failed agent step must not skip it; it needs only the change report, not the checkouts
+        if: ${{ !cancelled() && steps.app.outcome == 'success' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          PYTHONPATH: .
+        run: |
+          if [ ! -s "$RUNNER_TEMP/base.sha" ] || [ ! -f "$RUNNER_TEMP/sync-consumer.sh" ]; then
+            echo "Skipped: an earlier step failed before the base of the change list was known"
+            exit 0
+          fi
+          source "$RUNNER_TEMP/sync-consumer.sh"
+          report="$RUNNER_TEMP/breaking-report.json"
+          section="$RUNNER_TEMP/breaking-section.md"
+          plan="$RUNNER_TEMP/breaking"
+          rm -rf "$plan"
+          write_section "$(cat "$RUNNER_TEMP/base.sha")" "$section" "$PWD" "$report"
+          # the title, body and comment are made by the helper from the report; "none" means no breaking change
+          kind=$(python -m apiserver.contract.breaking_issue plan --json-report "$report" --section-file "$section" \
+            --changelog CHANGELOG.md --sha "$GITHUB_SHA" --note "$(cat "$RUNNER_TEMP/base.note")" --out-dir "$plan")
+          if [ "$kind" = none ]; then
+            echo "No breaking change: no issue"
+            note "breaking-change issues: none needed"
+            exit 0
+          fi
+          # the REST endpoint (not gh issue list, whose label filter lags behind a creation): pull requests are in the
+          # listing too and the helper leaves them out
+          list_issues() {
+            gh api --paginate "repos/$1/issues?labels=api-breaking&state=all&per_page=100" > "$RUNNER_TEMP/breaking-issues.json"
+          }
+          decide() {
+            python -m apiserver.contract.breaking_issue find --json-report "$report" --issues-file "$RUNNER_TEMP/breaking-issues.json"
+          }
+          for repo in gianlucapargaetzi/cairnml gianlucapargaetzi/cairnml-web gianlucapargaetzi/cairnml-agent; do
+            list_issues "$repo"
+            decision=$(decide)
+            if [ "$decision" = none ]; then
+              # an issue made seconds ago by the previous run may not be listed yet: look once more before creating
+              sleep "${BREAKING_RECHECK_SECONDS:-20}"
+              list_issues "$repo"
+              decision=$(decide)
+            fi
+            case "$decision" in
+              open\ *)
+                gh issue comment "${decision#open }" --repo "$repo" --body-file "$plan/comment.md"
+                note "$repo: $kind, commented on issue #${decision#open }"
+                ;;
+              closed\ *)
+                echo "The issue for this API version is closed: nothing to do in $repo"
+                note "$repo: $kind, issue #${decision#closed } is closed, nothing done"
+                ;;
+              none)
+                gh label create api-breaking --force --repo "$repo" --color b60205 \
+                  --description "A breaking API change of cairnml-server: adopt the new definition, check the old one"
+                url=$(gh issue create --repo "$repo" --label api-breaking --title "$(cat "$plan/title.txt")" \
+                  --body-file "$plan/body.md")
+                note "$repo: $kind, opened $url"
+                ;;
+              *)
+                echo "unexpected answer of the helper: $decision" >&2
+                exit 1
+                ;;
+            esac
+          done
       - name: Summary
         if: ${{ !cancelled() }}
         shell: bash
