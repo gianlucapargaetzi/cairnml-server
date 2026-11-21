@@ -20,6 +20,10 @@ name: sync-sdk-client
 # body and the decision (an open issue of that version gets a comment, a closed one means the maintainer has worked
 # through it and nothing is done, none is created) come from apiserver/contract/breaking_issue.py; the issues are closed
 # by hand. An additive change or none opens nothing.
+# A hand-written commit on that branch (author email other than the sync's release@example.invalid) is never
+# overwritten: the run then pushes nothing and closes nothing, comments ONCE on the open pull request (or notes it in
+# the step summary when none is open), and the sync resumes when the branch is merged, deleted or has only the sync's
+# own commits again; the decision is made by apiserver/contract/manual_commits.py.
 # The branch is named chore/ because the consumers' branch-name ruleset refuses other prefixes (sync/ is declined with
 # GH013). The inputs sdk_ref, web_ref and agent_ref (default main) exist for demonstrating the paths on throwaway
 # branches; they reach the run only as the ref of a checkout, never as shell text.
@@ -154,18 +158,74 @@ jobs:
               return 1
             fi
           }
+          # inspect_branch <what> <server folder>: looks at the remote chore/api-sync of the consumer (run in its checkout)
+          # before anything is rebuilt. It writes the commits of the remote branch that are not on the checked-out
+          # commit (the one the branch is rebuilt from, main on a normal run) to $RUNNER_TEMP/branch-<what>.tsv, the
+          # decision of apiserver/contract/manual_commits.py on them ("none" or "manual <n>": a commit whose author
+          # email is not the sync's) to branch-<what>.decision, and the sha the remote branch had (empty: none yet) to
+          # branch-<what>.head. The push below leases on that sha, so a commit that arrives later is not overwritten
+          # either. A checkout is shallow, so the history is completed first (commits and trees only, no file
+          # contents); any failure here fails the step, never reads as "no manual commits".
+          inspect_branch() {
+            local what=$1 root=$2 out="$RUNNER_TEMP/branch-$1" heads
+            : > "$out.tsv"; : > "$out.head"; echo none > "$out.decision"
+            heads=$(git ls-remote --heads origin chore/api-sync)
+            if [ -z "$heads" ]; then
+              echo "The remote has no chore/api-sync yet"
+              return 0
+            fi
+            if [ "$(git rev-parse --is-shallow-repository)" = true ]; then
+              git fetch --no-tags --filter=blob:none --unshallow origin
+            else
+              git fetch --no-tags --filter=blob:none origin
+            fi
+            git fetch --no-tags --filter=blob:none origin "+refs/heads/chore/api-sync:refs/remotes/origin/chore/api-sync"
+            git rev-parse --verify "refs/remotes/origin/chore/api-sync^{commit}" > "$out.head"
+            git log --format='%H%x09%ae%x09%s' HEAD..refs/remotes/origin/chore/api-sync > "$out.tsv"
+            PYTHONPATH="$root" python -m apiserver.contract.manual_commits decide --commits-file "$out.tsv" > "$out.decision"
+            echo "chore/api-sync: $(cat "$out.decision")"
+          }
+          # stand_aside <owner/repo> <open pull request number or empty> <what> <server folder>: the branch has hand-written
+          # commits, so nothing is pushed and nothing is closed. The open pull request gets ONE comment (the marker in
+          # it is looked up through the REST comments endpoint, so a rerun does not repeat it); with no open pull
+          # request the step summary says so.
+          stand_aside() {
+            local repo=$1 open=$2 what=$3 root=$4 seen
+            local comments="$RUNNER_TEMP/pr-comments-$what.json" text="$RUNNER_TEMP/manual-comment-$what.md"
+            echo "$repo: chore/api-sync has hand-written commits, so the sync stands aside (no push, no close)"
+            if [ -z "$open" ]; then
+              note "$repo: chore/api-sync has hand-written commits and no pull request is open: nothing pushed, nothing closed"
+              return 0
+            fi
+            gh api --paginate "repos/$repo/issues/$open/comments" > "$comments"
+            seen=$(PYTHONPATH="$root" python -m apiserver.contract.manual_commits has-comment --comments-file "$comments")
+            if [ "$seen" = yes ]; then
+              note "$repo: chore/api-sync has hand-written commits: nothing pushed, #$open stays open (already commented)"
+              return 0
+            fi
+            PYTHONPATH="$root" python -m apiserver.contract.manual_commits comment-body --commits-file "$RUNNER_TEMP/branch-$what.tsv" \
+              --sha "$GITHUB_SHA" --out "$text"
+            gh pr comment "$open" --repo "$repo" --body-file "$text"
+            note "$repo: chore/api-sync has hand-written commits: nothing pushed, #$open stays open (commented)"
+          }
           # sync_consumer <folder> <owner/repo> <client|layer> <what a red check means>
-          # Run in the consumer's checkout after the generator wrote into it. No difference to the checked-out main:
-          # the consumer is up to date (an open chore/api-sync pull request is closed). A difference: the body is made
-          # first (so a failure publishes nothing), the rolling branch is rebuilt from the checked-out main and pushed,
-          # and the one open pull request is created or updated. The change list starts from the base the open pull
-          # request recorded in its body (when it is a commit of this history), else from the resolved base.
+          # Run in the consumer's checkout after the generator wrote into it. A rolling branch with hand-written commits
+          # is never touched (inspect_branch, stand_aside), whatever the difference is. No difference to the checked-out
+          # main: the consumer is up to date (an open chore/api-sync pull request is closed). A difference: the body is
+          # made first (so a failure publishes nothing), the rolling branch is rebuilt from the checked-out main and
+          # pushed, and the one open pull request is created or updated. The change list starts from the base the open
+          # pull request recorded in its body (when it is a commit of this history), else from the resolved base.
           sync_consumer() (
             local dir=$1 repo=$2 what=$3 hint=$4
             local sha8=${GITHUB_SHA::8} root=$PWD open lease body url base marker_base note
             cd "$dir"
             git add -A  # a plain git diff would miss the files that are new
             open=$(gh pr list --repo "$repo" --head chore/api-sync --state open --json number --jq '.[0].number // empty')
+            inspect_branch "$what" "$root"
+            if [ "$(cat "$RUNNER_TEMP/branch-$what.decision")" != none ]; then
+              stand_aside "$repo" "$open" "$what" "$root"
+              return 0
+            fi
             if git diff --cached --quiet; then
               echo "The API $what of $repo is up to date"
               if [ -n "$open" ]; then
@@ -191,7 +251,7 @@ jobs:
               fi
             fi
             write_section "$base" "$RUNNER_TEMP/section-$what.md" "$root"
-            printf 'The schema of cairnml-server changed (cairnml-server@%s). This pull request is the regenerated API %s. It is rebuilt from main on every run, so it always names the latest server commit.\n\n%s\n' \
+            printf 'The schema of cairnml-server changed (cairnml-server@%s). This pull request is the regenerated API %s. It is rebuilt from main on every run, so it always names the latest server commit.\n\n%s\n\nTo add hand-written changes, commit them on this branch; the sync will not overwrite them (it comments here and waits until the branch is merged or deleted).\n' \
               "$GITHUB_SHA" "$what" "$hint" > "$RUNNER_TEMP/intro-$what.md"
             body="$RUNNER_TEMP/pr-body-$what.md"
             PYTHONPATH="$root" python -m apiserver.contract.pr_body build --intro-file "$RUNNER_TEMP/intro-$what.md" \
@@ -200,7 +260,7 @@ jobs:
             git config user.name release
             git checkout -B chore/api-sync
             git commit -q -m "Regenerate the API $what from cairnml-server $sha8"
-            lease=$(git ls-remote --heads origin chore/api-sync | cut -f1)  # empty: the branch must not exist yet
+            lease=$(cat "$RUNNER_TEMP/branch-$what.head")  # the sha inspected above; empty: the branch must not exist yet
             git push --force-with-lease="chore/api-sync:$lease" origin chore/api-sync
             if [ -n "$open" ]; then
               gh pr edit "$open" --repo "$repo" --title "Regenerate the API $what from cairnml-server $sha8" --body-file "$body"
