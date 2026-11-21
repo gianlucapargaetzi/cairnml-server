@@ -6,6 +6,14 @@ name: sync-sdk-client
 #   request (SDK: api contract, web: check-web) is the signal that the hand-written code must be updated on that branch;
 # - the agent (cairnml-agent) has no generated code: its hand-written callers are checked against the schema, and a
 #   disagreement is ONE issue with the label api-sync, updated by comment and closed when the callers agree again.
+# Every pull request body and every agent issue body starts with a "What changed in the API" section made by the contract
+# tool (python -m apiserver.contract.evolution --markdown-report) from a base commit of the server to this one. On a push the
+# base is the commit before the push, on a dispatch it is the input base_ref (default: the first parent of the commit); a
+# rolling pull request records its base once as <!-- api-sync-base:<sha> --> in its body and every later run keeps it, so
+# the section stays cumulative from that base. A body is built from files by apiserver/contract/pr_body.py (never from
+# schema text in shell) and capped below GitHub's size limit. Runs are serialized by the concurrency group below, which
+# keeps at most one pending run: a push run that was replaced by a newer one is not run, which the recorded base makes up
+# for in an existing pull request. The agent issue has the section only when its callers disagree.
 # The branch is named chore/ because the consumers' branch-name ruleset refuses other prefixes (sync/ is declined with
 # GH013). The inputs sdk_ref, web_ref and agent_ref (default main) exist for demonstrating the paths on throwaway
 # branches; they reach the run only as the ref of a checkout, never as shell text.
@@ -29,6 +37,10 @@ on:
         description: "Ref of cairnml-agent to check (default main)"
         required: false
         default: main
+      base_ref:
+        description: "Commit, branch or tag of the server the change list starts from (default: the first parent of the commit)"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -53,6 +65,8 @@ jobs:
           permission-pull-requests: write
           permission-issues: write
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0 # the change list needs the history behind the base
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: gianlucapargaetzi/cairnml
@@ -76,18 +90,71 @@ jobs:
         with:
           python-version: "3.12"
       - run: python -m pip install pyhocon jinja2 requests
+      - name: Resolve the base of the change list
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          INPUT_BASE: ${{ inputs.base_ref }}
+        run: |
+          # base.sha: the full sha the change list starts from; base.note: why (shown under the section);
+          # base.explicit: 1 when a dispatch named it, which then wins over the base a pull request recorded
+          sha=""; explicit=0; note=""
+          if [ "$EVENT_NAME" = workflow_dispatch ] && [ -n "$INPUT_BASE" ]; then
+            case "$INPUT_BASE" in -*) echo "base_ref must not start with a dash" >&2; exit 1 ;; esac
+            sha=$(git rev-parse --verify --quiet "$INPUT_BASE^{commit}" || git rev-parse --verify --quiet "origin/$INPUT_BASE^{commit}" || true)
+            if [ -z "$sha" ] && git fetch --no-tags origin "$INPUT_BASE"; then
+              sha=$(git rev-parse --verify --quiet "FETCH_HEAD^{commit}" || true)
+            fi
+            if [ -z "$sha" ]; then echo "base_ref could not be resolved to a commit of the server" >&2; exit 1; fi
+            explicit=1
+            note="Base: the dispatch input base_ref."
+          elif [ "$EVENT_NAME" = push ]; then
+            if [[ "$BEFORE" =~ ^[0-9a-f]{40}$ ]] && [[ ! "$BEFORE" =~ ^0+$ ]] && git cat-file -e "$BEFORE^{commit}" 2>/dev/null \
+              && git merge-base --is-ancestor "$BEFORE" HEAD; then
+              sha=$BEFORE
+              note="Base: the commit before this push."
+            else
+              note="Base: the first parent, because the commit before this push is not an ancestor of it (a forced push or a new branch)."
+            fi
+          else
+            note="Base: the first parent of the commit (the dispatch named no base_ref)."
+          fi
+          if [ -z "$sha" ]; then sha=$(git rev-parse --verify "HEAD~1^{commit}"); fi
+          if [[ ! "$sha" =~ ^[0-9a-f]{40}$ ]]; then echo "the base is not a full sha: $sha" >&2; exit 1; fi
+          echo "$sha" > "$RUNNER_TEMP/base.sha"
+          echo "$note" > "$RUNNER_TEMP/base.note"
+          echo "$explicit" > "$RUNNER_TEMP/base.explicit"
+          echo "The change list starts from ${sha::8}. $note"
+          echo "- Change list base: ${sha::8}. $note" >> "$RUNNER_TEMP/sync-summary.md"
       - name: Write the helper that updates one consumer
         shell: bash
         run: |
           cat > "$RUNNER_TEMP/sync-consumer.sh" <<'HELPER'
+          # write_section <base sha> <file> <server folder>: the "What changed in the API" section from the contract tool.
+          # Exit 1 of the tool with a report is the contract check finding problems, which the section lists; anything
+          # else (a base that cannot be read, a broken schema) fails the step before anything is published.
+          note() { echo "- $1" >> "$RUNNER_TEMP/sync-summary.md"; }
+          write_section() {
+            local base=$1 out=$2 root=$3 rc=0
+            rm -f "$out"
+            PYTHONPATH="$root" python -m apiserver.contract.evolution --base-ref "$base" --markdown-report "$out" \
+              > "$RUNNER_TEMP/evolution.log" || rc=$?
+            cat "$RUNNER_TEMP/evolution.log"
+            if [ "$rc" -gt 1 ] || [ ! -s "$out" ]; then
+              echo "the change list could not be made (exit $rc)" >&2
+              return 1
+            fi
+          }
           # sync_consumer <folder> <owner/repo> <client|layer> <what a red check means>
           # Run in the consumer's checkout after the generator wrote into it. No difference to the checked-out main:
-          # the consumer is up to date (an open chore/api-sync pull request is closed). A difference: the rolling branch
-          # is rebuilt from the checked-out main and pushed, and the one open pull request is created or updated.
-          note() { echo "- $1" >> "$RUNNER_TEMP/sync-summary.md"; }
+          # the consumer is up to date (an open chore/api-sync pull request is closed). A difference: the body is made
+          # first (so a failure publishes nothing), the rolling branch is rebuilt from the checked-out main and pushed,
+          # and the one open pull request is created or updated. The change list starts from the base the open pull
+          # request recorded in its body (when it is a commit of this history), else from the resolved base.
           sync_consumer() (
             local dir=$1 repo=$2 what=$3 hint=$4
-            local sha8=${GITHUB_SHA::8} open lease body url
+            local sha8=${GITHUB_SHA::8} root=$PWD open lease body url base marker_base note
             cd "$dir"
             git add -A  # a plain git diff would miss the files that are new
             open=$(gh pr list --repo "$repo" --head chore/api-sync --state open --json number --jq '.[0].number // empty')
@@ -101,15 +168,32 @@ jobs:
               fi
               return 0
             fi
+            base=$(cat "$RUNNER_TEMP/base.sha")
+            note=$(cat "$RUNNER_TEMP/base.note")
+            if [ -n "$open" ] && [ "$(cat "$RUNNER_TEMP/base.explicit")" != 1 ]; then
+              gh pr view "$open" --repo "$repo" --json body --jq .body > "$RUNNER_TEMP/open-body-$what.md"
+              marker_base=$(PYTHONPATH="$root" python -m apiserver.contract.pr_body read-marker "$RUNNER_TEMP/open-body-$what.md")
+              if [ -n "$marker_base" ] && git -C "$root" cat-file -e "$marker_base^{commit}" 2>/dev/null \
+                && git -C "$root" merge-base --is-ancestor "$marker_base" HEAD; then
+                base=$marker_base
+                # the reason the first run gave, read back, so that a rerun writes the same text
+                note=$(PYTHONPATH="$root" python -m apiserver.contract.pr_body read-note "$RUNNER_TEMP/open-body-$what.md")
+                [ -n "$note" ] || note="Base: the one this pull request recorded when it was opened."
+                echo "The change list keeps the base this pull request recorded: ${base::8}"
+              fi
+            fi
+            write_section "$base" "$RUNNER_TEMP/section-$what.md" "$root"
+            printf 'The schema of cairnml-server changed (cairnml-server@%s). This pull request is the regenerated API %s. It is rebuilt from main on every run, so it always names the latest server commit.\n\n%s\n' \
+              "$GITHUB_SHA" "$what" "$hint" > "$RUNNER_TEMP/intro-$what.md"
+            body="$RUNNER_TEMP/pr-body-$what.md"
+            PYTHONPATH="$root" python -m apiserver.contract.pr_body build --intro-file "$RUNNER_TEMP/intro-$what.md" \
+              --section-file "$RUNNER_TEMP/section-$what.md" --base "$base" --note "$note" --out "$body"
             git config user.email release@example.invalid
             git config user.name release
             git checkout -B chore/api-sync
             git commit -q -m "Regenerate the API $what from cairnml-server $sha8"
             lease=$(git ls-remote --heads origin chore/api-sync | cut -f1)  # empty: the branch must not exist yet
             git push --force-with-lease="chore/api-sync:$lease" origin chore/api-sync
-            body="$RUNNER_TEMP/pr-body-$what.md"
-            printf 'The schema of cairnml-server changed (cairnml-server@%s). This pull request is the regenerated API %s. It is rebuilt from main on every run, so it always names the latest server commit.\n\n%s\n' \
-              "$GITHUB_SHA" "$what" "$hint" > "$body"
             if [ -n "$open" ]; then
               gh pr edit "$open" --repo "$repo" --title "Regenerate the API $what from cairnml-server $sha8" --body-file "$body"
               note "$repo: updated #$open"
@@ -162,10 +246,13 @@ jobs:
           elif [ "$rc" -eq 1 ] && grep -Eq '^[^ ]+:[0-9]+: ' <<<"$out"; then
             echo "$out"
             body="$RUNNER_TEMP/agent-issue.md"
+            write_section "$(cat "$RUNNER_TEMP/base.sha")" "$RUNNER_TEMP/section-agent.md" "$PWD"
             # the backticks are the code fence of the findings, not a command substitution
             # shellcheck disable=SC2016
             printf 'The hand-written callers of the agent disagree with the API schema of cairnml-server@%s:\n\n````\n%s\n````\n\nFix the callers in this repository. Nothing is generated for the agent, so this issue is not closed by a pull request of the server.\n' \
-              "$GITHUB_SHA" "$out" > "$body"
+              "$GITHUB_SHA" "$out" > "$RUNNER_TEMP/intro-agent.md"
+            python -m apiserver.contract.pr_body build --intro-file "$RUNNER_TEMP/intro-agent.md" \
+              --section-file "$RUNNER_TEMP/section-agent.md" --note "$(cat "$RUNNER_TEMP/base.note")" --out "$body"
             gh label create api-sync --force --repo "$repo" --description "The agent disagrees with the server's API schema" --color d93f0b
             if [ -n "$open" ]; then
               gh issue comment "$open" --repo "$repo" --body-file "$body"

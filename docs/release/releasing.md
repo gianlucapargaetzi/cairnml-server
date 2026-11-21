@@ -35,12 +35,34 @@ request is served by the newest block at or below the requested version.
     the latest server commit (`Regenerate the API client from cairnml-server <commit>`, `Regenerate the API layer ...`).
     If a later run finds no difference to `main` any more, it closes that pull request with a comment. A red check on it
     (SDK: `api contract`, web: `check-web` in `build`) means the hand-written code needs updating on that branch.
+  - **What changed in the API:** the body of each pull request, and of the agent issue, has a "What changed in the API"
+    section made by `python -m apiserver.contract.evolution --markdown-report`: the API versions, the number of breaking
+    changes, one table row per changed endpoint (added, removed or changed, marked **breaking** or additive, with the
+    detail and the definition it goes from and to; at most 40 rows, the rest is "and N more"), the problems the contract
+    check found, and a link to the changelog section when there is one. "The API contract did not change" means only
+    the schema text or the generator changed. The section is ONE cumulative list from a fixed base: the first run of
+    a pull request records its base as `<!-- api-sync-base:<sha> -->` in the body, every later run reads it back from the
+    open pull request (a marker counts only as a line of its own with a full lower-case sha, and the commit must be an
+    ancestor), so the list grows with the pull request; a new pull request after a merge starts from its own base. The
+    body is built from files (`apiserver/contract/pr_body.py`), never from schema text in shell, and kept below 60000
+    characters by dropping table rows. The agent issue has the section only when its callers disagree (the run opens no
+    issue otherwise).
+  - **The base:** on a push to `main` it is the commit before the push (`github.event.before`); when that is missing,
+    all zeros or not an ancestor (a forced push, a new branch), it is the first parent, and the text under the section
+    says which. On a `workflow_dispatch` run it is the input `base_ref` (a sha, branch or tag of the server; a name that
+    cannot be resolved fails the run), else the first parent of the dispatched commit; an explicit `base_ref` also
+    replaces the base an open pull request recorded. The run reads the server's full history for this. If the tool
+    cannot read the base or the schema, the run fails before it pushes or opens anything. The concurrency group keeps at
+    most one pending run, so a push run that a newer one replaced does not run; the recorded base keeps an existing pull
+    request's list complete, but a brand-new pull request after such a drop can miss the changes of the dropped commit
+    in its list (the generated diff itself is always complete).
   - The **agent** has no generated code. The workflow runs `check-callers --target agent` on its `main` against the new
     schema; findings open ONE issue with the label `api-sync` in the agent repository (further runs comment on it), and
     a run that finds the callers in step again closes it. A failure of the checker itself fails the run.
   - It uses the release GitHub App, installed on `cairnml`, `cairnml-server`, `cairnml-web` and `cairnml-agent` with
     write access to contents, pull requests and issues. A run can be started by hand (`workflow_dispatch`); its
-    inputs `sdk_ref`, `web_ref` and `agent_ref` (default `main`) exist to demonstrate the paths on throwaway branches.
+    inputs `sdk_ref`, `web_ref` and `agent_ref` (default `main`) exist to demonstrate the paths on throwaway branches,
+    and `base_ref` names the server commit the change list starts from.
     The step summary of a run lists what each consumer got.
 - **The SDK's `api contract` job** compares its committed client with what the server's `main` generates, and checks
   that the hand-written SDK code only calls actions, fields and versions that exist. A red job on the auto-PR (or on
