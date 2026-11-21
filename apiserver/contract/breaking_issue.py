@@ -120,13 +120,14 @@ def find_issue(issues: List[dict], top: str) -> Tuple[str, Optional[int]]:
     return "none", None
 
 
-def load_listing(path) -> List[dict]:
+def load_listing(path, what: str = "issue listing") -> List[dict]:
     """The issues listed by ``gh api --paginate`` (the REST endpoint): one JSON array per page, one after the other, or a
-    single array. An empty file, an error object or anything else is refused, never read as "no issues"."""
+    single array. An empty file, an error object or anything else is refused, never read as "no issues". ``what`` names
+    the listing in the error, so that the comments of a pull request can be read the same way."""
     try:
         text = Path(path).read_text(encoding="utf-8")
     except OSError as error:
-        raise ValueError(f"cannot read the issue listing {path}: {error}") from error
+        raise ValueError(f"cannot read the {what} {path}: {error}") from error
     decoder = json.JSONDecoder()
     issues: List[dict] = []
     position, pages = 0, 0
@@ -138,13 +139,13 @@ def load_listing(path) -> List[dict]:
         try:
             page, position = decoder.raw_decode(text, position)
         except ValueError as error:
-            raise ValueError(f"the issue listing {path} is not JSON: {error}") from error
+            raise ValueError(f"the {what} {path} is not JSON: {error}") from error
         if not isinstance(page, list) or not all(isinstance(item, dict) for item in page):
-            raise ValueError(f"the issue listing {path} is not a list of issues")
+            raise ValueError(f"the {what} {path} is not a list of objects")
         issues.extend(page)
         pages += 1
     if pages == 0:
-        raise ValueError(f"the issue listing {path} is empty")
+        raise ValueError(f"the {what} {path} is empty")
     return issues
 
 
