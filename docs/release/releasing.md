@@ -24,6 +24,34 @@ request is served by the newest block at or below the requested version.
      description is not part of the contract and never fails.
 3. Merge. Locally, the same check runs with `python -m apiserver.contract.evolution --base-ref origin/main`.
 
+### Coordinated work across the repositories
+
+An API change usually needs its implementation in the SDK, the web app or the agent. The consumers' CI jobs that read the
+server (SDK: `api contract`; web: `build`, the steps `generate --check` and `check-web`; agent: `api contract`) would be
+red against the server's `main` until the server pull request is merged, and the required checks block the consumer
+pull request. The convention that lets both be tested together is the branch name:
+
+1. Use the **same branch name** in the server and in every consumer that needs a change (for example `feature/x` in
+   `cairnml-server` and in `cairnml`; the prefixes the repositories accept are `ci/`, `feature/`, `build/`,
+   `refactor/`, `chore/` and `fix/`).
+2. A consumer pull request from branch `X` reads the server's branch `X` when the server has one, else `main`. The
+   agent also reads the SDK's branch `X` the same way (its `test`, `python`, `package` and `api contract` jobs). The
+   local action `.github/actions/same-named-ref` of each consumer makes the decision: it looks the branch up with
+   `git ls-remote --exit-code --heads` on the public repository, takes the branch name only through `env:` (never as
+   shell text), looks up only names made of letters, digits and `. _ / -`, and requires an exact match. No pull request
+   event, an unusual name, no such branch or a failed lookup give `main`, exactly as before. The job log says which ref
+   was used and why (`same-named-ref: <repository> -> <ref>: <reason>`), and so does the step summary. Pull requests from
+   forks are not covered.
+3. Regenerate the consumer's code from the server branch (SDK: `scripts/regenerate-api.sh <server branch>`; web: `python -m
+   apiserver.client_generator generate --target web --out src/app/business-logic` from the server branch) and commit it
+   on the consumer's branch together with the hand-written change.
+4. **Merge order: the server first, then the SDK, then the web app and the agent.** After the server branch is merged and
+   deleted, the consumers' CI reads `main`, which has the change, so their pull requests stay green (rerun the check if
+   it ran before the server merge). A consumer pull request with a same-named server branch that is merged first is
+   checked against a branch that is later deleted: do not do that.
+5. The rolling pull requests of the sync workflow (below) are guarded for this: a hand-written commit on
+   `chore/api-sync` is never overwritten, so the adaptation of the hand-written code can be committed on that branch.
+
 ### What happens in the other repositories
 
 - **After a merge that touches the schema or the generator**, the `sync-sdk-client` workflow keeps the three consumers
@@ -34,7 +62,18 @@ request is served by the newest block at or below the requested version.
     `main` on every run and force-pushed with a lease, and the open pull request is updated in place: its title names
     the latest server commit (`Regenerate the API client from cairnml-server <commit>`, `Regenerate the API layer ...`).
     If a later run finds no difference to `main` any more, it closes that pull request with a comment. A red check on it
-    (SDK: `api contract`, web: `check-web` in `build`) means the hand-written code needs updating on that branch.
+    (SDK: `api contract`, web: `check-web` in `build`) means the hand-written code needs updating on that branch: commit
+    the update on that branch, the sync will not overwrite it.
+  - **Hand-written commits on the rolling branch are never overwritten.** Before it rebuilds the branch, the run fetches
+    the remote `chore/api-sync` and lists the commits that are not on the consumer's `main`. When any of them has an
+    author email other than the sync's (`release@example.invalid`), the run pushes nothing and closes nothing (also when
+    the regenerated output equals `main`), comments ONCE on the open pull request (the comment starts with
+    `<!-- api-sync-manual-commits -->`; a rerun finds the marker through the REST comments endpoint and does not repeat
+    it) or, when no pull request is open, notes it in the step summary, and the step ends green. The sync resumes when
+    the branch is merged, deleted or holds only the sync's own commits again; a merge of `main` made with the "Update
+    branch" button counts as a hand-written commit. The push leases on the sha of the branch that was inspected, so a
+    commit that arrives later makes the push fail instead of being overwritten. The decision is made by
+    `apiserver/contract/manual_commits.py`; the shell only passes files.
   - **What changed in the API:** the body of each pull request, and of the agent issue, has a "What changed in the API"
     section made by `python -m apiserver.contract.evolution --markdown-report`: the API versions, the number of breaking
     changes, one table row per changed endpoint (added, removed or changed, marked **breaking** or additive, with the
@@ -83,19 +122,21 @@ request is served by the newest block at or below the requested version.
     inputs `sdk_ref`, `web_ref` and `agent_ref` (default `main`) exist to demonstrate the paths on throwaway branches,
     and `base_ref` names the server commit the change list starts from.
     The step summary of a run lists what each consumer got.
-- **The SDK's `api contract` job** compares its committed client with what the server's `main` generates, and checks
+- **The SDK's `api contract` job** compares its committed client with what the server generates (the branch named like
+  the pull request's branch when the server has one, else `main`; see "Coordinated work"), and checks
   that the hand-written SDK code only calls actions, fields and versions that exist. A red job on the auto-PR (or on
   any SDK PR) means: the server changed, update the SDK. To refresh by hand: `scripts/regenerate-api.sh` in the SDK.
-- **The agent's CI** installs the SDK's `main` from GitHub, so an SDK change that breaks the agent shows up there. The
+- **The agent's CI** installs the SDK's `main` from GitHub (or the SDK's branch named like the pull request's branch,
+  see "Coordinated work"), so an SDK change that breaks the agent shows up there. The
   agent calls the API through the SDK's generated request classes. Its `api contract` job (a required check) runs
   `check-callers --target agent --root cairnml_agent --base sdk/cairnml` against the schema of the server's `main`
-  as fetched: it reads the agent's package on pull requests only, so drift that a server change causes on the agent's
+  as fetched (or of its branch named like the pull request's branch): it reads the agent's package on pull requests only, so drift that a server change causes on the agent's
   `main` is seen only through the issue the sync workflow opens (above), not by the agent's own CI.
 - **The web app's API layer** is generated by the web target and checked by `check-web` (see "The web app's calls and
   their versions" below). The web repository's `build` job (a required check) runs `generate --target web --check`
   and then `check-web --root src/app/business-logic --allow scripts/api-allow.txt`. `check-web` reads the generated
-  services and models and the other `src/**/*.ts` files (not HTML or `.js`), against the server's `main` as fetched,
-  and only on pull requests; the pull request of the sync workflow runs it on the regenerated layer.
+  services and models and the other `src/**/*.ts` files (not HTML or `.js`), against the server's `main` as fetched
+  (or its branch named like the pull request's branch), and only on pull requests; the pull request of the sync workflow runs it on the regenerated layer.
 
 None of the CI jobs installs a released package of this project from PyPI.
 
