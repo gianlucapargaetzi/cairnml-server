@@ -225,7 +225,7 @@ jobs:
       - run: |
           git config --global user.email ci@example.invalid
           git config --global user.name ci
-      - run: python -m pip install pyhocon jinja2 "./sdk[dataset]" pytest
+      - run: python -m pip install pyhocon jinja2 "./sdk[dataset,router]" pytest
       - name: The committed client equals what the server's schema generates
         run: python -m apiserver.client_generator generate --target sdk --out sdk/cairnml/backend_api/services --check
       - name: The hand-written callers agree with the schema
