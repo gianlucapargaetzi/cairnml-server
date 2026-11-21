@@ -47,6 +47,25 @@ request is served by the newest block at or below the requested version.
     body is built from files (`apiserver/contract/pr_body.py`), never from schema text in shell, and kept below 60000
     characters by dropping table rows. The agent issue has the section only when its callers disagree (the run opens no
     issue otherwise).
+  - **Breaking changes:** when the change report has at least one breaking change (the contract tool's definition: a
+    removed endpoint, a removed or newly required field, a changed type, a removed allowed value), the workflow opens
+    ONE issue with the label `api-breaking` in each of `cairnml`, `cairnml-web` and `cairnml-agent`, whether or not
+    anything else in that repository changed. The title is `API breaking change <version>: <first five endpoints>[ and N
+    more]` (at most 200 characters; the version is the highest one the schema declares). The body names the API versions
+    before and after, the server commit, a link to the `## API <version>` changelog section (or "no changelog section"),
+    this checklist, and the change list (the section described above):
+    - [ ] adopt the new definition where it brings functionality we want;
+    - [ ] check that the old definition is still supported by this repository's code;
+    - [ ] decide whether anything is dropped.
+
+    There is one issue per API version, ever: a later run for the same version comments on the open issue with the
+    new change list, and when the issue is closed the maintainer has worked through it, so nothing is opened or
+    commented. The existing issues are looked up through the REST issues endpoint (`gh api --paginate`, pull requests
+    left out), and when none matches the version the lookup is repeated once after about 20 seconds before an issue is
+    created, so that an issue a run made seconds ago is seen and a quick rerun comments instead of opening a second one.
+    The issues are never assigned and never closed automatically; the maintainer closes each one after the
+    checklist. An additive change, or no change, opens nothing. The title, body and decision are made by
+    `apiserver/contract/breaking_issue.py` from the tool's JSON and markdown reports; the shell only passes files.
   - **The base:** on a push to `main` it is the commit before the push (`github.event.before`); when that is missing,
     all zeros or not an ancestor (a forced push, a new branch), it is the first parent, and the text under the section
     says which. On a `workflow_dispatch` run it is the input `base_ref` (a sha, branch or tag of the server; a name that
