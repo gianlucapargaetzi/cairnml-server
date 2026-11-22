@@ -4,7 +4,7 @@ The server's API level is 2.41. The SDK and the web app are generated from the s
 
 - Removed in API 2.41: the request field non_public of projects.get_all_ex (send allow_public instead) and the response field server_errors of login.supported_modes. A client that asks for API 2.40 or older still gets the old behaviour; only clients at 2.41 do not.
 - models.get_by_task_id and models.update_for_task are refused above API 2.13. Use models.get_by_id or models.get_all, and tasks.add_or_update_model.
-- The queue list (queues.get_all_ex) and the queues of a project (projects.get_queues) return the number of entries, the workers, and the share level and id of each queue, and the schema declares these fields, so the SDK and the web app can read them.
+- The queue list (queues.get_all_ex) returns the number of entries and the workers of each queue when the request asks for them, and the queues of a project (projects.get_queues) return the share level and id of each queue. The schema declares these fields, so the SDK and the web app can read them.
 - Every change that affects an API client is listed in the section "API 2.41" of the server's CHANGELOG.md.
 
 # Changelog
