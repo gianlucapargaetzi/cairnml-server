@@ -22,6 +22,8 @@ request is served by the newest block at or below the requested version.
    - an endpoint whose request or response differs from its newest definition (in the base branch) fails the PR, even
      when the change is additive, unless the PR adds a definition labelled with a newer version. A comment or a
      description is not part of the contract and never fails.
+   - the check also reads changes inside shared definitions, and a field that changes to or from a union of shapes (a
+     request that took one shape now takes another) counts as a breaking change.
 3. Merge. Locally, the same check runs with `python -m apiserver.contract.evolution --base-ref origin/main`.
 
 ### Coordinated work across the repositories
@@ -244,7 +246,7 @@ change as the path.
 ## Releasing
 
 Each repository has a version file: `apiserver/version.py` (server), `cairnml/version.py` (SDK),
-`cairnml_agent/version.py` (agent).
+`cairnml_agent/version.py` (agent), and `package.json` (web app).
 
 **A repository is releasing when its version file is higher than its latest release tag and there are commits since.**
 Otherwise it is staying: it is used at its latest release tag. Unreleased commits without a bump are only reported.
@@ -271,6 +273,15 @@ Otherwise it is staying: it is used at its latest release tag. Unreleased commit
 Examples: a server-only bug fix: bump `apiserver/version.py` only; the SDK and agent are tested at their last releases.
 A new SDK release against the current server: bump `cairnml/version.py` only; it is tested against the latest released
 server.
+
+### Release notes (CHANGELOG.md)
+
+A section of a changelog is read by the users of the release (a person using the web app, a developer using the SDK or the agent, someone running the server), who see it in the "What's new" dialog, so it says what they can now do or must change, in the words of their documentation, and never how the release was made, checked or planned.
+
+- A releasing component must have its `## <version>` section in its `CHANGELOG.md` (`release-check` refuses the release without it).
+- The image carries the "What's new" bundle: the sections of the server, the web app and the SDK, made by `apiserver/release/whats_new.py` while the image is built, and the web app shows the newest section of each to a user who has not seen it. Write one line per bullet and no markdown: the dialog shows each line as a paragraph and shows markdown as text.
+- The web app's release uses its section as the text of the GitHub release; the server, the SDK and the agent use generated notes.
+- What belongs in the maintainer's notes (the API change check, how a release is planned) is in this file, above and below.
 
 ### Trying it without releasing
 
