@@ -1,8 +1,8 @@
-# Exact pins for the suite, compiled by uv from requirements.in together with the SDK (cairnml[dataset]) and the agent
-# (cairnml-agent), so that one set satisfies all three. The runner image and the host install use this file.
-# To change a version: edit requirements.in, then, with the SDK and agent trees fetched by scripts/fetch-sources.sh:
-#   uv pip compile requirements.in ../../cairnml[dataset] ../../cairnml-agent --python-version 3.12 --no-annotate -o requirements.txt
-# and drop the lines that name the local trees.
+# Exact pins for the suite, compiled by uv from requirements.in together with the SDK (cairnml[dataset,agent]), which
+# includes the agent, so that one set satisfies both. The runner image and the host install use this file.
+# To change a version: edit requirements.in, then, with the SDK tree fetched by scripts/fetch-sources.sh:
+#   uv pip compile requirements.in ../../cairnml[dataset,agent] --python-version 3.12 --no-annotate -o requirements.txt
+# and drop the lines that name the local tree.
 aiobotocore==3.10.0
 aiohappyeyeballs==2.7.1
 aiohttp==3.14.5

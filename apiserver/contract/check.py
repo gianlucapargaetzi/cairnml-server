@@ -219,7 +219,7 @@ def check_workspace(
     schema = schema_actions(schema_root)
     implemented = implemented_actions(server / "apiserver" / "services")
     sdk = workspace / "cairnml" / "cairnml"
-    agent = workspace / "cairnml-agent" / "cairnml_agent"
+    agent = workspace / "cairnml" / "cairnml_agent"
     web = workspace / "cairnml-web" / "src"
     services = set(schema) | set(CALLER_ONLY_SERVICES)
     problems = find_problems(

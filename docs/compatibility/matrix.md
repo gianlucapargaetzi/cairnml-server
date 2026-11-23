@@ -14,7 +14,7 @@ exists.
 | CLI: datasets | `clearml-data` | `cairnml dataset` (Git repository, files in DVC or Git LFS) | changed | [Dataset migration](dataset-migration.md) |
 | CLI: parameter search | `clearml-param-search` | `cairnml param-search` | changed | [CLI migration](cli-migration.md#parameter-search) |
 | CLI: debugging | `clearml-debug` | `cairnml debug` | changed | [CLI migration](cli-migration.md#debugging) |
-| CLI: agent | `clearml-agent` | `cairnml-agent`, a separate package and command | changed | [CLI migration](cli-migration.md#agent) |
+| CLI: agent | `clearml-agent` | `cairnml-agent`, installed with `cairnml[agent]` | changed | [CLI migration](cli-migration.md#agent) |
 | Python import | `from clearml import Task` | `from cairnml import Task` | changed | [CLI migration](cli-migration.md#python-import) |
 | Dataset workflow | ID-based datasets, `clearml-data` create, add, close, get | repository-based datasets: `cairnml dataset create`, init, add, commit, push, register, get | changed | [Dataset migration](dataset-migration.md) |
 | API access keys | `CLEARML_API_ACCESS_KEY` and `CLEARML_API_SECRET_KEY` in the environment or the config file | removed; each machine signs in with its own device key | removed | [Auth and storage](auth-and-storage.md#sign-in-and-access-keys) |

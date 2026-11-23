@@ -4,18 +4,18 @@ name: sync-sdk-client
 # - the SDK (cairnml) and the web app (cairnml-web) get the regenerated API code as ONE pull request each, from the
 #   rolling branch chore/api-sync, rebuilt from their main on every run and updated in place; a red check on that pull
 #   request (SDK: api contract, web: check-web) is the signal that the hand-written code must be updated on that branch;
-# - the agent (cairnml-agent) has no generated code: its hand-written callers are checked against the schema, and a
-#   disagreement is ONE issue with the label api-sync, updated by comment and closed when the callers agree again.
-# Every pull request body and every agent issue body starts with a "What changed in the API" section made by the contract
+# - the agent (cairnml_agent, in the SDK repository) has no generated code: its hand-written callers are checked against
+#   the schema in the SDK checkout, and a disagreement fails this run (the step log lists the findings; no issue is made).
+# Every pull request body starts with a "What changed in the API" section made by the contract
 # tool (python -m apiserver.contract.evolution --markdown-report) from a base commit of the server to this one. On a push the
 # base is the commit before the push, on a dispatch it is the input base_ref (default: the first parent of the commit); a
 # rolling pull request records its base once as <!-- api-sync-base:<sha> --> in its body and every later run keeps it, so
 # the section stays cumulative from that base. A body is built from files by apiserver/contract/pr_body.py (never from
 # schema text in shell) and capped below GitHub's size limit. Runs are serialized by the concurrency group below, which
 # keeps at most one pending run: a push run that was replaced by a newer one is not run, which the recorded base makes up
-# for in an existing pull request. The agent issue has the section only when its callers disagree.
+# for in an existing pull request.
 # A breaking change (the JSON report of the same tool) also opens ONE issue with the label api-breaking in each of the
-# SDK, the web app and the agent, titled "API breaking change <version>: <endpoints>", with the change list and a
+# SDK and the web app, titled "API breaking change <version>: <endpoints>", with the change list and a
 # checklist: adopt the new definition, check that the old one is still supported, decide what is dropped. The title, the
 # body and the decision (an open issue of that version gets a comment, a closed one means the maintainer has worked
 # through it and nothing is done, none is created) come from apiserver/contract/breaking_issue.py; the issues are closed
@@ -25,7 +25,7 @@ name: sync-sdk-client
 # the step summary when none is open), and the sync resumes when the branch is merged, deleted or has only the sync's
 # own commits again; the decision is made by apiserver/contract/manual_commits.py.
 # The branch is named chore/ because the consumers' branch-name ruleset refuses other prefixes (sync/ is declined with
-# GH013). The inputs sdk_ref, web_ref and agent_ref (default main) exist for demonstrating the paths on throwaway
+# GH013). The inputs sdk_ref and web_ref (default main) exist for demonstrating the paths on throwaway
 # branches; they reach the run only as the ref of a checkout, never as shell text.
 on:
   push:
@@ -41,10 +41,6 @@ on:
         default: main
       web_ref:
         description: "Ref of cairnml-web to regenerate (default main)"
-        required: false
-        default: main
-      agent_ref:
-        description: "Ref of cairnml-agent to check (default main)"
         required: false
         default: main
       base_ref:
@@ -70,7 +66,7 @@ jobs:
           app-id: ${{ secrets.RELEASE_APP_ID }}
           private-key: ${{ secrets.RELEASE_APP_KEY }}
           owner: gianlucapargaetzi
-          repositories: cairnml,cairnml-server,cairnml-web,cairnml-agent
+          repositories: cairnml,cairnml-server,cairnml-web
           permission-contents: write
           permission-pull-requests: write
           permission-issues: write
@@ -89,13 +85,6 @@ jobs:
           ref: ${{ inputs.web_ref || 'main' }}
           token: ${{ steps.app.outputs.token }}
           path: web
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          repository: gianlucapargaetzi/cairnml-agent
-          ref: ${{ inputs.agent_ref || 'main' }}
-          token: ${{ steps.app.outputs.token }}
-          path: agent
-          persist-credentials: false
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
@@ -290,54 +279,31 @@ jobs:
           python -m apiserver.client_generator generate --target web --out web/src/app/business-logic
           source "$RUNNER_TEMP/sync-consumer.sh"
           sync_consumer web gianlucapargaetzi/cairnml-web layer "If check-web is red, the hand-written callers in the web app need updating on this branch."
-      - name: Agent callers
+      - name: Agent callers (in the SDK checkout)
         shell: bash
         env:
-          GH_TOKEN: ${{ steps.app.outputs.token }}
           PYTHONPATH: .
         run: |
           source "$RUNNER_TEMP/sync-consumer.sh"
-          repo=gianlucapargaetzi/cairnml-agent
-          sha8=${GITHUB_SHA::8}
-          open=$(gh issue list --repo "$repo" --label api-sync --state open --json number --jq '.[0].number // empty')
           # exit 1 with path:line: lines is a finding; every other non-zero exit is a failure of the checker itself
           rc=0
-          out=$(python -m apiserver.client_generator check-callers --target agent --root agent/cairnml_agent --base sdk/cairnml) || rc=$?
+          out=$(python -m apiserver.client_generator check-callers --target agent --root sdk/cairnml/cairnml_agent --base sdk/cairnml) || rc=$?
           if [ "$rc" -eq 0 ]; then
             echo "The callers of the agent agree with the schema"
-            if [ -n "$open" ]; then
-              gh issue close "$open" --repo "$repo" --comment "The callers agree with the schema of cairnml-server@$sha8 again, so this issue is closed."
-              note "$repo: callers agree, closed issue #$open"
-            else
-              note "$repo: callers agree"
-            fi
+            note "sdk (cairnml_agent): callers agree"
           elif [ "$rc" -eq 1 ] && grep -Eq '^[^ ]+:[0-9]+: ' <<<"$out"; then
+            echo "The hand-written callers of the agent disagree with the API schema of cairnml-server@${GITHUB_SHA::8}:"
             echo "$out"
-            body="$RUNNER_TEMP/agent-issue.md"
-            write_section "$(cat "$RUNNER_TEMP/base.sha")" "$RUNNER_TEMP/section-agent.md" "$PWD"
-            # the backticks are the code fence of the findings, not a command substitution
-            # shellcheck disable=SC2016
-            printf 'The hand-written callers of the agent disagree with the API schema of cairnml-server@%s:\n\n````\n%s\n````\n\nFix the callers in this repository. Nothing is generated for the agent, so this issue is not closed by a pull request of the server.\n' \
-              "$GITHUB_SHA" "$out" > "$RUNNER_TEMP/intro-agent.md"
-            python -m apiserver.contract.pr_body build --intro-file "$RUNNER_TEMP/intro-agent.md" \
-              --section-file "$RUNNER_TEMP/section-agent.md" --note "$(cat "$RUNNER_TEMP/base.note")" --out "$body"
-            gh label create api-sync --force --repo "$repo" --description "The agent disagrees with the server's API schema" --color d93f0b
-            if [ -n "$open" ]; then
-              gh issue comment "$open" --repo "$repo" --body-file "$body"
-              note "$repo: findings, commented on issue #$open"
-            else
-              url=$(gh issue create --repo "$repo" --label api-sync \
-                --title "The agent's callers disagree with the API schema (cairnml-server $sha8)" --body-file "$body")
-              note "$repo: findings, opened $url"
-            fi
+            note "sdk (cairnml_agent): the callers disagree with the schema (findings in the step log): this run fails"
+            exit 1
           else
             echo "check-callers failed (exit $rc):" >&2
             [ -z "$out" ] || echo "$out" >&2
-            note "$repo: the checker failed (exit $rc)"
+            note "sdk (cairnml_agent): the checker failed (exit $rc)"
             exit 1
           fi
       - name: Breaking-change issues
-        # a separate step: a failed agent step must not skip it; it needs only the change report, not the checkouts
+        # a separate step: a failed callers step must not skip it; it needs only the change report, not the checkouts
         if: ${{ !cancelled() && steps.app.outcome == 'success' }}
         shell: bash
         env:
@@ -370,7 +336,7 @@ jobs:
           decide() {
             python -m apiserver.contract.breaking_issue find --json-report "$report" --issues-file "$RUNNER_TEMP/breaking-issues.json"
           }
-          for repo in gianlucapargaetzi/cairnml gianlucapargaetzi/cairnml-web gianlucapargaetzi/cairnml-agent; do
+          for repo in gianlucapargaetzi/cairnml gianlucapargaetzi/cairnml-web; do
             list_issues "$repo"
             decision=$(decide)
             if [ "$decision" = none ]; then

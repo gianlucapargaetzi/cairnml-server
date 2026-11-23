@@ -4,7 +4,7 @@
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
-declare -A repo=([sdk]=cairnml [agent]=cairnml-agent [web]=cairnml-web)
+declare -A repo=([sdk]=cairnml [web]=cairnml-web)
 status=0
 for pin in docker/build/*-ref; do
   key=$(basename "$pin" -ref)

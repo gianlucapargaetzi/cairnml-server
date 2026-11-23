@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Creates the virtual environment .venv at the root of this repository. The SDK and the agent are installed editable from
-# their folders (fetched by scripts/fetch-sources.sh), and the server's other requirements from apiserver/requirements.txt, so the tests and
+# Creates the virtual environment .venv at the root of this repository. The SDK, with its agent extra, is installed
+# editable from its folder (fetched by scripts/fetch-sources.sh), and the server's other requirements from
+# apiserver/requirements.txt, so the tests and
 # the scripts run the working tree and not the last release. Run it again after pulling or switching branches.
 #
 # All of it is one pip resolution, so a conflict between the packages is reported here and not left behind as a warning.
@@ -12,13 +13,13 @@ cd "$root"
 
 python3 -m venv --clear .venv
 .venv/bin/python -m pip install --quiet --upgrade pip
-# The two packages are the folders cairnml/ and cairnml-agent/; their lines are left out of the requirements so pip never fetches them from PyPI.
+# The SDK is the folder cairnml/; its line is left out of the requirements so pip never fetches it from PyPI.
 # editable_mode=compat puts the source folders on sys.path. The default finder loses to the cairnml/ folder at
 # the root of this repository, so from the root "import cairnml" would find that folder and not the package.
 .venv/bin/python -m pip install --quiet \
   --config-settings editable_mode=compat \
-  -e cairnml -e cairnml-agent pyarrow pytest \
-  -r <(grep -vE '^cairnml(-agent)?([<>=!~[:space:]]|$)' apiserver/requirements.txt)
+  -e 'cairnml[agent]' pyarrow pytest \
+  -r <(grep -vE '^cairnml([<>=!~[:space:]]|$)' apiserver/requirements.txt)
 
 # Every import must point into this working tree, from the root and from anywhere else.
 while read -r file; do

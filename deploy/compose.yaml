@@ -19,7 +19,6 @@ x-cairnml-build: &cairnml_build
     additional_contexts:
       cairnml_web: ${CAIRNML_WEB_DIR:-../web}
       cairnml_sdk: ../cairnml
-      cairnml_agent: ../cairnml-agent
   image: cairnml-server-fork:local
   restart: unless-stopped
 

@@ -104,9 +104,10 @@ def test_an_allowed_problem_passes_and_an_entry_that_matches_nothing_is_stale():
     assert stale == ["sdk client action the server lacks queues.gone"]
 
 
-def _workspace(root: Path, web_call: str) -> Path:
+def _workspace(root: Path, web_call: str, agent_call: str = "queues.get_all") -> Path:
     (root / "cairnml" / "cairnml").mkdir(parents=True)
-    (root / "cairnml-agent" / "cairnml_agent").mkdir(parents=True)
+    (root / "cairnml" / "cairnml_agent").mkdir(parents=True)
+    (root / "cairnml" / "cairnml_agent" / "x.py").write_text(f'call("{agent_call}")\n', encoding="utf-8")
     (root / "cairnml-web" / "src" / "api-services").mkdir(parents=True)
     (root / "cairnml-web" / "src" / "api-services" / "x.ts").write_text(
         f"const u = `${{base}}/{web_call}`;\n", encoding="utf-8"
@@ -125,4 +126,18 @@ def test_an_unknown_action_added_to_a_caller_fails_the_workspace_check(tmp_path)
     workspace = _workspace(tmp_path / "ws", "queues.definitely_not_an_action")
     unallowed, stale, _ = check_workspace(workspace, server, None, schema_root=schema_root)
     assert [p.name for p in unallowed if p.area == "web"] == ["queues.definitely_not_an_action"]
+    assert stale == []
+
+
+def test_the_agent_is_read_from_the_cairnml_checkout_and_a_removed_endpoint_is_a_problem(tmp_path):
+    """The agent lives in cairnml/cairnml_agent. A call it makes to an action the server no longer implements is a problem."""
+    schema_root = Path(__file__).parents[2] / "schema" / "services"
+    server = tmp_path / "server"
+    (server / "apiserver" / "services").mkdir(parents=True)
+    (server / "apiserver" / "services" / "q.py").write_text(
+        '@endpoint("queues.get_all")\ndef f(): pass\n', encoding="utf-8"
+    )
+    workspace = _workspace(tmp_path / "ws", "queues.get_all", agent_call="queues.definitely_removed")
+    unallowed, stale, _ = check_workspace(workspace, server, None, schema_root=schema_root)
+    assert [(p.area, p.name) for p in unallowed if p.area == "agent"] == [("agent", "queues.definitely_removed")]
     assert stale == []

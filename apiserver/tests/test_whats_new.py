@@ -56,6 +56,28 @@ def test_the_notes_of_one_release_are_its_section():
     assert out.getvalue().strip() == "- Release notes of 0.0.6.\n- Second line."
 
 
+# The SDK's agent notes are "Agent:" lines inside the SDK's release section, with no heading: a "###" heading shows
+# literally in the What's new dialog, and a "##" heading would end the section.
+AGENT_CHANGELOG = """# Changelog
+
+## 0.0.9
+
+- SDK change.
+
+Agent: the agent is part of this package; install it with `pip install "cairnml[agent]"`.
+
+## 0.0.8
+
+- Older SDK notes.
+"""
+
+
+def test_agent_notes_written_as_agent_lines_stay_in_the_sdk_section():
+    text = sections(AGENT_CHANGELOG)["0.0.9"]
+    assert "Agent: the agent is part of this package" in text
+    assert "Older SDK notes" not in text
+    assert has_section(AGENT_CHANGELOG, "0.0.9")
+
 REPO = Path(__file__).resolve().parents[2]
 
 

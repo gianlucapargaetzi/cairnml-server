@@ -3,7 +3,7 @@ name: docker
 # - Pull request: builds the image and scans it. Nothing is pushed.
 # - Started by the release workflow (workflow_dispatch) after the server tag exists: builds, scans, and pushes the image
 #   to Docker Hub. The job waits for the owner's approval (environment "dockerhub"), which also holds the Docker Hub
-#   credentials. The SDK and the agent are built from the exact commits the release tagged (sdk_sha, agent_sha).
+#   credentials. The SDK (with its agent) is built from the exact commit the release tagged (sdk_sha).
 # The web app comes from the branch named in docker/build/web-ref ("main": the newest commit of cairnml-web's main).
 on:
   pull_request:
@@ -16,9 +16,6 @@ on:
         required: true
       sdk_sha:
         description: The cairnml commit that the SDK release tagged
-        required: true
-      agent_sha:
-        description: The cairnml-agent commit that the agent release tagged
         required: true
       web_sha:
         description: "The cairnml-web commit the release picked (empty: the commit named in web-ref)"
@@ -98,11 +95,6 @@ jobs:
           repository: gianlucapargaetzi/cairnml
           ref: ${{ inputs.sdk_sha }}
           path: sdk
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          repository: gianlucapargaetzi/cairnml-agent
-          ref: ${{ inputs.agent_sha }}
-          path: agent
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
       - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
@@ -126,7 +118,6 @@ jobs:
           build-contexts: |
             cairnml_web=./web
             cairnml_sdk=./sdk
-            cairnml_agent=./agent
           build-args: |
             CAIRNML_FROM=source
             VERSION=${{ inputs.version }}
@@ -148,7 +139,6 @@ jobs:
           build-contexts: |
             cairnml_web=./web
             cairnml_sdk=./sdk
-            cairnml_agent=./agent
           build-args: |
             CAIRNML_FROM=source
             VERSION=${{ inputs.version }}

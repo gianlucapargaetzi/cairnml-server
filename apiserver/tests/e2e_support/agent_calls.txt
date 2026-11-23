@@ -1,5 +1,5 @@
-# Endpoints that the cairnml-agent package calls, derived statically from its source (task 3).
-# Each name is preceded by the call sites, as cairnml-agent relative file:line.
+# Endpoints that the agent calls (cairnml_agent in the cairnml repository), derived statically from its source (task 3).
+# Each name is preceded by the call sites, as paths relative to the cairnml repository root (cairnml/cairnml_agent/...).
 # Lines starting with # are comments; every other non-empty line is an endpoint name.
 #
 # cairnml_agent/backend_api/session/callresult.py:94
