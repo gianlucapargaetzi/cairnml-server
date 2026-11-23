@@ -141,7 +141,7 @@ The server needs no address of its own: it answers to any address of this machin
 The clients take the address of the server and work out the rest:
 
 - **SDK:** `cairnml init http://<server-ip>`, see the [SDK](https://github.com/gianlucapargaetzi/cairnml).
-- **Agents:** any signed-in user enrols an agent with `cairnml-agent init http://<server-ip>`, see the [agent](https://github.com/gianlucapargaetzi/cairnml-agent).
+- **Agents:** any signed-in user enrols an agent with `cairnml-agent init http://<server-ip>`, installed with `pip install "cairnml[agent]"`; see the [SDK](https://github.com/gianlucapargaetzi/cairnml).
 
 Opening `http://<server-ip>/` leads to the web app. Nothing else is served at the root.
 
@@ -212,7 +212,7 @@ The settings a user may set are in `deploy/.env`, copied from [`deploy/.env.exam
 
 ## Compatibility
 
-Each component has its own version number, and the numbers are not related: server 0.0.3 does not mean SDK 0.0.3. A published server image is built from the exact SDK and agent commits that the release tagged, and from the newest commit of the web app's `main` (named by `docker/build/web-ref`). The release workflow passes those commits in, so the image matches the release. Locally, `scripts/fetch-sources.sh` takes `SDK_REF` and `AGENT_REF` (default `main`).
+Each component has its own version number, and the numbers are not related: server 0.0.3 does not mean SDK 0.0.3. A published server image is built from the exact SDK commit that the release tagged (the agent is part of the SDK), and from the newest commit of the web app's `main` (named by `docker/build/web-ref`). The release workflow passes those commits in, so the image matches the release. Locally, `scripts/fetch-sources.sh` takes `SDK_REF` and `AGENT_REF` (default `main`).
 
 - **Use the SDK and the agent at the commits the pins name.** A client installed from another source may work, but it is not tested with this server.
 - **Differences from upstream ClearML.** The commands, the dataset workflow, the sign-in and the storage differ from upstream. The [compatibility matrix](docs/compatibility/README.md) lists each area with its status and migration path: CLI commands ([CLI migration](docs/compatibility/cli-migration.md)), datasets ([Dataset migration](docs/compatibility/dataset-migration.md)), sign-in and storage ([Auth and storage](docs/compatibility/auth-and-storage.md)). The agent's app metering and proxy path is not supported ([Agent metering](docs/compatibility/agent-metering.md)).

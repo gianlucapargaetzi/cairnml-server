@@ -71,19 +71,18 @@ on 127.0.0.1 and nine free ports in 18000 to 18999. Run one suite at a time, and
 the deploy stack (see Limits). Needs Docker with Compose v2, uv, and Python 3.12.
 
 ```bash
-# 1. Sources, in a scratch folder (WS): the server at the commit under test, and the SDK, the agent and the web app
-#    inside it, in the folders the compose file builds from (cairnml/, cairnml-agent/, web/). From git:
-WS=/path/to/scratch/ws; mkdir -p "$WS"/{cairnml,cairnml-agent,web}
+# 1. Sources, in a scratch folder (WS): the server at the commit under test, and the SDK (which includes the agent) and
+#    the web app inside it, in the folders the compose file builds from (cairnml/, web/). From git:
+WS=/path/to/scratch/ws; mkdir -p "$WS"/{cairnml,web}
 git -C cairnml-server archive origin/main | tar -x -C "$WS"
 git -C cairnml archive origin/main | tar -x -C "$WS/cairnml"
-git -C cairnml-agent archive origin/main | tar -x -C "$WS/cairnml-agent"
 git -C cairnml-web archive origin/main | tar -x -C "$WS/web"
 #    (or, from the pins, `scripts/fetch-sources.sh` in the server's folder.)
 cd "$WS"
-# 2. The suite's environment: its exact pins, and the SDK and the agent from their folders. --seed puts pip in the
+# 2. The suite's environment: its exact pins, and the SDK with its agent extra from its folder. --seed puts pip in the
 #    venv: the agent builds its own wheel with `python -m pip` when a job starts, and a venv without pip crashes there.
 uv venv --seed -p 3.12 .venv
-uv pip install -r tests/e2e/requirements.txt -e "./cairnml[dataset]" -e ./cairnml-agent
+uv pip install -r tests/e2e/requirements.txt -e "./cairnml[dataset,agent]"
 .venv/bin/python -m playwright install chromium
 # 3. The suite, from a folder that is neither the SDK's nor the agent's. HOME and TMPDIR are scratch folders, so that
 #    nothing is written to your own ~/.cairnml, and the stack's state (which containers write as other users) is in one place.
@@ -110,13 +109,13 @@ nothing else, and nothing inside it is published to the host.
 |---|---|
 | host | `docker compose -f tests/e2e/docker/compose.yaml up dind`, then `inside.sh` runs in it. Nothing else. |
 | `dind` (privileged) | Its daemon runs every container below. Its filesystem holds `/workspace` (the repository, mounted from the host), `/e2e-state` and `/e2e-cache` (volumes), and the images it pulls and builds. |
-| runner (in `dind`) | Built by `inside.sh` from `runner.Dockerfile`: the test venv (the suite, the SDK and the agent from their folders, editable), Chromium, the Docker CLI and Compose, git. It runs `pytest`, the managed agent and the browser. |
+| runner (in `dind`) | Built by `inside.sh` from `runner.Dockerfile`: the test venv (the suite, the SDK with its agent from its folder, editable), Chromium, the Docker CLI and Compose, git. It runs `pytest`, the managed agent and the browser. |
 | stack (in `dind`) | The CairnML stack from `stack/compose.yaml`, started by the suite with the Compose plugin of the runner, against the daemon of `dind`. |
 | job containers (in `dind`) | Started by the agent, through the same daemon. |
 
 **Networking.** The runner starts with `--network host`: it shares the network namespace of `dind`, as the stack does. So
 the stack is reached at `127.0.0.1`, the browser and the SDK use the same addresses, and a job container reaches the
-server through the loopback rule of the agent (`cairnml-agent/cairnml_agent/commands/worker.py`, host networking for a
+server through the loopback rule of the agent (`cairnml/cairnml_agent/commands/worker.py`, host networking for a
 loopback server).
 
 **Paths.** The runner mounts the daemon's socket, so its `docker` and `docker compose` commands go to the daemon of `dind`.

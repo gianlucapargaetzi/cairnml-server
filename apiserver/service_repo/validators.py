@@ -42,7 +42,7 @@ def validate_data(call: APICall, endpoint: Endpoint):
 
 
 # Agents hold the admin role of the person who enrolled them, so a leaked agent token would carry it too. An agent
-# may therefore call only the endpoints the cairnml-agent calls (tests/e2e_support/agent_calls.txt lists them with
+# may therefore call only the endpoints the agent calls (tests/e2e_support/agent_calls.txt lists them with
 # their source locations). Every other endpoint, including people, devices, projects, queue administration, storage,
 # credentials and datasets, is refused for agent tokens.
 AGENT_ALLOWED_ENDPOINTS = frozenset(

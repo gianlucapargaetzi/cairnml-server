@@ -6,7 +6,7 @@ CairnML is an unofficial, modified version of ClearML. It is not created, sponso
 
 ## What is changed in this copy
 
-- **Dispatch** (`cairnml-server`, `cairnml-agent`): jobs wait in a queue until an agent that listens to it takes them; job containers install the agent and the SDK from local source.
+- **Dispatch** (`cairnml-server`, and the agent in `cairnml`): jobs wait in a queue until an agent that listens to it takes them; job containers install the agent and the SDK from local source.
 - **Sign-in** (`cairnml-server`): device sign-in and directory sync through an identity provider.
 - **Datasets** (`cairnml`, `cairnml-server`): git and DVC replace ClearML's dataset implementation; a dataset registry lists the repositories a job may clone.
 - **SDK** (`cairnml`): `Task.enqueue` checks the server's API level rather than the level the process is using.

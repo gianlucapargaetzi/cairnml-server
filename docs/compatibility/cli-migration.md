@@ -14,7 +14,7 @@ they are changed.
 | `clearml-data` | `cairnml dataset ...` | Different workflow; see [Dataset migration](dataset-migration.md). |
 | `clearml-param-search` | `cairnml param-search ...` | |
 | `clearml-debug` | `cairnml debug ...` | `cairnml debug token` and `cairnml debug config dump`. |
-| `clearml-agent` | `cairnml-agent ...` | A separate package. See [agent](#agent). |
+| `clearml-agent` | `cairnml-agent ...` | Installed with `cairnml[agent]`. See [agent](#agent). |
 
 ## Enrolment
 
@@ -55,7 +55,7 @@ and `cairnml debug token` to show the details of the current token.
 
 ## Agent
 
-The agent is a separate package with its own command:
+The agent is part of the SDK: install it with the `agent` extra, `pip install "cairnml[agent]"`. It has its own command:
 
 ```bash
 cairnml-agent init                    # enrols the agent with the server

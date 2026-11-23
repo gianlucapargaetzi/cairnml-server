@@ -1,8 +1,8 @@
 # Releasing, API changes and how the repositories stay in step
 
-This describes how the server (`cairnml-server`), the SDK (`cairnml`), the agent (`cairnml-agent`) and the web app
-(`cairnml-web`) are kept consistent and released. The server is the source of truth for the API. The SDK's client is
-generated from the server's schema, and the agent uses the SDK.
+This describes how the server (`cairnml-server`), the SDK (`cairnml`, which includes the agent as its `cairnml_agent`
+package) and the web app (`cairnml-web`) are kept consistent and released. The server is the source of truth for the
+API. The SDK's client is generated from the server's schema, and the agent uses the SDK.
 
 ## Making an API change (server)
 
@@ -28,8 +28,8 @@ request is served by the newest block at or below the requested version.
 
 ### Coordinated work across the repositories
 
-An API change usually needs its implementation in the SDK, the web app or the agent. The consumers' CI jobs that read the
-server (SDK: `api contract`; web: `build`, the steps `generate --check` and `check-web`; agent: `api contract`) would be
+An API change usually needs its implementation in the SDK (with its agent) or the web app. The consumers' CI jobs that read the
+server (SDK: `api contract`, which includes the agent's callers; web: `build`, the steps `generate --check` and `check-web`) would be
 red against the server's `main` until the server pull request is merged, and the required checks block the consumer
 pull request. The convention that lets both be tested together is the branch name:
 
@@ -37,7 +37,6 @@ pull request. The convention that lets both be tested together is the branch nam
    `cairnml-server` and in `cairnml`; the prefixes the repositories accept are `ci/`, `feature/`, `build/`,
    `refactor/`, `chore/` and `fix/`).
 2. A consumer pull request from branch `X` reads the server's branch `X` when the server has one, else `main`. The
-   agent also reads the SDK's branch `X` the same way (its `test`, `python`, `package` and `api contract` jobs). The
    local action `.github/actions/same-named-ref` of each consumer makes the decision: it looks the branch up with
    `git ls-remote --exit-code --heads` on the public repository, takes the branch name only through `env:` (never as
    shell text), looks up only names made of letters, digits and `. _ / -`, and requires an exact match. No pull request
@@ -47,7 +46,7 @@ pull request. The convention that lets both be tested together is the branch nam
 3. Regenerate the consumer's code from the server branch (SDK: `scripts/regenerate-api.sh <server branch>`; web: `python -m
    apiserver.client_generator generate --target web --out src/app/business-logic` from the server branch) and commit it
    on the consumer's branch together with the hand-written change.
-4. **Merge order: the server first, then the SDK, then the web app and the agent.** After the server branch is merged and
+4. **Merge order: the server first, then the SDK and the web app.** After the server branch is merged and
    deleted, the consumers' CI reads `main`, which has the change, so their pull requests stay green (rerun the check if
    it ran before the server merge). A consumer pull request with a same-named server branch that is merged first is
    checked against a branch that is later deleted: do not do that.
@@ -56,7 +55,7 @@ pull request. The convention that lets both be tested together is the branch nam
 
 ### What happens in the other repositories
 
-- **After a merge that touches the schema or the generator**, the `sync-sdk-client` workflow keeps the three consumers
+- **After a merge that touches the schema or the generator**, the `sync-sdk-client` workflow keeps the two consumers
   in step. It makes no difference between a breaking change and an addition: any difference in what the generator writes
   counts, because each consumer's check requires its committed code to equal the generator's output.
   - The **SDK** and the **web app** each get ONE pull request, from the rolling branch `chore/api-sync` (the consumers'
@@ -76,7 +75,7 @@ pull request. The convention that lets both be tested together is the branch nam
     branch" button counts as a hand-written commit. The push leases on the sha of the branch that was inspected, so a
     commit that arrives later makes the push fail instead of being overwritten. The decision is made by
     `apiserver/contract/manual_commits.py`; the shell only passes files.
-  - **What changed in the API:** the body of each pull request, and of the agent issue, has a "What changed in the API"
+  - **What changed in the API:** the body of each pull request has a "What changed in the API"
     section made by `python -m apiserver.contract.evolution --markdown-report`: the API versions, the number of breaking
     changes, one table row per changed endpoint (added, removed or changed, marked **breaking** or additive, with the
     detail and the definition it goes from and to; at most 40 rows, the rest is "and N more"), the problems the contract
@@ -86,11 +85,10 @@ pull request. The convention that lets both be tested together is the branch nam
     open pull request (a marker counts only as a line of its own with a full lower-case sha, and the commit must be an
     ancestor), so the list grows with the pull request; a new pull request after a merge starts from its own base. The
     body is built from files (`apiserver/contract/pr_body.py`), never from schema text in shell, and kept below 60000
-    characters by dropping table rows. The agent issue has the section only when its callers disagree (the run opens no
-    issue otherwise).
+    characters by dropping table rows.
   - **Breaking changes:** when the change report has at least one breaking change (the contract tool's definition: a
     removed endpoint, a removed or newly required field, a changed type, a removed allowed value), the workflow opens
-    ONE issue with the label `api-breaking` in each of `cairnml`, `cairnml-web` and `cairnml-agent`, whether or not
+    ONE issue with the label `api-breaking` in each of `cairnml` and `cairnml-web`, whether or not
     anything else in that repository changed. The title is `API breaking change <version>: <first five endpoints>[ and N
     more]` (at most 200 characters; the version is the highest one the schema declares). The body names the API versions
     before and after, the server commit, a link to the `## API <version>` changelog section (or "no changelog section"),
@@ -116,24 +114,22 @@ pull request. The convention that lets both be tested together is the branch nam
     most one pending run, so a push run that a newer one replaced does not run; the recorded base keeps an existing pull
     request's list complete, but a brand-new pull request after such a drop can miss the changes of the dropped commit
     in its list (the generated diff itself is always complete).
-  - The **agent** has no generated code. The workflow runs `check-callers --target agent` on its `main` against the new
-    schema; findings open ONE issue with the label `api-sync` in the agent repository (further runs comment on it), and
-    a run that finds the callers in step again closes it. A failure of the checker itself fails the run.
-  - It uses the release GitHub App, installed on `cairnml`, `cairnml-server`, `cairnml-web` and `cairnml-agent` with
+  - The **agent** (`cairnml_agent`, in the SDK checkout) has no generated code. The workflow runs `check-callers --target
+    agent --root sdk/cairnml/cairnml_agent --base sdk/cairnml` against the new schema. Findings fail the sync run, and
+    the step log lists them; no issue is opened. A failure of the checker itself fails the run.
+  - It uses the release GitHub App, installed on `cairnml`, `cairnml-server` and `cairnml-web` with
     write access to contents, pull requests and issues. A run can be started by hand (`workflow_dispatch`); its
-    inputs `sdk_ref`, `web_ref` and `agent_ref` (default `main`) exist to demonstrate the paths on throwaway branches,
+    inputs `sdk_ref` and `web_ref` (default `main`) exist to demonstrate the paths on throwaway branches,
     and `base_ref` names the server commit the change list starts from.
     The step summary of a run lists what each consumer got.
 - **The SDK's `api contract` job** compares its committed client with what the server generates (the branch named like
   the pull request's branch when the server has one, else `main`; see "Coordinated work"), and checks
   that the hand-written SDK code only calls actions, fields and versions that exist. A red job on the auto-PR (or on
   any SDK PR) means: the server changed, update the SDK. To refresh by hand: `scripts/regenerate-api.sh` in the SDK.
-- **The agent's CI** installs the SDK's `main` from GitHub (or the SDK's branch named like the pull request's branch,
-  see "Coordinated work"), so an SDK change that breaks the agent shows up there. The
-  agent calls the API through the SDK's generated request classes. Its `api contract` job (a required check) runs
-  `check-callers --target agent --root cairnml_agent --base sdk/cairnml` against the schema of the server's `main`
-  as fetched (or of its branch named like the pull request's branch): it reads the agent's package on pull requests only, so drift that a server change causes on the agent's
-  `main` is seen only through the issue the sync workflow opens (above), not by the agent's own CI.
+- **The agent's tests and API check** run in the SDK's CI. The agent calls the API through the SDK's generated request
+  classes, so an SDK change that breaks the agent shows up in the SDK's own tests. The SDK's `api contract` job runs
+  `check-callers --target agent --root cairnml_agent --base sdk/cairnml` against the schema of the server's `main` as
+  fetched (or of its branch named like the pull request's branch), on pull requests.
 - **The web app's API layer** is generated by the web target and checked by `check-web` (see "The web app's calls and
   their versions" below). The web repository's `build` job (a required check) runs `generate --target web --check`
   and then `check-web --root src/app/business-logic --allow scripts/api-allow.txt`. `check-web` reads the generated
@@ -147,7 +143,7 @@ None of the CI jobs installs a released package of this project from PyPI.
 `python -m apiserver.client_generator check-callers --target <target> --root <folder or file> [--allow <file>]
 [--base <folder>]...` checks the Python code that calls the API by hand against the schema. The targets are `sdk` (the SDK's package, checked by the
 SDK's `api contract` job with `--root sdk/cairnml --allow sdk/scripts/api-allow.txt`) and `agent` (the agent's package,
-checked by the agent's `api contract` job with `--root cairnml_agent --base sdk/cairnml`). It reports, one line per finding as `path:line: message`:
+checked by the SDK's `api contract` job with `--root cairnml_agent --base sdk/cairnml`). It reports, one line per finding as `path:line: message`:
 
 - a request class of a generated service that the schema does not have, or a keyword that is not a field of it;
 - a call with literal `service=` and `action=` that names no action of the schema, or a literal `version=` the action
@@ -245,8 +241,8 @@ change as the path.
 
 ## Releasing
 
-Each repository has a version file: `apiserver/version.py` (server), `cairnml/version.py` (SDK),
-`cairnml_agent/version.py` (agent), and `package.json` (web app).
+Each repository has a version file: `apiserver/version.py` (server), `cairnml/version.py` (SDK, which includes the agent),
+and `package.json` (web app).
 
 **A repository is releasing when its version file is higher than its latest release tag and there are commits since.**
 Otherwise it is staying: it is used at its latest release tag. Unreleased commits without a bump are only reported.
@@ -256,21 +252,20 @@ Otherwise it is staying: it is used at its latest release tag. Unreleased commit
 1. Bump the version file in each repository you want to release, through a PR, and merge it.
 2. In the server repository: **Actions → release → Run workflow**, on `main`. Nothing is typed in.
 3. The workflow runs, in order:
-   1. **check** (`release-check.yml`): works out what is releasing, and tests the three together at exactly those
-      commits (a releasing repo at its `main`, a staying repo at its latest release tag): the server's unit tests with
-      the SDK, the SDK's generated client against the server's schema plus its tests, and the agent's tests with the
-      SDK. It also refuses a version that is already tagged or on PyPI, or lower than the last release, and a release
+   1. **check** (`release-check.yml`): works out what is releasing, and tests the server and the SDK together at exactly
+      those commits (a releasing repo at its `main`, a staying repo at its latest release tag): the server's unit tests
+      with the SDK, and the SDK's generated client against the server's schema plus its tests. It also refuses a version that is already tagged or on PyPI, or lower than the last release, and a release
       that is not started from `main`. If it fails, or nothing is releasing, the run stops and **no tag is created**.
    2. **approve**: you approve the plan (the `release` environment).
    3. **server**: tags and releases the server, if it is releasing.
-   4. **SDK**, then **agent**: release the planned commit under the version file's version, if releasing. Each starts
-      that repository's `publish` workflow, which waits for the `pypi` approval and refuses to upload unless its gate
-      passes (SDK: the client equals what the newest released server tag generates; agent: the newest released SDK is
-      accepted by `requirements.txt`).
-   5. **image**: if the server is releasing, builds the server image from the server tag with the SDK and the agent
-      built from the planned commits, and pushes it after the `dockerhub` approval. No pin file is involved.
+   4. **SDK**: releases the planned commit under the version file's version, if releasing. It starts the SDK's `publish`
+      workflow, which waits for the `pypi` approval and refuses to upload unless its gate passes (the client equals what
+      the newest released server tag generates).
+   5. **web app**: releases its planned commit with its CHANGELOG section as the release notes, if releasing.
+   6. **image**: if the server is releasing, builds the server image from the server tag with the SDK built from the
+      planned commit, and pushes it after the `dockerhub` approval. No pin file is involved.
 
-Examples: a server-only bug fix: bump `apiserver/version.py` only; the SDK and agent are tested at their last releases.
+Examples: a server-only bug fix: bump `apiserver/version.py` only; the SDK is tested at its last release.
 A new SDK release against the current server: bump `cairnml/version.py` only; it is tested against the latest released
 server.
 
@@ -280,7 +275,7 @@ A section of a changelog is read by the users of the release (a person using the
 
 - A releasing component must have its `## <version>` section in its `CHANGELOG.md` (`release-check` refuses the release without it).
 - The image carries the "What's new" bundle: the sections of the server, the web app and the SDK, made by `apiserver/release/whats_new.py` while the image is built, and the web app shows the newest section of each to a user who has not seen it. Write one line per bullet and no markdown: the dialog shows each line as a paragraph and shows markdown as text.
-- The web app's release uses its section as the text of the GitHub release; the server, the SDK and the agent use generated notes.
+- The web app's release uses its section as the text of the GitHub release; the server and the SDK use generated notes.
 - What belongs in the maintainer's notes (the API change check, how a release is planned) is in this file, above and below.
 
 ### Trying it without releasing
@@ -296,10 +291,10 @@ server is now at its latest tag, so it is staying; the SDK is still bumped, so i
 ## One-time setup
 
 - A GitHub App (permissions: Contents, Actions, Pull requests: read and write), installed on `cairnml-server`, `cairnml`
-  and `cairnml-agent`. Its ID and private key are the repository secrets `RELEASE_APP_ID` and `RELEASE_APP_KEY` of the
+  and `cairnml-web`. Its ID and private key are the repository secrets `RELEASE_APP_ID` and `RELEASE_APP_KEY` of the
   server repository. A release made with the default token would not start the publish workflows.
-- Environments in the server repository: `release` (required reviewer: you) and `dockerhub`. In the SDK and agent
-  repositories: `pypi` (required reviewer) and `testpypi`.
+- Environments in the server repository: `release` (required reviewer: you) and `dockerhub`. In the SDK repository:
+  `pypi` (required reviewer) and `testpypi`.
 
 ## The pipelines
 
@@ -312,6 +307,4 @@ server is now at its latest tag, so it is staying; the SDK is still bumped, so i
 | Server | `sync-sdk-client` | push to `main` that changes the schema or the generator |
 | SDK | `ci` (test, api contract, lint, versions, package, ...) | PRs and push |
 | SDK | `publish` | started by the release (or by hand) |
-| Agent | `ci` | PRs and push |
-| Agent | `publish` | started by the release (or by hand) |
 | Web | `build` | PRs and push |
