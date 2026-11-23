@@ -12,12 +12,13 @@ python3 -m pip install --upgrade pip
 # The lock has exact versions and hashes, so two builds of the same commit install the same packages.
 python3 -m pip install --require-hashes -r /opt/cairnml/apiserver/requirements.lock
 if [ "${CAIRNML_FROM:-pypi}" = source ]; then
-    # The SDK is the source tree of this build, not the released version of the lock; its agent extra comes with it.
-    # Build output left in a checkout is not source, so it is removed before the install. The install takes the
-    # dependencies too (the lock is installed above, so only the missing packages come from the index).
+    # The SDK is the source tree of this build, not the released version of the lock. The server does not run the agent,
+    # so the agent extra is not installed. The dependencies stay the ones of the lock (--no-deps): a dependency of an
+    # extra could replace a locked package (the agent extra asks for a newer packaging, which breaks the migration
+    # loader). Build output left in a checkout is not source, so it is removed before the install.
     tree=/tmp/cairnml-sdk
     rm -rf "$tree/build" "$tree/dist" "$tree"/*.egg-info
-    python3 -m pip install "${tree}[agent]"
+    python3 -m pip install --no-deps --force-reinstall "$tree"
     # pip check also reports unrelated packages of the base image (the wheel package needs a newer packaging than the
     # lock); only a broken dependency of the SDK fails the build.
     if python3 -m pip check | grep -qi cairnml; then
