@@ -1,6 +1,6 @@
 """``python -m apiserver.contract --workspace DIR [--server DIR] [--allow FILE]``
 
-DIR holds the checkouts ``cairnml``, ``cairnml-agent`` and ``cairnml-web``. Exits 1 when a problem is not on the allow-list
+DIR holds the checkouts ``cairnml`` (its ``cairnml_agent`` folder is the agent) and ``cairnml-web``. Exits 1 when a problem is not on the allow-list
 or an allow-list entry no longer matches a problem."""
 
 import argparse
@@ -19,7 +19,7 @@ def main(argv=None) -> int:
     parser.add_argument("--server", type=Path, default=DEFAULT_SERVER)
     parser.add_argument("--allow", type=Path, default=DEFAULT_ALLOW)
     args = parser.parse_args(argv)
-    for name in ("cairnml", "cairnml-agent", "cairnml-web"):
+    for name in ("cairnml", "cairnml-web"):
         if not (args.workspace / name).is_dir():
             print(f"error: {args.workspace / name} is missing", file=sys.stderr)
             return 2
