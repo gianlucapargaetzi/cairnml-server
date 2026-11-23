@@ -2,6 +2,7 @@
 company App or none needed), the tokens it gives, and the anonymous answer of the host. Records come from bll/repository_records."""
 
 import logging
+import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import List, Optional
@@ -14,7 +15,7 @@ from apiserver.database.model.project import Project
 from apiserver.database.model.repository import Assignment, Repository
 from apiserver.database.model.user_access import UserAccess
 from apiserver.idp import git_credentials as store
-from apiserver.idp.github import GitHubApp, GitHubError, RepoNotAccessible
+from apiserver.idp.github import GitHubApp, GitHubError, GitHubUnreachable, RepoNotAccessible
 from apiserver.idp.repo_visibility import is_private
 
 log = logging.getLogger(__name__)
@@ -233,9 +234,38 @@ def resolve(
     return Resolution(UNREACHABLE, None, f"The repository is private and no credential is assigned ({why}).", False)
 
 
+TOKEN_ATTEMPTS = 3
+TOKEN_PAUSES_SEC = (1, 2)  # the wait before the second and the third attempt
+
+
+def _pause(seconds: float) -> None:
+    """The wait between attempts. A seam of its own: the tests patch this, not time.sleep, which other threads use too."""
+    time.sleep(seconds)
+
+
+def _issue_token(app: GitHubApp, repo: Repository, permissions: Optional[dict]):
+    """The installation token, asked again when GitHub could not be reached (a network failure, not a refusal)."""
+    for attempt in range(1, TOKEN_ATTEMPTS + 1):
+        try:
+            return app.installation_token(repo.path, permissions) if permissions else app.installation_token(repo.path)
+        except GitHubUnreachable as exc:
+            cause = exc.__cause__
+            log.warning(
+                "GitHub could not be reached for %s (attempt %d of %d): %s: %s",
+                repo.path,
+                attempt,
+                TOKEN_ATTEMPTS,
+                type(cause).__name__,
+                cause,
+            )
+            if attempt == TOKEN_ATTEMPTS:
+                raise
+            _pause(TOKEN_PAUSES_SEC[attempt - 1])
+
+
 def _app_token(app: GitHubApp, repo: Repository, label: str, permissions: Optional[dict] = None) -> dict:
     try:
-        token = app.installation_token(repo.path, permissions) if permissions else app.installation_token(repo.path)
+        token = _issue_token(app, repo, permissions)
     except RepoNotAccessible:
         raise errors.bad_request.ValidationError(f"{label} is not installed on {repo.path}") from None
     except GitHubError as exc:

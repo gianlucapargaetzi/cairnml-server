@@ -6,6 +6,9 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
+import requests
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 
 from apiserver.apierrors import errors
 from apiserver.bll import user_access
@@ -19,6 +22,7 @@ from apiserver.database.model.share import Share
 from apiserver.database.model.user import UserProfile
 from apiserver.database.model.user_access import UserAccess
 from apiserver.idp import git_credentials as store
+from apiserver.idp.github import GitHubApp, GitHubError, GitHubRefused, InstallationToken, RepoNotAccessible
 from apiserver.tests.db import ensure_db
 
 
@@ -956,6 +960,95 @@ def test_a_write_token_refused_by_github_says_the_app_needs_write_access(world):
     with pytest.raises(errors.bad_request.ValidationError) as read_refused:  # a read token has no such hint
         bll._app_token(App(), repo, "the GitHub App x")
     assert "write" not in read_refused.value.msg
+
+
+class FakeApp:
+    """A GitHub App whose token request raises the exceptions given, one per call, and then issues a token."""
+
+    def __init__(self, *failures):
+        self.failures = list(failures)
+        self.calls = 0
+
+    def installation_token(self, repo, permissions=None):
+        self.calls += 1
+        if self.failures:
+            raise self.failures.pop(0)
+        return InstallationToken("ghs_x", datetime(2099, 1, 1))
+
+
+class GitHubHttp:
+    """The HTTP session under a real GitHubApp: the installation lookup and the access-token POST of acme/proj. The token POST
+    raises the given errors, one per call, before it answers with a token."""
+
+    INSTALL = "/repos/acme/proj/installation"
+    TOKEN = "/app/installations/77/access_tokens"
+
+    def __init__(self, *token_failures):
+        self.token_failures = list(token_failures)
+        self.requests = []
+
+    def request(self, method, url, **kwargs):
+        self.requests.append((method, url))
+        if url.endswith(self.INSTALL):
+            return SimpleNamespace(status_code=200, json=lambda: {"id": 77})
+        if url.endswith(self.TOKEN):
+            if self.token_failures:
+                raise self.token_failures.pop(0)
+            return SimpleNamespace(
+                status_code=201, json=lambda: {"token": "ghs_x", "expires_at": "2099-01-01T00:00:00Z"}
+            )
+        raise AssertionError(f"unexpected {method} {url}")
+
+    def paths(self, suffix):
+        return [url for _method, url in self.requests if url.endswith(suffix)]
+
+
+def _github_app(http):
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    pem = key.private_bytes(
+        serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()
+    ).decode()
+    return GitHubApp("123", pem, "https://api.github.com", http=http, clock=lambda: 1000.0)
+
+
+def test_a_transient_github_failure_is_retried_once(world, monkeypatch):
+    pauses = []
+    _patch(monkeypatch, "_pause", pauses.append)
+    http = GitHubHttp(requests.ConnectionError("connection reset"))  # the real client path, the token POST fails once
+    repo = use(world)
+    answer = bll._app_token(_github_app(http), repo, "the GitHub App x")
+    assert answer["token"] == "ghs_x"
+    assert len(http.paths(GitHubHttp.TOKEN)) == 2
+    assert len(http.paths(GitHubHttp.INSTALL)) == 1  # the installation id is kept by the App for the second attempt
+    assert pauses == [1]
+
+
+@pytest.mark.parametrize(
+    "refusal",
+    [
+        GitHubError("token request failed: 500"),
+        GitHubRefused("GitHub did not accept the App ID or its key (401)"),
+        RepoNotAccessible("acme/proj"),
+    ],
+)
+def test_a_refusal_by_github_is_not_retried(world, monkeypatch, refusal):
+    pauses = []
+    _patch(monkeypatch, "_pause", pauses.append)
+    app = FakeApp(refusal)
+    repo = use(world)
+    with pytest.raises(errors.bad_request.ValidationError):
+        bll._app_token(app, repo, "the GitHub App x")
+    assert app.calls == 1 and pauses == []
+
+
+def test_a_timeout_is_not_retried(world, monkeypatch):
+    pauses = []
+    _patch(monkeypatch, "_pause", pauses.append)
+    http = GitHubHttp(requests.ReadTimeout("read timed out"))
+    repo = use(world)
+    with pytest.raises(errors.bad_request.ValidationError):
+        bll._app_token(_github_app(http), repo, "the GitHub App x")
+    assert len(http.paths(GitHubHttp.TOKEN)) == 1 and pauses == []
 
 
 # --- no record is left pointing at a deleted one ----------------------------------------------------------------------------
