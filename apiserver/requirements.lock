@@ -1,19 +1,19 @@
 async-timeout==5.0.1 \
     --hash=sha256:39e3809566ff85354557ec2398b55e096c8364bacac9405a7a1fa429e77fe76c \
     --hash=sha256:d9321a7a3d5a6a5e187e824d2fa0793ce379a202935782d555d6e9d2735677d3
-    # via redis
+    # via redis, -c requirements.lock
 attrs==22.2.0 \
     --hash=sha256:29e95c7f6778868dbd49170f98f8818f78f3dc5e0e37c0b1f474e3561b240836 \
     --hash=sha256:c9227bfc2f01993c03f68db37d1d15c9690188323c067c641f1a35ca58185f99
-    # via cairnml, jsonschema, referencing, -r apiserver/requirements.txt
+    # via cairnml, jsonschema, referencing, -c requirements.lock, -r requirements.txt
 azure-core==1.41.0 \
     --hash=sha256:522b4011e8180b1a3dcd2024396a4e7fe9ac37fb8597db47163d230b5efe892d \
     --hash=sha256:f46ff5dfcd230f25cf1c19e8a34b8dc08a337b2503e268bb600a16c00db8ad5a
-    # via azure-storage-blob
+    # via azure-storage-blob, -c requirements.lock
 azure-storage-blob==12.31.0 \
     --hash=sha256:0c0cb601d3462491d09ea96023cd791bb9dd4b173bf950daf3cff34ff47ba5b5 \
     --hash=sha256:997b393cfcbdc4b186d5911790d91f80387f7edc12c4d73eab963a2d26e5b2a9
-    # via -r apiserver/requirements.txt
+    # via -c requirements.lock, -r requirements.txt
 backports-zstd==1.8.0 \
     --hash=sha256:029bca2385ebb4355135bdb8559792d2768ae19707705eea84e68c42a30a0276 \
     --hash=sha256:045e15ed3b3ebd8816edaa7d66f024becf050d9aec09605f549ce33cfda01098 \
@@ -107,7 +107,7 @@ backports-zstd==1.8.0 \
     --hash=sha256:f99b44c2c13fc60f65ad568bf7401d9540370f996b1040793a34988324e3b712 \
     --hash=sha256:f9e9aa28a44db1897fb637f037175566f3b75890d4bae6cae7ba34f1df1e0804 \
     --hash=sha256:fc9ee08e6a17f388f670a421b36a5d3a9417a404c2f39ac0bf5e6ad958ac853c
-    # via flask-compress
+    # via flask-compress, -c requirements.lock
 bcrypt==5.0.0 \
     --hash=sha256:046ad6db88edb3c5ece4369af997938fb1c19d6a699b9c1b27b0db432faae4c4 \
     --hash=sha256:0c418ca99fd47e9c59a301744d63328f17798b5947b0f791e9af3c1c499c2d0a \
@@ -172,31 +172,31 @@ bcrypt==5.0.0 \
     --hash=sha256:f748f7c2d6fd375cc93d3fba7ef4a9e3a092421b8dbf34d8d4dc06be9492dfdd \
     --hash=sha256:f8429e1c410b4073944f03bd778a9e066e7fad723564a52ff91841d278dfc822 \
     --hash=sha256:fc746432b951e92b58317af8e0ca746efe93e66555f1b40888865ef5bf56446b
-    # via -r apiserver/requirements.txt
+    # via -c requirements.lock, -r requirements.txt
 blinker==1.9.0 \
     --hash=sha256:b4ce2265a7abece45e7cc896e98dbebe6cead56bcf805a3d23136d145f5445bf \
     --hash=sha256:ba0efaa9080b619ff2f3459d1d500c57bddea4a6b424b60a91141db6fd2f08bc
-    # via flask
+    # via flask, -c requirements.lock
 boltons==26.2.0 \
     --hash=sha256:41942cbce440211bbcf2487ccdc356964ad674f95a01068b8a0dd7a1d1fed036 \
     --hash=sha256:d39cfd15c1a1c3bd4d705c82252fa9edb8e4f5e8cc039f8e39afac7b1b47e92c
-    # via -r apiserver/requirements.txt
+    # via -c requirements.lock, -r requirements.txt
 boto3==1.43.118 \
     --hash=sha256:ab8f3d2c622ef039338b4f228d97ea55f1abd573d84bb9b9a5ee8cb6780c0ccd \
     --hash=sha256:c0620f799e0f0c222ba42c337b65cdbcd3da38a3121187f634d8926cbbb28a9c
-    # via -r apiserver/requirements.txt
+    # via -c requirements.lock, -r requirements.txt
 boto3-stubs==1.43.118 \
     --hash=sha256:11a39b22fabd4ac0532904b0522e7491cc54b1a710e04ead30711ceafda6ba4f \
     --hash=sha256:21c9fd6d24b99af97d5f04247b58b8072352f39d69233fe1c5f20676c5aa547b
-    # via -r apiserver/requirements.txt
+    # via -c requirements.lock, -r requirements.txt
 botocore==1.43.118 \
     --hash=sha256:7f3f9d88cc9e847587690f82a42e3c3c292c3026c92c1e60d68a9310018e003f \
     --hash=sha256:a45d7ae570674161e4a3542d8c68633bf7503f92d1de781ef7361b79488eda6f
-    # via boto3, s3transfer
+    # via boto3, s3transfer, -c requirements.lock
 botocore-stubs==1.43.118 \
     --hash=sha256:5c5684f51b50b09e2a7b2d7bd3e822a8f0e669932019e204de950903b2066b72 \
     --hash=sha256:684daeaef4bafc08eee8c001809b47588d51d0ad774e61fb1f42a2d5f5366721
-    # via boto3-stubs
+    # via boto3-stubs, -c requirements.lock
 brotli==1.2.1 \
     --hash=sha256:0023348c448140a6ea71615eba331835c971d38ae8acf8a89b4e963b1f38f131 \
     --hash=sha256:00a50d063aae2e69c2eb28818ccf6dc3e51f2ea5b74e3c2082a47943ee23f399 \
@@ -341,19 +341,15 @@ brotli==1.2.1 \
     --hash=sha256:fb5df75d1b1c42d997adbb39eac61f2cdb48efa26304a0cb9c0b757c9bc20732 \
     --hash=sha256:fb6a4d400aa531c73a718b337116fad77ba8dc6df34fa615c808bfc55ffb19ca \
     --hash=sha256:ff02e697d947f518e9e99f2b25698045a5ddffa95049c4d95b5a8cf3618d9008
-    # via flask-compress
+    # via flask-compress, -c requirements.lock
 cairnml==0.0.2 \
-    --hash=sha256:e124df0bc30e821f47d7e60224a8caf0b6d7c29d8b824c0bb6e4fd7a3c4de9d6 \
-    --hash=sha256:d452ca88b375c894f2d38ea26c568d8ffa5a20b913ac40a6108ca623cdfd497e
-    # via -r apiserver/requirements.txt
-cairnml-agent==0.0.1 \
-    --hash=sha256:4633a74ca19f329e443cb9e1f008d64d894545d4edf0397cd8143c00f51d5f3d \
-    --hash=sha256:d7bbf17477b7a5aed281c0db9199aa7fd08c74b90b462d8b5c9581809812579e
-    # via -r apiserver/requirements.txt
+    --hash=sha256:d452ca88b375c894f2d38ea26c568d8ffa5a20b913ac40a6108ca623cdfd497e \
+    --hash=sha256:e124df0bc30e821f47d7e60224a8caf0b6d7c29d8b824c0bb6e4fd7a3c4de9d6
+    # via -c requirements.lock, -r requirements.txt
 certifi==2026.10.23 \
     --hash=sha256:a9895e6e2758b371e0545e321a3a8fd1fcfd9829ada8824a936dfb16aaaf36cd \
     --hash=sha256:e9b54de76e530bb6cf0ccd036787103acb58fd42ba930ea8bf948ddbaa2f61d1
-    # via elastic-transport, requests
+    # via elastic-transport, requests, -c requirements.lock
 cffi==2.1.1 \
     --hash=sha256:046bfc24911b37851ee1b51aab8bffe713d89c68c6a057b09484ce9fd5f69b4e \
     --hash=sha256:06c72bb76605a4b0cd0aad6930b69d4baf7dd5d806cfc409b824191099700e66 \
@@ -455,7 +451,7 @@ cffi==2.1.1 \
     --hash=sha256:f8ec5e643a9a937f64e1999eb9f75d072263751912dc5cd06d3c85f8f44be7c3 \
     --hash=sha256:fb92203a88b3d3053034db775110081c49d28be6551923805e039924093761e4 \
     --hash=sha256:fcd22650c908d7b7da162bbfaab594a1227a15d1643a98c68b122ac642fa2264
-    # via cryptography
+    # via cryptography, -c requirements.lock
 charset-normalizer==3.5.2 \
     --hash=sha256:01077390b03f7988f11d700a2194e69b119741a86b1a638b1db88891e3eced8e \
     --hash=sha256:01b0c0d2262a9e28e8484a278c7e1b5d650e3ac8cf2683d2967e25899f208bdf \
@@ -629,11 +625,11 @@ charset-normalizer==3.5.2 \
     --hash=sha256:fcff63213e8e6e47770541a4607175404f47cbb3ebea7b6058cc82d524a0e424 \
     --hash=sha256:fd1fbe0f116b6e55da77aca2c6ddcddcfac2186cbf78bdebf40fc156efca389d \
     --hash=sha256:fe9753dfee015c570d73df76f899f18444d41388bffcde097deba51c4fadbb9f
-    # via requests
+    # via requests, -c requirements.lock
 click==8.5.0 \
     --hash=sha256:255bc9599cf7748b4b1a446ccc735421bd08a2ae529a8b88597d3de5664ee360 \
     --hash=sha256:ba0d2089de75ea0310e2dde03160e6ca10009947fb95a182f9b54021bb272e34
-    # via flask
+    # via flask, -c requirements.lock
 cryptography==50.0.2 \
     --hash=sha256:0ddc924c04591c2811ca024d62ecad4f7f6f08af8939c211438f48a16bd23602 \
     --hash=sha256:0ec5f09541743261e66e291b4a0cbf0fb2997aeaab6d9e9c740b9dba1b58d1c2 \
@@ -694,66 +690,58 @@ cryptography==50.0.2 \
     --hash=sha256:f9f6143a8c75945eb960d9eb98905a441394abfa24afaae239d514ffb2586480 \
     --hash=sha256:fa8f5efb344d6908a1ce62f4a24e2e5780f825d6f53f5f50ec5ffacac72936cb \
     --hash=sha256:fdd28f912fccfec1846a94e2e1e8f9b0012f557f0c46fe4f3eb0d7a87afcf90b
-    # via azure-storage-blob, cairnml, cairnml-agent, google-auth, -r apiserver/requirements.txt
-distlib==0.4.4 \
-    --hash=sha256:ca4175b4ac7f71223cc30ed7248c45d2b38c2439d8ee6e498ab67ed63cf3508d \
-    --hash=sha256:cf09d55b1e85a89576b036aeb71550bfd68320f3f21761ca329eadadad918638
-    # via virtualenv
+    # via azure-storage-blob, cairnml, google-auth, -c requirements.lock, -r requirements.txt
 dnspython==2.9.0 \
     --hash=sha256:9a4aedb833c3c1b49214d04d44d3032ab7a9135f7c1d29a549b4ff78fd82fda9 \
     --hash=sha256:b44dc6b18f07a8b1c56676a19fbfdb5209415b046a9cece286baafa87ff3f7f1
-    # via pymongo
+    # via pymongo, -c requirements.lock
 dpath==1.5.0 \
     --hash=sha256:496615b4ea84236d18e0d286122de74869a60e0f87e2c7ec6787ff286c48361b
-    # via -r apiserver/requirements.txt
+    # via -c requirements.lock, -r requirements.txt
 elastic-transport==8.19.0 \
     --hash=sha256:32afed2a70dad80511476c821b2cf823f35a82153289765f6b2e2eb8cb0de099 \
     --hash=sha256:97ab35de878c7f4c7ebf8840cbc8ff1ff01d9dbc0e977e52d82715b155678b4f
-    # via elasticsearch
+    # via elasticsearch, -c requirements.lock
 elasticsearch==8.17.0 \
     --hash=sha256:15965240fe297279f0e68b260936d9ced9606aa7ef8910b9b56727f96ef00d5b \
     --hash=sha256:c1069bf2204ba8fab29ff00b2ce6b37324b2cc6ff593283b97df43426ec13053
-    # via -r apiserver/requirements.txt
+    # via -c requirements.lock, -r requirements.txt
 fastjsonschema==2.22.2 \
     --hash=sha256:0fb3915616adac85ccfdd737d26be1089845d2019819505b42d39888458f74d4 \
     --hash=sha256:72064e12356a7d6ef02165be2946b9abadbdf238536e07eb587e3dbaa33099cf
-    # via -r apiserver/requirements.txt
-filelock==3.32.7 \
-    --hash=sha256:37b8a3d9811b0f9aef7e5ec5c71bb320de52df51e6ca9bcd6f5ad81187660da7 \
-    --hash=sha256:65ff0d0190ea42038b32bda4b77834fb05be2cad4c5b9b01aa4dfb3614536e52
-    # via virtualenv
+    # via -c requirements.lock, -r requirements.txt
 flask==3.1.3 \
     --hash=sha256:0ef0e52b8a9cd932855379197dd8f94047b359ca0a78695144304cb45f87c9eb \
     --hash=sha256:f4bcbefc124291925f1a26446da31a5178f9483862233b23c0c96a20701f670c
-    # via flask-compress, flask-cors, -r apiserver/requirements.txt
+    # via flask-compress, flask-cors, -c requirements.lock, -r requirements.txt
 flask-compress==1.25 \
     --hash=sha256:6ca78e29728525e575a9e76e0e8e7acc6e0bf1421e0cbfd452bca0a68626166f \
     --hash=sha256:802954fb3af048cf4ca2a3b414393bf2b98466ae8067e6654ea0aa34ba34aff5
-    # via -r apiserver/requirements.txt
+    # via -c requirements.lock, -r requirements.txt
 flask-cors==6.0.5 \
     --hash=sha256:30c5031552cd59f620ac0c8211dac45b345d3b2df310e7721879e4f46ef9c601 \
     --hash=sha256:68fcf75693e961f3af26683b23c4b9a8fb6b64de17d20d0c37b95e8de7ab2ed8
-    # via -r apiserver/requirements.txt
+    # via -c requirements.lock, -r requirements.txt
 furl==2.1.4 \
     --hash=sha256:877657501266c929269739fb5f5980534a41abd6bbabcb367c136d1d3b2a6015 \
     --hash=sha256:da34d0b34e53ffe2d2e6851a7085a05d96922b5b578620a37377ff1dbeeb11c8
-    # via cairnml, -r apiserver/requirements.txt
+    # via cairnml, -c requirements.lock, -r requirements.txt
 google-api-core==2.30.3 \
     --hash=sha256:a85761ba72c444dad5d611c2220633480b2b6be2521eca69cca2dbb3ffd6bfe8 \
     --hash=sha256:e601a37f148585319b26db36e219df68c5d07b6382cff2d580e83404e44d641b
-    # via google-cloud-core, google-cloud-storage
+    # via google-cloud-core, google-cloud-storage, -c requirements.lock
 google-auth==2.62.0 \
     --hash=sha256:0bef0ce54bdf9ce226c5d66e4264413bd918141c31bbe49fb52eac882f513d69 \
     --hash=sha256:4ff4319aeb4ad128409759d397a9fcafad126d0031d241cc0dd6b9a00b43e3f3
-    # via google-api-core, google-cloud-core, google-cloud-storage
+    # via google-api-core, google-cloud-core, google-cloud-storage, -c requirements.lock
 google-cloud-core==2.8.0 \
     --hash=sha256:365f8e4518ae81c8101b8dea5fc1c32a960badedb8b511f19db2843cbbd285d2 \
     --hash=sha256:e235b0952f7ffe7b9c71a4cf96b506d9cfb557e22557c412f0df9b7068b5d007
-    # via google-cloud-storage
+    # via google-cloud-storage, -c requirements.lock
 google-cloud-storage==3.17.1 \
     --hash=sha256:287c7919d7bcda710eae6f6b60c756e89140475d9a4daec01b6174e737488ca8 \
     --hash=sha256:b24df37900f5e0a93518bd7d3a2a7b7b48d8a1e72add8eb57d53a38b8b2b0640
-    # via -r apiserver/requirements.txt
+    # via -c requirements.lock, -r requirements.txt
 google-crc32c==1.9.0 \
     --hash=sha256:0568b17ed90ac596f29400d99e243fd0cc6276766183def888d1bf8d1dc13827 \
     --hash=sha256:0abe7e202c25909869c35672ab0f2fe748a7acf276eb78577332a7c38999740f \
@@ -786,59 +774,59 @@ google-crc32c==1.9.0 \
     --hash=sha256:f97c3806dcea41c29c04965347b0e12481561b75e0045dc7a4f69d75dec5d9b1 \
     --hash=sha256:fb63a8d7fa2e95dcff1ca16af2f4d88b526fa5ff72d1696285884ac2d49b6963 \
     --hash=sha256:fbef61a3794e011c65fb4396a196cf123a7f474fe5a443db8e5dd7d751b9e6d4
-    # via google-cloud-storage, google-resumable-media
+    # via google-cloud-storage, google-resumable-media, -c requirements.lock
 google-resumable-media==2.11.0 \
     --hash=sha256:f43d15e6a7f818f762eaead0f369c551f8275a4179c9d6225d0d259f49b87b5d \
     --hash=sha256:febd83686752799661b4de575f0b993c5c25c349a5362556fc4d7be164056a37
-    # via google-cloud-storage
+    # via google-cloud-storage, -c requirements.lock
 googleapis-common-protos==1.76.0 \
     --hash=sha256:59e13344a9f3651aa201a03e2bee815a3bf43a4baf1f9ff8a9b62a840ce25fac \
     --hash=sha256:71db0e44a1d4c2dd024ebad44ca67129cc1e2892e4861df466764749d5ef8642
-    # via google-api-core
+    # via google-api-core, -c requirements.lock
 gunicorn==26.2.0 \
     --hash=sha256:62b864895d9ebff0b2f9867ba04fe811c93121596540830c9c916d0769668447 \
     --hash=sha256:bd249d0b3f7972f7432f0a6b6ff3b3ee2d129f70cd1ff6c09a9dd9e29a2b88e3
-    # via -r apiserver/requirements.txt
+    # via -c requirements.lock, -r requirements.txt
 humanfriendly==10.0 \
     --hash=sha256:1697e1a8a8f550fd43c2865cd84542fc175a61dcb779b6fee18cf6b6ccba1477 \
     --hash=sha256:6b0b831ce8f15f7300721aa49829fc4e83921a9a301cc7f606be6686a2288ddc
-    # via -r apiserver/requirements.txt
+    # via -c requirements.lock, -r requirements.txt
 idna==3.20 \
     --hash=sha256:a7db850025b95ded1eae8a46181a1a6c56c92c96f0e2b005d9ff8dc0210cab44 \
     --hash=sha256:ab7ae7122974553370f0bdb919e1a960b2cd1bc1ef0276416d896db81c14582c
-    # via requests
+    # via requests, -c requirements.lock
 isodate==0.7.2 \
     --hash=sha256:28009937d8031054830160fce6d409ed342816b543597cece116d966c6d99e15 \
     --hash=sha256:4cd1aa0f43ca76f4a6c6c0292a85f40b35ec2e43e315b59f06e6d32171a953e6
-    # via azure-storage-blob
+    # via azure-storage-blob, -c requirements.lock
 itsdangerous==2.2.0 \
     --hash=sha256:c6242fc49e35958c8b15141343aa660db5fc54d4f13a1db01a3f5891b98700ef \
     --hash=sha256:e0050c0b7da1eea53ffaf149c0cfbb5c6e2e2b69c4bef22c81fa6eb73e5f6173
-    # via flask
+    # via flask, -c requirements.lock
 jinja2==3.1.6 \
     --hash=sha256:0137fb05990d35f1275a587e9aee6d56da821fc83491a0fb838183be43f66d6d \
     --hash=sha256:85ece4451f492d0c13c5dd7c13a64681a86afae63a5f347908daf103ce6d2f67
-    # via flask, -r apiserver/requirements.txt
+    # via flask, -c requirements.lock, -r requirements.txt
 jmespath==1.1.0 \
     --hash=sha256:472c87d80f36026ae83c6ddd0f1d05d4e510134ed462851fd5f754c8c3cbb88d \
     --hash=sha256:a5663118de4908c91729bea0acadca56526eb2698e83de10cd116ae0f4e97c64
-    # via boto3, botocore
+    # via boto3, botocore, -c requirements.lock
 jsonmodels==2.8.0 \
     --hash=sha256:9c37ae58f0417252b743ee1fa85fc937d9696e16520824f6b221f19f62f08f9c \
     --hash=sha256:b7a603de1caf328d38d2aac961fe692ffc63d979e23f63ee89f264dbb0e4820f
-    # via -r apiserver/requirements.txt
+    # via -c requirements.lock, -r requirements.txt
 jsonschema==4.26.0 \
     --hash=sha256:0c26707e2efad8aa1bfc5b7ce170f3fccc2e4918ff85989ba9ffa9facb2be326 \
     --hash=sha256:d489f15263b8d200f8387e64b4c3a75f06629559fb73deb8fdfb525f2dab50ce
-    # via cairnml, -r apiserver/requirements.txt
+    # via cairnml, -c requirements.lock, -r requirements.txt
 jsonschema-specifications==2025.9.1 \
     --hash=sha256:98802fee3a11ee76ecaca44429fda8a41bff98b00a0f2838151b113f210cc6fe \
     --hash=sha256:b540987f239e745613c7a9176f3edb72b832a4ac465cf02712288397832b5e8d
-    # via jsonschema
+    # via jsonschema, -c requirements.lock
 luqum==1.0.0 \
     --hash=sha256:25e8723aa7b4a522f296eaf8553f7c887b75a29cc92479293cb44333a3b0bc2b \
     --hash=sha256:3e7bf3a94eaf8dc936c63de3019b306ee96e63575bc19372dad56114b194f8e0
-    # via -r apiserver/requirements.txt
+    # via -c requirements.lock, -r requirements.txt
 markupsafe==3.0.4 \
     --hash=sha256:007e1ffd9bf65bb6ee96df7b258fc632a4868dd5566037986c64781f35a36e98 \
     --hash=sha256:02fa4acbc6a3fc5c693c34d4dd8c1130b7fe99cc915181b0ddd6f72aeb296002 \
@@ -991,18 +979,18 @@ markupsafe==3.0.4 \
     --hash=sha256:fa95848c929b6a75f6848d3c9793e59db365ee436776e57db835cdbfa79ba977 \
     --hash=sha256:fd9f8797427910198f95bced71ddfed61130d7e349213bfb8466c9c99e2c46a8 \
     --hash=sha256:fdb4ca07ab75ffadab4a8b135ad59cdbb3156b99310f3d565370da74a15d6bd3
-    # via flask, jinja2, werkzeug
+    # via flask, jinja2, werkzeug, -c requirements.lock
 mongoengine==0.29.1 \
     --hash=sha256:3b43abaf2d5f0b7d39efc2b7d9e78f4d4a5dc7ce92b9889ba81a5a9b8dee3cf3 \
     --hash=sha256:9302ec407dd60f47f62cc07684d9f6cac87f1e93283c54203851788104d33df4
-    # via -r apiserver/requirements.txt
+    # via -c requirements.lock, -r requirements.txt
 mypy-boto3-s3==1.43.106 \
     --hash=sha256:731195f15830699a36e29d3c8abb2918bccd3587eb2edcb233f8046967893279 \
     --hash=sha256:e233d04dbcf3925522dff4346e75c37344ec3d1cbb82337e5eed2af263847668
-    # via boto3-stubs
+    # via boto3-stubs, -c requirements.lock
 nested-dict==1.61 \
     --hash=sha256:de0fb5bac82ba7bcc23736f09373f18628ea57f92bbaa13480d23f261c41e771
-    # via -r apiserver/requirements.txt
+    # via -c requirements.lock, -r requirements.txt
 numpy==2.4.6 \
     --hash=sha256:001fbb8e08d942dd57599e781f2472269ee7f2755fae407b4f67b2f0b17da3f1 \
     --hash=sha256:0280e0356c0829a18d9de1cb7eee50ec22ca639878d7240307ca0943d73cd2c4 \
@@ -1076,19 +1064,19 @@ numpy==2.4.6 \
     --hash=sha256:f3a3570c4a2a16746ac2c31a7c7c7b0c186b95ce902e33db6f28094ed7387dda \
     --hash=sha256:f407cb6b8e9d6d8c626bc73c945db1706035af8fd632295547bf1c9e46d092d6 \
     --hash=sha256:f74a575920ab21fe304421a3fc28793d82e299cae9eccb37084e9fc7f3617c20
-    # via cairnml
+    # via cairnml, -c requirements.lock
 orderedmultidict==1.0.2 \
     --hash=sha256:16a7ae8432e02cc987d2d6d5af2df5938258f87c870675c73ee77a0920e6f4a6 \
     --hash=sha256:ab5044c1dca4226ae4c28524cfc5cc4c939f0b49e978efa46a6ad6468049f79b
-    # via furl
+    # via furl, -c requirements.lock
 packaging==20.3 \
     --hash=sha256:3c292b474fda1671ec57d46d739d072bfd495a4f51ad01a055121d81e952b7a3 \
     --hash=sha256:82f77b9bee21c1bafbf35a84905d604d5d1223801d639cf3ed140bd651c08752
-    # via -r apiserver/requirements.txt
+    # via -c requirements.lock, -r requirements.txt
 pathlib2==2.3.7.post1 \
     --hash=sha256:5266a0fd000452f1b3467d782f079a4343c63aaa119221fbdc4e39577489ca5b \
     --hash=sha256:9fe0edad898b83c0c3e199c842b27ed216645d2e177757b2dd67384d4113c641
-    # via cairnml
+    # via cairnml, -c requirements.lock
 pillow==13.0.0 \
     --hash=sha256:02464da86f561f410e13b061ec37c3068a9cb557a095494157742d07b3c24a27 \
     --hash=sha256:04a63720f79e22fd54d897c233a68314c50ca0603360f54ce2bd5db8f0f43782 \
@@ -1173,19 +1161,15 @@ pillow==13.0.0 \
     --hash=sha256:fc481f742ccda20e9ed760b8f978dff50f2a4e9bc253ac167fb0a05b0783ef52 \
     --hash=sha256:ff3fe9eb621fbb9db4c4be33ab946f6bac5f98ab50ca8d3260503653656c961b \
     --hash=sha256:ffea6b2986a797c84b6d1d27d4f43e0b83c73fc16281a930891cd237cf0d08fe
-    # via cairnml, -r apiserver/requirements.txt
-platformdirs==4.13.5 \
-    --hash=sha256:05831adf87d392760f4b5c3a0a95579ab5a10b18b9b9bd43680dcb47544788a0 \
-    --hash=sha256:53d3ec4280b815c1e0b02edad7f9ee8fda1ba9c0865dd9c2e6e63849ce82fc1e
-    # via virtualenv
+    # via cairnml, -c requirements.lock, -r requirements.txt
 ply==3.11 \
     --hash=sha256:00c7c1aaa88358b9c765b6d3000c6eec0ba42abca5351b095321aef446081da3 \
     --hash=sha256:096f9b8350b65ebd2fd1346b12452efe5b9607f7482813ffca50c22722a807ce
-    # via luqum
+    # via luqum, -c requirements.lock
 proto-plus==1.29.0 \
     --hash=sha256:8acd070469a7aaf43f440b022ef9757c8cac1a9f866e933f59ae98669ddc6c8b \
     --hash=sha256:cfb4e62ad7e13dd18f346cabbda00cab39930d36a05791fd81ddb074d6ee884f
-    # via google-api-core
+    # via google-api-core, -c requirements.lock
 protobuf==7.36.2 \
     --hash=sha256:497d0463ff3316681da6c0b9e8d06cb465d61abce00b613ab42226175644d1bb \
     --hash=sha256:89f23aa53c24553a2416fd4fd1ec06f74fa42b14b546d8883128813f775bbfd2 \
@@ -1195,7 +1179,7 @@ protobuf==7.36.2 \
     --hash=sha256:cbc70b17ee27e28894c7fee8bb04be1abead49e936bc70eb60052531eee2079e \
     --hash=sha256:e11e1f0180583a2af89db6a2ecd9e8dc40aa6d2988ca175bfd0e6d12ea72d74e \
     --hash=sha256:f4fee11ec330d238b34a05c9b675f693c20415d1c5bd7d5320cc2f8a798eb9cf
-    # via google-api-core, googleapis-common-protos, proto-plus
+    # via google-api-core, googleapis-common-protos, proto-plus, -c requirements.lock
 psutil==7.2.2 \
     --hash=sha256:0746f5f8d406af344fd547f1c8daa5f5c33dbc293bb8d6a16d80b4bb88f59372 \
     --hash=sha256:076a2d2f923fd4821644f5ba89f059523da90dc9014e85f8e45a5774ca5bc6f9 \
@@ -1218,26 +1202,26 @@ psutil==7.2.2 \
     --hash=sha256:ed0cace939114f62738d808fdcecd4c869222507e266e574799e9c0faa17d486 \
     --hash=sha256:eed63d3b4d62449571547b60578c5b2c4bcccc5387148db46e0c2313dad0ee00 \
     --hash=sha256:fd04ef36b4a6d599bbdb225dd1d3f51e00105f6d48a28f006da7f9822f2606d8
-    # via cairnml, cairnml-agent, -r apiserver/requirements.txt
+    # via cairnml, -c requirements.lock, -r requirements.txt
 pyasn1==0.6.4 \
     --hash=sha256:9c447d8431c947fe4c8febc4ed9e760bc29011a5b01e5c74b67025bd9fb8ce81 \
     --hash=sha256:deda9277cfd454080ec40b207fb6df82206a3a2688735233cdcd8d3d565f088b
-    # via pyasn1-modules
+    # via pyasn1-modules, -c requirements.lock
 pyasn1-modules==0.4.2 \
     --hash=sha256:29253a9207ce32b64c3ac6600edc75368f98473906e8fd1043bd6b5b1de2c14a \
     --hash=sha256:677091de870a80aae844b1ca6134f54652fa2c8c5a52aa396440ac3106e941e6
-    # via google-auth
+    # via google-auth, -c requirements.lock
 pycparser==3.12 \
     --hash=sha256:a076f3f489b39b43ed13563a1dafe42447445bec2e294154ec5c57fcdda4c85e \
     --hash=sha256:f03387877eab82ce01bbdfd0ba7252ee55a90b1c708d5129e2ce915475cf1db6
-    # via cffi
+    # via cffi, -c requirements.lock
 pyhocon==0.3.63 \
     --hash=sha256:7c98db21453c0390c6cedc376576fee4e0a153da5f2201bc681cf886820f4a7c
-    # via -r apiserver/requirements.txt
+    # via -c requirements.lock, -r requirements.txt
 pyjwt==2.15.1 \
     --hash=sha256:42d59d631f7768a1028a64c7ff581a9bf7519804daf91fc5b6c56e30eec5e193 \
     --hash=sha256:4f259e80cdfb6b3fc18a7de51fd1ef9ec79652f25019bae68975ca2468a34df8
-    # via cairnml, cairnml-agent, -r apiserver/requirements.txt
+    # via cairnml, -c requirements.lock, -r requirements.txt
 pymongo==4.18.3 \
     --hash=sha256:01da84a43a37b5ab327dbe7cf9f2612f9963c4ca093390d2211671eb996b26cc \
     --hash=sha256:05838fcc42c277d6293ca3e85d5c959beaa355f515b877ef56a048bb1c6660ae \
@@ -1310,15 +1294,15 @@ pymongo==4.18.3 \
     --hash=sha256:f973cd934f9f943602418d4d0ff9a1371990741eaaeb7c6dbb421fec1345a828 \
     --hash=sha256:fbeffc9b90020e9bdd3d9d124403cbeeb4b4d6002d3779a66b43f46458e2c336 \
     --hash=sha256:ff7585de6e5befc06eec004ac6352507685f901eac92ea0c79ae5defae374a96
-    # via mongoengine, -r apiserver/requirements.txt
+    # via mongoengine, -c requirements.lock, -r requirements.txt
 pyparsing==3.3.3 \
     --hash=sha256:928ae7e20211f3b6f3915a72f06a0cfd29ab9d24279dd6346b6b1a7146397d36 \
     --hash=sha256:ece8c00a69cf01b45d0b1dedabb469c90d8caf996d4fda40f147627a122849a4
-    # via cairnml, packaging, pyhocon
+    # via cairnml, packaging, pyhocon, -c requirements.lock
 python-dateutil==2.9.0.post0 \
     --hash=sha256:37dd54208da7e1cd875388217d5e00ebd4179249f90fb72437e91a35459a0ad3 \
     --hash=sha256:a8b2bc7bffae282281c8140a97d3aa9c14da0b136dfe83f850eea9a5f7470427
-    # via botocore, cairnml, jsonmodels
+    # via botocore, cairnml, jsonmodels, -c requirements.lock
 python-rapidjson==1.25 \
     --hash=sha256:02950c997db93803dad2dbfc11d0ca095e8dec3797c21e703c208344a876c962 \
     --hash=sha256:06a3f76b1997b4d16a86744b3e733dc24738c37085aedfb393f6e7779e7d2b58 \
@@ -1401,7 +1385,7 @@ python-rapidjson==1.25 \
     --hash=sha256:f8b5d37bac0230ab3848c5447e8dd582ece10b36fec0ed234a14cf897dfcb160 \
     --hash=sha256:f9e3950c0fddcc14cec7bd1bf00835b68893f7d331395b3c8d08fae198d13d6d \
     --hash=sha256:ff1800233170b331c25b1d1c42a30dac769857bb9cc0a4b41ab6559142eb1f3d
-    # via -r apiserver/requirements.txt
+    # via -c requirements.lock, -r requirements.txt
 pyyaml==6.0.3 \
     --hash=sha256:00c4bdeba853cc34e7dd471f16b4114f4162dc03e6b7afcc2128711f0eca823c \
     --hash=sha256:0150219816b6a1fa26fb4699fb7daa9caf09eb1999f3b70fb6e786805e80375a \
@@ -1476,23 +1460,23 @@ pyyaml==6.0.3 \
     --hash=sha256:f7057c9a337546edc7973c0d3ba84ddcdf0daa14533c2065749c9075001090e6 \
     --hash=sha256:fa160448684b4e94d80416c0fa4aac48967a969efe22931448d853ada8baf926 \
     --hash=sha256:fc09d0aa354569bc501d4e787133afc08552722d3ab34836a80547331bb5d4a0
-    # via cairnml
+    # via cairnml, -c requirements.lock
 redis==7.0.1 \
     --hash=sha256:4977af3c7d67f8f0eb8b6fec0dafc9605db9343142f634041fb0235f67c0588a \
     --hash=sha256:c949df947dca995dc68fdf5a7863950bf6df24f8d6022394585acc98e81624f1
-    # via -r apiserver/requirements.txt
+    # via -c requirements.lock, -r requirements.txt
 referencing==0.37.0 \
     --hash=sha256:381329a9f99628c9069361716891d34ad94af76e461dcb0335825aecc7692231 \
     --hash=sha256:44aefc3142c5b842538163acb373e24cce6632bd54bdb01b21ad5863489f50d8
-    # via cairnml, jsonschema, jsonschema-specifications
+    # via cairnml, jsonschema, jsonschema-specifications, -c requirements.lock
 requests==2.32.5 \
     --hash=sha256:2462f94637a34fd532264295e186976db0f5d453d1cdd31473c85a6a161affb6 \
     --hash=sha256:dbba0bac56e100853db0ea71b82b4dfd5fe2bf6d3754a8893c3af500cec7d7cf
-    # via azure-core, cairnml, cairnml-agent, google-api-core, google-cloud-storage, requests-toolbelt, -r apiserver/requirements.txt
+    # via azure-core, cairnml, google-api-core, google-cloud-storage, requests-toolbelt, -c requirements.lock, -r requirements.txt
 requests-toolbelt==1.0.0 \
     --hash=sha256:7681a0a3d047012b5bdc0ee37d7f8f07ebe76ab08caeccfc3921ce23c88d5bc6 \
     --hash=sha256:cccfdd665f0a24fcf4726e690f65639d272bb0637b9b92dfd91a5568ccf6bd06
-    # via -r apiserver/requirements.txt
+    # via -c requirements.lock, -r requirements.txt
 rpds-py==2026.9.1 \
     --hash=sha256:00ba2d8c7dd4ee537978ddf4b3fbd712bef2d8751603f7f3146b3f4287768e25 \
     --hash=sha256:01445c8d194aa032a08e944f16567672da1c62dbdbefd8b6d0693032e290cf68 \
@@ -1622,48 +1606,44 @@ rpds-py==2026.9.1 \
     --hash=sha256:fda1d96e542c37b6c804547dbf489c129fe7c97183a76a5ec275909ba1a063df \
     --hash=sha256:fdcd198979b4ecffcc1beba366a7fbcf4eb41243691a82fe52ceb0b902f09c12 \
     --hash=sha256:fe5ad0664ec772b02c45859041aa17655709cced7a31005817fbbbd988c25567
-    # via jsonschema, referencing
+    # via jsonschema, referencing, -c requirements.lock
 s3transfer==0.19.3 \
     --hash=sha256:24eb7535804306355e31c952a90022bf5b2f9d760f9a11062c7493a217c08553 \
     --hash=sha256:8326acc3d056d7f7b8a37110c7d2aea41f67e83f6ae79cd3b5fbcca34c726406
-    # via boto3
+    # via boto3, -c requirements.lock
 semantic-version==2.10.0 \
     --hash=sha256:bdabb6d336998cbb378d4b9db3a4b56a1e3235701dc05ea2690d9a997ed5041c \
     --hash=sha256:de78a3b8e0feda74cabc54aab2da702113e33ac9d9eb9d2389bcf1f58b7d9177
-    # via -r apiserver/requirements.txt
+    # via -c requirements.lock, -r requirements.txt
 setuptools==81.0.0 \
     --hash=sha256:487b53915f52501f0a79ccfd0c02c165ffe06631443a886740b91af4b7a5845a \
     --hash=sha256:fdd925d5c5d9f62e4b74b30d6dd7828ce236fd6ed998a08d81de62ce5a6310d6
-    # via cairnml-agent, -r apiserver/requirements.txt
+    # via -c requirements.lock, -r requirements.txt
 six==1.17.0 \
     --hash=sha256:4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274 \
     --hash=sha256:ff70335d468e7eb6ec65b95b99d3a2836546063f63acc5171de367e834932a81
-    # via cairnml, furl, orderedmultidict, packaging, pathlib2, python-dateutil, -r apiserver/requirements.txt
+    # via cairnml, furl, orderedmultidict, packaging, pathlib2, python-dateutil, -c requirements.lock, -r requirements.txt
 types-s3transfer==0.19.3 \
     --hash=sha256:6843143f3b79e3cb73e58b6f45738e28e88d9f681fd32cc5ef7fa16f0c193356 \
     --hash=sha256:99422ef028a5f854cd92d1e72cf4208bd0569f68a87936ca02fb9f91a68cdcd3
-    # via boto3-stubs
+    # via boto3-stubs, -c requirements.lock
 typing-extensions==4.16.0 \
     --hash=sha256:481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8 \
     --hash=sha256:dc983d19a509c94dba722ee6abd33940f7c05a89e243c47e907eb4db6f1a43e5
-    # via azure-core, azure-storage-blob, boto3-stubs, mypy-boto3-s3, referencing
+    # via azure-core, azure-storage-blob, boto3-stubs, mypy-boto3-s3, referencing, -c requirements.lock
 urllib3==2.8.0 \
     --hash=sha256:0cf3cae568d36aa9576b28dfb35f11328f1cb974ca7647d9475ebb86c75ac6e3 \
     --hash=sha256:63bf2ead4c879426ebf22ef2a781eeb4aa3b4ae798a0435506f8687fd5bb9b63
-    # via botocore, cairnml, cairnml-agent, elastic-transport, requests, -r apiserver/requirements.txt
+    # via botocore, cairnml, elastic-transport, requests, -c requirements.lock, -r requirements.txt
 validators==0.36.0 \
     --hash=sha256:92ad9ed00bbed320b784cec0ea90b213cf08904cf605b3d0852cfa4108e32a2c \
     --hash=sha256:c52ad00435e385b95fa4d6dd3081cb20c0660e7fd07b214523c8584dd2edba34
-    # via -r apiserver/requirements.txt
-virtualenv==20.39.1 \
-    --hash=sha256:a00332e0b089ba64edefbf94ef34e6db33f45fe5184df0652cf0b754dcd36190 \
-    --hash=sha256:c551ea1072d7717a273dd9a4a0adad8f45571af134b0f63a12430e85f6ac1c08
-    # via cairnml-agent
+    # via -c requirements.lock, -r requirements.txt
 werkzeug==3.1.9 \
     --hash=sha256:55ca7c70a75689be937aa27f8ff4b018f06ff4838fc73045560bf0f5a1291060 \
     --hash=sha256:6392e50c78460ba618e5b21f08a71f59c99ce99cdc6cf6e3dd7e6ccca8754fab
-    # via flask, flask-cors, -r apiserver/requirements.txt
+    # via flask, flask-cors, -c requirements.lock, -r requirements.txt
 winfcntl==1.1.9 \
     --hash=sha256:23971ceeafee9872227cbccdeaa9d6c5836130c1c8aa8445ba54b273adee98b1 \
     --hash=sha256:efa93c1ef8d1b804be2a6ec307ed2f480d1b7fc8367771e622e1e1d3251b76ff
-    # via -r apiserver/requirements.txt
+    # via -c requirements.lock, -r requirements.txt
