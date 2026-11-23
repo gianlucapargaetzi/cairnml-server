@@ -1,3 +1,7 @@
+## 0.0.7
+
+- The agent is now part of the SDK: install it with pip install "cairnml[agent]". The server image no longer uses a separate agent package. The agent's command, its configuration files and its environment names stay the same.
+
 ## 0.0.6
 
 The server's API level is 2.41. The SDK and the web app are generated from the server's schema, so they use the same level.
