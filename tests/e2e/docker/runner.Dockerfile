@@ -1,5 +1,5 @@
 # The suite's runner, built inside dind by inside.sh from a staged build context:
-#   runner.Dockerfile, requirements.txt (tests/e2e/requirements.txt, exact pins), src/cairnml, src/cairnml-agent
+#   runner.Dockerfile, requirements.txt (tests/e2e/requirements.txt, exact pins), src/cairnml
 # It holds the test venv (the suite, the SDK and the agent from their folders), Chromium for the browser tests, the
 # Docker CLI and Compose (they talk to the daemon of dind through its socket), and git for the git tests.
 FROM python:3.12-slim
@@ -18,10 +18,9 @@ RUN pip install -r /tmp/requirements.txt \
     && python -m playwright install --with-deps chromium \
     && rm -rf /var/lib/apt/lists/* /tmp/requirements.txt
 
-# The SDK and the agent are installed from their folders, editable, as the host's venv has them.
+# The SDK, with its agent (cairnml_agent, the extra), is installed from its folder, editable, as the host's venv has it.
 COPY src/cairnml /src/cairnml
-COPY src/cairnml-agent /src/cairnml-agent
-RUN pip install -e "/src/cairnml[dataset]" -e /src/cairnml-agent
+RUN pip install -e "/src/cairnml[dataset,agent]"
 
 # git reads the mounted repository, whose files belong to another user
 RUN git config --system --add safe.directory '*'

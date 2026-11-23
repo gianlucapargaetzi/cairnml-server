@@ -52,7 +52,7 @@ def commit_all(checkout: Path, message: str) -> str:
 def served(root: Path):
     """The repositories under root, over git:// on the loopback address, while the block runs. A job's container clones
     them as it would clone a remote: a local path is not visible inside the container, but this address is, because a
-    job container on a loopback server runs with the host's network (cairnml-agent, worker.py). Yields the base URL."""
+    job container on a loopback server runs with the host's network (worker.py). Yields the base URL."""
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
         port = probe.getsockname()[1]

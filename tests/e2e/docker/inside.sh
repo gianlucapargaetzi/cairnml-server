@@ -3,7 +3,7 @@
 # daemon, then runs the suite in a runner container of this daemon.
 #
 # The runner shares the network namespace of dind, as the stack does: the stack is reached at 127.0.0.1, and a job
-# container reaches the server through the loopback rule of the agent (cairnml-agent, worker.py).
+# container reaches the server through the loopback rule of the agent (worker.py).
 #
 #   inside.sh                  the suite; the arguments go to pytest
 #   inside.sh --stop-stack     stop the CairnML stack, keep the environment
@@ -26,9 +26,8 @@ mkdir -p "$STAGE/src"
 cp /workspace/tests/e2e/docker/runner.Dockerfile "$STAGE/"
 cp /workspace/tests/e2e/requirements.txt "$STAGE/requirements.txt"
 cp -r /workspace/cairnml "$STAGE/src/cairnml"
-cp -r /workspace/cairnml-agent "$STAGE/src/cairnml-agent"
 # build output is not source: a stale build/ folder would be packed into the wheel instead of the sources
-rm -rf "$STAGE/src/cairnml/build" "$STAGE/src/cairnml/dist" "$STAGE/src/cairnml-agent/build" "$STAGE/src/cairnml-agent/dist"
+rm -rf "$STAGE/src/cairnml/build" "$STAGE/src/cairnml/dist"
 docker build -q -t "$IMAGE" -f "$STAGE/runner.Dockerfile" "$STAGE" >/dev/null
 
 # The runner runs as the host's user, who has no entry in the image's passwd file. dvc names the user with getpass, which
