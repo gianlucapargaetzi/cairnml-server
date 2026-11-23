@@ -268,6 +268,10 @@ def _app_token(app: GitHubApp, repo: Repository, label: str, permissions: Option
         token = _issue_token(app, repo, permissions)
     except RepoNotAccessible:
         raise errors.bad_request.ValidationError(f"{label} is not installed on {repo.path}") from None
+    except GitHubUnreachable:
+        raise errors.bad_request.ValidationError(
+            f"GitHub could not be reached to issue a token for {repo.path}, try again in a few minutes"
+        ) from None
     except GitHubError as exc:
         hint = ""
         if permissions and "422" in str(exc):

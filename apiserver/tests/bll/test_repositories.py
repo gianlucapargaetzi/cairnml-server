@@ -1,6 +1,7 @@
 """Repositories: one record, one credential mechanism. Who sees what, who may assign what, and how one repository is read for a
 run in a project by a user (apiserver/bll/repositories)."""
 
+import logging
 from datetime import datetime
 from types import SimpleNamespace
 from uuid import uuid4
@@ -22,7 +23,14 @@ from apiserver.database.model.share import Share
 from apiserver.database.model.user import UserProfile
 from apiserver.database.model.user_access import UserAccess
 from apiserver.idp import git_credentials as store
-from apiserver.idp.github import GitHubApp, GitHubError, GitHubRefused, InstallationToken, RepoNotAccessible
+from apiserver.idp.github import (
+    GitHubApp,
+    GitHubError,
+    GitHubRefused,
+    GitHubUnreachable,
+    InstallationToken,
+    RepoNotAccessible,
+)
 from apiserver.tests.db import ensure_db
 
 
@@ -1049,6 +1057,39 @@ def test_a_timeout_is_not_retried(world, monkeypatch):
     with pytest.raises(errors.bad_request.ValidationError):
         bll._app_token(_github_app(http), repo, "the GitHub App x")
     assert len(http.paths(GitHubHttp.TOKEN)) == 1 and pauses == []
+
+
+def _unreachable(cause="connection reset"):
+    """What the GitHub client raises for a network failure: the requests error is kept as the cause."""
+    error = GitHubUnreachable("GitHub transport error")
+    error.__cause__ = requests.ConnectionError(cause)
+    return error
+
+
+def test_an_unreachable_github_says_so_after_three_attempts(world, monkeypatch):
+    pauses = []
+    _patch(monkeypatch, "_pause", pauses.append)
+    app = FakeApp(_unreachable(), _unreachable(), _unreachable())
+    repo = use(world)
+    with pytest.raises(errors.bad_request.ValidationError) as caught:
+        bll._app_token(app, repo, "the GitHub App x")
+    assert caught.value.code == 400
+    assert "GitHub could not be reached" in caught.value.msg and "try again" in caught.value.msg
+    assert app.calls == 3 and pauses == [1, 2]
+
+
+def test_each_failed_attempt_logs_the_cause(world, monkeypatch, caplog):
+    _patch(monkeypatch, "_pause", lambda seconds: None)
+    app = FakeApp(_unreachable("connection reset"), _unreachable("name resolution failed"), _unreachable("refused"))
+    repo = use(world)
+    with caplog.at_level(logging.WARNING, logger="apiserver.bll.repository_access"):
+        with pytest.raises(errors.bad_request.ValidationError):
+            bll._app_token(app, repo, "the GitHub App x")
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING and "could not be reached" in r.getMessage()]
+    assert len(warnings) == 3
+    assert "attempt 3 of 3" in warnings[-1].getMessage()
+    assert "ConnectionError: connection reset" in warnings[0].getMessage()
+    assert "name resolution failed" in warnings[1].getMessage()
 
 
 # --- no record is left pointing at a deleted one ----------------------------------------------------------------------------
