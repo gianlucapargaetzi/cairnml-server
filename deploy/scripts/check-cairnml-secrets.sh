@@ -3,7 +3,7 @@
 # repositories. It never prints a secret value: findings name the file and the secret's name only.
 #
 # Usage: check-cairnml-secrets.sh [repo ...]
-# Defaults: this repository, the SDK and the agent (cairnml, cairnml-agent) and the web app (web/, see scripts/fetch-sources.sh),
+# Defaults: this repository, the SDK (cairnml, which includes the agent) and the web app (web/, see scripts/fetch-sources.sh),
 # and the secrets in $CAIRNML_HOME/secrets/cairnml (default ~/.local/share/cairnml).
 set -uo pipefail
 
@@ -11,7 +11,7 @@ root="$(cd "$(dirname "$0")/../.." && pwd)"
 secrets_dir="${CAIRNML_SECRETS_DIR:-${CAIRNML_HOME:-$HOME/.local/share/cairnml}/secrets/cairnml}"
 repos=("$@")
 if [ "${#repos[@]}" -eq 0 ]; then
-  repos=("$root" "$root/cairnml" "$root/cairnml-agent" "$root/web")
+  repos=("$root" "$root/cairnml" "$root/web")
 fi
 
 status=0

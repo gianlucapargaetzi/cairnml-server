@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Puts the repositories this one builds from in folders next to it, each at the commit its pin file names:
-#   SDK_REF (default main)    -> cairnml/        the SDK commit
-#   AGENT_REF (default main)  -> cairnml-agent/  the agent commit
+#   SDK_REF (default main)    -> cairnml/        the SDK commit (the agent is its cairnml_agent folder)
 #   docker/build/web-ref     -> web/            the web app
 # A pin file holds either a commit (40 hex characters), which is fetched exactly, or a branch name such as "main", which
 # means the branch's latest commit at the time of the run. The web app tracks "main". The pin files are the record of
@@ -34,7 +33,6 @@ fetch() { # fetch <folder> <repository> <commit or branch>
 }
 
 fetch cairnml cairnml "${SDK_REF:-main}"
-fetch cairnml-agent cairnml-agent "${AGENT_REF:-main}"
 if [ -n "${CAIRNML_WEB_DIR:-}" ]; then
   echo "web/ is not fetched: the web app is in $CAIRNML_WEB_DIR"
 else

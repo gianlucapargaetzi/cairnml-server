@@ -2,7 +2,6 @@
 .github
 # The stack's folders and the fetched repositories: the image takes them as named build contexts, not from this one.
 cairnml
-cairnml-agent
 web
 deploy
 tests

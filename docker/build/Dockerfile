@@ -1,7 +1,7 @@
-# CAIRNML_FROM chooses where the SDK (cairnml) and the agent (cairnml-agent) come from:
-#   pypi    (the default, and the release build) the versions pinned in requirements.lock
-#   source  the source trees passed as the named contexts cairnml_sdk and cairnml_agent, so the image runs the
-#           working tree; the stack (deploy/, the end-to-end suite) builds this way
+# CAIRNML_FROM chooses where the SDK (cairnml, which includes the agent as cairnml_agent) comes from:
+#   pypi    (the default, and the release build) the version pinned in requirements.lock
+#   source  the source tree passed as the named context cairnml_sdk, so the image runs the working tree; the stack
+#           (deploy/, the end-to-end suite) builds this way
 ARG CAIRNML_FROM=pypi
 
 FROM node:24-bookworm-slim AS webapp_builder
@@ -17,11 +17,8 @@ COPY --chmod=744 docker/build/internal_files/build_webapp.sh /tmp/internal_files
 RUN /bin/bash -c '/tmp/internal_files/build_webapp.sh'
 
 FROM scratch AS sdk-pypi
-FROM scratch AS agent-pypi
 FROM cairnml_sdk AS sdk-source
-FROM cairnml_agent AS agent-source
 FROM sdk-${CAIRNML_FROM} AS sdk
-FROM agent-${CAIRNML_FROM} AS agent
 
 # The "What's new" bundle: the release notes of the server, the web app and the SDK, read from their CHANGELOG.md files
 # with the server's own generator. A context without a changelog gives an empty section, as the generator reads it.
@@ -43,7 +40,6 @@ COPY --chmod=744 docker/build/internal_files/final_image_preparation.sh /tmp/int
 COPY docker/build/internal_files/cairnml.conf.template /tmp/internal_files/
 # The source trees are mounted, not copied, so they never become a layer of the image.
 RUN --mount=type=bind,from=sdk,source=/,target=/tmp/cairnml-sdk,rw \
-    --mount=type=bind,from=agent,source=/,target=/tmp/cairnml-agent,rw \
     /bin/bash -c '/tmp/internal_files/final_image_preparation.sh'
 
 # The Angular application builder writes the app into build/browser; that folder replaces nginx's default page.
