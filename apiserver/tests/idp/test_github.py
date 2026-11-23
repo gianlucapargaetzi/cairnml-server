@@ -2,10 +2,11 @@ import re
 from unittest import TestCase
 
 import jwt
+import requests
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
-from apiserver.idp.github import GitHubApp, GitHubError, RepoNotAccessible
+from apiserver.idp.github import GitHubApp, GitHubError, GitHubUnreachable, RepoNotAccessible
 
 API = "https://api.github.com"
 
@@ -191,3 +192,40 @@ class TestReadDirTexts(TestCase):
             app(FakeHttp({**self.SETUP, self.GRAPHQL: errors})).read_dir_texts("acme/proj", "datasets")
         with self.assertRaisesRegex(GitHubError, "502"):
             app(FakeHttp({**self.SETUP, self.GRAPHQL: Resp(502)})).read_dir_texts("acme/proj", "datasets")
+
+
+class FailingOn(FakeHttp):
+    """Answers like FakeHttp, but raises the given network error for one request instead of replying."""
+
+    def __init__(self, replies, method, suffix, error):
+        super().__init__(replies)
+        self.method, self.suffix, self.error = method, suffix, error
+
+    def request(self, method, url, **kwargs):
+        if method == self.method and url.endswith(self.suffix):
+            self.requests.append((method, url, kwargs))
+            raise self.error
+        return super().request(method, url, **kwargs)
+
+
+class TestTransportErrors(TestCase):
+    def test_a_transport_error_is_its_own_type_and_keeps_its_cause(self):
+        error = requests.ConnectionError("connection reset")
+        http = FailingOn({INSTALL: Resp(200, {"id": 77})}, *TOKEN, error)
+        with self.assertRaises(GitHubUnreachable) as caught:
+            app(http).installation_token("acme/proj")
+        self.assertIs(caught.exception.__cause__, error)
+
+    def test_a_server_error_is_a_plain_github_error_not_unreachable(self):
+        http = FakeHttp({INSTALL: Resp(200, {"id": 77}), TOKEN: Resp(500)})
+        with self.assertRaises(GitHubError) as caught:
+            app(http).installation_token("acme/proj")
+        self.assertIs(type(caught.exception), GitHubError)
+
+    def test_a_timeout_is_a_plain_github_error_not_unreachable(self):
+        error = requests.ReadTimeout("read timed out")
+        http = FailingOn({INSTALL: Resp(200, {"id": 77})}, *TOKEN, error)
+        with self.assertRaises(GitHubError) as caught:
+            app(http).installation_token("acme/proj")
+        self.assertIs(type(caught.exception), GitHubError)
+        self.assertIs(caught.exception.__cause__, error)
