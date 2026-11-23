@@ -1,17 +1,18 @@
 name: release
 
-# Releases what the plan says is releasing, in order: server, SDK (cairnml), agent (cairnml-agent), then the server
-# image. Started by hand from main (Actions, release, Run workflow); nothing is typed in.
+# Releases what the plan says is releasing, in order: server, SDK (cairnml, which includes the agent), web app, then the
+# server image. Started by hand from main (Actions, release, Run workflow); nothing is typed in.
 #
-# 1. check (release-check.yml): which of the three is releasing (its version file is higher than its latest release
-#    tag, with commits since), and that the three work together at the planned commits. Staying repositories are used
-#    at their latest release tag. Nothing further runs if it fails, or if none is releasing, and no tag is created.
+# 1. check (release-check.yml): which of the server, the SDK and the web app is releasing (its version file is higher
+#    than its latest release tag, with commits since), and that the server and the SDK work together at the planned
+#    commits. Staying repositories are used at their latest release tag. Nothing further runs if it fails, or if none
+#    is releasing, and no tag is created.
 # 2. approve: you approve the plan ("release" environment).
 # 3. server: tags and releases the server, when it is releasing.
-# 4. SDK, then agent: release the planned commit under its version file's version, when releasing. Their publish
-#    workflows wait for the "pypi" approval.
-# 5. image: when the server is releasing, builds the server image from the tag with the SDK and the agent built from
-#    the planned commits (docker.yml, its "dockerhub" approval). No pin file is involved.
+# 4. SDK: releases the planned commit under its version file's version, when releasing. Its publish workflow waits for
+#    the "pypi" approval.
+# 5. image: when the server is releasing, builds the server image from the tag with the SDK built from the planned
+#    commit (docker.yml, its "dockerhub" approval). No pin file is involved.
 #
 # Each release is created with the GitHub App (secrets RELEASE_APP_ID, RELEASE_APP_KEY), because a release made with
 # the default token does not start the publish workflows. The "release" environment must have required reviewers.
@@ -34,7 +35,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: release
     steps:
-      - run: echo "Approved. Server ${{ needs.check.outputs.server_release }}, SDK ${{ needs.check.outputs.sdk_release }}, agent ${{ needs.check.outputs.agent_release }} are releasing."
+      - run: echo "Approved. Server ${{ needs.check.outputs.server_release }}, SDK ${{ needs.check.outputs.sdk_release }}, web app ${{ needs.check.outputs.web_release }} are releasing."
 
   server:
     name: release the server
@@ -80,30 +81,6 @@ jobs:
           RUN="$(gh run list --repo gianlucapargaetzi/cairnml --workflow publish.yml --event release --limit 1 --json databaseId --jq '.[0].databaseId')"
           gh run watch "$RUN" --repo gianlucapargaetzi/cairnml --exit-status
 
-  agent:
-    name: release the agent
-    needs: [check, approve, server, sdk]
-    if: ${{ !cancelled() && needs.approve.result == 'success' && needs.check.outputs.agent_release == 'true' && (needs.server.result == 'success' || needs.server.result == 'skipped') && (needs.sdk.result == 'success' || needs.sdk.result == 'skipped') }}
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
-        id: app
-        with:
-          app-id: ${{ secrets.RELEASE_APP_ID }}
-          private-key: ${{ secrets.RELEASE_APP_KEY }}
-          owner: gianlucapargaetzi
-          repositories: cairnml-agent
-      - name: Release the agent commit and wait for its PyPI publish
-        env:
-          GH_TOKEN: ${{ steps.app.outputs.token }}
-          V: ${{ needs.check.outputs.agent_version }}
-          SHA: ${{ needs.check.outputs.agent_ref }}
-        run: |
-          gh release create "v$V" --repo gianlucapargaetzi/cairnml-agent --target "$SHA" --title "v$V" --generate-notes
-          sleep 20
-          RUN="$(gh run list --repo gianlucapargaetzi/cairnml-agent --workflow publish.yml --event release --limit 1 --json databaseId --jq '.[0].databaseId')"
-          gh run watch "$RUN" --repo gianlucapargaetzi/cairnml-agent --exit-status
-
   web:
     name: release the web app
     needs: [check, approve]
@@ -136,8 +113,8 @@ jobs:
 
   image:
     name: build and publish the server image
-    needs: [check, approve, server, sdk, agent, web]
-    if: ${{ !cancelled() && needs.approve.result == 'success' && needs.server.result == 'success' && (needs.sdk.result == 'success' || needs.sdk.result == 'skipped') && (needs.agent.result == 'success' || needs.agent.result == 'skipped') && (needs.web.result == 'success' || needs.web.result == 'skipped') }}
+    needs: [check, approve, server, sdk, web]
+    if: ${{ !cancelled() && needs.approve.result == 'success' && needs.server.result == 'success' && (needs.sdk.result == 'success' || needs.sdk.result == 'skipped') && (needs.web.result == 'success' || needs.web.result == 'skipped') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
@@ -152,11 +129,10 @@ jobs:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           V: ${{ needs.check.outputs.server_version }}
           SDK_SHA: ${{ needs.check.outputs.sdk_ref }}
-          AGENT_SHA: ${{ needs.check.outputs.agent_ref }}
           WEB_SHA: ${{ needs.check.outputs.web_ref }}
         run: |
           gh workflow run docker.yml --repo "$GITHUB_REPOSITORY" --ref "v$V" \
-            -f version="$V" -f sdk_sha="$SDK_SHA" -f agent_sha="$AGENT_SHA" -f web_sha="$WEB_SHA"
+            -f version="$V" -f sdk_sha="$SDK_SHA" -f web_sha="$WEB_SHA"
           sleep 20
           RUN="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow docker.yml --event workflow_dispatch --limit 1 --json databaseId --jq '.[0].databaseId')"
           gh run watch "$RUN" --repo "$GITHUB_REPOSITORY" --exit-status

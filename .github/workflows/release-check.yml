@@ -2,11 +2,11 @@ name: release-check
 
 # Is the next release valid? Run by hand before a release, or called by the release workflow. It publishes nothing.
 #
-# Plan: each of the server, the SDK (cairnml) and the agent (cairnml-agent) is either releasing or staying.
-#  - Releasing: the version in its version file (apiserver/version.py, cairnml/version.py, cairnml_agent/version.py) is
+# Plan: each of the server, the SDK (cairnml, which includes the agent) and the web app is either releasing or staying.
+#  - Releasing: the version in its version file (apiserver/version.py, cairnml/version.py, web/package.json) is
 #    higher than its latest release tag, and there are commits since. It is used at its main.
 #  - Staying: used at its latest release tag. Commits that are not bumped are only reported.
-# Then the three are tested together at exactly those commits. No PyPI package of this project is installed.
+# Then the server and the SDK are tested together at exactly those commits. No PyPI package of this project is installed.
 on:
   workflow_dispatch:
   workflow_call:
@@ -29,12 +29,6 @@ on:
         value: ${{ jobs.plan.outputs.sdk_ref }}
       sdk_version:
         value: ${{ jobs.plan.outputs.sdk_version }}
-      agent_release:
-        value: ${{ jobs.plan.outputs.agent_release }}
-      agent_ref:
-        value: ${{ jobs.plan.outputs.agent_ref }}
-      agent_version:
-        value: ${{ jobs.plan.outputs.agent_version }}
       web_release:
         value: ${{ jobs.plan.outputs.web_release }}
       web_ref:
@@ -56,9 +50,6 @@ jobs:
       sdk_release: ${{ steps.plan.outputs.sdk_release }}
       sdk_ref: ${{ steps.plan.outputs.sdk_ref }}
       sdk_version: ${{ steps.plan.outputs.sdk_version }}
-      agent_release: ${{ steps.plan.outputs.agent_release }}
-      agent_ref: ${{ steps.plan.outputs.agent_ref }}
-      agent_version: ${{ steps.plan.outputs.agent_version }}
       web_release: ${{ steps.plan.outputs.web_release }}
       web_ref: ${{ steps.plan.outputs.web_ref }}
       web_version: ${{ steps.plan.outputs.web_version }}
@@ -70,11 +61,6 @@ jobs:
         with:
           repository: gianlucapargaetzi/cairnml
           path: sdk
-          fetch-depth: 0
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          repository: gianlucapargaetzi/cairnml-agent
-          path: agent
           fetch-depth: 0
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -118,11 +104,10 @@ jobs:
           components = [
               ("server", ".", file_version("apiserver/version.py"), None),
               ("sdk", "sdk", file_version("sdk/cairnml/version.py"), "cairnml"),
-              ("agent", "agent", file_version("agent/cairnml_agent/version.py"), "cairnml-agent"),
               ("web", "web", package_version("web/package.json"), None),
           ]
           # the release notes each component publishes: CHANGELOG.md at its root, with a "## <version>" section
-          changelogs = {"server": ".", "sdk": "sdk", "agent": "agent", "web": "web"}
+          changelogs = {"server": ".", "sdk": "sdk", "web": "web"}
           sys.path.insert(0, ".")
           from apiserver.release.whats_new import has_section
           problems, out = [], {}
@@ -158,7 +143,7 @@ jobs:
               out[f"{name}_version"] = used or ""
           if os.environ["REQUIRE_RELEASE"] == "true" and os.environ["GITHUB_REF"] != "refs/heads/main":
               problems.append("a release is started from main only")
-          if os.environ["REQUIRE_RELEASE"] == "true" and not any(out[f"{n}_release"] == "true" for n in ("server", "sdk", "agent", "web")):
+          if os.environ["REQUIRE_RELEASE"] == "true" and not any(out[f"{n}_release"] == "true" for n in ("server", "sdk", "web")):
               problems.append("none of the four is releasing: bump a version file")
           with open(os.environ["GITHUB_OUTPUT"], "a") as f:
               for k, v in out.items():
@@ -232,34 +217,9 @@ jobs:
         run: python -m apiserver.client_generator check-callers --target sdk --root sdk/cairnml --allow sdk/scripts/api-allow.txt
       - run: cd sdk && python -m pytest tests -q
 
-  agent-with-sdk:
-    name: agent tests with the SDK
-    needs: plan
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          repository: gianlucapargaetzi/cairnml
-          ref: ${{ needs.plan.outputs.sdk_ref }}
-          path: sdk
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          repository: gianlucapargaetzi/cairnml-agent
-          ref: ${{ needs.plan.outputs.agent_ref }}
-          path: agent
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
-        with:
-          python-version: "3.12"
-      - run: |
-          git config --global user.email ci@example.invalid
-          git config --global user.name ci
-      - run: python -m pip install "./sdk[gpu]"
-      - run: python -m pip install ./agent -r agent/tests/requirements.txt
-      - run: cd agent && python -m pytest tests -q --ignore=tests/requirements --ignore=tests/package
-
   ready:
     name: release is valid
-    needs: [plan, server-with-sdk, sdk-with-server, agent-with-sdk]
+    needs: [plan, server-with-sdk, sdk-with-server]
     runs-on: ubuntu-latest
     steps:
-      - run: echo "The plan is valid and the three work together at the planned commits. Nothing was published."
+      - run: echo "The plan is valid and the server and the SDK work together at the planned commits. Nothing was published."
