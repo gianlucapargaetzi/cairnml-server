@@ -229,3 +229,21 @@ class TestTransportErrors(TestCase):
             app(http).installation_token("acme/proj")
         self.assertIs(type(caught.exception), GitHubError)
         self.assertIs(caught.exception.__cause__, error)
+
+    def test_a_connect_timeout_is_a_plain_github_error_not_unreachable(self):
+        # ConnectTimeout is both a ConnectionError and a Timeout: it must count as a timeout, which is never retried
+        error = requests.ConnectTimeout("connect timed out")
+        http = FailingOn({INSTALL: Resp(200, {"id": 77})}, *TOKEN, error)
+        with self.assertRaises(GitHubError) as caught:
+            app(http).installation_token("acme/proj")
+        self.assertIs(type(caught.exception), GitHubError)
+        self.assertIs(caught.exception.__cause__, error)
+
+    def test_a_certificate_failure_is_a_plain_github_error_not_unreachable(self):
+        # SSLError is a ConnectionError, but a bad certificate does not get better by asking again
+        error = requests.exceptions.SSLError("certificate verify failed")
+        http = FailingOn({INSTALL: Resp(200, {"id": 77})}, *TOKEN, error)
+        with self.assertRaises(GitHubError) as caught:
+            app(http).installation_token("acme/proj")
+        self.assertIs(type(caught.exception), GitHubError)
+        self.assertIs(caught.exception.__cause__, error)

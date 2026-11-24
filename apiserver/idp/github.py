@@ -126,6 +126,10 @@ class GitHubApp:
     def _send(self, method: str, url: str, **kwargs):
         try:
             return self._http.request(method, url, timeout=_TIMEOUT, **kwargs)
+        except (requests.Timeout, requests.exceptions.SSLError) as exc:
+            # ConnectTimeout is a ConnectionError too, and a certificate failure does not pass by asking again: neither
+            # is a network failure worth a retry
+            raise GitHubError("GitHub transport error") from exc
         except requests.ConnectionError as exc:
             raise GitHubUnreachable("GitHub transport error") from exc
         except requests.RequestException as exc:
