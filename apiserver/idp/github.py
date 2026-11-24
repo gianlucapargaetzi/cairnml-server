@@ -29,6 +29,12 @@ class RepoNotAccessible(GitHubError):
     pass
 
 
+class GitHubUnreachable(GitHubError):
+    """GitHub could not be reached: a network failure, not an answer. The caller may try again."""
+
+    pass
+
+
 class GitHubRefused(GitHubError):
     """GitHub answered that the App ID or its key is not accepted. Not a network problem: fix the App settings."""
 
@@ -120,8 +126,14 @@ class GitHubApp:
     def _send(self, method: str, url: str, **kwargs):
         try:
             return self._http.request(method, url, timeout=_TIMEOUT, **kwargs)
-        except requests.RequestException:
-            raise GitHubError("GitHub transport error") from None
+        except (requests.Timeout, requests.exceptions.SSLError) as exc:
+            # ConnectTimeout is a ConnectionError too, and a certificate failure does not pass by asking again: neither
+            # is a network failure worth a retry
+            raise GitHubError("GitHub transport error") from exc
+        except requests.ConnectionError as exc:
+            raise GitHubUnreachable("GitHub transport error") from exc
+        except requests.RequestException as exc:
+            raise GitHubError("GitHub transport error") from exc
 
     def _app_jwt(self) -> str:
         now = int(self._clock())

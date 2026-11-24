@@ -7,6 +7,7 @@ The server's API level is 2.41. The SDK and the web app are generated from the s
 - The queue list (queues.get_all_ex) returns the number of entries and the workers of each queue when the request asks for them, and the queues of a project (projects.get_queues) return the share level and id of each queue. The schema declares these fields, so the SDK and the web app can read them.
 - Every change that affects an API client is listed in the section "API 2.41" of the server's CHANGELOG.md.
 - The agent is now part of the SDK: install it with pip install "cairnml[agent]". The server image no longer uses a separate agent package. The agent's command, its configuration files and its environment names stay the same.
+- A job that asks for a repository token is no longer failed by a short network error to GitHub: the server tries the request again (up to three times) before it reports that GitHub could not be reached.
 
 # Changelog
 
