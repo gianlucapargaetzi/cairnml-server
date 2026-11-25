@@ -461,6 +461,9 @@ def test_a_private_repository_nobody_reaches_is_not_readable(world):
     repo = use(world)
     answer = resolve(world, repo, "member")
     assert answer.state == bll.UNREACHABLE and "no credential is assigned" in answer.message
+    # the text must not suggest that the company App is the only way in: the user's own credential is enough
+    assert "Assigning your own credential is enough" in answer.message
+    assert "no company GitHub App is set up" in answer.message  # the reason stays, as the fallback's explanation
 
 
 def test_a_host_that_cannot_be_asked_is_unknown_and_never_refused(world):

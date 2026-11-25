@@ -8,6 +8,7 @@ The server's API level is 2.41. The SDK and the web app are generated from the s
 - Every change that affects an API client is listed in the section "API 2.41" of the server's CHANGELOG.md.
 - The agent is now part of the SDK: install it with pip install "cairnml[agent]". The server image no longer uses a separate agent package. The agent's command, its configuration files and its environment names stay the same.
 - A job that asks for a repository token is no longer failed by a short network error to GitHub: the server tries the request again (up to three times) before it reports that GitHub could not be reached.
+- The message for a private repository that no credential reaches now says that assigning your own credential is enough, instead of pointing at the company GitHub App only.
 
 # Changelog
 
