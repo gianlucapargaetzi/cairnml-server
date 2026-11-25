@@ -231,7 +231,13 @@ def resolve(
         )
     if public is None:
         return Resolution(UNKNOWN, None, "The host could not be asked whether this repository is public", None)
-    return Resolution(UNREACHABLE, None, f"The repository is private and no credential is assigned ({why}).", False)
+    return Resolution(
+        UNREACHABLE,
+        None,
+        f"The repository is private and no credential is assigned. Assigning your own credential is enough; "
+        f"the company fallback cannot read it ({why}).",
+        False,
+    )
 
 
 TOKEN_ATTEMPTS = 3
