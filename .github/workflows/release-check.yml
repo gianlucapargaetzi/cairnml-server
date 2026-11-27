@@ -210,12 +210,14 @@ jobs:
       - run: |
           git config --global user.email ci@example.invalid
           git config --global user.name ci
-      - run: python -m pip install pyhocon jinja2 "./sdk[dataset,router]" pytest
+      # the SDK's own test commands (its ci.yml): the agent is part of the SDK, with its tests in tests/agent
+      - run: python -m pip install pyhocon jinja2 -e "./sdk[dataset,router,agent]" -r sdk/tests/agent/requirements.txt
       - name: The committed client equals what the server's schema generates
         run: python -m apiserver.client_generator generate --target sdk --out sdk/cairnml/backend_api/services --check
       - name: The hand-written callers agree with the schema
         run: python -m apiserver.client_generator check-callers --target sdk --root sdk/cairnml --allow sdk/scripts/api-allow.txt
-      - run: cd sdk && python -m pytest tests -q
+      - run: cd sdk && python -m pytest tests --ignore=tests/agent -q
+      - run: cd sdk && python -m pytest tests/agent -q --ignore=tests/agent/requirements
 
   ready:
     name: release is valid
