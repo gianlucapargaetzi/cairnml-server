@@ -1,4 +1,4 @@
-## 0.0.6
+## 0.1.0
 
 The server's API level is 2.41. The SDK and the web app are generated from the server's schema, so they use the same level.
 
@@ -9,6 +9,12 @@ The server's API level is 2.41. The SDK and the web app are generated from the s
 - The agent is now part of the SDK: install it with pip install "cairnml[agent]". The server image no longer uses a separate agent package. The agent's command, its configuration files and its environment names stay the same.
 - A job that asks for a repository token is no longer failed by a short network error to GitHub: the server tries the request again (up to three times) before it reports that GitHub could not be reached.
 - The message for a private repository that no credential reaches now says that assigning your own credential is enough, instead of pointing at the company GitHub App only.
+- Deleting a user now also deletes their credentials and assignments, their shares, their repository checks and their sign-in record and project memberships, revokes their devices and removes their jobs, so nothing of a deleted user is left behind.
+- A task id that does not exist, one in a project you cannot see and one of another company get the same answer on the task write endpoints (tasks.dequeue, tasks.started and the others), so ids cannot be probed for existence.
+- tasks.edit refuses a status or type that is not one of the task's choices, with the same error tasks.create gives.
+- Elasticsearch in the stack takes a 2 GB heap by default instead of half of the host's memory. Set CAIRNML_ES_HEAP in deploy/.env to change it.
+- The sign-in callback and logout addresses have no API version, and bootstrap.sh updates the CairnML clients in Keycloak on every run, so an installation made with an earlier version can sign in again after an upgrade.
+- The stack's Docker network has a fixed address range inside the default trusted proxies, so a host whose Docker daemon chooses other address ranges no longer loses the port in redirect addresses. Running bootstrap.sh on an existing installation recreates the network when its range differs.
 
 # Changelog
 
